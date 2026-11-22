@@ -96,3 +96,14 @@ async def acknowledge_manual_edit(
     """Human decision after reviewing a manual-edit diff: take the current page as the new baseline.
     Nothing is written; the refreshed preview shows what a publication would replace."""
     return await container.publications.acknowledge_manual_edit(user, job_id)
+
+
+@router.post("/api/publications/jobs/{job_id}/release-missing-page", response_model=PublicationJobDetail)
+async def release_missing_page(
+    job_id: JobId,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.publish_confluence))],
+) -> PublicationJobDetail:
+    """After the published page was deleted in Confluence (verified absent now): forget the mapping and
+    dry-run again, so the next publication creates a new page. Nothing is written."""
+    return await container.publications.release_missing_page(user, job_id)

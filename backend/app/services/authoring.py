@@ -45,6 +45,7 @@ from app.services.proposals import ProposalStore, repository_path_problem
 logger = logging.getLogger("skh.authoring")
 
 MAX_REFERENCES = 4
+MIN_QUOTE_CHARS = 12  # same floor as grounded answers: a shorter "quote" proves nothing
 MAX_REFERENCE_SECTION_CHARS = 1500
 _HINT_RE = re.compile(rf"^>?\s*{PLACEHOLDER}:?\s*(.*)$")
 TAKEN_CODES = frozenset({"document_id_taken", "document_path_taken"})
@@ -440,7 +441,12 @@ class AuthoringService:
             ref = by_id.get(citation.document_id)
             doc = snapshot.get(citation.document_id) if ref else None
             source_text = "\n".join(s.text for s in doc.sections) if doc else ""
-            if ref is None or doc is None or not quote_is_verbatim(citation.quote, source_text):
+            if (
+                ref is None
+                or doc is None
+                or len(citation.quote.strip()) < MIN_QUOTE_CHARS
+                or not quote_is_verbatim(citation.quote, source_text)
+            ):
                 warnings.append(
                     f"Выдержка, приписанная {citation.document_id}, не найдена в источнике дословно и исключена."
                 )

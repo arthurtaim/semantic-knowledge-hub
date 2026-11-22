@@ -410,7 +410,7 @@ def test_no_route_accepts_a_page_id(pub: PubEnv) -> None:
     spec = pub.client.get("/api/openapi.json").json()
     for path, methods in spec["paths"].items():
         if "publication" in path:
-            assert "page" not in path.replace("publication", "")
+            assert "{page" not in path  # no route takes a page ID as a parameter
             for operation in methods.values():
                 assert "requestBody" not in operation  # nothing to inject a target into
 
@@ -493,3 +493,50 @@ def test_unexpected_error_during_write_never_leaves_job_publishing(
     with pytest.raises(RuntimeError):
         pub.publish(job["id"])
     assert pub.client.get(f"/api/publications/jobs/{job['id']}").json()["state"] == "result_unknown"
+
+
+def test_page_moved_under_another_parent_is_a_conflict(pub: PubEnv) -> None:
+    pub.merged_document()
+    page_id = pub.publish(pub.latest_job()["id"]).json()["page_id"]
+    TestClient(pub.confluence).post(f"/__mock__/pages/{page_id}/move", json={"parent": FOREIGN_PAGE_ID})
+    pub.update_document(NEW_ID, "Ревизия после ручного переноса страницы.")
+    job = pub.latest_job()
+    assert job["state"] == "conflict" and job["error_code"] == "page_moved"
+    assert pub.pages[page_id]["parent"] == FOREIGN_PAGE_ID  # not moved back silently
+
+
+def test_deleted_page_can_be_released_and_recreated(pub: PubEnv) -> None:
+    pub.merged_document()
+    page_id = pub.publish(pub.latest_job()["id"]).json()["page_id"]
+    TestClient(pub.confluence).post(f"/__mock__/pages/{page_id}/delete")
+    job = pub.client.post(f"/api/documents/{NEW_ID}/publication/prepare").json()
+    assert job["state"] == "conflict" and job["error_code"] == "mapped_page_missing"
+    released = pub.client.post(f"/api/publications/jobs/{job['id']}/release-missing-page").json()
+    assert released["state"] == "dry_run_ready" and released["plan"]["action"] == "create"
+    recreated = pub.publish(job["id"]).json()
+    assert recreated["state"] == "published" and recreated["page_id"] != page_id
+
+
+def test_noop_is_robust_to_confluence_reserialisation(pub: PubEnv) -> None:
+    pub.merged_document()
+    page_id = pub.publish(pub.latest_job()["id"]).json()["page_id"]
+    # Confluence re-serialises the stored body without a new version (e.g. adds macro ids)
+    page = pub.pages[page_id]
+    page["storage"] = page["storage"].replace('ac:name="info"', 'ac:name="info" ac:macro-id="abc"')
+    again = pub.client.post(f"/api/documents/{NEW_ID}/publication/prepare").json()
+    assert again["plan"]["action"] == "noop"
+
+
+def test_found_managed_page_without_mapping_is_recorded_without_writing(pub: PubEnv, tmp_path: Path) -> None:
+    pub.merged_document()
+    page_id = pub.publish(pub.latest_job()["id"]).json()["page_id"]
+    with sqlite3.connect(tmp_path / "workspace" / "publications.sqlite3") as db:
+        db.execute("DELETE FROM publication_mappings")  # e.g. the state DB was restored from an old backup
+    writes = pub.writes()
+    job = pub.client.post(f"/api/documents/{NEW_ID}/publication/prepare").json()
+    assert job["plan"]["action"] == "noop" and "managed_page_found" in {
+        w["code"] for w in job["plan"]["warnings"]
+    }
+    done = pub.publish(job["id"]).json()
+    assert done["state"] == "published" and pub.writes() == writes
+    assert pub.status()["mapping"]["page_id"] == page_id

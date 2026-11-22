@@ -284,6 +284,12 @@ class ConfluenceMock:
             for p in state.pages.values()
         ):
             return _error(400, "A page with this title already exists")
+        ancestors = body.get("ancestors") or []
+        if ancestors:  # DC moves the page under the given parent
+            parent = str(ancestors[0].get("id"))
+            if parent not in state.pages or state.pages[parent]["space"] != page["space"]:
+                return _error(404, "Parent page not found in space")
+            page["parent"] = parent
         page["history"].append(
             {"version": page["version"], "storage": page["storage"], "title": page["title"]}
         )
@@ -333,6 +339,18 @@ class ConfluenceMock:
                     str(body.get("storage", page["storage"] + "\n<p>Ручная правка.</p>"))
                 )
                 page["title"] = str(body.get("title", page["title"]))
+                page["version"] += 1
+                page["when"] = state.now()
+                return JSONResponse({"version": page["version"]})
+            moved = re.fullmatch(r"/__mock__/pages/([^/]+)/(move|delete)", path)
+            if moved:
+                page = state.pages.get(moved.group(1))
+                if page is None:
+                    return _error(404, "no such page")
+                if moved.group(2) == "delete":
+                    del state.pages[page["id"]]
+                    return JSONResponse({"ok": True})
+                page["parent"] = str(body.get("parent", FOREIGN_PAGE_ID))
                 page["version"] += 1
                 page["when"] = state.now()
                 return JSONResponse({"version": page["version"]})

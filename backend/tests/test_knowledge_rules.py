@@ -266,6 +266,21 @@ def test_openapi_contract_lists_documented_endpoints(client: TestClient) -> None
         ("/api/drafts/{draft_id}/submit", "post"),
         ("/api/drafts/{draft_id}/refresh-status", "post"),
         ("/api/drafts/{draft_id}/reject", "post"),
+        ("/api/drafts/{draft_id}", "put"),
+        ("/api/drafts/{draft_id}", "delete"),
+        ("/api/authoring/templates", "get"),
+        ("/api/authoring/check", "post"),
+        ("/api/authoring/ai-draft", "post"),
+        ("/api/authoring/drafts", "post"),
+        ("/api/documents/{document_id}/publication", "get"),
+        ("/api/documents/{document_id}/publication/prepare", "post"),
+        ("/api/publications/jobs", "get"),
+        ("/api/publications/jobs/{job_id}", "get"),
+        ("/api/publications/jobs/{job_id}/dry-run", "post"),
+        ("/api/publications/jobs/{job_id}/publish", "post"),
+        ("/api/publications/jobs/{job_id}/reconcile", "post"),
+        ("/api/publications/jobs/{job_id}/acknowledge-manual-edit", "post"),
+        ("/api/publications/jobs/{job_id}/release-missing-page", "post"),
     ]:
         assert method in paths.get(path, {}), (path, method)
     assert paths["/api/drafts/{draft_id}/open-mr"]["post"].get("deprecated") is True

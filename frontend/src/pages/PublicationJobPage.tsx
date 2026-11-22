@@ -20,13 +20,14 @@ import {
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
 
-type JobAction = "dry_run" | "publish" | "reconcile" | "acknowledge";
+type JobAction = "dry_run" | "publish" | "reconcile" | "acknowledge" | "release";
 
 const PENDING_TEXT: Record<JobAction, string> = {
   dry_run: "Выполняем предпросмотр: читаем Confluence, ничего не записываем…",
   publish: "Публикуем в Confluence: перед записью ещё раз проверяем страницу…",
   reconcile: "Проверяем состояние страницы в Confluence (без записи)…",
   acknowledge: "Принимаем текущую страницу как основу и обновляем предпросмотр…",
+  release: "Проверяем, что страницы нет, и готовим создание новой (без записи)…",
 };
 
 const isHttpUrl = (value: string | null | undefined): value is string => Boolean(value && /^https?:\/\//i.test(value));
@@ -38,6 +39,7 @@ function toApiError(err: unknown): ApiError {
 function outcomeMessage(kind: JobAction, job: PublicationJobDetail): string {
   const label = PUBLICATION_JOB_STATE_LABEL[job.state];
   if (kind === "acknowledge") return "Ручная правка подтверждена. Предпросмотр обновлён: проверьте, что заменит публикация.";
+  if (kind === "release") return "Привязка к удалённой странице снята. Предпросмотр обновлён: будет создана новая страница.";
   if (kind === "dry_run") return `Предпросмотр обновлён: «${label}».`;
   if (kind === "publish") {
     if (job.state === "published") {
@@ -278,6 +280,7 @@ export function PublicationJobPage() {
   const done = job.state === "published";
   const title = plan?.target.title ?? job.document_id;
   const manualEdit = plan?.diff_kind === "manual_edit";
+  const pageMissing = job.state === "conflict" && Boolean(plan?.problems.some((p) => p.code === "mapped_page_missing"));
   const mr = plan?.merge_request ?? null;
 
   let publishHint: string;
@@ -487,6 +490,28 @@ export function PublicationJobPage() {
               </div>
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {pageMissing ? (
+        <section className="panel conflict-panel" aria-labelledby="page-missing-title">
+          <h2 id="page-missing-title">Опубликованная страница не найдена в Confluence</h2>
+          <p>
+            Страницу удалили или перенесли туда, где она недоступна. Лучше всего восстановить её в Confluence (например,
+            из корзины пространства) и выполнить проверку заново. Если восстановить нельзя, создайте страницу заново:
+            приложение убедится, что страницы действительно нет, забудет старую привязку и покажет новый предпросмотр. В
+            Confluence при этом ничего не записывается.
+          </p>
+          <div className="button-row">
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={busy}
+              onClick={() => run("release", () => api.releaseMissingPage(job.id))}
+            >
+              Создать страницу заново
+            </button>
+          </div>
         </section>
       ) : null}
 

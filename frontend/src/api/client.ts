@@ -186,4 +186,9 @@ export const api = {
     request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/acknowledge-manual-edit`, {
       method: "POST",
     }),
+  /** Recovery after the published page was deleted: forget the mapping (page verified absent), new dry-run. */
+  releaseMissingPage: (id: string) =>
+    request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/release-missing-page`, {
+      method: "POST",
+    }),
 };

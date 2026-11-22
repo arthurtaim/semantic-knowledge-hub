@@ -79,6 +79,14 @@ def _issue(severity: str, code: str, message: str) -> ValidationIssue:
     return ValidationIssue.model_validate({"severity": severity, "code": code, "message": message})
 
 
+def _direct_parent(page: dict[str, Any]) -> str | None:
+    """Last element of `ancestors` (DC returns the chain from the space root to the direct parent)."""
+    ancestors = page.get("ancestors")
+    if not isinstance(ancestors, list) or not ancestors or not isinstance(ancestors[-1], dict):
+        return None
+    return str(ancestors[-1].get("id"))
+
+
 def _diff(before: str, after: str, before_name: str, after_name: str) -> str:
     lines = difflib.unified_diff(
         before.splitlines(), after.splitlines(), fromfile=before_name, tofile=after_name, lineterm="", n=2
@@ -207,6 +215,13 @@ class PublicationStore:
                 row,
             )
 
+    def delete_mapping(self, project_id: str, document_key: str) -> None:
+        with self._lock, self._conn:
+            self._conn.execute(
+                "DELETE FROM publication_mappings WHERE project_id = ? AND document_key = ?",
+                (project_id, document_key),
+            )
+
     def event(
         self,
         actor: str,
@@ -253,7 +268,9 @@ class PublicationStore:
             self._conn.close()
 
 
-Applied = Literal["applied", "not_applied", "unknown"]
+# unknown: Confluence could not be inspected; inconclusive: inspected, but the page neither proves nor
+# disproves our write (e.g. re-serialised body or a concurrent edit) — a fresh dry-run decides next.
+Applied = Literal["applied", "not_applied", "unknown", "inconclusive"]
 
 
 class PublicationService:
@@ -706,10 +723,18 @@ class PublicationService:
                             "Переименуйте документ или страницу.",
                         )
                     )
-                elif (page.get("space") or {}).get("key") != pub.space_key:
+                elif (page.get("space") or {}).get("key") != pub.space_key or _direct_parent(page) not in (
+                    None,
+                    pub.parent_id,
+                ):
                     action = "conflict"
                     problems.append(
-                        _issue("error", "page_moved", "Страница перенесена в другое пространство вручную.")
+                        _issue(
+                            "error",
+                            "page_moved",
+                            "Страница перенесена вручную (другое пространство или родительская страница). "
+                            "Публикация не вернёт её обратно автоматически.",
+                        )
                     )
                 elif (
                     mapping is not None
@@ -752,7 +777,14 @@ class PublicationService:
                                 "Версия страницы изменилась без изменения содержимого.",
                             )
                         )
-                    if storage_signature(remote_storage) == signature and page.get("title") == doc.title:
+                    same_as_published = (
+                        mapping is not None
+                        and remote_version == mapping["page_version"]
+                        and signature == mapping["rendered_signature"]
+                    )
+                    if page.get("title") == doc.title and (
+                        same_as_published or storage_signature(remote_storage) == signature
+                    ):
                         action, diff_kind, diff = "noop", "none", ""
                     else:
                         action, diff_kind = "update", "page_update"
@@ -856,13 +888,38 @@ class PublicationService:
         row = self._job_row(job_id)
         pub = self._publisher
         try:
-            if plan.action == "noop":
+            if plan.action == "noop" and self._store.mapping(self._project, doc.id.lower()) is not None:
                 return self._finalize_noop(user, row, doc, plan)
+            if plan.action == "noop":  # our page found without a local mapping: record it, no write
+                assert plan.target.page_id is not None
+                found = await pub.read_page(plan.target.page_id)
+                if found is None:
+                    raise PublicationError("confluence_not_found", "Страница не найдена.", uncertain=True)
+                return self._finalize(user, row, doc, plan, found)
             if plan.action == "create":
                 created = await pub.create_page(doc.title, plan.storage, self._marker(doc))
                 page_id = str(created.get("id"))
                 if not self._marker_matches(await pub.read_marker(page_id), doc):
-                    await pub.write_marker(page_id, self._marker(doc))
+                    try:
+                        await pub.write_marker(page_id, self._marker(doc))
+                    except PublicationError as exc:
+                        message = (
+                            f"Страница {page_id} создана, но метку владельца записать не удалось ({exc.message}). "
+                            "Приложение не будет менять эту страницу автоматически: проверьте её в Confluence."
+                        )
+                        self._store.transition(
+                            row["id"],
+                            {"publishing"},
+                            "failed",
+                            error_code="marker_write_failed",
+                            error_message=message[:500],
+                            page_id=page_id,
+                            uncertain=0,
+                        )
+                        self._store.event(
+                            user.user_id, "marker_write_failed", row["id"], doc.id, row["revision"], "failed"
+                        )
+                        return self._detail(self._job_row(row["id"]))
             else:
                 assert plan.target.page_id is not None and plan.remote_version is not None
                 page_id = plan.target.page_id
@@ -897,7 +954,7 @@ class PublicationService:
                     user.user_id, "write_confirmed_after_lost_answer", job_id, doc.id, row["revision"], None
                 )
                 return self._finalize(user, row, doc, plan, page)
-            if outcome == "unknown":
+            if outcome in ("unknown", "inconclusive"):
                 self._store.transition(
                     job_id,
                     {"publishing"},
@@ -947,7 +1004,7 @@ class PublicationService:
                 return "not_applied", None
             if version == (plan.remote_version or 0) + 1 and storage_signature(storage) == plan.rendered_hash:
                 return "applied", current
-            return "unknown", None
+            return "inconclusive", None
         except PublicationError:
             return "unknown", None
 
@@ -1046,6 +1103,8 @@ class PublicationService:
                             "confluence_write_uncertain",
                             "Проверить результат в Confluence пока не удалось. Повторите проверку позже.",
                         )
+                    # inconclusive / not applied: a fresh read-only dry-run shows the real page state
+                    # (an unexplained version becomes a manual-edit conflict for a human to resolve).
                 self._store.transition(job_id, {"result_unknown"}, "failed", uncertain=0)
             elif row["state"] not in ("failed", "conflict"):
                 raise ApiError(409, "invalid_transition", "Проверка не требуется для этого задания.")
@@ -1084,6 +1143,36 @@ class PublicationService:
             self._store.upsert_mapping(values)
             self._store.event(
                 user.user_id, "manual_edit_acknowledged", job_id, row["document_id"], row["revision"], None
+            )
+            return await self._dry_run_locked(user, job_id)
+
+    async def release_missing_page(self, user: UserContext, job_id: str) -> PublicationJobDetail:
+        """Recovery after the published page was deleted in Confluence: forget the local mapping (the
+        page is verified to be absent right now), then dry-run again — the plan becomes «create»."""
+        self._ensure_enabled()
+        row = self._job_row(job_id)
+        async with self._lock(row["document_key"]):
+            row = self._job_row(job_id)
+            plan = self._plan_of(row)
+            codes = {p.code for p in plan.problems} if plan else set()
+            mapping = self._store.mapping(self._project, row["document_key"])
+            if row["state"] != "conflict" or "mapped_page_missing" not in codes or mapping is None:
+                raise ApiError(
+                    409,
+                    "invalid_transition",
+                    "Действие доступно только если опубликованная страница исчезла.",
+                )
+            try:
+                still_missing = await self._publisher.read_page(mapping["page_id"]) is None
+            except PublicationError as exc:
+                raise ApiError(502, exc.code, exc.message) from exc
+            if not still_missing:
+                raise ApiError(
+                    409, "page_exists", "Страница снова доступна в Confluence: выполните проверку заново."
+                )
+            self._store.delete_mapping(self._project, row["document_key"])
+            self._store.event(
+                user.user_id, "missing_page_released", job_id, row["document_id"], row["revision"], None
             )
             return await self._dry_run_locked(user, job_id)
 

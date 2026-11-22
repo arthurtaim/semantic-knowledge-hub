@@ -65,6 +65,17 @@ def test_write_routes_require_write_actions(client: TestClient) -> None:
         ("POST", "/api/drafts/{draft_id}/refresh-status"): Action.submit_proposal,
         ("POST", "/api/index/sync"): Action.sync_knowledge,
         ("GET", "/api/corporate/pages/{page_id}"): Action.read_corporate,
+        ("PUT", "/api/drafts/{draft_id}"): Action.create_proposal,
+        ("DELETE", "/api/drafts/{draft_id}"): Action.create_proposal,
+        ("POST", "/api/authoring/drafts"): Action.create_proposal,
+        ("POST", "/api/authoring/check"): Action.create_proposal,
+        ("POST", "/api/authoring/ai-draft"): Action.create_proposal,
+        ("POST", "/api/documents/{document_id}/publication/prepare"): Action.prepare_publication,
+        ("POST", "/api/publications/jobs/{job_id}/dry-run"): Action.prepare_publication,
+        ("POST", "/api/publications/jobs/{job_id}/reconcile"): Action.prepare_publication,
+        ("POST", "/api/publications/jobs/{job_id}/publish"): Action.publish_confluence,
+        ("POST", "/api/publications/jobs/{job_id}/acknowledge-manual-edit"): Action.publish_confluence,
+        ("POST", "/api/publications/jobs/{job_id}/release-missing-page"): Action.publish_confluence,
     }
     seen = {(m, r.path): _actions(r.dependant) for r in api_routes(client) for m in r.methods}
     for key, action in expected.items():

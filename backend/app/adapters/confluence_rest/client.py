@@ -149,7 +149,11 @@ class ConfluenceDCClient:
                     ) from exc
                 if response.status_code in RETRY_STATUSES and attempt < retries:
                     attempt += 1
-                    await self._sleep(min(5.0, 0.5 * 2 ** (attempt - 1)))
+                    try:
+                        delay = float(response.headers.get("Retry-After", ""))
+                    except ValueError:
+                        delay = 0.5 * 2 ** (attempt - 1)
+                    await self._sleep(min(5.0, max(0.0, delay)))
                     continue
                 logger.info(
                     "confluence %s %s -> %s",

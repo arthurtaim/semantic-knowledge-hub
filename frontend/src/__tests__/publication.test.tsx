@@ -284,6 +284,32 @@ describe("Publication job page", () => {
     expect(screen.queryByRole("heading", { name: "Страница изменена в Confluence вручную" })).toBeNull();
   });
 
+  it("offers to recreate a page that was deleted in Confluence", async () => {
+    const base = publicationJob().plan!;
+    const missing = publicationJob({
+      state: "conflict",
+      action: "conflict",
+      can_publish: false,
+      can_reconcile: true,
+      error_code: "mapped_page_missing",
+      plan: {
+        ...base,
+        action: "conflict",
+        target: { ...base.target, page_id: "98765" },
+        problems: [{ severity: "error", code: "mapped_page_missing", message: "Страница 98765 не найдена.", field: null }],
+      },
+    });
+    const calls = mockApi([
+      { path: JOB, body: missing },
+      { method: "POST", path: `${JOB}/release-missing-page`, body: publicationJob() },
+    ]);
+    renderJob();
+    await screen.findByRole("heading", { name: "Опубликованная страница не найдена в Confluence" });
+    await userEvent.click(screen.getByRole("button", { name: "Создать страницу заново" }));
+    expect(await screen.findByText(/Привязка к удалённой странице снята/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST").map((c) => c.url)).toEqual([`${JOB}/release-missing-page`]);
+  });
+
   it("checks an unconfirmed write before anything else", async () => {
     const calls = mockApi([
       {
