@@ -3,7 +3,11 @@ PYTHON ?= python3.12
 VENV := .venv
 PY := $(VENV)/bin/python
 
-.PHONY: setup backend frontend dev test test-backend test-frontend lint e2e up down logs reset-workspace check
+INTEGRATION_ENV ?= deploy/integration/integration.env
+COMPOSE_INTEGRATION = docker compose --env-file $(INTEGRATION_ENV) -f docker-compose.yml -f docker-compose.integration.yml
+
+.PHONY: setup backend frontend dev test test-backend test-frontend lint e2e up down logs reset-workspace check \
+	preflight preflight-integration integration-up test-live
 
 setup: ## Create .venv, install backend (dev) and frontend dependencies
 	$(PYTHON) -m venv $(VENV)
@@ -49,3 +53,15 @@ logs:
 
 reset-workspace: ## Delete local derived state and re-seed synthetic fixtures on next start
 	rm -rf workspace
+
+preflight: ## Offline check of the current configuration (no network connections)
+	cd backend && ../$(PY) -m app.preflight
+
+preflight-integration: ## Offline check of $(INTEGRATION_ENV) inside the container (needs SKH_SECRETS_DIR)
+	$(COMPOSE_INTEGRATION) run --rm --no-deps backend python -m app.preflight
+
+integration-up: ## Start against the TEST GitLab/Confluence MCP (only after approval; needs SKH_SECRETS_DIR)
+	$(COMPOSE_INTEGRATION) up --build -d
+
+test-live: ## Read-only smoke tests against the configured TEST environment (explicit opt-in)
+	cd backend && SKH_LIVE_TESTS=1 ../$(PY) -m pytest -m live tests/live -v

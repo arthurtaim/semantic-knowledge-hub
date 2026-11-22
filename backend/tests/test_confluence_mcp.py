@@ -50,6 +50,13 @@ PAGES = [
 ]
 
 
+def payload_method(request: httpx.Request) -> str:
+    try:
+        return str(json.loads(request.content).get("method", ""))
+    except ValueError:
+        return ""
+
+
 class FakeMcp:
     def __init__(self, *, sse: bool = False, tools: list[dict[str, Any]] | None = None) -> None:
         self.sse = sse
@@ -68,7 +75,9 @@ class FakeMcp:
             ]
         )
         self.calls: list[dict[str, Any]] = []
+        self.deleted_sessions: list[str] = []
         self.status_override: int | None = None
+        self.paginate_tools = False
 
     def _reply(self, message: dict[str, Any], session: bool = False) -> httpx.Response:
         headers = {"Mcp-Session-Id": "sess-1"} if session else {}
@@ -81,7 +90,12 @@ class FakeMcp:
         if self.status_override:
             return httpx.Response(self.status_override, json={})
         assert request.headers["Authorization"] == "Bearer mcp-secret"
+        if request.method == "DELETE":
+            self.deleted_sessions.append(request.headers.get("Mcp-Session-Id", ""))
+            return httpx.Response(204)
         assert "text/event-stream" in request.headers["Accept"]
+        if payload_method(request) != "initialize":
+            assert request.headers.get("MCP-Protocol-Version") == "2025-06-18"
         payload = json.loads(request.content)
         method = payload.get("method")
         if method == "initialize":
@@ -97,6 +111,13 @@ class FakeMcp:
         if method == "notifications/initialized":
             return httpx.Response(202)
         if method == "tools/list":
+            if self.paginate_tools:
+                cursor = payload.get("params", {}).get("cursor")
+                page = self.tools[:1] if cursor is None else self.tools[1:]
+                result: dict[str, Any] = {"tools": page}
+                if cursor is None:
+                    result["nextCursor"] = "page-2"
+                return self._reply({"jsonrpc": "2.0", "id": payload["id"], "result": result})
             return self._reply({"jsonrpc": "2.0", "id": payload["id"], "result": {"tools": self.tools}})
         if method == "tools/call":
             self.calls.append(payload["params"])
@@ -286,3 +307,44 @@ def test_entities_decoded_and_bad_ids_dropped() -> None:
     page = c._to_page({"id": "7", "space": "TEAM", "title": "A &amp; B", "excerpt": "x &lt; y &amp;amp; z"})
     assert page is not None and page.title == "A & B" and page.body == "x < y &amp; z"
     assert c._to_page({"id": 'x" status="approved', "space": "TEAM", "title": "t"}) is None
+
+
+def test_sessions_are_closed_and_tool_pages_followed() -> None:
+    fake = FakeMcp()
+    fake.paginate_tools = True
+    status = asyncio.run(connector(fake).status())
+    assert status.state == "connected"  # conf_get_page only appears on the second page
+    assert fake.deleted_sessions == ["sess-1"]
+    asyncio.run(connector(fake).search("ARIS", USER))
+    assert fake.deleted_sessions.count("sess-1") >= 3  # status + verify + call, each session closed
+
+
+def test_result_map_and_relative_links() -> None:
+    from app.adapters.corporate.confluence_mcp import parse_result_map
+
+    mapping = parse_result_map(
+        json.dumps({"items": "data.hits", "id": "content.id", "space": "content.space.key"})
+    )
+    assert mapping is not None
+    client = McpClient(
+        url=URL, token=SecretStr("mcp-secret"), transport=httpx.MockTransport(FakeMcp().handler)
+    )
+    c = ConfluenceMCPConnector(
+        client,
+        tool_map=parse_tool_map(TOOL_MAP),
+        allowlisted_spaces=["TEAM"],
+        link_hosts=["confluence.internal.example"],
+        result_map=mapping,
+        web_base_url="https://confluence.internal.example/wiki",
+    )
+    page = c._to_page(
+        {
+            "content": {"id": "55", "space": {"key": "TEAM"}, "title": "Nested"},
+            "excerpt": "x",
+            "url": "/display/TEAM/Nested",
+        }
+    )
+    assert page is not None and page.page_id == "55" and page.title == "Nested"
+    assert page.source_uri == "https://confluence.internal.example/wiki/display/TEAM/Nested"
+    assert parse_result_map('{"unknown_field": "x"}') is None
+    assert parse_result_map("[1, 2]") is None

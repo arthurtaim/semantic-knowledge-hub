@@ -32,6 +32,7 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["live: read-only tests against a configured TEST environment; skipped unless SKH_LIVE_TESTS=1"]
 filterwarnings = [
     "error::DeprecationWarning:app.*",
     # FastAPI's TestClient still wraps httpx; the transport warning is upstream, not ours.

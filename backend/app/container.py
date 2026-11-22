@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from dataclasses import dataclass
 
 from app.adapters.ai.base import AIProvider
 from app.adapters.ai.mock import DisabledAIProvider, MockAIProvider
 from app.adapters.ai.openai_compatible import OpenAICompatibleAIProvider
 from app.adapters.corporate.base import CorporateKnowledgeConnector
-from app.adapters.corporate.confluence_mcp import ConfluenceMCPConnector, parse_tool_map
+from app.adapters.corporate.confluence_mcp import ConfluenceMCPConnector, parse_result_map, parse_tool_map
 from app.adapters.corporate.disabled import DisabledCorporateConnector
 from app.adapters.corporate.mcp_client import McpClient
 from app.adapters.corporate.mock import MockCorporateConnector
@@ -22,7 +23,7 @@ from app.adapters.publishers.base import ConfluencePublisher, ProposalPublisher
 from app.adapters.publishers.disabled import DisabledConfluencePublisher, DisabledProposalPublisher
 from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
-from app.config import Settings
+from app.config import Settings, tls_verify
 from app.domain.models import UserContext
 from app.services.assistant import AssistantService
 from app.services.integrations import IntegrationService
@@ -93,6 +94,7 @@ def build_repository(settings: Settings) -> KnowledgeRepository:
         project_id=settings.gitlab_project_id,
         token=settings.gitlab_token,
         timeout_seconds=settings.gitlab_timeout_seconds,
+        verify=_verify(settings, settings.gitlab_ca_bundle),
     )
     return GitLabKnowledgeRepository(
         client,
@@ -119,7 +121,15 @@ def build_ai(settings: Settings) -> AIProvider:
         allow_insecure_http=settings.ai_allow_insecure_http,
         max_context_chars=settings.ai_max_context_chars,
         max_response_bytes=settings.ai_max_response_bytes,
+        verify=_verify(settings, settings.ai_ca_bundle),
     )
+
+
+def _verify(settings: Settings, bundle: str) -> ssl.SSLContext | bool:
+    try:
+        return tls_verify(settings, bundle)
+    except (ValueError, ssl.SSLError) as exc:
+        raise ConfigurationError(str(exc)) from exc
 
 
 def build_corporate(settings: Settings) -> CorporateKnowledgeConnector:
@@ -127,16 +137,21 @@ def build_corporate(settings: Settings) -> CorporateKnowledgeConnector:
         return DisabledCorporateConnector()
     if settings.confluence_connector == "mock":
         return MockCorporateConnector(settings.confluence_space_list or None)
+    result_map = parse_result_map(settings.confluence_mcp_result_map)
     return ConfluenceMCPConnector(
         McpClient(
             url=settings.confluence_mcp_url,
             token=settings.confluence_mcp_auth_token,
             timeout_seconds=settings.confluence_mcp_timeout_seconds,
+            verify=_verify(settings, settings.confluence_mcp_ca_bundle),
         ),
         tool_map=parse_tool_map(settings.confluence_mcp_tool_map),
         allowlisted_spaces=settings.confluence_space_list,
         link_hosts=settings.confluence_link_host_list,
         max_body_chars=settings.confluence_max_body_chars,
+        result_map=result_map,
+        result_map_valid=result_map is not None,
+        web_base_url=settings.confluence_web_base_url,
     )
 
 

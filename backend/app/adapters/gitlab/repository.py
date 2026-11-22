@@ -13,7 +13,9 @@ import hashlib
 import logging
 import time
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlsplit
+
+import httpx
 
 from app.adapters.gitlab.client import GitLabClient, GitLabError
 from app.adapters.knowledge.base import (
@@ -28,8 +30,19 @@ from app.domain.schema import is_valid_document_id
 
 logger = logging.getLogger("skh.gitlab.repository")
 
-PER_PAGE = 100
+PER_PAGE = 100  # GitLab maximum for per_page
 MAX_PARALLEL_READS = 8
+MAX_TREE_PAGES = 500
+
+
+def _next_page_token(response: httpx.Response) -> str | None:
+    """`page_token` of the `Link: <…>; rel="next"` header. The URL itself is never followed: only the
+    opaque token is reused against the configured host."""
+    link = response.links.get("next", {}).get("url") if response.headers.get("link") else None
+    if not link:
+        return None
+    values = parse_qs(urlsplit(link).query).get("page_token")
+    return values[0] if values else None
 
 
 class GitLabKnowledgeRepository:
@@ -70,17 +83,22 @@ class GitLabKnowledgeRepository:
         return f"gitlab://{self._project_id}/{path}@{self._branch}"
 
     async def _list_markdown_files(self) -> list[dict[str, Any]]:
+        """Walk the repository tree. Uses keyset pagination (recommended by GitLab for the tree
+        endpoint: `pagination=keyset`, next page via the `Link` header's `page_token`) and falls back
+        to offset pagination (`X-Next-Page`) for instances that ignore keyset."""
         entries: list[dict[str, Any]] = []
-        page = 1
-        while True:
-            params: dict[str, Any] = {
-                "ref": self._branch,
-                "recursive": "true",
-                "per_page": PER_PAGE,
-                "page": page,
-            }
+        page_token: str | None = None
+        page: int | None = None
+        for _ in range(MAX_TREE_PAGES):
+            params: dict[str, Any] = {"ref": self._branch, "recursive": "true", "per_page": PER_PAGE}
             if self._prefix:
                 params["path"] = self._prefix
+            if page is not None:
+                params["page"] = page
+            else:
+                params["pagination"] = "keyset"
+                if page_token:
+                    params["page_token"] = page_token
             response = await self._client.request(
                 "GET", self._client.project_path("/repository/tree"), params=params
             )
@@ -96,10 +114,16 @@ class GitLabKnowledgeRepository:
                     and str(item.get("path", "")).lower().endswith(".md")
                 ):
                     entries.append(item)
-            next_page = response.headers.get("X-Next-Page", "")
-            if not next_page or len(entries) >= self._max_files:
+            if len(entries) >= self._max_files:
                 break
-            page = int(next_page)
+            next_token = _next_page_token(response)
+            next_offset = response.headers.get("X-Next-Page", "")
+            if next_token and page is None:
+                page_token = next_token
+            elif next_offset.isdigit():
+                page = int(next_offset)
+            else:
+                break
         return sorted(entries[: self._max_files], key=lambda e: str(e["path"]))
 
     async def _read_file(self, path: str, issues: list[LoadIssue]) -> DocumentRecord | None:
@@ -218,7 +242,12 @@ class GitLabKnowledgeRepository:
         }
         details = {"host": self._client.host, "branch": self._branch}
         try:
+            # The project endpoint may answer without authentication for public projects, so the
+            # default branch is probed too: it proves the token can read this repository.
             await self._client.request("GET", self._client.project_path())
+            await self._client.request(
+                "GET", self._client.project_path(f"/repository/branches/{quote(self._branch, safe='')}")
+            )
         except GitLabError as exc:
             return IntegrationStatus(
                 **base,

@@ -85,7 +85,7 @@ cd frontend && npx playwright test                             # нужен за
 
 Во время pytest исходящие сокеты заблокированы — тест упадёт, если код попытается выйти в сеть. Браузер для Playwright ставится один раз: `cd frontend && npx playwright install chromium`.
 
-**Последний прогон из корня репозитория (2026-11-22, macOS, Python 3.12, Node 26, Docker 29.4):** `make setup` — ок; `make check` — backend 235 passed, frontend 23 passed, `ruff`/`ruff format --check`/`mypy --strict`/`tsc`/`eslint` без замечаний; `make up` с пустым томом — backend healthy, исходящая сеть из контейнера недоступна, чужой `Host` → 400; `make e2e` — 5 passed (desktop + mobile). Отказ запуска при `APP_HOST=0.0.0.0` или публикации на не-loopback адрес проверен вручную (код выхода 2). Соответствие тестов сценариям приёмки — в [docs/TEST_PLAN.md](docs/TEST_PLAN.md#traceability-implemented-tests).
+**Последний прогон из корня репозитория (2026-11-22, macOS, Python 3.12, Node 26, Docker 29.4):** `make setup` — ок; `make check` — backend 263 passed + 2 skipped (opt-in live-тесты), frontend 23 passed, `ruff`/`ruff format --check`/`mypy --strict`/`tsc`/`eslint` без замечаний; `make up` с пустым томом — backend healthy, исходящая сеть из контейнера недоступна, чужой `Host` → 400; `make e2e` — 5 passed (desktop + mobile); `make preflight` — ошибок нет; `make preflight-integration` на незаполненном шаблоне корректно перечисляет недостающие параметры. Отказ запуска при `APP_HOST=0.0.0.0` или публикации на не-loopback адрес проверен вручную (код выхода 2). Соответствие тестов сценариям приёмки — в [docs/TEST_PLAN.md](docs/TEST_PLAN.md#traceability-implemented-tests).
 
 ## Конфигурация
 
@@ -104,9 +104,23 @@ cd frontend && npx playwright test                             # нужен за
 - **Внутренняя модель:** `AI_PROVIDER=internal_api`, `AI_BASE_URL=https://…`, `AI_MODEL`, `AI_API_KEY`, `AI_ALLOWED_HOSTS=<хост из AI_BASE_URL>`.
 - **GitLab:** `KNOWLEDGE_BACKEND=gitlab`, `GITLAB_URL`, `GITLAB_PROJECT_ID`, `GITLAB_TOKEN` (минимальные права на чтение; для MR — права на ветки/MR без доступа к защищённой ветке).
 - **Confluence MCP:** `CONFLUENCE_CONNECTOR=mcp`, `CONFLUENCE_MCP_URL`, `CONFLUENCE_MCP_AUTH_TOKEN`, `CONFLUENCE_ALLOWLISTED_SPACES`, `CONFLUENCE_LINK_HOSTS` и `CONFLUENCE_MCP_TOOL_MAP` — сопоставление с инструментами, которые реально объявил сервер (их список виден на странице «Интеграции», если сопоставление не задано или неверно).
-- В Docker у бэкенда нет исходящей сети. Для одобренных интеграций: `docker compose -f docker-compose.yml -f docker-compose.egress.yml up --build -d`.
+- В Docker у бэкенда нет исходящей сети. Тестовый контур интеграций подключается отдельным override — см. раздел ниже.
 
-«Подключено» в статусе выставляется только после реальной проверки (GitLab — запрос проекта, MCP — обнаружение инструментов, AI — `/models`).
+«Подключено» в статусе выставляется только после реальной проверки (GitLab — проект и основная ветка, MCP — обнаружение инструментов, AI — `/models`).
+
+## Подготовка к подключению тестовых GitLab и Confluence MCP
+
+Подробности, перечень параметров и доступов, чек-лист для инфраструктуры — в [docs/INTEGRATION_READINESS.md](docs/INTEGRATION_READINESS.md). Кратко:
+
+```bash
+cp deploy/integration/integration.env.example deploy/integration/integration.env   # git-ignored, без секретов
+export SKH_SECRETS_DIR=~/.config/skh-secrets      # вне репозитория: gitlab_token, confluence_mcp_token, corporate-ca.pem
+make preflight-integration    # офлайн-проверка конфигурации в контейнере, соединений не выполняет
+make integration-up           # запуск с исходящей сетью для backend — только после согласования
+make test-live                # read-only смоук против тестового контура (явное включение SKH_LIVE_TESTS=1)
+```
+
+Секреты читаются только из файлов (`*_FILE`), корпоративный CA — через `*_CA_BUNDLE`. Запись в GitLab (`GITLAB_PROPOSALS_ENABLED`) и в Confluence (`CONFLUENCE_PUBLISH_ENABLED`) остаётся выключенной. `make preflight` проверяет текущую локальную конфигурацию.
 
 ## Архитектура
 
@@ -124,6 +138,9 @@ backend/app/
   container.py         выбор адаптеров по конфигурации
 frontend/src           React + TypeScript (страницы, компоненты, API-клиент), тесты в __tests__, e2e в ../e2e
 fixtures/knowledge     синтетические документы; fixtures/qa — 11 эталонных вопросов
+fixtures/integration   записанные (синтетические) сценарии ответов MCP-сервера для replay-тестов
+deploy/integration     шаблон конфигурации тестового контура (без секретов)
+backend/tests          unit/контрактные тесты; integration/ — replay MCP; live/ — opt-in read-only смоук
 ```
 
 API (все пути с префиксом `/api`): `GET /health`, `GET /session`, `GET /documents`, `GET /documents/{id}`, `GET /knowledge/facets`, `GET /knowledge/issues`, `GET /search`, `POST /assistant/ask`, `GET /integrations/status`, `POST /drafts`, `GET /drafts`, `GET /drafts/{id}`, `POST /drafts/{id}/reject`, `POST /drafts/{id}/mark-ready`, `POST /drafts/{id}/open-mr`, `POST /drafts/suggest`, `GET /corporate/pages/{id}`. Схема — `GET /api/openapi.json`; изменения относительно исходного контракта описаны в [docs/API_CONTRACTS.md](docs/API_CONTRACTS.md#implemented-contract-v01). Изменяющие запросы требуют заголовок `X-SKH-Client` (защита от CSRF на localhost).
@@ -135,10 +152,10 @@ API (все пути с префиксом `/api`): `GET /health`, `GET /session
 
 ## Статус и дальнейшие шаги
 - M0–M3 — готово и проверено (каркас, база знаний и поиск, ассистент с цитатами, предложения с diff).
-- M4 — адаптеры GitLab (чтение, MR) и Confluence MCP реализованы и покрыты контрактными тестами на фейковых серверах; с реальными системами не проверялись.
+- M4 — адаптеры GitLab (чтение, MR) и Confluence MCP сверены с официальной документацией GitLab REST v4 и спецификацией MCP 2025-06-18, покрыты контрактными тестами на фейковых серверах и replay-сценариями; конфигурация тестового контура подготовлена. С реальными системами соединений не было.
 - Далее по приоритету: 1) проверить GitLab/MCP-адаптеры на непродуктивном контуре и уточнить формат ответов MCP-инструментов; 2) SSO/RBAC и пер-пользовательский доступ до любого многопользовательского запуска; 3) M5 — публикация в Confluence с dry-run и защитой от конфликтов версий; 4) адаптер GigaCode после подтверждения доступного интерфейса (см. [docs/GIGACODE_MIGRATION.md](docs/GIGACODE_MIGRATION.md)).
 
 ## Документация
-`CLAUDE.md`, `AGENTS.md` — правила для агентов; `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/DOCUMENT_SCHEMA.md`, `docs/API_CONTRACTS.md`, `docs/INTEGRATIONS.md`, `docs/UX.md`, `docs/SECURITY.md`, `docs/TEST_PLAN.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`, `docs/GIGACODE_MIGRATION.md`.
+`CLAUDE.md`, `AGENTS.md` — правила для агентов; `docs/INTEGRATION_READINESS.md` — подключение корпоративных систем; `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/DOCUMENT_SCHEMA.md`, `docs/API_CONTRACTS.md`, `docs/INTEGRATIONS.md`, `docs/UX.md`, `docs/SECURITY.md`, `docs/TEST_PLAN.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/DECISIONS.md`, `docs/GIGACODE_MIGRATION.md`.
 
 > Установка Claude Code «на своём сервере» сама по себе не означает, что модель работает локально и банковские данные не уходят наружу. Пока сетевой контур AI не согласован, используйте только синтетические данные.

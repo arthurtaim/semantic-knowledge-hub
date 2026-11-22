@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import ssl
 import time
 from typing import Any
 from urllib.parse import urlsplit
@@ -149,8 +150,10 @@ class OpenAICompatibleAIProvider:
         max_context_chars: int = 12000,
         max_response_bytes: int = 256 * 1024,
         transport: httpx.AsyncBaseTransport | None = None,
+        verify: ssl.SSLContext | bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._verify = verify
         self._model = model
         self._api_key = api_key
         self._timeout = timeout_seconds
@@ -179,6 +182,7 @@ class OpenAICompatibleAIProvider:
             follow_redirects=False,
             transport=self._transport,
             trust_env=False,
+            verify=self._verify,
         )
 
     def _ensure_configured(self) -> None:

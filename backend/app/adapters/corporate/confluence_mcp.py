@@ -63,12 +63,52 @@ def parse_tool_map(raw: str) -> ToolMapping | None:
         return None
 
 
+DEFAULT_RESULT_MAP: dict[str, tuple[str, ...]] = {
+    "items": ("results", "pages", "items"),
+    "id": ("id", "page_id", "pageId", "content_id", "content.id"),
+    "space": ("space", "space_key", "spaceKey", "space.key", "content.space.key"),
+    "title": ("title", "name", "content.title"),
+    "body": ("excerpt", "body", "text", "content", "body.storage.value", "content.body.storage.value"),
+    "url": ("url", "link", "_links.webui", "content._links.webui"),
+    "version": ("version.number", "version", "content.version.number"),
+    "updated": ("updated_at", "lastModified", "version.when", "content.version.when"),
+}
+
+
+def parse_result_map(raw: str) -> dict[str, tuple[str, ...]] | None:
+    """Merge CONFLUENCE_MCP_RESULT_MAP overrides (path or list of paths per field) into defaults.
+    Returns None if the JSON is invalid."""
+    mapping = dict(DEFAULT_RESULT_MAP)
+    if not raw.strip():
+        return mapping
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    for key, value in data.items():
+        if key not in DEFAULT_RESULT_MAP:
+            return None
+        paths = (value,) if isinstance(value, str) else tuple(value) if isinstance(value, list) else None
+        if not paths or not all(isinstance(p, str) and p for p in paths):
+            return None
+        mapping[key] = paths + tuple(p for p in DEFAULT_RESULT_MAP[key] if p not in paths)
+    return mapping
+
+
+def _resolve(item: Any, path: str) -> Any:
+    value = item
+    for part in path.split("."):
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
+
+
 def _first(item: dict[str, Any], *keys: str) -> Any:
+    """First scalar found under the given dotted paths (dicts/lists are never stringified)."""
     for key in keys:
-        value: Any = item
-        for part in key.split("."):
-            value = value.get(part) if isinstance(value, dict) else None
-        if value not in (None, ""):
+        value = _resolve(item, key)
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool) and value != "":
             return value
     return None
 
@@ -98,17 +138,25 @@ class ConfluenceMCPConnector:
         allowlisted_spaces: list[str],
         link_hosts: list[str],
         max_body_chars: int = 4000,
+        result_map: dict[str, tuple[str, ...]] | None = None,
+        web_base_url: str = "",
+        result_map_valid: bool = True,
     ) -> None:
         self._client = client
         self._map = tool_map
         self._spaces = frozenset(allowlisted_spaces)
         self._link_hosts = frozenset(h.lower() for h in link_hosts)
         self._max_body_chars = max_body_chars
+        self._fields = result_map or dict(DEFAULT_RESULT_MAP)
+        self._result_map_valid = result_map_valid
+        self._web_base = web_base_url.rstrip("/")
         self._verified_at = 0.0
         self._status_cache: tuple[float, IntegrationStatus] | None = None
 
     # --- configuration checks ----------------------------------------------------------------------
     def _config_problem(self) -> str | None:
+        if not self._result_map_valid:
+            return "некорректный CONFLUENCE_MCP_RESULT_MAP."
         if self._map is None:
             return "не задано сопоставление инструментов CONFLUENCE_MCP_TOOL_MAP."
         if not self._spaces:
@@ -155,6 +203,8 @@ class ConfluenceMCPConnector:
         """Only https links to allowlisted hosts survive, rebuilt from parsed parts. Backslashes,
         whitespace, userinfo and explicit ports are rejected (browsers parse those differently)."""
         fallback = f"confluence://{space}/{page_id}"
+        if isinstance(url, str) and url.startswith("/") and not url.startswith("//") and self._web_base:
+            url = self._web_base + url  # relative Confluence link (e.g. _links.webui)
         if not isinstance(url, str) or len(url) > 2048 or any(c in url for c in "\\ \t\r\n"):
             return fallback
         try:
@@ -172,9 +222,10 @@ class ConfluenceMCPConnector:
     def _to_page(self, item: Any) -> CorporatePage | None:
         if not isinstance(item, dict):
             return None
-        page_id = _first(item, "id", "page_id", "pageId", "content_id")
-        space = _first(item, "space", "space_key", "spaceKey", "space.key")
-        title = _first(item, "title", "name")
+        f = self._fields
+        page_id = _first(item, *f["id"])
+        space = _first(item, *f["space"])
+        title = _first(item, *f["title"])
         if page_id is None or space is None or title is None:
             return None
         if not PAGE_ID_RE.fullmatch(str(page_id)):  # IDs end up in URLs and model context
@@ -182,13 +233,13 @@ class ConfluenceMCPConnector:
         space = str(space)
         if space not in self._spaces:  # defence in depth: never surface non-allowlisted spaces
             return None
-        raw_body = _first(item, "excerpt", "body", "text", "content", "body.storage.value")
+        raw_body = _first(item, *f["body"])
         # Strip markup, then decode entities: the body is only ever rendered as plain text.
         body = strip_control(html.unescape(nh3.clean(str(raw_body or ""), tags=set())))[
             : self._max_body_chars
         ]
-        version = _first(item, "version.number", "version")
-        updated = _first(item, "updated_at", "lastModified", "version.when")
+        version = _first(item, *f["version"])
+        updated = _first(item, *f["updated"])
         updated_at = None
         if isinstance(updated, str):
             try:
@@ -200,7 +251,7 @@ class ConfluenceMCPConnector:
             space=space,
             title=strip_control(html.unescape(nh3.clean(str(title), tags=set())))[:300],
             body=body,
-            source_uri=self._safe_link(_first(item, "url", "link", "_links.webui"), space, str(page_id)),
+            source_uri=self._safe_link(_first(item, *f["url"]), space, str(page_id)),
             version=str(version) if version is not None else "",
             updated_at=updated_at,
             is_mock=False,
@@ -218,7 +269,11 @@ class ConfluenceMCPConnector:
             payload = _payload(await self._client.call_tool(mapping.search_tool, arguments))
         except McpError as exc:
             raise ConnectorUnavailableError(exc.code, exc.message) from exc
-        items = payload.get("results", payload.get("pages", [])) if isinstance(payload, dict) else payload
+        items: Any = payload
+        if isinstance(payload, dict):
+            items = next(
+                (v for v in (_resolve(payload, p) for p in self._fields["items"]) if isinstance(v, list)), []
+            )
         pages = [p for p in (self._to_page(i) for i in (items if isinstance(items, list) else [])) if p]
         return pages[:limit]
 

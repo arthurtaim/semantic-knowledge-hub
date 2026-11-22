@@ -79,4 +79,6 @@ At delivery, run the local app and walk through AC-01 to AC-10. Report exact tes
 | AC-19 | `test_repo_hygiene.py` (ignored paths, no secrets/PII in candidate files, synthetic fixture markers, empty secrets in `.env.example`) |
 | AC-20 | Whole pytest suite runs with outbound sockets blocked; Docker backend runs on an `internal: true` network |
 
+Integration readiness (M4): `test_gitlab.py` — keyset/offset tree pagination, branch probe, undocumented branch/commit/MR responses resolved by state, POST never retried; `test_confluence_mcp.py` — session close (`DELETE`), `tools/list` cursor pagination, result-field mapping and relative links; `tests/integration/test_confluence_mcp_replay.py` — replayable server scenarios from `fixtures/integration/confluence_mcp/*.json` (JSON and SSE); `test_integration_config.py` — secrets from files, CA bundles, offline `app.preflight`; `tests/live/` — opt-in read-only smoke (skipped unless `SKH_LIVE_TESTS=1`).
+
 Other contract tests: internal AI adapter with mocked transport (`test_assistant.py`: request shape, HTTP errors, timeout, size limit, misconfiguration, fake citations rejected), MCP tool discovery without guessed names and SSE replies (`test_confluence_mcp.py`), idempotent MR creation (`test_gitlab.py`). M5 publisher tests (version increment, conflict, repeat) remain open because publication is not implemented.

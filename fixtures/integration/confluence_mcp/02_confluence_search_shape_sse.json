@@ -1,0 +1,30 @@
+{
+  "description": "Вложенная структура как у поиска Confluence (content.*, _links.webui), ответы в text/event-stream, список инструментов на двух страницах (nextCursor), результат — JSON в text-блоке. Синтетические данные.",
+  "transport": "sse",
+  "session_id": "replay-2",
+  "config": {
+    "tool_map": {
+      "search": {"tool": "confluence_search", "query_arg": "cql_text", "limit_arg": "max_results", "spaces_arg": null},
+      "read": {"tool": "confluence_get_page", "id_arg": "id"}
+    },
+    "allowlisted_spaces": ["SKHTEST"],
+    "link_hosts": ["confluence.test.example"],
+    "web_base_url": "https://confluence.test.example/wiki",
+    "result_map": {"items": "data.results", "id": "content.id", "space": "content.space.key", "title": "content.title", "url": "content._links.webui", "version": "content.version.number"}
+  },
+  "server": {
+    "tools_pages": [
+      [{"name": "confluence_search", "inputSchema": {"type": "object", "properties": {"cql_text": {"type": "string"}, "max_results": {"type": "integer"}}}}],
+      [{"name": "confluence_get_page", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}}}}]
+    ],
+    "calls": [
+      {"tool": "confluence_search", "match": {}, "result": {"content": [{"type": "text", "text": "{\"data\": {\"results\": [{\"content\": {\"id\": \"2001\", \"title\": \"[TEST] Глоссарий &amp; термины\", \"space\": {\"key\": \"SKHTEST\"}, \"version\": {\"number\": 12}, \"_links\": {\"webui\": \"/display/SKHTEST/Glossary\"}}, \"excerpt\": \"Тестовый &lt;глоссарий&gt; семантического слоя\"}, {\"content\": {\"id\": \"2002\", \"title\": \"[TEST] Чужое пространство\", \"space\": {\"key\": \"OTHER\"}, \"_links\": {\"webui\": \"/display/OTHER/X\"}}, \"excerpt\": \"OTHER-SPACE-MARKER\"}]}}"}]}},
+      {"tool": "confluence_get_page", "match": {"id": "2001"}, "result": {"content": [{"type": "text", "text": "{\"content\": {\"id\": \"2001\", \"title\": \"[TEST] Глоссарий &amp; термины\", \"space\": {\"key\": \"SKHTEST\"}, \"_links\": {\"webui\": \"/display/SKHTEST/Glossary\"}}, \"body\": \"Тестовый глоссарий семантического слоя\"}"}]}}
+    ]
+  },
+  "expect": {
+    "status": "connected",
+    "search": {"query": "глоссарий", "page_ids": ["2001"], "links": {"2001": "https://confluence.test.example/wiki/display/SKHTEST/Glossary"}, "titles": {"2001": "[TEST] Глоссарий & термины"}, "absent_text": ["OTHER-SPACE-MARKER"]},
+    "read": {"page_id": "2001", "title": "[TEST] Глоссарий & термины", "body_contains": "семантического слоя"}
+  }
+}

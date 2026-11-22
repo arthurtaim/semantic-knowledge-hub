@@ -37,3 +37,7 @@ coverage/
 # Playwright artifacts
 test-results/
 playwright-report/
+# Integration environment: local values and secrets never go to git
+deploy/integration/*.env
+secrets/
+.secrets/

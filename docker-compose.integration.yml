@@ -1,0 +1,36 @@
+# Override for the TEST integration environment (GitLab / Confluence MCP / internal AI).
+# Gives the backend a route out and mounts a secrets directory that lives OUTSIDE the repository.
+# Never use it for the offline demo. Start only after approval:
+#   export SKH_SECRETS_DIR=~/.config/skh-secrets
+#   docker compose --env-file deploy/integration/integration.env \
+#     -f docker-compose.yml -f docker-compose.integration.yml up --build -d
+# The application still enforces its own allowlists; restrict egress further with the corporate
+# proxy/firewall (only the GitLab, MCP and AI hosts listed by `python -m app.preflight`).
+services:
+  backend:
+    networks:
+      - internal
+      - egress
+    volumes:
+      - ${SKH_SECRETS_DIR:?Set SKH_SECRETS_DIR to a directory outside the repository}:/run/skh-secrets:ro
+    environment:
+      GITLAB_URL: ${GITLAB_URL:-}
+      GITLAB_PROJECT_ID: ${GITLAB_PROJECT_ID:-}
+      GITLAB_DEFAULT_BRANCH: ${GITLAB_DEFAULT_BRANCH:-main}
+      GITLAB_KNOWLEDGE_PATH: ${GITLAB_KNOWLEDGE_PATH:-}
+      GITLAB_TOKEN_FILE: ${GITLAB_TOKEN_FILE:-}
+      GITLAB_CA_BUNDLE: ${GITLAB_CA_BUNDLE:-}
+      GITLAB_TIMEOUT_SECONDS: ${GITLAB_TIMEOUT_SECONDS:-15}
+      GITLAB_REFRESH_SECONDS: ${GITLAB_REFRESH_SECONDS:-60}
+      CONFLUENCE_MCP_URL: ${CONFLUENCE_MCP_URL:-}
+      CONFLUENCE_MCP_AUTH_TOKEN_FILE: ${CONFLUENCE_MCP_AUTH_TOKEN_FILE:-}
+      CONFLUENCE_MCP_CA_BUNDLE: ${CONFLUENCE_MCP_CA_BUNDLE:-}
+      CONFLUENCE_MCP_TOOL_MAP: ${CONFLUENCE_MCP_TOOL_MAP:-}
+      CONFLUENCE_MCP_RESULT_MAP: ${CONFLUENCE_MCP_RESULT_MAP:-}
+      CONFLUENCE_LINK_HOSTS: ${CONFLUENCE_LINK_HOSTS:-}
+      CONFLUENCE_WEB_BASE_URL: ${CONFLUENCE_WEB_BASE_URL:-}
+      AI_API_KEY_FILE: ${AI_API_KEY_FILE:-}
+      AI_CA_BUNDLE: ${AI_CA_BUNDLE:-}
+
+networks:
+  egress: {}

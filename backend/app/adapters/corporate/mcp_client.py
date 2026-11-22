@@ -6,8 +6,12 @@ in its own short session with strict timeouts and a response-size cap.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
+import ssl
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
@@ -17,6 +21,7 @@ logger = logging.getLogger("skh.mcp")
 
 PROTOCOL_VERSION = "2025-06-18"
 CLIENT_INFO = {"name": "semantic-knowledge-hub", "version": "0.1.0"}
+MAX_TOOL_PAGES = 10
 
 
 class McpError(RuntimeError):
@@ -51,8 +56,10 @@ class McpClient:
         timeout_seconds: float = 15.0,
         max_response_bytes: int = 1024 * 1024,
         transport: httpx.AsyncBaseTransport | None = None,
+        verify: ssl.SSLContext | bool = True,
     ) -> None:
         self._url = url
+        self._verify = verify
         self._token = token
         self._timeout = timeout_seconds
         self._max_bytes = max_response_bytes
@@ -68,6 +75,7 @@ class McpClient:
             follow_redirects=False,
             transport=self._transport,
             trust_env=False,
+            verify=self._verify,
         )
 
     async def _post(
@@ -80,6 +88,10 @@ class McpClient:
             async with client.stream("POST", self._url, json=payload, headers=headers) as response:
                 if response.status_code in (401, 403):
                     raise McpError("mcp_auth_failed", "MCP-сервер Confluence отклонил авторизацию.")
+                if response.status_code == 404 and session_id:
+                    raise McpError(
+                        "mcp_session_expired", "Сессия MCP истекла; запрос будет выполнен в новой сессии."
+                    )
                 if response.status_code >= 300:
                     raise McpError("mcp_http_error", f"MCP-сервер вернул HTTP {response.status_code}.")
                 body = bytearray()
@@ -126,7 +138,10 @@ class McpClient:
             raise McpError("mcp_invalid_response", "MCP-сервер вернул пустой результат.")
         return result, response.headers.get("Mcp-Session-Id") or session_id
 
-    async def _run(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    @asynccontextmanager
+    async def _session(self) -> AsyncIterator[Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]]:
+        """initialize → notifications/initialized → caller's requests → DELETE (spec: client SHOULD end
+        the session explicitly; servers may answer 405, which is fine)."""
         async with self._http() as client:
             _, session_id = await self._rpc(
                 client,
@@ -144,16 +159,40 @@ class McpClient:
                 )
             except httpx.HTTPError as exc:
                 raise McpError("mcp_unreachable", "MCP-сервер Confluence недоступен.") from exc
-            result, _ = await self._rpc(client, 2, method, params, session_id)
-            return result
+            counter = itertools.count(2)
+
+            async def call(method: str, params: dict[str, Any]) -> dict[str, Any]:
+                result, _ = await self._rpc(client, next(counter), method, params, session_id)
+                return result
+
+            try:
+                yield call
+            finally:
+                if session_id:
+                    try:
+                        await client.delete(self._url, headers=headers)
+                    except httpx.HTTPError:
+                        logger.debug("mcp session close failed (ignored)")
 
     async def list_tools(self) -> list[dict[str, Any]]:
-        result = await self._run("tools/list", {})
-        tools = result.get("tools")
-        return [t for t in tools if isinstance(t, dict)] if isinstance(tools, list) else []
+        """All tools, following `nextCursor` pagination (bounded)."""
+        tools: list[dict[str, Any]] = []
+        async with self._session() as call:
+            cursor: str | None = None
+            for _ in range(MAX_TOOL_PAGES):
+                result = await call("tools/list", {"cursor": cursor} if cursor else {})
+                page = result.get("tools")
+                if isinstance(page, list):
+                    tools.extend(t for t in page if isinstance(t, dict))
+                next_cursor = result.get("nextCursor")
+                if not isinstance(next_cursor, str) or not next_cursor:
+                    break
+                cursor = next_cursor
+        return tools
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        result = await self._run("tools/call", {"name": name, "arguments": arguments})
+        async with self._session() as call:
+            result = await call("tools/call", {"name": name, "arguments": arguments})
         if result.get("isError"):
             raise McpError("mcp_tool_error", "Инструмент MCP вернул ошибку.")
         return result

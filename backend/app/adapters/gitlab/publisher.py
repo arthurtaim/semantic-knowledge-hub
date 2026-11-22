@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from urllib.parse import quote
 
 from app.adapters.gitlab.client import GitLabClient, GitLabError
 from app.adapters.gitlab.repository import GitLabKnowledgeRepository
@@ -30,17 +31,27 @@ class GitLabMRPublisher:
         self._repository = repository
         self._client: GitLabClient = repository.client
 
+    async def _branch_exists(self, branch: str) -> bool:
+        response = await self._client.request(
+            "GET",
+            self._client.project_path(f"/repository/branches/{quote(branch, safe='')}"),
+            allowed_statuses=frozenset({404}),
+        )
+        return response.status_code == 200
+
     async def _ensure_branch(self, branch: str) -> None:
+        """Create the proposal branch. The "already exists" answer is not documented, so a 400 is
+        resolved by checking the branch explicitly instead of parsing the error text."""
         response = await self._client.request(
             "POST",
             self._client.project_path("/repository/branches"),
             params={"branch": branch, "ref": self._repository.branch},
-            allowed_statuses=frozenset({400}),
+            allowed_statuses=frozenset({400, 409}),
         )
-        if response.status_code == 400:
-            message = str(response.json().get("message", ""))
-            if "already exists" not in message.lower():
-                raise GitLabError("gitlab_bad_request", "GitLab не создал ветку для предложения.", 400)
+        if response.status_code >= 300 and not await self._branch_exists(branch):
+            raise GitLabError(
+                "gitlab_bad_request", "GitLab не создал ветку для предложения.", response.status_code
+            )
 
     async def _branch_has_proposal_commit(self, branch: str, proposal_id: str) -> bool:
         response = await self._client.request(
@@ -106,14 +117,22 @@ class GitLabMRPublisher:
                 try:
                     await self._commit(proposal, branch)
                 except GitLabError as exc:
-                    if exc.status == 400:  # `last_commit_id` precondition failed: the file changed
+                    if exc.status != 400:
+                        raise
+                    # GitLab answers a stale `last_commit_id` with a generic 400: decide by state.
+                    if (
+                        await self._repository.current_file_revision(proposal.document_path)
+                        != proposal.base_revision
+                    ):
                         return PublishResult(
                             state="conflict",
                             external_id=None,
                             external_url=None,
                             message="GitLab отклонил коммит: файл изменился после создания предложения. MR не создан.",
                         )
-                    raise
+                    raise GitLabError(
+                        "gitlab_commit_rejected", "GitLab отклонил коммит предложения (400).", 400
+                    ) from exc
             response = await self._client.request(
                 "POST",
                 self._client.project_path("/merge_requests"),
@@ -128,18 +147,26 @@ class GitLabMRPublisher:
                     ),
                     "remove_source_branch": True,
                 },
-                allowed_statuses=frozenset({409}),
+                allowed_statuses=frozenset({400, 409, 422}),
             )
+            if response.status_code >= 300:
+                # The duplicate-MR answer is undocumented: an existing MR for the branch is the only
+                # acceptable explanation; anything else is a real error.
+                existing = await self._find_mr(branch)
+                if not existing:
+                    raise GitLabError(
+                        "gitlab_bad_request",
+                        f"GitLab не создал Merge Request (HTTP {response.status_code}).",
+                        400,
+                    )
+                return PublishResult(
+                    state="unchanged",
+                    external_id=str(existing.get("iid")),
+                    external_url=existing.get("web_url"),
+                    message="Merge Request для этого предложения уже существует.",
+                )
         except GitLabError as exc:
             raise PublisherDisabledError(exc.code, exc.message) from exc
-        if response.status_code == 409:
-            existing = await self._find_mr(branch)
-            return PublishResult(
-                state="unchanged",
-                external_id=str(existing.get("iid")) if existing else None,
-                external_url=existing.get("web_url") if existing else None,
-                message="Merge Request для этого предложения уже существует.",
-            )
         mr = response.json()
         logger.info("merge request opened for proposal %s", proposal.proposal_id)
         return PublishResult(

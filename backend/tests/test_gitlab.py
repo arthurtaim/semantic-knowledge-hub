@@ -31,7 +31,8 @@ PROJECT = "/api/v4/projects/42"
 class FakeGitLab:
     """In-memory GitLab subset: tree (paginated), files, branches, commits, merge requests."""
 
-    def __init__(self, files: dict[str, str]) -> None:
+    def __init__(self, files: dict[str, str], *, keyset: bool = True) -> None:
+        self.keyset = keyset  # older instances ignore `pagination=keyset` and only page by offset
         self.files = {
             path: {"content": text, "commit": f"c0ffee{i:034d}"}
             for i, (path, text) in enumerate(files.items())
@@ -64,9 +65,22 @@ class FakeGitLab:
                 for p, v in sorted(self.files.items())
             ]
             items.append({"type": "tree", "path": "docs"})
+            size = 2  # tiny pages to exercise pagination
+            if self.keyset and params.get("pagination") == "keyset":
+                start = int(params.get("page_token", "0"))
+                chunk = items[start : start + size]
+                headers = {}
+                if start + size < len(items):
+                    # Documented keyset style: next page in the Link header. The host is deliberately
+                    # foreign to prove that only the opaque token is reused, never the URL.
+                    headers["Link"] = (
+                        f"<https://elsewhere.example{PROJECT}/repository/tree?page_token={start + size}"
+                        '&pagination=keyset&per_page=100>; rel="next"'
+                    )
+                return httpx.Response(200, json=chunk, headers=headers)
             page = int(params.get("page", "1"))
-            chunk = items[(page - 1) * 2 : page * 2]  # tiny pages to exercise pagination
-            headers = {"X-Next-Page": str(page + 1)} if page * 2 < len(items) else {}
+            chunk = items[(page - 1) * size : page * size]
+            headers = {"X-Next-Page": str(page + 1)} if page * size < len(items) else {}
             return httpx.Response(200, json=chunk, headers=headers)
         if path.startswith(f"{PROJECT}/repository/files/"):
             raw_path = request.url.raw_path.decode().split("?", 1)[0]
@@ -87,10 +101,15 @@ class FakeGitLab:
                     "last_commit_id": entry["commit"],
                 },
             )
+        if path.startswith(f"{PROJECT}/repository/branches/") and request.method == "GET":
+            name = unquote(request.url.raw_path.decode().split("/repository/branches/", 1)[1].split("?")[0])
+            if name in self.branches:
+                return httpx.Response(200, json={"name": name})
+            return httpx.Response(404, json={"message": "404 Branch Not Found"})
         if path == f"{PROJECT}/repository/branches" and request.method == "POST":
             name = params["branch"]
             if name in self.branches:
-                return httpx.Response(400, json={"message": "Branch already exists"})
+                return httpx.Response(400, json={"message": "undocumented wording"})
             self.branches.add(name)
             return httpx.Response(201, json={"name": name})
         if path == f"{PROJECT}/repository/commits" and request.method == "GET":
@@ -151,8 +170,9 @@ def test_reads_documents_with_commit_revisions() -> None:
     assert doc.revision.startswith("c0ffee")
     assert doc.source_uri == f"gitlab://42/{doc.path}@main"
     assert not doc.is_demo or "demo" in doc.tags
-    # pagination walked every page
-    assert {r.url.params.get("page") for r in fake.requests if r.url.path.endswith("/tree")} >= {"1", "2"}
+    # pagination walked every page (keyset tokens)
+    tokens = [r.url.params.get("page_token") for r in fake.requests if r.url.path.endswith("/tree")]
+    assert tokens == [None, "2", "4"]  # 3 docs + README.txt + a tree entry, 2 per page
 
 
 def test_unchanged_tree_is_not_refetched() -> None:
@@ -377,3 +397,92 @@ def test_post_requests_are_not_retried() -> None:
         asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
     assert exc.value.code == "gitlab_unavailable"
     assert calls == ["mr-post"]  # a POST is sent exactly once, never retried
+
+
+def test_keyset_pagination_reuses_only_the_token() -> None:
+    fake = FakeGitLab(fixture_files())
+    snapshot = asyncio.run(make_repo(fake).snapshot(USER))
+    assert len(snapshot.documents) == 3
+    tree_calls = [r for r in fake.requests if r.url.path.endswith("/repository/tree")]
+    assert all(r.url.params.get("pagination") == "keyset" for r in tree_calls)
+    assert [r.url.params.get("page_token") for r in tree_calls] == [None, "2"]
+    assert all(r.url.host == "gitlab.internal.example" for r in fake.requests)  # Link host never followed
+
+
+def test_offset_pagination_fallback() -> None:
+    fake = FakeGitLab(fixture_files(), keyset=False)
+    snapshot = asyncio.run(make_repo(fake).snapshot(USER))
+    assert len(snapshot.documents) == 3
+    pages = [r.url.params.get("page") for r in fake.requests if r.url.path.endswith("/repository/tree")]
+    assert pages == [None, "2"]
+
+
+def test_status_requires_readable_default_branch() -> None:
+    fake = FakeGitLab(fixture_files())
+    fake.branches.discard("main")
+    status = asyncio.run(make_repo(fake).status())
+    assert status.state == "error"
+
+
+def test_existing_branch_is_detected_by_state_not_message() -> None:
+    fake = FakeGitLab(fixture_files())
+    repo = make_repo(fake)
+    proposal = proposal_for(repo)
+    fake.branches.add(branch_name(proposal.proposal_id))  # e.g. left over from an interrupted run
+    result = asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
+    assert result.state == "created"
+
+
+def test_commit_rejected_without_file_change_is_an_error_not_a_conflict() -> None:
+    fake = FakeGitLab(fixture_files())
+    repo = make_repo(fake)
+    proposal = proposal_for(repo)
+    original = fake.handler
+
+    def reject_commits(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/repository/commits"):
+            return httpx.Response(400, json={"message": "something else"})
+        return original(request)
+
+    repo.client._transport = httpx.MockTransport(reject_commits)  # type: ignore[attr-defined]
+    with pytest.raises(PublisherDisabledError) as exc:
+        asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
+    assert exc.value.code == "gitlab_commit_rejected"
+
+
+@pytest.mark.parametrize("status", [400, 409, 422])
+def test_mr_creation_failure_resolved_by_lookup(status: int) -> None:
+    fake = FakeGitLab(fixture_files())
+    repo = make_repo(fake)
+    proposal = proposal_for(repo)
+    original = fake.handler
+    state = {"posted": False}
+
+    def duplicate(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/merge_requests"):
+            if not state["posted"]:
+                state["posted"] = True
+                original(request)  # GitLab created it, but answered with an error
+            return httpx.Response(status, json={"message": "undocumented"})
+        return original(request)
+
+    repo.client._transport = httpx.MockTransport(duplicate)  # type: ignore[attr-defined]
+    result = asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
+    assert result.state == "unchanged" and result.external_url
+
+
+def test_mr_creation_failure_without_mr_is_an_error() -> None:
+    fake = FakeGitLab(fixture_files())
+    repo = make_repo(fake)
+    proposal = proposal_for(repo)
+    original = fake.handler
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path.endswith("/merge_requests"):
+            return httpx.Response(422, json={"message": "nope"})
+        return original(request)
+
+    repo.client._transport = httpx.MockTransport(refuse)  # type: ignore[attr-defined]
+    with pytest.raises(PublisherDisabledError) as exc:
+        asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
+    assert exc.value.code == "gitlab_bad_request"

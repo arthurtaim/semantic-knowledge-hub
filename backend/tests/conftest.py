@@ -26,7 +26,10 @@ class NetworkBlockedError(RuntimeError):
 
 
 @pytest.fixture(autouse=True)
-def _block_network(monkeypatch: pytest.MonkeyPatch) -> None:
+def _block_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    if request.node.get_closest_marker("live"):
+        return  # opt-in live tests (SKH_LIVE_TESTS=1) are the only ones allowed to open sockets
+
     def guard(*args: Any, **kwargs: Any) -> None:
         raise NetworkBlockedError("outbound network access attempted during tests")
 

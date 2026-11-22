@@ -90,3 +90,33 @@ def test_fixtures_are_valid_and_marked_synthetic(path: Path) -> None:
     assert re.search(r"DEMO ONLY|ДЕМО-ДАННЫЕ", text)
     assert not find_secrets(text)
     assert not find_personal_identifiers(text)
+
+
+def test_integration_template_has_no_secrets_or_hosts() -> None:
+    template = PROJECT_ROOT / "deploy" / "integration" / "integration.env.example"
+    for line in template.read_text(encoding="utf-8").splitlines():
+        if line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        if key.endswith("_FILE") or key.endswith("_CA_BUNDLE"):
+            assert value == "" or value.startswith("/run/skh-secrets/"), key
+        elif any(marker in key for marker in ("TOKEN", "API_KEY", "PASSWORD", "SECRET")):
+            assert value.strip() == "", key
+        if key.endswith("_URL") or key in ("GITLAB_PROJECT_ID", "CONFLUENCE_LINK_HOSTS", "AI_ALLOWED_HOSTS"):
+            assert value.strip() == "", f"{key} must be filled locally, not committed"
+    assert "GITLAB_PROPOSALS_ENABLED=false" in template.read_text(encoding="utf-8")
+    assert "CONFLUENCE_PUBLISH_ENABLED=false" in template.read_text(encoding="utf-8")
+
+
+def test_filled_integration_env_is_ignored() -> None:
+    try:
+        result = subprocess.run(
+            ["git", "check-ignore", "deploy/integration/integration.env"],  # noqa: S607
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pytest.skip("git is not available")
+    assert result.returncode == 0

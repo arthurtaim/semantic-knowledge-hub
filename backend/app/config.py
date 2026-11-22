@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import ssl
 from functools import cached_property
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -70,6 +71,10 @@ class Settings(BaseSettings):
     gitlab_project_id: str = ""
     gitlab_default_branch: str = "main"
     gitlab_token: SecretStr = SecretStr("")
+    # Preferred: path to a file with the token (Docker/Kubernetes secret, vault agent). Never in git.
+    gitlab_token_file: str = ""
+    # PEM bundle with the corporate CA for TLS to GitLab (empty = system trust store).
+    gitlab_ca_bundle: str = ""
     gitlab_proposals_enabled: bool = False
     gitlab_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
     gitlab_knowledge_path: str = ""
@@ -87,6 +92,8 @@ class Settings(BaseSettings):
     ai_base_url: str = ""
     ai_model: str = ""
     ai_api_key: SecretStr = SecretStr("")
+    ai_api_key_file: str = ""
+    ai_ca_bundle: str = ""
     ai_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     ai_allowed_hosts: str = ""
     ai_allow_insecure_http: bool = False
@@ -97,6 +104,8 @@ class Settings(BaseSettings):
     confluence_connector: Literal["disabled", "mock", "mcp"] = "disabled"
     confluence_mcp_url: str = ""
     confluence_mcp_auth_token: SecretStr = SecretStr("")
+    confluence_mcp_auth_token_file: str = ""
+    confluence_mcp_ca_bundle: str = ""
     confluence_allowlisted_spaces: str = ""
     # JSON mapping business capabilities to discovered MCP tools (never guessed), e.g.
     # {"search": {"tool": "<name>", "query_arg": "query", "limit_arg": "limit", "spaces_arg": "spaces"},
@@ -106,12 +115,30 @@ class Settings(BaseSettings):
     confluence_mcp_allow_insecure_http: bool = False
     confluence_link_hosts: str = ""
     confluence_max_body_chars: int = Field(default=4000, ge=200, le=50_000)
+    # Optional JSON overriding where page fields are found in tool results, e.g.
+    # {"items": "results", "id": "content.id", "space": "content.space.key", "url": "_links.webui"}
+    confluence_mcp_result_map: str = ""
+    # Base for relative links returned by Confluence (e.g. /display/TEAM/Page); its host must be in
+    # CONFLUENCE_LINK_HOSTS.
+    confluence_web_base_url: str = ""
     confluence_publish_enabled: bool = False
     confluence_rest_url: str = ""
     confluence_target_space: str = ""
 
     # --- tasks -----------------------------------------------------------------------------------
     task_system: Literal["disabled"] = "disabled"
+
+    @model_validator(mode="after")
+    def _load_secret_files(self) -> Settings:
+        """Read `*_FILE` secrets. A value and a file for the same secret are rejected as ambiguous."""
+        for name in ("gitlab_token", "ai_api_key", "confluence_mcp_auth_token"):
+            file_value: str = getattr(self, f"{name}_file")
+            if not file_value:
+                continue
+            if getattr(self, name).get_secret_value():
+                raise ValueError(f"{name.upper()} и {name.upper()}_FILE заданы одновременно; оставьте один.")
+            setattr(self, name, SecretStr(read_secret_file(self.resolve_path(Path(file_value)))))
+        return self
 
     @field_validator("log_level")
     @classmethod
@@ -157,6 +184,34 @@ class Settings(BaseSettings):
     @property
     def confluence_link_host_list(self) -> list[str]:
         return [h.lower() for h in _split_csv(self.confluence_link_hosts)]
+
+
+MAX_SECRET_FILE_BYTES = 16 * 1024
+
+
+def read_secret_file(path: Path) -> str:
+    """Read a secret from a regular file. Errors never include the file content."""
+    try:
+        if not path.is_file():
+            raise ValueError(f"Файл секрета не найден или не является файлом: {path}")
+        if path.stat().st_size > MAX_SECRET_FILE_BYTES:
+            raise ValueError(f"Файл секрета слишком большой: {path}")
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ValueError(f"Не удалось прочитать файл секрета: {path}") from exc
+    if not value:
+        raise ValueError(f"Файл секрета пуст: {path}")
+    return value
+
+
+def tls_verify(settings: Settings, bundle: str) -> ssl.SSLContext | bool:
+    """System trust store by default; a corporate CA bundle when configured (fails if unreadable)."""
+    if not bundle:
+        return True
+    path = settings.resolve_path(Path(bundle))
+    if not path.is_file():
+        raise ValueError(f"Файл CA-сертификатов не найден: {path}")
+    return ssl.create_default_context(cafile=str(path))
 
 
 class InsecureConfigurationError(RuntimeError):
@@ -219,6 +274,12 @@ def security_violations(settings: Settings, *, in_container: bool | None = None)
             problems.append("CONFLUENCE_MCP_URL использует http без CONFLUENCE_MCP_ALLOW_INSECURE_HTTP=true.")
         elif mcp.username or mcp.password:
             problems.append("CONFLUENCE_MCP_URL не должен содержать учётные данные.")
+    if settings.confluence_web_base_url:
+        base = urlsplit(settings.confluence_web_base_url)
+        if base.scheme != "https" or (base.hostname or "").lower() not in settings.confluence_link_host_list:
+            problems.append(
+                "CONFLUENCE_WEB_BASE_URL должен быть https-адресом с хостом из CONFLUENCE_LINK_HOSTS."
+            )
     if settings.ai_provider == "internal_api" and settings.ai_base_url:
         host = (urlsplit(settings.ai_base_url).hostname or "").lower()
         if host and host not in settings.ai_allowed_host_list:

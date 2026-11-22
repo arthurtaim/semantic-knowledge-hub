@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -79,8 +80,10 @@ class GitLabClient:
         max_retries: int = 2,
         transport: httpx.AsyncBaseTransport | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        verify: ssl.SSLContext | bool = True,
     ) -> None:
         self._base_url = base_url.rstrip("/")
+        self._verify = verify
         self._project = quote(project_id, safe="")
         self._token = token
         self._timeout = timeout_seconds
@@ -114,6 +117,7 @@ class GitLabClient:
             follow_redirects=False,
             transport=self._transport,
             trust_env=False,
+            verify=self._verify,
         ) as client:
             while True:
                 try:

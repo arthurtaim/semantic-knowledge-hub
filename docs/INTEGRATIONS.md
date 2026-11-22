@@ -1,5 +1,7 @@
 # Integrations: GitHub vs GitLab vs Confluence DC vs AI
 
+> Implementation status, API compliance, parameters and the infrastructure checklist for the TEST environment: see [INTEGRATION_READINESS.md](INTEGRATION_READINESS.md).
+
 ## 1. Ownership and direction
 
 | System | Purpose | Write path |
