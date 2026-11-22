@@ -463,3 +463,33 @@ def test_integration_statuses_are_labelled_honestly(pub: PubEnv, client: TestCli
         "disabled",
     )
     assert offline["gitlab_knowledge"]["target"] == "none"
+
+
+def test_publishing_token_never_logged_or_returned(pub: PubEnv, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("DEBUG")
+    pub.merged_document()
+    job = pub.latest_job()
+    published = pub.publish(job["id"])
+    texts = [
+        caplog.text,
+        published.text,
+        pub.client.get("/api/integrations/status").text,
+        pub.client.get(f"/api/documents/{NEW_ID}/publication").text,
+    ]
+    assert all(CONF_TOKEN not in t for t in texts)
+
+
+def test_unexpected_error_during_write_never_leaves_job_publishing(
+    pub: PubEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pub.merged_document()
+    job = pub.latest_job()
+    container = pub.client.app.state.container  # type: ignore[attr-defined]
+
+    async def boom(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(container.confluence_publisher, "create_page", boom)
+    with pytest.raises(RuntimeError):
+        pub.publish(job["id"])
+    assert pub.client.get(f"/api/publications/jobs/{job['id']}").json()["state"] == "result_unknown"

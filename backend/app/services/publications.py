@@ -794,6 +794,7 @@ class PublicationService:
                 )
             stored = self._plan_of(row)
             fresh = await self._plan(user, row)
+            doc = await self._document(user, row["document_id"])  # read before any state change
             if (
                 stored is None
                 or fresh.problems
@@ -835,11 +836,24 @@ class PublicationService:
             self._store.event(
                 user.user_id, "publish_started", job_id, row["document_id"], row["revision"], "publishing"
             )
-            return await self._execute(user, job_id, fresh)
+            try:
+                return await self._execute(user, job_id, doc, fresh)
+            except Exception:
+                # Never leave a job stuck in "publishing": the outcome is unknown until inspected.
+                self._store.transition(
+                    job_id,
+                    {"publishing"},
+                    "result_unknown",
+                    uncertain=1,
+                    error_code="publication_error",
+                    error_message="Непредвиденная ошибка во время публикации; результат будет проверен в Confluence.",
+                )
+                raise
 
-    async def _execute(self, user: UserContext, job_id: str, plan: PublicationPlan) -> PublicationJobDetail:
+    async def _execute(
+        self, user: UserContext, job_id: str, doc: DocumentRecord, plan: PublicationPlan
+    ) -> PublicationJobDetail:
         row = self._job_row(job_id)
-        doc = await self._document(user, row["document_id"])
         pub = self._publisher
         try:
             if plan.action == "noop":
