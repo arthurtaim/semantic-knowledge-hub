@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocumentDetail, ProposalList } from "../api/types";
+import type { DocumentDetail, DocumentPublicationStatus, ProposalList } from "../api/types";
+import { PublicationPassportRow, PublicationSection } from "../components/DocumentPublication";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { ProposalStateLabel } from "../components/ProposalState";
 import { SafeHtml } from "../components/SafeHtml";
@@ -33,7 +34,12 @@ async function loadDocument(id: string): Promise<{ doc: DocumentDetail; proposal
   return { doc, proposals };
 }
 
-function Passport({ doc }: { doc: DocumentDetail }) {
+interface PublicationInfo {
+  status: DocumentPublicationStatus | null;
+  failed: boolean;
+}
+
+function Passport({ doc, publication }: { doc: DocumentDetail; publication: PublicationInfo }) {
   return (
     <aside className="passport" aria-labelledby="passport-title">
       <h2 id="passport-title" className="passport__title">
@@ -95,6 +101,7 @@ function Passport({ doc }: { doc: DocumentDetail }) {
             <code className="passport__uri">{doc.path}</code>
           </dd>
         </div>
+        <PublicationPassportRow status={publication.status} failed={publication.failed} />
         {doc.tags.length > 0 ? (
           <div>
             <dt>Теги</dt>
@@ -160,6 +167,8 @@ export function DocumentPage() {
   const location = useLocation();
   const [view, setView] = useState<"rendered" | "raw">("rendered");
   const { data, error, loading, reload } = useAsync(() => loadDocument(id), id);
+  // Loaded separately: a publication problem never hides the document itself.
+  const publication = useAsync(() => api.documentPublication(id), `publication-${id}`);
 
   useEffect(() => {
     if (!data || !location.hash) return;
@@ -299,8 +308,9 @@ export function DocumentPage() {
               </pre>
             )}
           </div>
+          {publication.data ? <PublicationSection status={publication.data} /> : null}
         </div>
-        <Passport doc={doc} />
+        <Passport doc={doc} publication={{ status: publication.data, failed: publication.error !== null }} />
       </div>
     </article>
   );

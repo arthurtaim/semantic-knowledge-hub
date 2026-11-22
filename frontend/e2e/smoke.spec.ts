@@ -97,7 +97,7 @@ test("Integration status is honest", async ({ page }) => {
   await page.goto("/integrations");
   const gitlab = page.locator(".integration", { hasText: "GitLab (каноническая база знаний)" });
   await expect(gitlab).toContainText("Не подключено");
-  await expect(page.locator(".integration", { hasText: "Confluence Data Center" })).toContainText("Не подключено");
+  await expect(page.locator(".integration", { hasText: "Confluence Data Center (MCP" })).toContainText("Не подключено");
   await expect(page.locator(".integration", { hasText: "AI-провайдер" })).toContainText("Демо (mock)");
   await expect(page.locator(".integration", { hasText: "Система задач" })).toContainText("Не подключено");
 });

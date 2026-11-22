@@ -37,7 +37,20 @@ const SIGN: Record<DiffLine["kind"], string> = { add: "+", remove: "−", contex
  * `newFile`: the diff of a file that does not exist yet — every line is an addition, so the before/after
  * view (an empty left column) is not offered.
  */
-export function DiffView({ diff, newFile = false }: { diff: DiffResult; newFile?: boolean }) {
+export function DiffView({
+  diff,
+  newFile = false,
+  label,
+  beforeLabel = "Было",
+  afterLabel = "Стало",
+}: {
+  diff: DiffResult;
+  newFile?: boolean;
+  /** Accessible name of the line-by-line table (defaults to the proposal wording). */
+  label?: string;
+  beforeLabel?: string;
+  afterLabel?: string;
+}) {
   const [selected, setMode] = useState<"unified" | "split">("unified");
   const mode = newFile ? "unified" : selected;
   if (!diff.changed) return <p className="muted">Изменений нет.</p>;
@@ -67,7 +80,10 @@ export function DiffView({ diff, newFile = false }: { diff: DiffResult; newFile?
       </div>
       <div className="diff__scroll">
         {mode === "unified" ? (
-          <table className="diff__table" aria-label={newFile ? "Содержимое нового файла" : "Изменения построчно"}>
+          <table
+            className="diff__table"
+            aria-label={label ?? (newFile ? "Содержимое нового файла" : "Изменения построчно")}
+          >
             <thead className="visually-hidden">
               <tr>
                 <th>Было, строка</th>
@@ -100,8 +116,8 @@ export function DiffView({ diff, newFile = false }: { diff: DiffResult; newFile?
           <table className="diff__table diff__table--split" aria-label="Сравнение до и после">
             <thead>
               <tr>
-                <th colSpan={2}>Было</th>
-                <th colSpan={2}>Стало</th>
+                <th colSpan={2}>{beforeLabel}</th>
+                <th colSpan={2}>{afterLabel}</th>
               </tr>
             </thead>
             <tbody>

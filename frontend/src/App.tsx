@@ -15,6 +15,7 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProposalDetailPage } from "./pages/ProposalDetailPage";
 import { ProposalEditorPage } from "./pages/ProposalEditorPage";
 import { ProposalsPage } from "./pages/ProposalsPage";
+import { PublicationJobPage } from "./pages/PublicationJobPage";
 
 const TITLES: [RegExp, string][] = [
   [/^\/$/, "Главная"],
@@ -25,6 +26,7 @@ const TITLES: [RegExp, string][] = [
   [/^\/proposals\/new/, "Новое предложение"],
   [/^\/proposals\/.+/, "Предложение"],
   [/^\/proposals/, "Предложения"],
+  [/^\/publications\//, "Публикация"],
   [/^\/integrations/, "Интеграции"],
 ];
 
@@ -56,6 +58,7 @@ export function App() {
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalEditorPage />} />
           <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+          <Route path="/publications/:jobId" element={<PublicationJobPage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/corporate/:id" element={<CorporatePage />} />
           <Route path="*" element={<NotFoundPage />} />

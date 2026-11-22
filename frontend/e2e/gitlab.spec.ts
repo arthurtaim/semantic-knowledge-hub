@@ -1,11 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /*
- * @gitlab scenarios: the backend runs with KNOWLEDGE_BACKEND=gitlab against the loopback GitLab
- * TEST DOUBLE (backend/tests/support/gitlab_mock.py). They prove the application flow and the adapter
- * contract as modelled by the mock — not the behaviour of a real GitLab instance.
+ * @gitlab scenarios: the backend runs in INTEGRATION_PROFILE=integration_mock against loopback TEST
+ * DOUBLES (backend/tests/support): GitLab :8929, Confluence MCP :8930, Confluence DC REST :8931. They prove
+ * the application flow and the adapter contracts as modelled by the doubles — not real-system behaviour.
  */
 const MOCK = "http://127.0.0.1:8929";
+const MCP = "http://127.0.0.1:8930";
 
 async function mock(request: APIRequestContext, path: string, data?: unknown): Promise<void> {
   const response = await request.post(`${MOCK}/__mock__/${path}`, { data: data ?? {} });
@@ -25,6 +26,7 @@ async function createReadyProposal(page: Page, docId: string, line: string): Pro
 
 test.beforeEach(async ({ request }) => {
   await mock(request, "reset");
+  expect((await request.post(`${MCP}/__mock__/reset`)).ok()).toBeTruthy();
 });
 
 test("@gitlab E2E-09 send to GitLab mock → MR → merge in GitLab → knowledge base updated", async ({ page, request }) => {
@@ -95,9 +97,11 @@ test("@gitlab E2E-10 GitLab error keeps the local proposal; retry creates exactl
   expect(state.protected_write_attempts).toBe(0);
 });
 
-test("@gitlab E2E-11 unavailable Confluence MCP is shown as such", async ({ page }) => {
+test("@gitlab E2E-11 unavailable Confluence MCP is shown as such", async ({ page, request }) => {
+  // the MCP double answers 503 to everything while this fault is active
+  await request.post(`${MCP}/__mock__/faults`, { data: { mode: "unavailable", times: 1000 } });
   await page.goto("/integrations");
-  const mcp = page.locator(".integration", { hasText: "Confluence Data Center" });
+  const mcp = page.locator(".integration", { hasText: "Confluence Data Center (MCP" });
   await expect(mcp).toContainText("Ошибка");
   await expect(mcp).toContainText("MCP недоступен");
   await expect(page.locator(".integration", { hasText: "GitLab (каноническая база знаний)" })).toContainText(
@@ -111,4 +115,15 @@ test("@gitlab E2E-11 unavailable Confluence MCP is shown as such", async ({ page
   await expect(page.getByText("Корпоративные источники не использованы.")).toBeVisible();
   await expect(page.getByText(/сейчас недоступен/)).toBeVisible();
   await expect(page.locator(".citation").first()).toContainText("GitLab");
+  await request.delete(`${MCP}/__mock__/faults`);
+});
+
+test("@gitlab E2E-11b available Confluence MCP double gives a corporate citation with provenance", async ({ page }) => {
+  await page.goto("/ask");
+  await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
+  await page.getByLabel("Корпоративные").check({ force: true });
+  await page.getByRole("button", { name: "Спросить" }).click();
+  const corporate = page.locator(".citation", { hasText: "Регламент публикации тестовых страниц (MOCK)" });
+  await expect(corporate).toBeVisible();
+  await expect(corporate).toContainText("Confluence");
 });

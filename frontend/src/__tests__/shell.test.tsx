@@ -55,7 +55,7 @@ describe("Integrations page", () => {
     renderAt("/integrations", "/integrations", <IntegrationsPage />);
     const gitlab = (await screen.findByRole("heading", { name: "GitLab (каноническая база знаний)" })).closest("li") as HTMLElement;
     expect(within(gitlab).getByText("Не подключено", { selector: ".state" })).toBeInTheDocument();
-    const confluence = screen.getByRole("heading", { name: /Confluence Data Center/ }).closest("li") as HTMLElement;
+    const confluence = screen.getByRole("heading", { name: "Confluence Data Center (MCP, только чтение)" }).closest("li") as HTMLElement;
     expect(within(confluence).getByText("Не подключено", { selector: ".state" })).toBeInTheDocument();
     expect(screen.queryAllByText("Подключено", { selector: ".state" })).toHaveLength(1); // only local knowledge
     const ai = screen.getByRole("heading", { name: "AI-провайдер" }).closest("li") as HTMLElement;

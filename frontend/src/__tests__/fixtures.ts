@@ -5,11 +5,13 @@ import type {
   DocumentDetail,
   DocumentFacets,
   DocumentPage,
+  DocumentPublicationStatus,
   DocumentTemplateInfo,
   IntegrationsResponse,
   ProposalDetail,
   ProposalList,
   ProposalSummary,
+  PublicationJobDetail,
   SessionResponse,
   SyncStatus,
 } from "../api/types";
@@ -182,10 +184,11 @@ export const insufficientAnswer: AskResponse = {
 export const integrations: IntegrationsResponse = {
   checked_at: "2026-11-22T00:00:00Z",
   items: [
-    { name: "local_knowledge", title: "Локальная база знаний", kind: "knowledge_repository", state: "connected", capabilities: ["read"], human_readable_message: "Локальный workspace", details: {} },
-    { name: "gitlab_knowledge", title: "GitLab (каноническая база знаний)", kind: "knowledge_repository", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {} },
-    { name: "confluence_mcp", title: "Confluence Data Center (MCP, только чтение)", kind: "corporate_knowledge", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {} },
-    { name: "ai_provider", title: "AI-провайдер", kind: "ai", state: "mock", capabilities: ["extractive_answers"], human_readable_message: "Демо-режим", details: {} },
+    { name: "local_knowledge", title: "Локальная база знаний", kind: "knowledge_repository", state: "connected", capabilities: ["read"], human_readable_message: "Локальный workspace", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
+    { name: "gitlab_knowledge", title: "GitLab (каноническая база знаний)", kind: "knowledge_repository", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
+    { name: "confluence_mcp", title: "Confluence Data Center (MCP, только чтение)", kind: "corporate_knowledge", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
+    { name: "ai_provider", title: "AI-провайдер", kind: "ai", state: "mock", capabilities: ["extractive_answers"], human_readable_message: "Демо-режим", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
+    { name: "confluence_publisher", title: "Confluence Data Center (REST, публикация)", kind: "confluence_publisher", state: "disabled", capabilities: [], human_readable_message: "Не настроено (CONFLUENCE_REST_URL не задан).", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
   ],
 };
 
@@ -463,4 +466,89 @@ export function newDocumentProposal(overrides: Partial<ProposalDetail> = {}): Pr
     },
     ...overrides,
   });
+}
+
+// --- publication to Confluence (M5) ---
+
+export const PUB_JOB_ID = "c".repeat(32);
+export const PUB_REVISION = "3f2a9c1d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b";
+export const CONFLUENCE_PAGE_URL = "http://confluence-mock.test/pages/viewpage.action?pageId=98765";
+
+export function publicationStatus(overrides: Partial<DocumentPublicationStatus> = {}): DocumentPublicationStatus {
+  return {
+    document_id: "SEM-INT-ARIS-001",
+    current_revision: PUB_REVISION,
+    state: "not_published",
+    message: "Документ ещё не публиковался в Confluence.",
+    publisher: {
+      mode: "write",
+      target_kind: "mock",
+      space_key: "SKHTEST",
+      parent_id: "1001",
+      message: "Публикация включена для тестового пространства (локальный тестовый дубль Confluence).",
+    },
+    mapping: null,
+    latest_job: null,
+    can_prepare: true,
+    ...overrides,
+  };
+}
+
+export const disabledPublication = publicationStatus({
+  state: "disabled",
+  message: "Публикация в Confluence не настроена.",
+  publisher: { mode: "disabled", target_kind: "none", space_key: null, parent_id: null, message: "Публикация в Confluence не настроена." },
+  can_prepare: false,
+});
+
+export function publicationJob(overrides: Partial<PublicationJobDetail> = {}): PublicationJobDetail {
+  return {
+    id: PUB_JOB_ID,
+    document_id: "SEM-INT-ARIS-001",
+    document_path: "docs/SEM-INT-ARIS-001.md",
+    revision: PUB_REVISION,
+    state: "dry_run_ready",
+    action: "create",
+    proposal_id: null,
+    created_at: "2026-11-22T10:00:00Z",
+    updated_at: "2026-11-22T10:00:05Z",
+    attempts: 0,
+    error_code: null,
+    error_message: null,
+    uncertain: false,
+    page_id: null,
+    version_after: null,
+    published_at: null,
+    plan: {
+      action: "create",
+      revision: PUB_REVISION,
+      target: { space_key: "SKHTEST", parent_id: "1001", page_id: null, title: "ARIS integration — questions for discovery", url: null },
+      storage: "<h1>ARIS integration</h1>\n<p>Synthetic discovery questions.</p>",
+      diff: "--- /dev/null\n+++ new-page\n@@ -0,0 +1,2 @@\n+<h1>ARIS integration</h1>\n+<p>Synthetic discovery questions.</p>",
+      diff_kind: "new_page",
+      warnings: [
+        {
+          severity: "warning",
+          code: "image_not_published",
+          message: "Изображения не публикуются: на странице будет текстовая отметка вместо картинки.",
+          field: null,
+        },
+      ],
+      problems: [],
+      remote_version: null,
+      rendered_hash: "sha256:abc",
+      merge_request: { iid: "42", url: MR_URL, merged_at: "2026-11-22T09:00:00Z" },
+      checked_at: "2026-11-22T10:00:05Z",
+    },
+    history: [
+      { at: "2026-11-22T10:00:00Z", actor: "local-demo-user", action: "job_created", state: "pending", revision: PUB_REVISION },
+      { at: "2026-11-22T10:00:05Z", actor: "local-demo-user", action: "dry_run", state: "dry_run_ready", revision: PUB_REVISION },
+    ],
+    can_dry_run: true,
+    can_publish: true,
+    can_reconcile: false,
+    publish_enabled: true,
+    publish_disabled_reason: null,
+    ...overrides,
+  };
 }

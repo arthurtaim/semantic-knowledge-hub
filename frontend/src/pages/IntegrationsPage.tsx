@@ -1,10 +1,52 @@
 import { useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
-import type { SyncStatus } from "../api/types";
+import type { IntegrationStatus, PublisherMode, SyncStatus } from "../api/types";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
-import { formatDateTime, pluralRu, SOURCE_LABEL, SYNC_STATE_LABEL } from "../lib/labels";
+import {
+  formatDateTime,
+  INTEGRATION_ACCESS_LABEL,
+  INTEGRATION_TARGET_LABEL,
+  pluralRu,
+  PUBLISHER_MODE_LABEL,
+  SOURCE_LABEL,
+  SYNC_STATE_LABEL,
+} from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+
+const PUBLISHER_MODES = new Set<string>(["disabled", "dry_run_only", "write"]);
+
+/** Target, access and last check of one integration; a configured address alone is never shown as "green". */
+function IntegrationFacts({ item }: { item: IntegrationStatus }) {
+  const publisherMode: PublisherMode | null =
+    item.name === "confluence_publisher"
+      ? PUBLISHER_MODES.has(item.details.mode ?? "")
+        ? (item.details.mode as PublisherMode)
+        : "disabled"
+      : null;
+  return (
+    <dl className="integration__facts">
+      <div>
+        <dt>Цель</dt>
+        <dd data-target={item.target}>{INTEGRATION_TARGET_LABEL[item.target]}</dd>
+      </div>
+      <div>
+        <dt>Доступ</dt>
+        <dd data-access={item.access}>{INTEGRATION_ACCESS_LABEL[item.access]}</dd>
+      </div>
+      {publisherMode ? (
+        <div>
+          <dt>Режим публикации</dt>
+          <dd data-mode={publisherMode}>{PUBLISHER_MODE_LABEL[publisherMode]}</dd>
+        </div>
+      ) : null}
+      <div>
+        <dt>Последняя проверка</dt>
+        <dd>{item.checked_at ? formatDateTime(item.checked_at) : "не проверялось"}</dd>
+      </div>
+    </dl>
+  );
+}
 
 function SyncFacts({ status }: { status: SyncStatus }) {
   return (
@@ -148,7 +190,8 @@ export function IntegrationsPage() {
         <h1>Интеграции и источники</h1>
         <p className="lead">
           «Подключено» показывается только после реальной проверки соединения. Незаданные интеграции отключены и не
-          выполняют сетевых запросов.
+          выполняют сетевых запросов. Для каждой интеграции указано, куда она направлена (локально, тестовый дубль или
+          реальный сервер) и разрешена ли запись.
         </p>
       </div>
       {loading && !data ? <Loading /> : null}
@@ -163,6 +206,7 @@ export function IntegrationsPage() {
                   <StateBadge state={item.state} />
                 </div>
                 <p>{item.human_readable_message}</p>
+                <IntegrationFacts item={item} />
                 {item.capabilities.length > 0 ? (
                   <p className="integration__caps">
                     Возможности:{" "}

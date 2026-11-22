@@ -2,12 +2,18 @@ import type {
   Confidence,
   DocStatus,
   DocType,
+  DocumentPublicationState,
   DocumentSort,
+  IntegrationAccess,
   IntegrationState,
+  IntegrationTarget,
   MergeRequestState,
   NewDocumentStatus,
   ProposalOperation,
   ProposalStatus,
+  PublicationAction,
+  PublicationJobState,
+  PublisherMode,
   ReviewState,
   SourceType,
   SyncState,
@@ -146,6 +152,141 @@ export const MR_STATE_LABEL: Record<MergeRequestState, string> = {
   closed: "Закрыт без merge",
   locked: "Заблокирован",
   unknown: "Неизвестно",
+};
+
+/** Where an integration points (never "green" just because an address is configured). */
+export const INTEGRATION_TARGET_LABEL: Record<IntegrationTarget, string> = {
+  none: "Не настроено",
+  local: "Локально",
+  mock: "Тестовый дубль (mock)",
+  real: "Реальный сервер — live validation не проводилась",
+};
+
+export const INTEGRATION_ACCESS_LABEL: Record<IntegrationAccess, string> = {
+  none: "не используется",
+  read: "только чтение",
+  write: "запись",
+  read_write: "чтение и запись",
+};
+
+// --- publication to Confluence (M5) ---
+
+/** Publication state of a document (document page). Independent of the proposal and MR states. */
+export const PUBLICATION_STATE_LABEL: Record<DocumentPublicationState, string> = {
+  disabled: "Не настроена",
+  not_published: "Не публиковался",
+  pending: "Ожидает предпросмотра",
+  validating: "Идёт предпросмотр",
+  dry_run_ready: "Предпросмотр готов",
+  publishing: "Публикуется",
+  published: "Опубликован",
+  outdated: "Опубликована прежняя ревизия",
+  conflict: "Конфликт",
+  failed: "Ошибка публикации",
+  result_unknown: "Результат не подтверждён",
+};
+
+export const PUBLICATION_JOB_STATE_LABEL: Record<PublicationJobState, string> = {
+  pending: "Ожидает предпросмотра",
+  validating: "Идёт предпросмотр",
+  dry_run_ready: "Предпросмотр готов",
+  publishing: "Публикуется",
+  published: "Опубликовано",
+  conflict: "Конфликт",
+  failed: "Ошибка публикации",
+  result_unknown: "Результат не подтверждён",
+  superseded: "Заменено новой ревизией",
+};
+
+export const PUBLISHER_MODE_LABEL: Record<PublisherMode, string> = {
+  disabled: "публикация не настроена",
+  dry_run_only: "только предпросмотр (запись в Confluence выключена)",
+  write: "запись разрешена",
+};
+
+/** The publication action in words; `published` jobs use the past tense. */
+export function publicationActionText(
+  action: PublicationAction | null,
+  opts: { pageId?: string | null; remoteVersion?: number | null; done?: boolean } = {},
+): string {
+  const { pageId, remoteVersion, done = false } = opts;
+  switch (action) {
+    case "create":
+      return done ? "Создана новая страница" : "Будет создана новая страница";
+    case "update": {
+      const page = pageId ? `страница ${pageId}` : "страница";
+      const versions = remoteVersion != null ? ` (версия ${remoteVersion} → ${remoteVersion + 1})` : "";
+      return `${done ? "Обновлена" : "Будет обновлена"} ${page}${versions}`;
+    }
+    case "noop":
+      return "Изменений нет — новая версия не создаётся";
+    case "conflict":
+      return "Конфликт — страница не будет изменена";
+    default:
+      return "Ещё не определено: нужен предпросмотр";
+  }
+}
+
+/** Labels for PublicationEvent.action; unknown actions fall back to the raw value. */
+export const PUBLICATION_EVENT_LABEL: Record<string, string> = {
+  job_created: "Создано задание публикации",
+  superseded: "Заменено заданием для новой ревизии",
+  dry_run: "Выполнен предпросмотр (dry-run)",
+  plan_changed: "Предпросмотр устарел и обновлён",
+  publish_started: "Начата запись в Confluence",
+  publish_failed: "Запись не выполнена",
+  result_unknown: "Ответ Confluence не получен",
+  conflict: "Обнаружен конфликт",
+  published_create: "Создана страница в Confluence",
+  published_update: "Обновлена страница в Confluence",
+  published_noop: "Изменений нет — версия не создавалась",
+  write_confirmed_after_lost_answer: "Запись подтверждена после потерянного ответа",
+  write_confirmed_on_check: "Запись подтверждена проверкой в Confluence",
+  manual_edit_acknowledged: "Ручная правка подтверждена",
+};
+
+/** Extra guidance for blocking problems and warnings of a publication preview (the server message comes first). */
+export const PUBLICATION_ISSUE_HINT: Record<string, string> = {
+  not_merged: "Публикуются только изменения, merge которых подтверждён в GitLab.",
+  status_not_publishable: "Публикуются только документы с разрешённым статусом (обычно «Утверждён»).",
+  revision_superseded: "Вернитесь на страницу документа и подготовьте публикацию для актуальной ревизии.",
+  space_not_found: "Проверьте пространство публикации в настройках и права сервисной учётной записи.",
+  parent_not_found: "Проверьте родительскую страницу публикации в настройках.",
+  unsafe_link: "Исправьте ссылку в документе через предложение изменения.",
+  manual_edit: "Перенесите правку в GitLab или подтвердите её — см. блок ниже.",
+  foreign_page: "Страница без метки приложения не изменяется. Разберитесь с ней в Confluence.",
+  title_taken: "Переименуйте документ или существующую страницу в Confluence.",
+  mapped_page_missing: "Восстановите страницу в Confluence или обратитесь к администратору.",
+  page_moved: "Верните страницу в пространство публикации или обратитесь к администратору.",
+  image_not_published: "Картинки остаются в GitLab; на странице будет текстовая отметка.",
+  diagram_as_code: "Диаграмма будет видна как исходный код.",
+  frontmatter_page_id_ignored: "Страница выбирается только по привязке приложения.",
+};
+
+/** Titles for publication API errors and job error codes. */
+export const PUBLICATION_ERROR_TITLE: Record<string, string> = {
+  confluence_auth_failed: "Ошибка авторизации в Confluence",
+  confluence_forbidden: "Нет прав на запись в Confluence",
+  confluence_unavailable: "Confluence недоступен",
+  confluence_timeout: "Confluence не ответил вовремя",
+  confluence_write_uncertain: "Результат записи в Confluence не подтверждён",
+  interrupted: "Публикация прервана перезапуском",
+  publication_disabled: "Публикация в Confluence не настроена",
+  publish_disabled: "Запись в Confluence выключена",
+  plan_changed: "Предпросмотр устарел",
+  publication_in_progress: "Публикация уже выполняется",
+  publication_job_not_found: "Задание публикации не найдено",
+  invalid_transition: "Действие недоступно в текущем состоянии",
+};
+
+export const PUBLICATION_ERROR_HINT: Record<string, string> = {
+  confluence_auth_failed: "Обратитесь к администратору: проверьте учётную запись публикации.",
+  confluence_forbidden: "Обратитесь к администратору: проверьте права в пространстве публикации.",
+  confluence_unavailable: "Повторите позже. Ничего не записано.",
+  confluence_timeout: "Повторите позже. Перед повторной записью приложение проверит Confluence.",
+  confluence_write_uncertain:
+    "Нажмите «Проверить результат»: приложение сначала проверит Confluence и не создаст дубликат страницы.",
+  interrupted: "Нажмите «Проверить результат»: приложение выяснит, была ли запись выполнена.",
 };
 
 export const SYNC_STATE_LABEL: Record<SyncState, string> = {

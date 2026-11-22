@@ -35,7 +35,9 @@ export type ProposalStatus =
 export type MergeRequestState = "opened" | "merged" | "closed" | "locked" | "unknown";
 /**
  * `new_document`: a `create` proposal whose document is not in the knowledge base yet (expected before merge);
- * `id_taken`: a document with the proposed ID/path appeared in the knowledge base before this proposal merged.
+ * `id_taken`: a document with the proposed ID/path appeared in the knowledge base before this proposal merged;
+ * `merged_pending_sync`: GitLab confirmed the merge, the knowledge base has not been re-synced yet
+ * (`merged_revision` is null; "refresh status" retries the sync).
  */
 export type SourceDocumentState =
   | "unchanged"
@@ -43,7 +45,8 @@ export type SourceDocumentState =
   | "updated_by_this_proposal"
   | "missing"
   | "new_document"
-  | "id_taken";
+  | "id_taken"
+  | "merged_pending_sync";
 /** `create`: a new file in the knowledge base; `update`: a change of an existing document. */
 export type ProposalOperation = "create" | "update";
 export type ProposalOrigin = "manual" | "ai_suggestion";
@@ -186,6 +189,13 @@ export interface AskResponse {
   unmatched_terms: string[];
 }
 
+/**
+ * Where an integration points: `none` not configured · `local` built into this app (fixtures, demo) ·
+ * `mock` a declared local test double · `real` a real server (NOT live-validated by this application).
+ */
+export type IntegrationTarget = "none" | "local" | "mock" | "real";
+export type IntegrationAccess = "none" | "read" | "write" | "read_write";
+
 export interface IntegrationStatus {
   name: string;
   title: string;
@@ -194,6 +204,9 @@ export interface IntegrationStatus {
   capabilities: string[];
   human_readable_message: string;
   details: Record<string, string>;
+  target: IntegrationTarget;
+  access: IntegrationAccess;
+  checked_at: string | null;
 }
 
 export interface IntegrationsResponse {
@@ -486,4 +499,138 @@ export interface ChangeDraftUpdate {
   reason?: string;
   origin?: ProposalOrigin;
   proposed_content: string;
+}
+
+// --- M5: publication of merged GitLab documents to Confluence (backend/app/domain/publications.py) ---
+
+export type PublicationJobState =
+  | "pending"
+  | "validating"
+  | "dry_run_ready"
+  | "publishing"
+  | "published"
+  | "conflict"
+  | "failed"
+  | "result_unknown"
+  | "superseded";
+export type PublicationAction = "create" | "update" | "noop" | "conflict";
+export type DocumentPublicationState =
+  | "disabled"
+  | "not_published"
+  | "pending"
+  | "validating"
+  | "dry_run_ready"
+  | "publishing"
+  | "published"
+  | "outdated"
+  | "conflict"
+  | "failed"
+  | "result_unknown";
+export type PublisherMode = "disabled" | "dry_run_only" | "write";
+export type PublicationDiffKind = "new_page" | "page_update" | "manual_edit" | "none";
+
+export interface PublicationTarget {
+  space_key: string;
+  parent_id: string;
+  page_id: string | null;
+  title: string;
+  url: string | null;
+}
+
+export interface MergeEvidence {
+  iid: string;
+  url: string | null;
+  merged_at: string | null;
+}
+
+/** Result of a dry-run (read requests only). */
+export interface PublicationPlan {
+  action: PublicationAction;
+  revision: string;
+  target: PublicationTarget;
+  /** Exact Confluence storage XHTML that would be written — show as code, never render as HTML. */
+  storage: string;
+  /** Unified diff: current page → new body (or, for `manual_edit`, last published → current page). */
+  diff: string;
+  diff_kind: PublicationDiffKind;
+  warnings: ValidationIssue[];
+  /** Blocking problems. */
+  problems: ValidationIssue[];
+  remote_version: number | null;
+  rendered_hash: string;
+  merge_request: MergeEvidence | null;
+  checked_at: string;
+}
+
+export interface PublicationEvent {
+  at: string;
+  actor: string;
+  action: string;
+  state: string | null;
+  revision: string | null;
+}
+
+export interface PublicationJobSummary {
+  id: string;
+  document_id: string;
+  document_path: string;
+  revision: string;
+  state: PublicationJobState;
+  action: PublicationAction | null;
+  proposal_id: string | null;
+  created_at: string;
+  updated_at: string;
+  attempts: number;
+  error_code: string | null;
+  error_message: string | null;
+  /** A write may have happened without a confirmed answer; the next step inspects Confluence first. */
+  uncertain: boolean;
+  page_id: string | null;
+  version_after: number | null;
+  published_at: string | null;
+}
+
+export interface PublicationJobDetail extends PublicationJobSummary {
+  plan: PublicationPlan | null;
+  history: PublicationEvent[];
+  can_dry_run: boolean;
+  can_publish: boolean;
+  can_reconcile: boolean;
+  publish_enabled: boolean;
+  publish_disabled_reason: string | null;
+}
+
+export interface PublicationJobList {
+  items: PublicationJobSummary[];
+  total: number;
+}
+
+export interface PublicationMapping {
+  page_id: string;
+  space_key: string;
+  parent_id: string;
+  page_title: string;
+  page_version: number;
+  published_revision: string;
+  last_published_at: string;
+  url: string | null;
+}
+
+export interface PublisherInfo {
+  mode: PublisherMode;
+  target_kind: IntegrationTarget;
+  space_key: string | null;
+  parent_id: string | null;
+  message: string;
+}
+
+export interface DocumentPublicationStatus {
+  document_id: string;
+  current_revision: string | null;
+  state: DocumentPublicationState;
+  message: string;
+  publisher: PublisherInfo;
+  mapping: PublicationMapping | null;
+  latest_job: PublicationJobSummary | null;
+  can_prepare: boolean;
 }

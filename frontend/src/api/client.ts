@@ -10,6 +10,7 @@ import type {
   DocumentDetail,
   DocumentFacets,
   DocumentPage,
+  DocumentPublicationStatus,
   DocumentSort,
   DocumentTemplateInfo,
   DraftCreate,
@@ -20,6 +21,8 @@ import type {
   ProposalDetail,
   ProposalList,
   ProposalStatus,
+  PublicationJobDetail,
+  PublicationJobList,
   SessionResponse,
   SuggestResponse,
   SyncStatus,
@@ -159,4 +162,28 @@ export const api = {
   /** Persists a draft of a NEW document (proposal with operation=create). 409 when the ID/path is taken. */
   createNewDocumentDraft: (payload: NewDocumentDraftCreate) =>
     request<ProposalDetail>("/authoring/drafts", { method: "POST", body: json(payload) }),
+
+  // --- publication to Confluence (M5) ---
+  documentPublication: (id: string) =>
+    request<DocumentPublicationStatus>(`/documents/${encodeURIComponent(id)}/publication`),
+  /** Creates or reuses the job for the current GitLab revision and runs a dry-run (reads only). */
+  preparePublication: (id: string) =>
+    request<PublicationJobDetail>(`/documents/${encodeURIComponent(id)}/publication/prepare`, { method: "POST" }),
+  publicationJobs: (documentId?: string) =>
+    request<PublicationJobList>(`/publications/jobs${query({ document_id: documentId })}`),
+  publicationJob: (id: string) => request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}`),
+  /** Re-checks the preview; read requests only. */
+  dryRunPublication: (id: string) =>
+    request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/dry-run`, { method: "POST" }),
+  /** Writes exactly the previewed change (re-checked first; 409 `plan_changed` on a stale preview). */
+  publishPublication: (id: string) =>
+    request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/publish`, { method: "POST" }),
+  /** Inspects Confluence after an unconfirmed/failed write, then refreshes the preview. Never writes. */
+  reconcilePublication: (id: string) =>
+    request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/reconcile`, { method: "POST" }),
+  /** Human decision: take the manually edited Confluence page as the new baseline. Nothing is written. */
+  acknowledgeManualEdit: (id: string) =>
+    request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/acknowledge-manual-edit`, {
+      method: "POST",
+    }),
 };

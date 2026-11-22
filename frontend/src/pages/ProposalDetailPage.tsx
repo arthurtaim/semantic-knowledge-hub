@@ -6,6 +6,7 @@ import { DiffView } from "../components/DiffView";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { ProposalLifecycle } from "../components/ProposalLifecycle";
 import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../components/ProposalState";
+import { PublicationJobStateLabel } from "../components/PublicationState";
 import {
   AUTHORING_ERROR_TITLE,
   formatDateTime,
@@ -42,10 +43,16 @@ function effectiveSourceState(p: ProposalDetail): SourceDocumentState {
 
 function SourceStatement({ proposal: p }: { proposal: ProposalDetail }) {
   const state = effectiveSourceState(p);
-  let tone: "info" | "danger" | "success" = "info";
+  let tone: "info" | "warning" | "danger" | "success" = "info";
   let text: string;
   let detail: string | null = null;
-  if (state === "new_document") {
+  if (state === "merged_pending_sync") {
+    tone = "warning";
+    text = "Merge подтверждён GitLab; база знаний ещё не синхронизирована.";
+    detail = p.can_refresh_status
+      ? "Нажмите «Проверить статус в GitLab», чтобы повторить синхронизацию. До этого в базе знаний видна прежняя версия документа."
+      : "Синхронизация будет повторена при следующей проверке статуса. До этого в базе знаний видна прежняя версия документа.";
+  } else if (state === "new_document") {
     text = "Документ появится в базе знаний только после merge в GitLab.";
     detail = `Сейчас существует только предложение: файл ${p.document_path} ещё не создан, документ не виден в каталоге, поиске и ответах ассистента.`;
   } else if (state === "id_taken") {
@@ -240,6 +247,20 @@ function ConflictPanel({ proposal: p }: { proposal: ProposalDetail }) {
   );
 }
 
+/** After a merge: a short link to the Confluence publication job of this document, if one exists. */
+function PublicationLink({ proposal: p }: { proposal: ProposalDetail }) {
+  const jobs = useAsync(() => api.publicationJobs(p.document_id), `publication-jobs-${p.document_id}`);
+  const items = jobs.data?.items ?? [];
+  const job = items.find((j) => j.proposal_id === p.id) ?? items[0];
+  if (!job) return null;
+  return (
+    <p className="publication-link">
+      <Link to={`/publications/${encodeURIComponent(job.id)}`}>Публикация в Confluence</Link>:{" "}
+      <PublicationJobStateLabel state={job.state} />
+    </p>
+  );
+}
+
 function successMessage(kind: ActionKind, result: ProposalDetail): string {
   if (kind === "mark_ready") return "Предложение отмечено «Готово к ревью». Документ не изменён.";
   if (kind === "reject") return "Предложение отклонено. Документ не изменён.";
@@ -247,6 +268,9 @@ function successMessage(kind: ActionKind, result: ProposalDetail): string {
     return result.status === "submitted_to_gitlab"
       ? "Предложение отправлено в GitLab: создан Merge Request. Документ изменится только после merge."
       : `Отправка обработана, статус: «${PROPOSAL_STATUS_LABEL[result.status]}».`;
+  }
+  if (result.status === "merged" && result.source_document_state === "merged_pending_sync") {
+    return "GitLab подтвердил merge, но база знаний ещё не синхронизирована. Повторите проверку позже.";
   }
   if (result.status === "merged") return "GitLab подтвердил merge.";
   if (result.status === "rejected") return "Merge Request закрыт в GitLab без merge — предложение отклонено.";
@@ -416,6 +440,7 @@ export function ProposalDetailPage() {
 
       <ProposalLifecycle proposal={p} />
       <SourceStatement proposal={p} />
+      {p.status === "merged" && session?.features.confluence_publish ? <PublicationLink proposal={p} /> : null}
       {p.status === "merged" && p.merged_revision ? (
         <Notice tone="success" className="sync-notice">
           <p>
