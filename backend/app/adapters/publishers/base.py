@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from app.domain.models import IntegrationStatus, UserContext
 from app.domain.proposals import MergeRequestState
@@ -88,8 +88,33 @@ class ProposalPublisher(Protocol):
 
 
 class ConfluencePublisher(Protocol):
-    """Publishes approved, merged GitLab documents to an allowlisted Confluence space (M5)."""
+    """Remote side of M5 publication to ONE allowlisted Confluence Data Center space + parent page.
 
-    enabled: bool
+    The publication service decides; this adapter only reads and (when `write_enabled`) writes pages.
+    The target space/parent come from configuration — never from a request or a document."""
+
+    enabled: bool  # REST configured: jobs + dry-run (reads)
+    write_enabled: bool  # CONFLUENCE_PUBLISH_ENABLED and an allowed profile: create/update pages
+    mode: Literal["disabled", "dry_run_only", "write"]
+    target_kind: Literal["none", "local", "mock", "real"]
+    space_key: str
+    parent_id: str
+    property_key: str
+
+    def page_url(self, page_id: str) -> str | None: ...
+
+    async def read_space(self) -> dict[str, Any] | None: ...
+
+    async def read_page(self, page_id: str) -> dict[str, Any] | None: ...
+
+    async def find_pages(self, title: str) -> list[dict[str, Any]]: ...
+
+    async def read_marker(self, page_id: str) -> dict[str, Any] | None: ...
+
+    async def create_page(self, title: str, storage: str, marker: dict[str, Any]) -> dict[str, Any]: ...
+
+    async def update_page(self, page_id: str, title: str, storage: str, version: int) -> dict[str, Any]: ...
+
+    async def write_marker(self, page_id: str, marker: dict[str, Any]) -> None: ...
 
     async def status(self) -> IntegrationStatus: ...

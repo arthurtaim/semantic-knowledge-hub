@@ -58,6 +58,7 @@ ignore = [
 # SQL text is assembled only from fixed column names/placeholders; values are always bound parameters.
 "app/adapters/search/sqlite_fts.py" = ["S608"]
 "app/services/proposals.py" = ["S608"]
+"app/services/publications.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"

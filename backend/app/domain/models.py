@@ -247,6 +247,10 @@ class AskResponse(BaseModel):
     unmatched_terms: list[str] = Field(default_factory=list)
 
 
+IntegrationTarget = Literal["none", "local", "mock", "real"]
+IntegrationAccess = Literal["none", "read", "write", "read_write"]
+
+
 class IntegrationStatus(BaseModel):
     name: str
     title: str
@@ -255,6 +259,11 @@ class IntegrationStatus(BaseModel):
     capabilities: list[str]
     human_readable_message: str
     details: dict[str, str] = Field(default_factory=dict)
+    # none: not configured · local: built into this app (fixtures, demo) · mock: a declared local TEST
+    # DOUBLE · real: a real server (NOT live-validated by this application).
+    target: IntegrationTarget = "none"
+    access: IntegrationAccess = "none"
+    checked_at: datetime | None = None
 
 
 class SyncStatus(BaseModel):

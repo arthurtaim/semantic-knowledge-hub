@@ -193,6 +193,7 @@ def test_replayed_pages_flow_into_grounded_answers(
     monkeypatch.setattr(McpClient, "__init__", patched)
     config = scenario["config"]
     client = client_factory(
+        integration_profile="live_read_only",
         confluence_connector="mcp",
         confluence_mcp_url=URL,
         confluence_mcp_auth_token=TOKEN,

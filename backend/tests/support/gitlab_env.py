@@ -99,6 +99,8 @@ def patch_gitlab_transport(monkeypatch: pytest.MonkeyPatch, mock: GitLabMock) ->
 
 
 GITLAB_SETTINGS: dict[str, Any] = {
+    "integration_profile": "integration_mock",
+    "mock_service_hosts": "gitlab.mock.example",
     "knowledge_backend": "gitlab",
     "gitlab_url": BASE_URL,
     "gitlab_project_id": PROJECT_ID,

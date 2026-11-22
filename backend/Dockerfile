@@ -29,7 +29,8 @@ ENV PROJECT_ROOT=/app \
     FIXTURES_DIR=/app/fixtures/knowledge \
     LOCAL_KNOWLEDGE_DIR=/data/workspace/knowledge \
     SEARCH_INDEX_PATH=/data/workspace/search.sqlite3 \
-    APP_STATE_PATH=/data/workspace/app_state.sqlite3
+    APP_STATE_PATH=/data/workspace/app_state.sqlite3 \
+    PUBLICATION_STATE_PATH=/data/workspace/publications.sqlite3
 
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \

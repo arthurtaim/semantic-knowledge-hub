@@ -82,6 +82,7 @@ def settings_factory(tmp_path: Path, workspace: Path) -> Callable[..., Settings]
             "seed_fixtures": False,
             "search_index_path": tmp_path / "workspace" / "search.sqlite3",
             "app_state_path": tmp_path / "workspace" / "app_state.sqlite3",
+            "publication_state_path": tmp_path / "workspace" / "publications.sqlite3",
             "repository_refresh_seconds": 0.0,
             "ai_provider": "mock",
             "confluence_connector": "disabled",

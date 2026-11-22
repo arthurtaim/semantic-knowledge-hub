@@ -31,6 +31,10 @@ class Action(StrEnum):
     review_proposal = "review_proposal"  # mark ready for review / reject locally
     submit_proposal = "submit_proposal"  # GitLab write: branch, commit, MR (and MR status checks)
     sync_knowledge = "sync_knowledge"  # manual re-synchronisation / re-index
+    prepare_publication = (
+        "prepare_publication"  # publication jobs, dry-run, reconciliation (Confluence reads)
+    )
+    publish_confluence = "publish_confluence"  # Confluence write: create/update a page of a merged document
 
 
 class AuthorizationPolicy(Protocol):

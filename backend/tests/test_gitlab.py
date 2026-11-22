@@ -308,6 +308,7 @@ def test_end_to_end_open_mr_through_api(
 
     monkeypatch.setattr(GitLabClient, "__init__", patched)
     client = client_factory(
+        integration_profile="live_write_staging",
         knowledge_backend="gitlab",
         gitlab_url="https://gitlab.internal.example",
         gitlab_project_id="42",
@@ -359,6 +360,7 @@ def test_gitlab_outage_returns_503(
 
     monkeypatch.setattr(GitLabClient, "__init__", patched)
     client = client_factory(
+        integration_profile="live_read_only",
         knowledge_backend="gitlab",
         gitlab_url="https://gitlab.internal.example",
         gitlab_project_id="42",

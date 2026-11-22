@@ -10,6 +10,8 @@ from pathlib import Path
 from app.adapters.ai.base import AIProvider
 from app.adapters.ai.mock import DisabledAIProvider, MockAIProvider
 from app.adapters.ai.openai_compatible import OpenAICompatibleAIProvider
+from app.adapters.confluence_rest.client import ConfluenceDCClient
+from app.adapters.confluence_rest.publisher import ConfluenceRESTPublisher
 from app.adapters.corporate.base import CorporateKnowledgeConnector
 from app.adapters.corporate.confluence_mcp import ConfluenceMCPConnector, parse_result_map, parse_tool_map
 from app.adapters.corporate.disabled import DisabledCorporateConnector
@@ -33,6 +35,7 @@ from app.services.authoring import AuthoringService
 from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
 from app.services.proposals import ProposalService, ProposalStore
+from app.services.publications import PublicationService, PublicationStore
 from app.services.search import SearchService
 
 logger = logging.getLogger("skh.container")
@@ -60,6 +63,8 @@ class Container:
     authoring: AuthoringService
     integrations: IntegrationService
     policy: AuthorizationPolicy
+    publication_store: PublicationStore
+    publications: PublicationService
 
     def demo_user(self) -> UserContext:
         return UserContext(
@@ -73,6 +78,7 @@ class Container:
     def close(self) -> None:
         self.search_provider.close()
         self.proposal_store.close()
+        self.publication_store.close()
 
 
 def build_repository(settings: Settings) -> KnowledgeRepository:
@@ -92,6 +98,9 @@ def build_repository(settings: Settings) -> KnowledgeRepository:
         settings.gitlab_project_id,
         settings.gitlab_token,
         settings.gitlab_allow_insecure_http,
+        frozenset(settings.mock_service_host_list)
+        if settings.integration_profile == "integration_mock"
+        else frozenset(),
     )
     if problem:
         raise ConfigurationError(f"KNOWLEDGE_BACKEND=gitlab: {problem}")
@@ -170,9 +179,28 @@ def build_proposal_publisher(settings: Settings, repository: KnowledgeRepository
 
 
 def build_confluence_publisher(settings: Settings) -> ConfluencePublisher:
-    if settings.confluence_publish_enabled:
-        raise ConfigurationError("CONFLUENCE_PUBLISH_ENABLED=true: публикация запланирована на этап M5.")
-    return DisabledConfluencePublisher()
+    """disabled (no REST URL) · dry_run_only (URL, write off) · write (only where the profile allows it;
+    `security_violations` has already refused every other combination at startup)."""
+    if not settings.confluence_rest_url:
+        return DisabledConfluencePublisher()
+    client = ConfluenceDCClient(
+        base_url=settings.confluence_rest_url,
+        token=settings.confluence_rest_token,
+        timeout_seconds=settings.confluence_rest_timeout_seconds,
+        verify=_verify(settings, settings.confluence_rest_ca_bundle),
+    )
+    target = settings.target_kind(settings.confluence_rest_url)
+    write = settings.confluence_publish_enabled and (
+        (settings.integration_profile == "integration_mock" and target == "mock")
+        or settings.integration_profile == "live_write_staging"
+    )
+    return ConfluenceRESTPublisher(
+        client,
+        space_key=settings.confluence_target_space,
+        parent_id=settings.confluence_parent_page_id,
+        write_enabled=write,
+        target_kind=target,
+    )
 
 
 def build_policy(settings: Settings) -> AuthorizationPolicy:
@@ -197,6 +225,19 @@ def build_container(settings: Settings) -> Container:
         if settings.document_templates_dir
         else DEFAULT_TEMPLATES_DIR
     )
+    publication_store = PublicationStore(settings.publication_state_file)
+    publications = PublicationService(
+        store=publication_store,
+        publisher=confluence_publisher,
+        repository=repository,
+        knowledge=knowledge,
+        merge_evidence=repository.merged_merge_request
+        if isinstance(repository, GitLabKnowledgeRepository)
+        else None,
+        project_id=settings.gitlab_project_id if settings.knowledge_backend == "gitlab" else "local",
+        publish_statuses=settings.confluence_publish_status_list,
+    )
+    publications.recover()
     authoring = AuthoringService(
         templates=load_templates(templates_dir),
         repository=repository,
@@ -229,8 +270,11 @@ def build_container(settings: Settings) -> Container:
             app_public_url=settings.app_public_url,
             on_merged=lambda: knowledge.refresh(),
             authoring=authoring,
+            after_sync=publications.on_document_merged,
         ),
         authoring=authoring,
+        publication_store=publication_store,
+        publications=publications,
         integrations=IntegrationService(
             settings=settings,
             repository=repository,

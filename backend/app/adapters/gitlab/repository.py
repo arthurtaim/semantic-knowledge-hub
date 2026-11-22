@@ -129,6 +129,10 @@ class GitLabKnowledgeRepository:
         return self._branch
 
     @property
+    def project_id(self) -> str:
+        return self._project_id
+
+    @property
     def knowledge_path(self) -> str:
         return self._prefix
 
@@ -514,6 +518,35 @@ class GitLabKnowledgeRepository:
         payload = json_body(response)
         value = str(payload.get("last_commit_id") or "") if isinstance(payload, dict) else ""
         return value or None
+
+    async def merged_merge_request(self, revision: str) -> dict[str, str] | None:
+        """GitLab's own evidence that `revision` reached the knowledge branch through a MERGED MR
+        (`GET /projects/:id/repository/commits/:sha/merge_requests`). None: no such MR."""
+        if not COMMIT_SHA_RE.fullmatch(revision):
+            return None
+        try:
+            response = await self._client.request(
+                "GET",
+                self._client.project_path(f"/repository/commits/{revision}/merge_requests"),
+                allowed_statuses=frozenset({404}),
+            )
+        except GitLabError as exc:
+            raise RepositoryUnavailableError(exc.code, exc.message) from exc
+        if response.status_code == 404:
+            return None
+        items = json_body(response)
+        for item in items if isinstance(items, list) else []:
+            if (
+                isinstance(item, dict)
+                and item.get("state") == "merged"
+                and item.get("target_branch") == self._branch
+            ):
+                return {
+                    "iid": str(item.get("iid") or ""),
+                    "url": self.merge_request_web_url_ok(item.get("web_url")) or "",
+                    "merged_at": str(item.get("merged_at") or ""),
+                }
+        return None
 
     async def file_exists(self, path: str) -> bool:
         return await self.current_file_revision(path) is not None

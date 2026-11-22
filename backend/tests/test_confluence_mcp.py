@@ -258,6 +258,7 @@ def test_assistant_uses_only_authorized_corporate_pages(
 
     monkeypatch.setattr(McpClient, "__init__", patched)
     client = client_factory(
+        integration_profile="live_read_only",
         confluence_connector="mcp",
         confluence_mcp_url=URL,
         confluence_mcp_auth_token="mcp-secret",

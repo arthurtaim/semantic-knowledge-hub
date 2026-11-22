@@ -49,6 +49,14 @@ def run_checks(settings: Settings) -> tuple[list[Check], list[str]]:
     for violation in security_violations(settings):
         add("Безопасность", "запуск", "error", violation)
     add("Режим", "AUTH_MODE", "info", settings.auth_mode)
+    add("Режим", "INTEGRATION_PROFILE", "info", settings.integration_profile)
+    if settings.mock_service_host_list:
+        add(
+            "Режим",
+            "MOCK_SERVICE_HOSTS",
+            "info",
+            ", ".join(settings.mock_service_host_list) + " (тестовые дубли)",
+        )
     if settings.auth_mode == "local_demo" and (
         settings.knowledge_backend == "gitlab" or settings.confluence_connector == "mcp"
     ):
@@ -151,10 +159,36 @@ def run_checks(settings: Settings) -> tuple[list[Check], list[str]]:
             hosts.append(f"{_host(settings.confluence_mcp_url)} (MCP Streamable HTTP)")
     else:
         add("Confluence MCP", "коннектор", "info", settings.confluence_connector)
-    if settings.confluence_publish_enabled:
-        add("Confluence", "публикация", "error", "публикация (M5) не реализована и должна быть выключена")
+    if not settings.confluence_rest_url:
+        add("Confluence REST", "публикация", "ok", "не настроена (CONFLUENCE_REST_URL пуст)")
     else:
-        add("Confluence", "публикация", "ok", "выключена")
+        target = settings.target_kind(settings.confluence_rest_url)
+        write = settings.confluence_publish_enabled
+        add(
+            "Confluence REST",
+            "режим",
+            "warning" if write and target == "real" else "info",
+            ("запись разрешена" if write else "только dry-run (запись выключена)")
+            + (
+                " — тестовый дубль"
+                if target == "mock"
+                else " — РЕАЛЬНЫЙ сервер, live validation не проводилась"
+            ),
+        )
+        add(
+            "Confluence REST",
+            "пространство/родитель",
+            "info",
+            f"{settings.confluence_target_space or '—'} / {settings.confluence_parent_page_id or '—'}",
+        )
+        add(
+            "Confluence REST",
+            "CONFLUENCE_REST_TOKEN",
+            "info",
+            _secret_state(settings, "confluence_rest_token"),
+        )
+        ca("Confluence REST", "CONFLUENCE_REST_CA_BUNDLE", settings.confluence_rest_ca_bundle)
+        hosts.append(f"{_host(settings.confluence_rest_url)} (Confluence DC REST, публикация)")
 
     # --- AI ------------------------------------------------------------------------------------
     if settings.ai_provider == "internal_api":

@@ -32,7 +32,11 @@ class GitLabError(RuntimeError):
 
 
 def validate_gitlab_config(
-    base_url: str, project_id: str, token: SecretStr, allow_insecure_http: bool
+    base_url: str,
+    project_id: str,
+    token: SecretStr,
+    allow_insecure_http: bool,
+    mock_hosts: frozenset[str] = frozenset(),
 ) -> str | None:
     if not base_url:
         return "GITLAB_URL не задан."
@@ -41,9 +45,11 @@ def validate_gitlab_config(
         return "GITLAB_URL должен быть абсолютным https-адресом."
     if parts.scheme == "http" and not allow_insecure_http:
         return "GITLAB_URL использует http; это разрешается только явным GITLAB_ALLOW_INSECURE_HTTP=true."
-    if parts.scheme == "http" and not is_loopback_host(parts.hostname):
-        # TLS is never switched off for real servers: plain http is only for a loopback test double.
-        return "GITLAB_URL с http допустим только для loopback-адреса (локальный тестовый mock)."
+    if parts.scheme == "http" and not (
+        is_loopback_host(parts.hostname) or parts.hostname.lower() in mock_hosts
+    ):
+        # TLS is never switched off for real servers: plain http is only for a declared test double.
+        return "GITLAB_URL с http допустим только для loopback-адреса или объявленного тестового mock."
     if parts.username or parts.password:
         return "GITLAB_URL не должен содержать учётные данные."
     if not project_id:

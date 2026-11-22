@@ -84,10 +84,14 @@ def test_sso_mode_not_silently_accepted(settings_factory: Callable[..., Settings
 
 def test_ai_host_must_be_allowlisted(settings_factory: Callable[..., Settings]) -> None:
     settings = settings_factory(
-        ai_provider="internal_api", ai_base_url="https://llm.internal.example/v1", ai_model="m"
+        integration_profile="live_read_only",
+        ai_provider="internal_api",
+        ai_base_url="https://llm.internal.example/v1",
+        ai_model="m",
     )
     assert any("AI_ALLOWED_HOSTS" in p for p in security_violations(settings))
     allowed = settings_factory(
+        integration_profile="live_read_only",
         ai_provider="internal_api",
         ai_base_url="https://llm.internal.example/v1",
         ai_model="m",
@@ -144,14 +148,16 @@ def test_misconfigured_live_integrations_fail_closed(settings_factory: Callable[
         {"confluence_connector": "mcp"},  # no MCP URL
         {"confluence_connector": "mcp", "confluence_mcp_url": "http://mcp.internal.example/mcp"},
         {"gitlab_proposals_enabled": True},  # requires the GitLab knowledge backend
+        {"confluence_publish_enabled": True},  # requires a configured test Confluence REST URL
+        {"knowledge_backend": "gitlab"},  # offline profile: no integrations at all
     )
     for overrides in insecure:
         with pytest.raises(InsecureConfigurationError):
             create_app(settings_factory(**overrides))
     for overrides in (
-        {"confluence_publish_enabled": True},  # M5, not implemented: refuse instead of pretending
-        {"knowledge_backend": "gitlab"},  # no URL / project / token
+        {"integration_profile": "live_read_only", "knowledge_backend": "gitlab"},  # no URL / project / token
         {
+            "integration_profile": "live_read_only",
             "knowledge_backend": "gitlab",
             "gitlab_url": "https://gitlab.internal.example",
             "gitlab_project_id": "7",
