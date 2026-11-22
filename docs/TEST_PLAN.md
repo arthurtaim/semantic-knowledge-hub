@@ -82,3 +82,29 @@ At delivery, run the local app and walk through AC-01 to AC-10. Report exact tes
 Integration readiness (M4): `test_gitlab.py` — keyset/offset tree pagination, branch probe, undocumented branch/commit/MR responses resolved by state, POST never retried; `test_confluence_mcp.py` — session close (`DELETE`), `tools/list` cursor pagination, result-field mapping and relative links; `tests/integration/test_confluence_mcp_replay.py` — replayable server scenarios from `fixtures/integration/confluence_mcp/*.json` (JSON and SSE); `test_integration_config.py` — secrets from files, CA bundles, offline `app.preflight`; `tests/live/` — opt-in read-only smoke (skipped unless `SKH_LIVE_TESTS=1`).
 
 Other contract tests: internal AI adapter with mocked transport (`test_assistant.py`: request shape, HTTP errors, timeout, size limit, misconfiguration, fake citations rejected), MCP tool discovery without guessed names and SSE replies (`test_confluence_mcp.py`), idempotent MR creation (`test_gitlab.py`). M5 publisher tests (version increment, conflict, repeat) remain open because publication is not implemented.
+
+## M4.5: browser scenarios E2E-01…E2E-12
+
+`make e2e` runs the offline stack scenarios (`desktop`/`mobile`, against `make up`) and starts a second, loopback-only stack for `@gitlab` scenarios: the GitLab TEST DOUBLE (`backend/tests/support/gitlab_mock.py`), a backend with `KNOWLEDGE_BACKEND=gitlab` (`frontend/e2e/gitlab-stack.sh`) and Vite on :5175. A passing `@gitlab` scenario proves the application flow against the mock, **not** a real GitLab.
+
+| ID | Scenario | Test |
+|---|---|---|
+| E2E-01 | Home: search, assistant entry, sections, recent docs, proposals, sources | `e2e/scenarios.spec.ts` |
+| E2E-02 | Search, sorting by date, empty result | `scenarios.spec.ts`, `smoke.spec.ts` (AC-01..04) |
+| E2E-03 | Document with metadata, revision, related docs, no fake source link | `scenarios.spec.ts` |
+| E2E-04 | Answer with a verified citation (demo mode, Ctrl+Enter) | `scenarios.spec.ts`, `smoke.spec.ts` (AC-05..07) |
+| E2E-05 | No evidence → «Недостаточно данных» | `scenarios.spec.ts` |
+| E2E-06 | Create a proposal; the source stays unchanged | `scenarios.spec.ts`, `smoke.spec.ts` (AC-08..10) |
+| E2E-07 | Diff: line view and before/after | `scenarios.spec.ts` |
+| E2E-08 | Revision conflict: nothing overwritten, proposal kept, recreate link | `e2e/gitlab.spec.ts` (@gitlab) |
+| E2E-09 | Submit → branch/commit/MR → merge in GitLab → «Проверить статус» → KB updated | `gitlab.spec.ts` (@gitlab) |
+| E2E-10 | GitLab 503 on commit → «Ошибка отправки», proposal kept, retry → exactly one MR | `gitlab.spec.ts` (@gitlab) |
+| E2E-11 | Confluence MCP configured but unreachable: status «Ошибка», answer discloses it | `gitlab.spec.ts` (@gitlab) |
+| E2E-12 | Phone layout: no horizontal scroll on main pages, menu works | `scenarios.spec.ts`, `smoke.spec.ts` (@mobile) |
+
+## M4.5: backend coverage
+
+- `tests/test_gitlab_lifecycle.py` (stateful GitLab mock, in-process via `httpx.ASGITransport` with a client timeout): commit revisions, dates and revision links; head-probe skips the tree walk; only changed files re-read and re-indexed; deleted documents leave catalog and index; history reads; partial sync failure keeps the last version flagged `stale`; outage serves the last snapshot flagged `stale`; revoked token drops the cache; full lifecycle to `merged` with KB update and MR description content; no duplicate MR on resubmit; commit applied but answer lost → detected, not repeated; commit timeout without write → safe retry; MR created but answer lost → adopted; uncertain MR outcome blocks local reject until checked; conflicts at mark-ready, at submit and in the race between check and commit (GitLab `last_commit_id`); permission error; foreign branch never overwritten; MR closed → rejected; invariant: zero writes to the protected branch in every scenario.
+- `tests/test_authz.py`: every route declares one action; write routes map to write actions; `DenyAllPolicy` → 403 on every route; corporate scope needs `read_corporate`; local demo policy only for the demo identity on loopback; SSO mode refuses to start.
+- `tests/test_knowledge_rules.py`: incremental FTS index (revision tracking, removal, single entry per document, restart), sorting, honest local revisions, `/api/index/*`, path rules, validation (front matter, id change, size, path), migration of v0.1 proposal stores, `http` only for loopback, `APP_PUBLIC_URL` rules, OpenAPI contract.
+- Frontend (Vitest, 46 tests): lifecycle states (ready, submission_failed incl. uncertain, conflict, submitted, merged), submit error reload, explorer sorting and dates, home blocks and empty states, document source link vs local, re-sync button, API error states.

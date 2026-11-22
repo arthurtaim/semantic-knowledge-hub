@@ -1,31 +1,104 @@
-# GigaCode migration contract (later)
+# GigaCode: целевая агентная среда и что остаётся в приложении
 
-The bank's target agent environment is **GigaCode**. We are using Claude Code to build and prototype the application first. Do not build the product around undocumented Claude Code runtime APIs or assume GigaCode is identical to GigaChat API.
+Сейчас Claude Code используется только для **разработки** приложения. Приложение от него не зависит:
+в рантайме работают `AI_PROVIDER=mock` (детерминированные выдержки, без модели) или явно настроенный
+OpenAI-совместимый внутренний эндпоинт. Целевая агентная среда банка — **GigaCode**. Его программные
+интерфейсы в банке пока не подтверждены, поэтому интеграции с GigaCode в коде **нет**, и она не
+имитируется.
 
-## What must stay portable
-- Canonical documentation: Markdown/YAML in GitLab, stable logical IDs.
-- Human workflows: GitLab Merge Requests, approved publication service to Confluence.
-- Retrieval, provenance, access control and source filters: independent of LLM provider.
-- Corporate knowledge connector: an approved Confluence Data Center MCP server, not model-specific calls.
-- Agent rules: shared `AGENTS.md`, separate runtime-specific `GIGACODE.md` later if needed.
-- Internal interfaces: `AIProvider`, `CorporateKnowledgeConnector`, `KnowledgeRepository`, `ProposalPublisher`.
+Не путать: GigaChat API (`chat/completions` — языковая модель) и GigaCode (агентная среда:
+CLI/IDE, инструменты, MCP) — разные вещи. Первое может стать `AIProvider`, второе — клиентом приложения.
 
-## Future migration checklist
-1. Identify actual bank-provided GigaCode mode: CLI, IDE plugin, GitVerse workflow or internal server API.
-2. Verify on-prem model/provider topology, MFA, credentials, supported MCP transports and tool restrictions.
-3. Map application functionality to GigaCode capabilities without inventing endpoints. If no programmatic agent API, keep web app runtime provider independently configured, while using GigaCode as the authoring agent.
-4. Implement and test a dedicated adapter; keep provider-independent acceptance tests.
-5. Check per-user ACL, citing, tool-call audit, prompt-injection safeguards, replay/timeout handling.
-6. Confirm the same GitLab documents and Confluence page mappings remain intact; no migration of canonical content required.
-7. Roll out with feature flag, side-by-side evaluation and rollback to the prior approved provider.
+## 1. Целевая архитектура
 
-## Anti-patterns
-- Never use the model itself as the only authorization layer.
-- Never store prompt/chat transcripts in GitHub if they contain corporate information.
-- Never assume Claude Code running on a server means fully local inference.
-- Never assume GigaChat `chat/completions` provides GigaCode's full agent tools.
+```text
+            Сотрудник
+         /             \
+  Web UI (React)      GigaCode (IDE/CLI агент)
+         \             /          \
+     Semantic Knowledge Hub API     MCP-серверы, разрешённые банком
+     (FastAPI: поиск, цитаты,       (Confluence MCP — тот же, что у приложения;
+      валидация, предложения,        будущий MCP-сервер самого Hub — опционально)
+      права, аудит)
+        |            \
+   GitLab (источник   AIProvider: mock | internal_api | (GigaChat — при подтверждении API)
+   истины: Markdown,
+   ветки, MR, ревью)
+```
 
-## Where a GigaCode adapter plugs in (as implemented)
-- Runtime answers: implement the `AIProvider` protocol (`backend/app/adapters/ai/base.py`: `answer`, `suggest_edit`, `status`) in a new module and register it in `build_ai()` (`backend/app/container.py`) under a new `AI_PROVIDER` value. The provider receives only already-authorized, delimited passages; `AssistantService` keeps retrieval, ACL and citation validation, so these stay provider-independent.
-- Agent tooling: if GigaCode works as an authoring agent (CLI/IDE), it uses the same HTTP API as the UI (`/api/search`, `/api/assistant/ask`, `/api/drafts…`) and the same review gates; it gets no direct write path to GitLab or Confluence.
-- Acceptance: run `backend/tests/test_curated_qa.py` and `test_assistant.py` against the new provider (with a mocked transport) before enabling it behind a feature flag.
+**GitLab остаётся источником истины в любом варианте.** Ни агент, ни модель не пишут в основную ветку:
+единственный путь изменений — предложение → валидация → ветка `kb/update/…` → MR → ревью людьми → merge.
+
+## 2. Что может заменить GigaCode
+
+| Функция | Сейчас | С GigaCode |
+|---|---|---|
+| Генерация текста ответа | `mock` или `internal_api` | `AIProvider` на подтверждённом API модели (GigaChat или внутренний шлюз) |
+| Черновик правки по инструкции (`suggest_edit`) | недоступно в `mock` | тот же `AIProvider`; результат — только черновик предложения |
+| Интерактивная работа автора (поиск, чтение, черновик в IDE) | Web UI | GigaCode как клиент API Hub (раздел 4) |
+| Многошаговые сценарии (найти → сравнить → предложить) | нет | агент GigaCode, вызывающий инструменты Hub; каждое изменение — только через предложение |
+
+## 3. Что остаётся в backend (не переносится в агента)
+- **Права:** кто что читает и меняет (`app/authz.py`, будущий SSO/RBAC). Модель не является слоем авторизации.
+- **Поиск и выбор доказательств:** FTS5-индекс, фильтры статусов, исключение черновиков и устаревших документов.
+- **Проверка цитат:**
+  - цитата возможна только из переданного фрагмента и только с дословной выдержкой не короче 12 символов;
+  - маркеры `[Cn]` в тексте источника нейтрализуются;
+  - при недостатке данных ответ заменяется фиксированной фразой «Недостаточно данных».
+- **Защита от prompt injection:**
+  - содержимое документов и ответы MCP — недоверенные данные;
+  - они передаются модели отдельным JSON-блоком, фразы-инструкции из документов вырезаются;
+  - системные инструкции приложения, запрос пользователя и найденный контент разделены;
+  - команды из документации никогда не исполняются; обнаруженные секреты не выдаются.
+- **Валидация предложений** (схема, `id`, путь, размер), diff, конфликт ревизий, запись в GitLab только
+  через `GitLabMRPublisher` с предусловием `last_commit_id`.
+- **Провенанс:** источник, ID, ревизия, ссылка и выдержка для каждой цитаты.
+
+## 4. Как GigaCode получает документы
+- **Через API Hub, а не напрямую из GitLab:** `GET /api/search`, `GET /api/documents/{id}`,
+  `POST /api/assistant/ask`. Так агент получает только то, что разрешено пользователю, вместе с
+  ревизией и ссылками.
+- **Контекст для модели в `AIProvider`** формирует `AssistantService`: только авторизованные фрагменты
+  с ограниченным объёмом (`AI_MAX_CONTEXT_CHARS`), с метаданными в JSON.
+- Если GigaCode поддерживает только MCP, а не HTTP-инструменты, нужен отдельный тонкий
+  **MCP-сервер Hub** поверх того же API: инструменты `search`, `get_document`, `ask`, `create_proposal`.
+  Права и проверки при этом остаются в backend. Это отдельная задача после подтверждения транспортов MCP
+  в GigaCode.
+
+## 5. Как GigaCode получает доступ к Confluence MCP
+- Предпочтительно — **через Hub** (`sources=["corporate"]`). Тогда работают allowlist пространств,
+  фильтрация ссылок, лимиты и проверка цитат.
+- Прямое подключение GigaCode к тому же MCP-серверу допустимо, только если MCP применяет права
+  **пользователя**. С общим сервисным токеном это недопустимо (PB-04).
+
+## 6. Как согласуются изменения
+1. Агент формирует черновик и вызывает `POST /api/drafts` с базовой ревизией. Документ не меняется.
+2. Ассистент не может поставить `approved` (ошибка валидации для `origin=ai_suggestion`).
+3. Человек смотрит diff и отмечает «Готово к ревью».
+4. Отправка в GitLab создаёт ветку и MR (`Draft:`). Merge выполняют только ревьюеры GitLab.
+5. Предложение получает статус `merged` только после подтверждения GitLab.
+
+## 7. Где подключается адаптер (как реализовано)
+- **Ответы модели:** новый модуль, реализующий протокол `AIProvider` (`backend/app/adapters/ai/base.py`:
+  `answer`, `suggest_edit`, `status`, `mode`). Регистрация в `build_ai()` (`backend/app/container.py`)
+  под новым значением `AI_PROVIDER` с allowlist хоста и CA, как у `internal_api`.
+- **Агент как клиент:** изменения в приложении не нужны. Используется тот же HTTP API и те же проверки
+  (`X-SKH-Client`, права через `require(Action…)`).
+- **Приёмка:** `tests/test_curated_qa.py` и `tests/test_assistant.py` с подменённым транспортом нового
+  провайдера, затем включение за флагом и сравнение с текущим провайдером.
+
+## 8. Что проверить на корпоративной установке GigaCode (до разработки адаптера)
+1. Режим поставки: CLI, IDE-плагин, серверный API; есть ли программный агентный API.
+2. Поддерживаемые транспорты MCP (stdio / Streamable HTTP), ограничения на инструменты, подтверждения пользователем.
+3. Где выполняется модель (on-prem / облако банка), куда уходят данные, хранение промптов и ответов.
+4. Аутентификация: SSO, MFA, сервисные учётные записи, передача идентичности пользователя в инструменты.
+5. Формат вызова инструментов и ответов, лимиты контекста, таймауты, повторы.
+6. Журналирование вызовов инструментов (аудит) и требования ИБ к нему.
+7. Совместимость с GigaChat API, если он используется как `AIProvider`: эндпоинт, формат, лимиты, CA.
+
+## 9. Антипаттерны
+- Модель или агент как единственный слой авторизации.
+- Прямая запись агента в GitLab или Confluence в обход предложений и MR.
+- Хранение промптов и переписки с корпоративными данными в GitHub.
+- Предположение, что GigaChat `chat/completions` даёт инструменты GigaCode.
+- «Временный» прямой доступ агента к основной ветке.

@@ -1,27 +1,28 @@
 # Architecture and technology decisions
 
-## 1. Topology
+## 1. Topology (as implemented, M4.5)
 
 ```text
-                       Local browser (React/Vite)
+                 Browser (React/Vite, CSP, no external resources)
                                  |
-                          FastAPI backend
-                  /             |               \
-         Knowledge API      Search/AI API     Proposal API
-           /      \             |                 |
-LocalKnowledge  GitLabKnowledge   AIProvider    ProposalStore
-Repository      Repository      /      \          /    \
-    |              |         Mock     Internal   local    GitLab MR
-ignored       approved       provider   API        draft   (later)
-workspace      GitLab
-                                   |
-                     CorporateKnowledgeConnector
-                           |             |
-                        Disabled     Confluence MCP
-                         /Mock          (later)
+              FastAPI backend — every route: require(Action) → AuthorizationPolicy
+        /               |                    |                     \
+ KnowledgeService   SearchService     AssistantService        ProposalService ── ProposalStore (SQLite: proposals,
+  (sync, sort,      (team + corporate   (retrieval, citation     (lifecycle, validation,         content-free audit)
+   staleness)        scopes, provenance)  validation, injection    conflict checks)
+        |                 |                 guards)                     |
+ KnowledgeRepository   SQLite FTS5 index      |                   ProposalPublisher
+  /            \        (incremental,       AIProvider            /            \
+Local          GitLab    doc_versions:      mock | internal_api   Disabled     GitLabMRPublisher
+workspace      (REST v4: source+revision)   | disabled            (offline)    (kb/update/* branch → commit
+(content-hash  head probe, keyset tree,                                          with last_commit_id → Draft MR;
+ revisions)    blob-incremental reads,      CorporateKnowledgeConnector         MR state read back)
+               commit SHA revisions)        Disabled | Mock | Confluence MCP (Streamable HTTP, read-only,
+                                                               service-account token — single-user only)
 
-GitLab approved docs --(opt-in safe publisher)--> Confluence team space
-GitHub code and CI -------------------------------- (no real KB content)
+GitLab = source of truth (Markdown + YAML, branches, MRs, human review). Confluence publication (M5) is not
+implemented and refuses to start. GitHub holds application code only.
+Tests: GitLab TEST DOUBLE (backend/tests/support/gitlab_mock.py), MCP replay scenarios — never shipped.
 ```
 
 ## 2. Stack for local MVP
@@ -75,3 +76,22 @@ Local: `docker compose` or documented `uvicorn` and Vite commands, localhost bin
 - Preserve commit SHA/content revision in proposals; reject conflicts.
 - No hidden automatic publishing, migrations, backups or Git push without explicit user operation.
 - The network is disabled by default; mocks are named mocks; external integrations are feature gated.
+
+## 9. M4.5 implementation notes
+- **Knowledge provider contract** (`adapters/knowledge/base.py`): list (`snapshot`), get, get at revision,
+  exists, fresh `current_revision` for conflict checks, manual `refresh(full)`, `sync_info`. Business logic
+  depends on the protocol only; no service imports the GitLab HTTP client.
+- **Synchronisation:** described in `docs/GITLAB_KNOWLEDGE_WORKFLOW.md` §8. The search index is derived
+  state and keeps one row per document with source and revision. Stale data is flagged per document
+  (`index_state`) and globally (`/api/index/status`), never shown as current.
+- **Lifecycle:** `docs/GITLAB_KNOWLEDGE_WORKFLOW.md` §4–7. Writes are never retried blindly. Uncertain
+  outcomes are stored and resolved by reading GitLab state.
+- **Authorization seam:** `app/authz.py` (ADR-024). Only the loopback single-operator policy exists.
+  Requirements for SSO and RBAC are in `docs/SSO_RBAC_REQUIREMENTS.md`.
+- **Network modes:**
+  - *Offline* (default): local workspace, mock AI, no integrations; the backend container sits on an
+    `internal` network with no route out.
+  - *Integration* (`docker-compose.integration.yml`): egress network, secrets from an external directory,
+    corporate CA, allowlisted hosts only.
+
+  The application allowlist does **not** replace infrastructure firewall rules (PB-06).

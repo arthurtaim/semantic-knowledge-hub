@@ -77,12 +77,24 @@
 | `CONFLUENCE_PUBLISH_ENABLED` | Публикация (M5) | всегда `false` | — | нет |
 | `AI_*` | Внутренняя модель (отдельное согласование) | `AI_PROVIDER=mock` по умолчанию | Владельцы AI-платформы | ключ — да |
 | `SKH_SECRETS_DIR` | Каталог секретов на хосте (вне репозитория) | `~/.config/skh-secrets` | Оператор стенда | — |
+| `GITLAB_REFRESH_SECONDS` | Как часто проверять head ветки при обращении к данным | `60` | Команда | нет |
+| `CONFLUENCE_MCP_AUTH_MODEL` | Модель доступа MCP | `service_account` (единственная разрешённая сейчас) | Владельцы MCP-сервиса | нет |
+| `APP_PUBLIC_URL` | Ссылка на предложение в описании MR | `http://127.0.0.1:5173` (только loopback в `local_demo`) | Оператор стенда | нет |
+
+Имена из задания M4.5 и действующий контракт (новые синонимы не вводились, чтобы не дублировать конфигурацию — ADR-018):
+
+| В задании | В приложении |
+|---|---|
+| `KNOWLEDGE_PROVIDER=local\|gitlab` | `KNOWLEDGE_BACKEND=local\|gitlab` |
+| `GITLAB_BASE_URL` | `GITLAB_URL` |
+| `GITLAB_DOCS_PATH` | `GITLAB_KNOWLEDGE_PATH` |
+| `GITLAB_PROJECT_ID`, `GITLAB_DEFAULT_BRANCH`, `GITLAB_TOKEN_FILE`, `GITLAB_CA_BUNDLE` | без изменений |
 
 ## 5. Доступы и права
 
 **GitLab (тестовый проект):**
 - Этап 1 (чтение): токен проекта/группы или сервисной учётной записи со scope `read_api` (достаточно для repository tree/files); роль в проекте не ниже Reporter. Персональные токены сотрудников не использовать.
-- Этап 2 (предложения): scope `api`, роль Developer; основная ветка защищена (merge только Maintainer/по правилам approval), push в неё для токена запрещён. Приложение коммитит только в ветки `skh/proposal-*` и открывает Draft MR.
+- Этап 2 (предложения): scope `api`, роль Developer; основная ветка защищена (merge только Maintainer/по правилам approval), push в неё для токена запрещён. Приложение коммитит только в ветки `kb/update/<ID>-<suffix>` и открывает Draft MR (`docs/GITLAB_KNOWLEDGE_WORKFLOW.md`).
 - Срок жизни токена и процедура ротации — по политике банка; токен кладётся файлом, перезапуск подхватывает новый.
 
 **Confluence Data Center через MCP:**
@@ -112,3 +124,23 @@
 - Политика именования веток и меток MR в GitLab команды; кто ревьюер по умолчанию.
 - Нужна ли интеграция с системой задач (пока «не подключено») и какой это продукт.
 - Внутренняя модель: endpoint, лимиты контекста, политика хранения запросов — отдельное согласование, на этом этапе `AI_PROVIDER=mock`.
+
+## 8. Входные данные для этапа M4 Live Integration Validation
+
+Реальные токены в отчёты и в репозиторий не передаются: только файлы в `SKH_SECRETS_DIR` на стенде.
+
+| Что | Требование | Куда |
+|---|---|---|
+| GitLab endpoint | `https://<test-gitlab-host>` без пути и учётных данных; DNS резолвится со стенда | `GITLAB_URL` |
+| Test project ID | числовой ID или URL-кодированный путь тестового проекта | `GITLAB_PROJECT_ID` |
+| Test branch | защищённая ветка знаний (обычно `main`): push запрещён, merge только через MR | `GITLAB_DEFAULT_BRANCH` |
+| Каталог документов | например `docs`; документы по `docs/DOCUMENT_SCHEMA.md`, только синтетика `[TEST]` | `GITLAB_KNOWLEDGE_PATH` |
+| Token scopes | этап A: `read_api`, роль Reporter; этап B (MR, отдельное разрешение): `api`, роль Developer; токен проекта или сервисной учётной записи, не персональный | файл `gitlab_token` |
+| Corporate CA | PEM корневого и промежуточного CA для GitLab, MCP (и AI) | `*_CA_BUNDLE` |
+| MCP endpoint | URL Streamable HTTP (MCP 2025-06-18) | `CONFLUENCE_MCP_URL` |
+| MCP tool mapping | вывод `tools/list` и примеры ответов поиска и чтения → JSON для `CONFLUENCE_MCP_TOOL_MAP` (+ `RESULT_MAP` при отличии формата) | `integration.env` |
+| Authentication model | MCP: сервисный токен (только однопользовательский контур) или передача пользователя (нужен SSO, не реализовано); GitLab: сервисный токен | `CONFLUENCE_MCP_AUTH_MODEL`, решение ИБ |
+| Network requirements | со стенда только 443/TCP к GitLab и MCP (и AI, если согласован); без интернета; прокси — если обязателен (сейчас не поддерживается, ~0,5 дня работы) | правила МЭ / ИБ |
+| Тестовое пространство Confluence | ключ пространства, только синтетические страницы, учётная запись с доступом только к нему | `CONFLUENCE_ALLOWLISTED_SPACES`, `CONFLUENCE_LINK_HOSTS`, `CONFLUENCE_WEB_BASE_URL` |
+
+Порядок проверки — `docs/STAGING_TEST_RUNBOOK.md`; ограничения — `docs/PRODUCTION_BLOCKERS.md`.
