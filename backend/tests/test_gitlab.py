@@ -124,6 +124,11 @@ class FakeGitLab:
                 )
             self.commits.append({"branch": body["branch"], "message": body["commit_message"]})
             return httpx.Response(201, json={"id": "new-commit"})
+        if path == f"{PROJECT}/repository/compare" and request.method == "GET":
+            # commits reachable from `to` but not from `from` (proposal branches fork from main)
+            return httpx.Response(
+                200, json={"commits": [c for c in self.commits if c["branch"] == params["to"]]}
+            )
         if path == f"{PROJECT}/merge_requests" and request.method == "GET":
             state = params.get("state", "all")
             found = [m for m in self.mrs if m["source_branch"] == params["source_branch"]]
@@ -220,6 +225,7 @@ def test_transient_errors_are_retried_with_bound() -> None:
     snapshot = asyncio.run(make_repo(fake).snapshot(USER))
     assert len(snapshot.documents) == 3
     fake.fail["project"] = [503, 503, 503, 503]
+    fake.requests.clear()
     status = asyncio.run(make_repo(fake).status())
     assert status.state == "error"
     assert sum(1 for r in fake.requests if r.url.path == PROJECT) == 3  # 1 try + 2 retries, then give up
@@ -271,11 +277,12 @@ def test_publisher_creates_branch_commit_and_mr_idempotently() -> None:
     proposal = proposal_for(repo)
     first = asyncio.run(publisher.publish_proposal(proposal, USER))
     assert first.state == "created"
-    assert first.external_url and first.external_url.startswith("https://")
-    assert branch_name(proposal.proposal_id) in fake.branches
+    assert first.merge_request and first.merge_request.url
+    assert first.merge_request.url.startswith("https://")
+    assert branch_name(proposal.proposal_id, proposal.document_id) in fake.branches
     assert len(fake.commits) == 1 and "Proposal-Id: " + "f" * 32 in fake.commits[0]["message"]
     again = asyncio.run(publisher.publish_proposal(proposal, USER))
-    assert again.state == "unchanged"
+    assert again.state == "existing"
     assert len(fake.mrs) == 1 and len(fake.commits) == 1
 
 
@@ -328,7 +335,7 @@ def test_end_to_end_open_mr_through_api(
     assert body["publication"]["state"] == "submitted"
     assert body["publication"]["external_url"].startswith("https://gitlab.internal.example/")
     assert [e["action"] for e in body["history"]][-1] == "merge_request_opened"
-    assert body["status"] == "submitted"
+    assert body["status"] == "submitted_to_gitlab"
     assert body["can_reject"] is False
     rejected = client.post(f"/api/drafts/{draft['id']}/reject")
     assert rejected.status_code == 409 and "GitLab" in rejected.json()["message"]
@@ -376,7 +383,7 @@ def test_closed_mr_is_not_recreated() -> None:
     asyncio.run(publisher.publish_proposal(proposal, USER))
     fake.mrs[0]["state"] = "closed"  # reviewers closed it in GitLab
     again = asyncio.run(publisher.publish_proposal(proposal, USER))
-    assert again.state == "unchanged"
+    assert again.state == "existing"
     assert len(fake.mrs) == 1
 
 
@@ -395,7 +402,8 @@ def test_post_requests_are_not_retried() -> None:
     repo.client._transport = httpx.MockTransport(flaky)  # type: ignore[attr-defined]
     with pytest.raises(PublisherDisabledError) as exc:
         asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
-    assert exc.value.code == "gitlab_unavailable"
+    # A 5xx answer to a write is an unknown outcome: GitLab is inspected, never re-posted.
+    assert exc.value.code == "gitlab_write_uncertain" and exc.value.uncertain
     assert calls == ["mr-post"]  # a POST is sent exactly once, never retried
 
 
@@ -428,7 +436,9 @@ def test_existing_branch_is_detected_by_state_not_message() -> None:
     fake = FakeGitLab(fixture_files())
     repo = make_repo(fake)
     proposal = proposal_for(repo)
-    fake.branches.add(branch_name(proposal.proposal_id))  # e.g. left over from an interrupted run
+    fake.branches.add(
+        branch_name(proposal.proposal_id, proposal.document_id)
+    )  # e.g. left over from an interrupted run
     result = asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
     assert result.state == "created"
 
@@ -468,7 +478,7 @@ def test_mr_creation_failure_resolved_by_lookup(status: int) -> None:
 
     repo.client._transport = httpx.MockTransport(duplicate)  # type: ignore[attr-defined]
     result = asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
-    assert result.state == "unchanged" and result.external_url
+    assert result.state == "existing" and result.merge_request and result.merge_request.url
 
 
 def test_mr_creation_failure_without_mr_is_an_error() -> None:
@@ -485,4 +495,4 @@ def test_mr_creation_failure_without_mr_is_an_error() -> None:
     repo.client._transport = httpx.MockTransport(refuse)  # type: ignore[attr-defined]
     with pytest.raises(PublisherDisabledError) as exc:
         asyncio.run(GitLabMRPublisher(repo).publish_proposal(proposal, USER))
-    assert exc.value.code == "gitlab_bad_request"
+    assert exc.value.code == "gitlab_mr_rejected" and not exc.value.uncertain

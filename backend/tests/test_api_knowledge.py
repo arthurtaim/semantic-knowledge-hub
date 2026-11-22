@@ -216,6 +216,7 @@ def test_session_reports_demo_mode(client: TestClient) -> None:
     assert session["demo_content"] is True
     assert session["features"] == {
         "ai_mode": "mock",
+        "ai_provider": "mock",
         "ai_edit_suggestions": False,
         "corporate_search": "disabled",
         "gitlab_proposals": False,

@@ -23,6 +23,7 @@ from app.adapters.publishers.base import ConfluencePublisher, ProposalPublisher
 from app.adapters.publishers.disabled import DisabledConfluencePublisher, DisabledProposalPublisher
 from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
+from app.authz import AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
 from app.config import Settings, tls_verify
 from app.domain.models import UserContext
 from app.services.assistant import AssistantService
@@ -54,6 +55,7 @@ class Container:
     assistant: AssistantService
     proposals: ProposalService
     integrations: IntegrationService
+    policy: AuthorizationPolicy
 
     def demo_user(self) -> UserContext:
         return UserContext(
@@ -169,6 +171,12 @@ def build_confluence_publisher(settings: Settings) -> ConfluencePublisher:
     return DisabledConfluencePublisher()
 
 
+def build_policy(settings: Settings) -> AuthorizationPolicy:
+    # local_demo: one operator on loopback (enforced at startup). Anything else fails closed until a
+    # corporate SSO/RBAC policy exists (docs/SSO_RBAC_REQUIREMENTS.md).
+    return LocalDemoPolicy() if settings.auth_mode == "local_demo" else DenyAllPolicy()
+
+
 def build_container(settings: Settings) -> Container:
     repository = build_repository(settings)
     search_provider = SqliteFtsSearchProvider(settings.search_index_file)
@@ -192,7 +200,16 @@ def build_container(settings: Settings) -> Container:
         knowledge=knowledge,
         search=SearchService(knowledge, corporate),
         assistant=AssistantService(knowledge, corporate, ai, max_context_chars=settings.ai_max_context_chars),
-        proposals=ProposalService(store, repository, proposal_publisher, ai),
+        proposals=ProposalService(
+            store,
+            repository,
+            proposal_publisher,
+            ai,
+            max_document_bytes=settings.max_document_bytes,
+            knowledge_prefix=settings.gitlab_knowledge_path if settings.knowledge_backend == "gitlab" else "",
+            app_public_url=settings.app_public_url,
+            on_merged=lambda: knowledge.refresh(),
+        ),
         integrations=IntegrationService(
             settings=settings,
             repository=repository,
@@ -203,4 +220,5 @@ def build_container(settings: Settings) -> Container:
             confluence_publisher=confluence_publisher,
             tasks=tasks,
         ),
+        policy=build_policy(settings),
     )

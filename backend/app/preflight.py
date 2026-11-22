@@ -49,6 +49,22 @@ def run_checks(settings: Settings) -> tuple[list[Check], list[str]]:
     for violation in security_violations(settings):
         add("Безопасность", "запуск", "error", violation)
     add("Режим", "AUTH_MODE", "info", settings.auth_mode)
+    if settings.auth_mode == "local_demo" and (
+        settings.knowledge_backend == "gitlab" or settings.confluence_connector == "mcp"
+    ):
+        add(
+            "Безопасность",
+            "доступ пользователей",
+            "warning",
+            "Один локальный оператор (local_demo, только loopback). SSO/RBAC не реализованы: корпоративные "
+            "данные нельзя открывать другим пользователям (docs/PRODUCTION_BLOCKERS.md).",
+        )
+    add(
+        "Режим",
+        "APP_PUBLIC_URL",
+        "info",
+        settings.app_public_url or "не задан — ссылка на предложение в описание MR не добавляется",
+    )
 
     def ca(area: str, name: str, value: str) -> None:
         if not value:
@@ -123,6 +139,14 @@ def run_checks(settings: Settings) -> tuple[list[Check], list[str]]:
             ", ".join(settings.confluence_link_host_list) or "не заданы — ссылки будут некликабельными",
         )
         ca("Confluence MCP", "CONFLUENCE_MCP_CA_BUNDLE", settings.confluence_mcp_ca_bundle)
+        add(
+            "Confluence MCP",
+            "модель доступа",
+            "warning" if settings.confluence_mcp_auth_model == "service_account" else "error",
+            "общий сервисный токен: ACL пользователей Confluence не проверяются"
+            if settings.confluence_mcp_auth_model == "service_account"
+            else "per_user не реализован (нужен SSO)",
+        )
         if settings.confluence_mcp_url:
             hosts.append(f"{_host(settings.confluence_mcp_url)} (MCP Streamable HTTP)")
     else:

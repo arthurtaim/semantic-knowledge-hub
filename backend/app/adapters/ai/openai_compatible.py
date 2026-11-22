@@ -25,6 +25,7 @@ from app.adapters.ai.base import (
     ContextPassage,
     ProviderAnswer,
 )
+from app.config import is_loopback_host
 from app.domain.models import Confidence, IntegrationStatus
 
 logger = logging.getLogger("skh.ai.internal_api")
@@ -98,6 +99,8 @@ def validate_endpoint(base_url: str, allowed_hosts: list[str], allow_insecure_ht
         return "AI_BASE_URL должен использовать https."
     if parts.scheme == "http" and not allow_insecure_http:
         return "AI_BASE_URL использует http; разрешите явно AI_ALLOW_INSECURE_HTTP=true только для тестового контура."
+    if parts.scheme == "http" and not is_loopback_host(host):
+        return "AI_BASE_URL с http допустим только для loopback-адреса (локальный тестовый mock)."
     if parts.username or parts.password:
         return "AI_BASE_URL не должен содержать учётные данные."
     if not host or host not in allowed_hosts:

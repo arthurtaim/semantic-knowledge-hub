@@ -2,18 +2,32 @@
 
 from __future__ import annotations
 
-from app.adapters.publishers.base import ProposalForPublication, PublisherDisabledError, PublishResult
+from app.adapters.publishers.base import (
+    MergeRequestRef,
+    ProposalForPublication,
+    PublicationError,
+    PublishResult,
+)
 from app.domain.models import IntegrationStatus, UserContext
 
 
 class DisabledProposalPublisher:
     enabled = False
 
+    def branch_for(self, proposal_id: str, document_id: str) -> str | None:
+        return None
+
+    async def merge_request_state(
+        self, proposal_id: str, document_id: str, iid: str | None
+    ) -> MergeRequestRef | None:
+        return None
+
     async def publish_proposal(self, proposal: ProposalForPublication, user: UserContext) -> PublishResult:
-        raise PublisherDisabledError(
+        raise PublicationError(
             "gitlab_proposals_disabled",
             "Создание Merge Request в GitLab отключено (GITLAB_PROPOSALS_ENABLED=false). "
             "Предложение хранится локально и ждёт ревью.",
+            retryable=False,
         )
 
     async def status(self) -> IntegrationStatus:

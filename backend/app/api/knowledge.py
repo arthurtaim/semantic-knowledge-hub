@@ -9,7 +9,8 @@ from fastapi import APIRouter, Depends, Path, Query
 from app.adapters.corporate.base import ConnectorUnavailableError, CorporatePageNotFoundError
 from app.adapters.knowledge.base import DocumentNotFoundError, DuplicateDocumentIdError
 from app.adapters.search.base import SearchFilters
-from app.api.deps import csv_values, get_container, get_user
+from app.api.deps import csv_values, get_container
+from app.authz import Action, ensure_allowed, require
 from app.container import Container
 from app.domain.models import (
     DocStatus,
@@ -24,7 +25,7 @@ from app.domain.models import (
 )
 from app.domain.schema import is_valid_document_id
 from app.errors import ApiError
-from app.services.knowledge import DocumentQuery
+from app.services.knowledge import DocumentQuery, SortOrder
 
 router = APIRouter(prefix="/api", tags=["knowledge"])
 
@@ -48,7 +49,7 @@ def _filters(
 @router.get("/documents", response_model=DocumentPage)
 async def list_documents(
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(get_user)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
     query: Annotated[str, Query(max_length=200)] = "",
     type: Annotated[str | None, Query(max_length=200)] = None,
     status: Annotated[str | None, Query(max_length=200)] = None,
@@ -57,10 +58,11 @@ async def list_documents(
     tag: Annotated[str | None, Query(max_length=200)] = None,
     page: Annotated[int, Query(ge=1, le=10_000)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
+    sort: SortOrder | None = None,
 ) -> DocumentPage:
     filters = _filters(type, status, owner, source, tag)
     return await container.knowledge.list_documents(
-        user, DocumentQuery(query=query, filters=filters, page=page, size=size)
+        user, DocumentQuery(query=query, filters=filters, page=page, size=size, sort=sort)
     )
 
 
@@ -68,7 +70,7 @@ async def list_documents(
 async def get_document(
     document_id: DocumentIdPath,
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(get_user)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
 ) -> DocumentDetail:
     if not is_valid_document_id(document_id):
         raise ApiError(400, "invalid_document_id", "Некорректный идентификатор документа.")
@@ -88,7 +90,7 @@ async def get_document(
 @router.get("/knowledge/facets", response_model=DocumentFacets)
 async def facets(
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(get_user)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
 ) -> DocumentFacets:
     return await container.knowledge.facets(user)
 
@@ -96,7 +98,7 @@ async def facets(
 @router.get("/knowledge/issues", response_model=list[LoadIssue])
 async def issues(
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(get_user)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
 ) -> list[LoadIssue]:
     return await container.knowledge.issues(user)
 
@@ -104,7 +106,7 @@ async def issues(
 @router.get("/search", response_model=SearchResponse)
 async def search(
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(get_user)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
     q: Annotated[str, Query(min_length=1, max_length=200)],
     source: Annotated[str, Query(max_length=40)] = "team",
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
@@ -115,6 +117,8 @@ async def search(
 ) -> SearchResponse:
     scopes = csv_values(source, _SCOPES, name="source") or frozenset({"team"})
     ordered_scopes: list[SearchScope] = [s for s in _SCOPES if s in scopes]
+    if "corporate" in ordered_scopes:
+        ensure_allowed(container.policy, user, Action.read_corporate)
     filters = _filters(type, status, owner, None, tag)
     await container.knowledge.snapshot(user)
     return await container.search.search(user, q, ordered_scopes, limit, filters)
@@ -124,7 +128,7 @@ async def search(
 async def corporate_page(
     page_id: Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")],
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(get_user)],
+    user: Annotated[UserContext, Depends(require(Action.read_corporate))],
 ) -> dict[str, str | bool | None]:
     try:
         page = await container.corporate.get_page(page_id, user)

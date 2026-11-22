@@ -15,6 +15,8 @@ from urllib.parse import quote, urlsplit
 import httpx
 from pydantic import SecretStr
 
+from app.config import is_loopback_host
+
 logger = logging.getLogger("skh.gitlab")
 
 RETRY_STATUSES = {429, 502, 503, 504}
@@ -39,6 +41,9 @@ def validate_gitlab_config(
         return "GITLAB_URL должен быть абсолютным https-адресом."
     if parts.scheme == "http" and not allow_insecure_http:
         return "GITLAB_URL использует http; это разрешается только явным GITLAB_ALLOW_INSECURE_HTTP=true."
+    if parts.scheme == "http" and not is_loopback_host(parts.hostname):
+        # TLS is never switched off for real servers: plain http is only for a loopback test double.
+        return "GITLAB_URL с http допустим только для loopback-адреса (локальный тестовый mock)."
     if parts.username or parts.password:
         return "GITLAB_URL не должен содержать учётные данные."
     if not project_id:
@@ -46,6 +51,16 @@ def validate_gitlab_config(
     if not token.get_secret_value():
         return "Токен GitLab не передан (GITLAB_TOKEN через хранилище секретов)."
     return None
+
+
+def json_body(response: httpx.Response) -> Any:
+    """Decoded JSON body; a malformed answer becomes a typed error instead of a crash."""
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise GitLabError(
+            "gitlab_invalid_response", "GitLab вернул некорректный ответ (не JSON).", response.status_code
+        ) from exc
 
 
 def _error_for(response: httpx.Response) -> GitLabError:
@@ -90,6 +105,10 @@ class GitLabClient:
         self._max_retries = max_retries
         self._transport = transport
         self._sleep = sleep
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
 
     @property
     def host(self) -> str:

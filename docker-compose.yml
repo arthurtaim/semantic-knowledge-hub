@@ -26,6 +26,7 @@ services:
       CONFLUENCE_PUBLISH_ENABLED: ${CONFLUENCE_PUBLISH_ENABLED:-false}
       GITLAB_PROPOSALS_ENABLED: ${GITLAB_PROPOSALS_ENABLED:-false}
       APP_PUBLISHED_HOST: ${BIND_ADDRESS:-127.0.0.1}
+      APP_PUBLIC_URL: http://${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-5173}
     volumes:
       - workspace:/data/workspace
     networks:

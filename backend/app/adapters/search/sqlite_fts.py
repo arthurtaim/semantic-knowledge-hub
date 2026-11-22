@@ -5,16 +5,17 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.adapters.search.base import ChunkHit, DocumentHit, SearchFilters
-from app.domain.models import HighlightSegment, IntegrationStatus
+from app.domain.models import DocumentRecord, HighlightSegment, IntegrationStatus
 from app.domain.text import QueryTerm, fts_query, fts_term, strip_control
 
 logger = logging.getLogger("skh.search")
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 _HL_START, _HL_END = "\x02", "\x03"
 _TOKENIZER = "unicode61 remove_diacritics 2"
 _FILTER_COLUMNS = ("status", "type", "owner", "source")
@@ -71,6 +72,7 @@ class SqliteFtsSearchProvider:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._indexed_version: str | None = None
+        self._indexed_at: datetime | None = None
         self._doc_count = 0
         self._ensure_schema()
 
@@ -84,6 +86,7 @@ class SqliteFtsSearchProvider:
             if row is None or row[0] != SCHEMA_VERSION:
                 self._conn.execute("DROP TABLE IF EXISTS docs")
                 self._conn.execute("DROP TABLE IF EXISTS chunks")
+                self._conn.execute("DROP TABLE IF EXISTS doc_versions")
                 self._conn.execute("DELETE FROM index_meta")
                 self._conn.execute(
                     "INSERT INTO index_meta(key, value) VALUES ('schema', ?)", (SCHEMA_VERSION,)
@@ -100,50 +103,96 @@ class SqliteFtsSearchProvider:
                 "tags_raw UNINDEXED, section UNINDEXED, anchor UNINDEXED, ordinal UNINDEXED, heading, text, "
                 f"tokenize='{_TOKENIZER}')"
             )
+            # One row per indexed document: which source revision the index holds (provenance).
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS doc_versions (doc_id TEXT PRIMARY KEY, source TEXT NOT NULL, "
+                "revision TEXT NOT NULL, fingerprint TEXT NOT NULL, indexed_at TEXT NOT NULL)"
+            )
+
+    @staticmethod
+    def _fingerprint(doc: DocumentRecord) -> str:
+        # Everything that is indexed or filtered on; a new revision always changes it.
+        return "|".join(
+            (doc.source, doc.revision, doc.status.value, doc.type.value, doc.owner, ",".join(doc.tags))
+        )
+
+    def _insert(self, doc: DocumentRecord) -> None:
+        filters = (doc.id, doc.status.value, doc.type.value, doc.owner, doc.source)
+        tags_raw = "|" + "|".join(doc.tags) + "|"
+        self._conn.execute(
+            "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                *filters,
+                tags_raw,
+                doc.id,
+                _clean(doc.title),
+                " ".join(doc.tags),
+                " ".join(doc.related_ids),
+                _clean(doc.summary or ""),
+                _clean("\n".join(s.text for s in doc.sections)),
+            ),
+        )
+        for ordinal, section in enumerate(doc.sections):
+            if not section.text:
+                continue
+            self._conn.execute(
+                "INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    *filters,
+                    tags_raw,
+                    section.heading,
+                    section.anchor,
+                    ordinal,
+                    _clean(section.heading),
+                    _clean(section.text),
+                ),
+            )
 
     def sync(self, snapshot: KnowledgeSnapshot) -> None:
+        """Incremental: re-index documents whose revision changed, drop documents that disappeared
+        from the source, keep exactly one entry per document id."""
         if snapshot.version == self._indexed_version:
             return
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._conn:
-            self._conn.execute("DELETE FROM docs")
-            self._conn.execute("DELETE FROM chunks")
-            for doc in snapshot.documents.values():
-                filters = (doc.id, doc.status.value, doc.type.value, doc.owner, doc.source)
-                tags_raw = "|" + "|".join(doc.tags) + "|"
+            indexed = {
+                row[0]: row[1] for row in self._conn.execute("SELECT doc_id, fingerprint FROM doc_versions")
+            }
+            wanted = {doc.id: doc for doc in snapshot.documents.values()}
+            removed = [doc_id for doc_id in indexed if doc_id not in wanted]
+            changed = [doc for doc_id, doc in wanted.items() if indexed.get(doc_id) != self._fingerprint(doc)]
+            for doc_id in [*removed, *(d.id for d in changed)]:
+                self._conn.execute("DELETE FROM docs WHERE doc_id = ?", (doc_id,))
+                self._conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
+                self._conn.execute("DELETE FROM doc_versions WHERE doc_id = ?", (doc_id,))
+            for doc in changed:
+                self._insert(doc)
                 self._conn.execute(
-                    "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        *filters,
-                        tags_raw,
-                        doc.id,
-                        _clean(doc.title),
-                        " ".join(doc.tags),
-                        " ".join(doc.related_ids),
-                        _clean(doc.summary or ""),
-                        _clean("\n".join(s.text for s in doc.sections)),
-                    ),
+                    "INSERT INTO doc_versions(doc_id, source, revision, fingerprint, indexed_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (doc.id, doc.source, doc.revision, self._fingerprint(doc), now),
                 )
-                for ordinal, section in enumerate(doc.sections):
-                    if not section.text:
-                        continue
-                    self._conn.execute(
-                        "INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            *filters,
-                            tags_raw,
-                            section.heading,
-                            section.anchor,
-                            ordinal,
-                            _clean(section.heading),
-                            _clean(section.text),
-                        ),
-                    )
-            self._conn.execute(
-                "INSERT OR REPLACE INTO index_meta(key, value) VALUES ('version', ?)", (snapshot.version,)
-            )
+            for key, value in (("version", snapshot.version), ("indexed_at", now)):
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO index_meta(key, value) VALUES (?, ?)", (key, value)
+                )
         self._indexed_version = snapshot.version
-        self._doc_count = len(snapshot.documents)
-        logger.info("search index rebuilt: %d document(s)", self._doc_count)
+        self._indexed_at = datetime.fromisoformat(now)
+        self._doc_count = len(wanted)
+        logger.info(
+            "search index synced: %d document(s), %d re-indexed, %d removed",
+            self._doc_count,
+            len(changed),
+            len(removed),
+        )
+
+    def indexed_revisions(self) -> dict[str, str]:
+        """Document id -> source revision currently held by the index."""
+        with self._lock:
+            return {r[0]: r[1] for r in self._conn.execute("SELECT doc_id, revision FROM doc_versions")}
+
+    def index_info(self) -> tuple[str | None, int, datetime | None]:
+        return self._indexed_version, self._doc_count, self._indexed_at
 
     # --- querying ------------------------------------------------------------------------------
     @staticmethod

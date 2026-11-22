@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     allowed_hosts: str = "localhost,127.0.0.1,::1"
     cors_origins: str = ""
     project_root: Path = _DEFAULT_PROJECT_ROOT
+    # Public address of the UI, used only to link a proposal from its GitLab MR description.
+    app_public_url: str = ""
     log_level: str = "INFO"
 
     # --- knowledge -----------------------------------------------------------------------------
@@ -106,6 +108,10 @@ class Settings(BaseSettings):
     confluence_mcp_auth_token: SecretStr = SecretStr("")
     confluence_mcp_auth_token_file: str = ""
     confluence_mcp_ca_bundle: str = ""
+    # How the MCP server authorizes reads. "service_account": one shared token — per-user Confluence
+    # ACLs are NOT enforced, so only a single-user test contour is acceptable. "per_user" needs SSO
+    # token propagation, which is not implemented (refused at startup).
+    confluence_mcp_auth_model: Literal["service_account", "per_user"] = "service_account"
     confluence_allowlisted_spaces: str = ""
     # JSON mapping business capabilities to discovered MCP tools (never guessed), e.g.
     # {"search": {"tool": "<name>", "query_arg": "query", "limit_arg": "limit", "spaces_arg": "spaces"},
@@ -266,19 +272,46 @@ def security_violations(settings: Settings, *, in_container: bool | None = None)
             "GITLAB_PROPOSALS_ENABLED=true требует KNOWLEDGE_BACKEND=gitlab: ревизии предложений должны быть "
             "commit SHA из GitLab."
         )
+    if settings.confluence_connector == "mcp" and settings.confluence_mcp_auth_model == "per_user":
+        problems.append(
+            "CONFLUENCE_MCP_AUTH_MODEL=per_user требует SSO и передачи пользовательского токена — не реализовано."
+        )
     if settings.confluence_connector == "mcp":
         mcp = urlsplit(settings.confluence_mcp_url)
         if not mcp.hostname or mcp.scheme not in ("https", "http"):
             problems.append("CONFLUENCE_MCP_URL должен быть абсолютным адресом утверждённого MCP-сервера.")
         elif mcp.scheme == "http" and not settings.confluence_mcp_allow_insecure_http:
             problems.append("CONFLUENCE_MCP_URL использует http без CONFLUENCE_MCP_ALLOW_INSECURE_HTTP=true.")
+        elif mcp.scheme == "http" and not is_loopback_host(mcp.hostname):
+            problems.append("CONFLUENCE_MCP_URL с http допустим только для loopback-адреса (тестовый mock).")
         elif mcp.username or mcp.password:
             problems.append("CONFLUENCE_MCP_URL не должен содержать учётные данные.")
+    if settings.app_public_url:
+        public = urlsplit(settings.app_public_url)
+        if (
+            public.scheme not in ("http", "https")
+            or not public.hostname
+            or public.username
+            or public.password
+        ):
+            problems.append("APP_PUBLIC_URL должен быть абсолютным http(s)-адресом без учётных данных.")
+        elif settings.auth_mode == "local_demo" and not is_loopback_host(public.hostname):
+            problems.append("AUTH_MODE=local_demo допускает только loopback APP_PUBLIC_URL.")
     if settings.confluence_web_base_url:
         base = urlsplit(settings.confluence_web_base_url)
         if base.scheme != "https" or (base.hostname or "").lower() not in settings.confluence_link_host_list:
             problems.append(
                 "CONFLUENCE_WEB_BASE_URL должен быть https-адресом с хостом из CONFLUENCE_LINK_HOSTS."
+            )
+    # TLS is never switched off for real hosts: plain http is accepted only for loopback test doubles.
+    for name, url, enabled in (
+        ("AI_BASE_URL", settings.ai_base_url, settings.ai_provider == "internal_api"),
+        ("GITLAB_URL", settings.gitlab_url, settings.knowledge_backend == "gitlab"),
+    ):
+        parts = urlsplit(url)
+        if enabled and parts.scheme == "http" and not is_loopback_host(parts.hostname or ""):
+            problems.append(
+                f"{name} с http допустим только для loopback-адреса (тестовый mock); нужен https."
             )
     if settings.ai_provider == "internal_api" and settings.ai_base_url:
         host = (urlsplit(settings.ai_base_url).hostname or "").lower()

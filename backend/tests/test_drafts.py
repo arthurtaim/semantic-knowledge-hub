@@ -40,7 +40,7 @@ def test_create_draft_shows_diff_and_keeps_source(client: TestClient, workspace:
     response = create(client)
     assert response.status_code == 201, response.text
     draft = response.json()
-    assert draft["status"] == "open"
+    assert draft["status"] == "draft"
     assert draft["diff"]["changed"] is True
     assert draft["additions"] == 1 and draft["deletions"] == 1
     kinds = [line["kind"] for line in draft["diff"]["lines"]]
@@ -179,7 +179,7 @@ def test_list_and_filter_drafts(client: TestClient) -> None:
     client.post(f"/api/drafts/{second}/reject")
     everything = client.get("/api/drafts").json()
     assert everything["total"] == 2
-    open_only = client.get("/api/drafts", params={"status": "open"}).json()["items"]
+    open_only = client.get("/api/drafts", params={"status": "draft"}).json()["items"]
     assert [d["id"] for d in open_only] == [first]
     by_doc = client.get("/api/drafts", params={"document_id": DOC_ID.lower()}).json()
     assert by_doc["total"] == 2
@@ -189,7 +189,7 @@ def test_drafts_persist_across_restart(client_factory: Any) -> None:
     client = client_factory()
     draft_id = create(client).json()["id"]
     restarted = client_factory()
-    assert restarted.get(f"/api/drafts/{draft_id}").json()["status"] == "open"
+    assert restarted.get(f"/api/drafts/{draft_id}").json()["status"] == "draft"
 
 
 def test_diff_line_numbers() -> None:

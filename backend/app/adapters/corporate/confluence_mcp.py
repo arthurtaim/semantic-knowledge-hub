@@ -311,8 +311,16 @@ class ConfluenceMCPConnector:
                     **base,
                     state="connected",
                     capabilities=["search_pages", "read_page"],
-                    details={"tools": ", ".join(tools[:20]), "spaces": ",".join(sorted(self._spaces))},
-                    human_readable_message="Подключено: инструменты MCP обнаружены и сопоставлены.",
+                    details={
+                        "tools": ", ".join(tools[:20]),
+                        "spaces": ",".join(sorted(self._spaces)),
+                        "auth_model": "service_account",
+                    },
+                    human_readable_message=(
+                        "Подключено: инструменты MCP обнаружены и сопоставлены. Общий сервисный токен: права "
+                        "пользователей Confluence не проверяются — допустим только однопользовательский "
+                        "тестовый контур."
+                    ),
                 )
             except McpError as exc:
                 status = IntegrationStatus(

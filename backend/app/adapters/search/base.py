@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Protocol
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
@@ -51,6 +52,10 @@ class SearchProvider(Protocol):
 
     def matching_document_ids(self, term: QueryTerm, filters: SearchFilters) -> set[str]:
         """Documents (within filters) that contain the term — used to detect unknown topics."""
+        ...
+
+    def index_info(self) -> tuple[str | None, int, datetime | None]:
+        """(indexed snapshot version, indexed documents, time of the last index update)."""
         ...
 
     def status(self) -> IntegrationStatus: ...

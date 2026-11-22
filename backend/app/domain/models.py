@@ -28,6 +28,8 @@ class DocStatus(StrEnum):
 
 
 SourceType = Literal["local", "gitlab", "confluence"]
+SyncState = Literal["fresh", "stale", "error", "never_synced"]
+IndexState = Literal["current", "stale"]
 IntegrationState = Literal["connected", "disabled", "mock", "error"]
 Confidence = Literal["supported", "partial", "insufficient_evidence"]
 SearchScope = Literal["team", "corporate"]
@@ -80,7 +82,10 @@ class DocumentRecord(BaseModel):
     source_uri: str
     revision: str
     path: str  # repository-relative path, never absolute
-    updated_at: datetime | None = None
+    updated_at: datetime | None = (
+        None  # time of the source revision (commit date / file mtime); never guessed
+    )
+    web_url: str | None = None  # link to this revision in the source system (validated host), if any
     is_demo: bool = False
     extra_metadata: dict[str, str] = Field(default_factory=dict)
     warnings: tuple[ValidationIssue, ...] = ()
@@ -114,6 +119,9 @@ class DocumentSummary(BaseModel):
     updated_at: datetime | None
     review_state: ReviewState
     owner_missing: bool
+    web_url: str | None = None
+    # "stale": the last sync could not refresh this document; it is shown with its last known revision.
+    index_state: IndexState = "current"
     highlights: list[HighlightSegment] | None = None  # present when listed via a text query
 
 
@@ -247,6 +255,25 @@ class IntegrationStatus(BaseModel):
     capabilities: list[str]
     human_readable_message: str
     details: dict[str, str] = Field(default_factory=dict)
+
+
+class SyncStatus(BaseModel):
+    """State of the knowledge source synchronisation and of the derived search index."""
+
+    source: SourceType
+    state: SyncState
+    message: str
+    documents: int
+    issues: int
+    failed_paths: list[str]
+    last_attempt_at: datetime | None
+    last_success_at: datetime | None
+    source_version: str | None
+    branch: str | None = None
+    head_commit: str | None = None
+    indexed_documents: int
+    indexed_version: str | None
+    indexed_at: datetime | None
 
 
 class IntegrationsResponse(BaseModel):

@@ -16,6 +16,9 @@ from app.adapters.knowledge.base import (
     DocumentNotFoundError,
     DuplicateDocumentIdError,
     KnowledgeSnapshot,
+    RevisionNotAvailableError,
+    SyncInfo,
+    lookup,
 )
 from app.adapters.knowledge.records import assemble_snapshot, build_record
 from app.domain.models import (
@@ -25,7 +28,6 @@ from app.domain.models import (
     SourceType,
     UserContext,
 )
-from app.domain.schema import is_valid_document_id
 
 logger = logging.getLogger("skh.knowledge.local")
 _O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -64,6 +66,8 @@ class LocalKnowledgeRepository:
         self._fingerprint: str | None = None
         self._checked_at = 0.0
         self._lock = asyncio.Lock()
+        self._last_attempt: datetime | None = None
+        self._last_success: datetime | None = None
 
     @property
     def root(self) -> Path:
@@ -205,27 +209,66 @@ class LocalKnowledgeRepository:
         if self._snapshot is not None and now - self._checked_at < self._refresh_seconds:
             return self._snapshot
         async with self._lock:
+            self._last_attempt = datetime.now(UTC)
             snapshot = await asyncio.to_thread(self._refresh_sync)
             self._checked_at = time.monotonic()
+            self._last_success = self._last_attempt
             return snapshot
 
-    async def refresh(self) -> KnowledgeSnapshot:
+    async def refresh(self, *, full: bool = False) -> KnowledgeSnapshot:
         async with self._lock:
+            self._last_attempt = datetime.now(UTC)
             snapshot = await asyncio.to_thread(self._refresh_sync, True)
             self._checked_at = time.monotonic()
+            self._last_success = self._last_attempt
             return snapshot
 
     async def get_document(self, document_id: str, user: UserContext) -> DocumentRecord:
-        if not is_valid_document_id(document_id):
-            raise DocumentNotFoundError(document_id)
-        snapshot = await self.snapshot(user)
-        key = document_id.lower()
-        if key in snapshot.duplicates:
-            raise DuplicateDocumentIdError(document_id, snapshot.duplicates[key])
-        record = snapshot.get(document_id)
-        if record is None:
-            raise DocumentNotFoundError(document_id)
+        return lookup(await self.snapshot(user), document_id)
+
+    async def get_document_at_revision(
+        self, document_id: str, revision: str, user: UserContext
+    ) -> DocumentRecord:
+        record = await self.get_document(document_id, user)
+        if record.revision != revision:
+            raise RevisionNotAvailableError(
+                document_id,
+                revision,
+                "Локальный workspace не хранит историю: доступна только текущая ревизия документа.",
+            )
         return record
+
+    async def exists(self, document_id: str, user: UserContext) -> bool:
+        try:
+            await self.get_document(document_id, user)
+        except (DocumentNotFoundError, DuplicateDocumentIdError):
+            return False
+        return True
+
+    async def current_revision(self, document_id: str, user: UserContext) -> str | None:
+        # Re-read the workspace now: a cached snapshot must not hide a concurrent edit.
+        snapshot = await self.refresh()
+        try:
+            return lookup(snapshot, document_id).revision
+        except (DocumentNotFoundError, DuplicateDocumentIdError):
+            return None
+
+    def sync_info(self) -> SyncInfo:
+        if not self._root.is_dir():
+            return SyncInfo(
+                state="error",
+                message="Каталог локальной базы знаний не найден.",
+                last_attempt_at=self._last_attempt,
+                last_success_at=self._last_success,
+            )
+        if self._snapshot is None:
+            return SyncInfo(state="never_synced", message="Workspace ещё не прочитан.")
+        return SyncInfo(
+            state="fresh",
+            message="Локальный workspace читается напрямую с диска.",
+            last_attempt_at=self._last_attempt,
+            last_success_at=self._last_success,
+        )
 
     async def status(self) -> IntegrationStatus:
         if not self._root.is_dir():
