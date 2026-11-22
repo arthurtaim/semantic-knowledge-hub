@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from app.adapters.ai.base import (
     AIMode,
     AIProviderError,
     AnswerOptions,
+    AuthoringCitation,
+    AuthoringDraft,
+    AuthoringReference,
+    AuthoringRequest,
     CitedEvidence,
     ContextPassage,
     ProviderAnswer,
@@ -77,9 +82,58 @@ def _sentences(passages: list[ContextPassage], terms: list[QueryTerm]) -> list[_
     return result
 
 
+PLACEHOLDER = "Требует уточнения"
+AUTHORING_DEMO_WARNING = (
+    "Демо-режим: черновик собран без языковой модели — это структура шаблона, ссылки на найденные "
+    "утверждённые документы и их дословные выдержки. Все разделы требуют заполнения автором."
+)
+_REFERENCE_SECTIONS = ("связанные документы", "связи", "источники")
+_MAX_QUOTE_CHARS = 400
+
+
+def _heading_key(heading: str) -> str:
+    return re.sub(r"[^\w]+", " ", heading.casefold()).strip()
+
+
+def _headings_match(template_heading: str, source_heading: str) -> bool:
+    a, b = _heading_key(template_heading), _heading_key(source_heading)
+    return a == b or (len(a) >= 6 and len(b) >= 6 and a[:6] == b[:6])
+
+
+def _link_title(text: str) -> str:
+    return text.replace("[", "(").replace("]", ")").replace("\n", " ").strip()
+
+
+def _quotable_sentence(text: str) -> str | None:
+    for block in text.split("\n"):
+        for sentence in split_sentences(block):
+            sentence = sentence.strip()
+            if (
+                20 <= len(sentence) <= _MAX_QUOTE_CHARS
+                and not looks_like_prompt_injection(sentence)
+                and "[" not in sentence
+                and "]" not in sentence
+            ):
+                return sentence
+    return None
+
+
+def _find_quote(
+    heading: str, references: tuple[AuthoringReference, ...]
+) -> tuple[AuthoringReference, str, str] | None:
+    for ref in references:
+        for source_heading, text in ref.sections:
+            if _headings_match(heading, source_heading):
+                sentence = _quotable_sentence(text)
+                if sentence:
+                    return ref, source_heading, sentence
+    return None
+
+
 class MockAIProvider:
     mode: AIMode = "mock"
     supports_edit_suggestions = False
+    supports_authoring = True
 
     async def answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
@@ -183,13 +237,64 @@ class MockAIProvider:
             "В демо-режиме ИИ не генерирует правки. Отредактируйте текст вручную — изменения пройдут ту же проверку.",
         )
 
+    async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
+        """Template structure + references + verbatim excerpts. Never composes requirements or rules:
+        every section keeps a «Требует уточнения» placeholder for the author."""
+        lines = [f"# {request.title.strip()}", ""]
+        citations: list[AuthoringCitation] = []
+        for heading, hint in request.sections:
+            lines.append(f"## {heading}")
+            if heading.casefold() in _REFERENCE_SECTIONS and request.references:
+                lines.append("")
+                for ref in request.references:
+                    lines.append(
+                        f"- [{_link_title(ref.title)}]({ref.document_id}.md) — `{ref.document_id}`, "
+                        f"статус {ref.status.value}, ревизия `{ref.revision[:12]}`"
+                    )
+                lines.append("")
+                continue
+            lines.append(f"> {PLACEHOLDER}: {hint}" if hint else f"> {PLACEHOLDER}.")
+            found = _find_quote(heading, request.references)
+            if found:
+                ref, source_heading, sentence = found
+                citations.append(
+                    AuthoringCitation(document_id=ref.document_id, section=source_heading, quote=sentence)
+                )
+                lines += [
+                    "",
+                    f"Выдержка из «{_link_title(ref.title)}» ([{ref.document_id}]({ref.document_id}.md), раздел "
+                    f"«{_link_title(source_heading)}», ревизия `{ref.revision[:12]}`) — проверьте, применима ли она:",
+                    "",
+                    f"> «{sentence}»",
+                ]
+            lines.append("")
+        warnings = [AUTHORING_DEMO_WARNING]
+        insufficient_data = not request.references
+        if insufficient_data:
+            warnings.append(
+                "Недостаточно данных: в утверждённых документах базы знаний не найдено материалов по запросу. "
+                "Разделы оставлены с пометкой «Требует уточнения»."
+            )
+        elif not citations:
+            warnings.append(
+                "Найдены связанные документы, но подходящих дословных выдержек для разделов шаблона нет."
+            )
+        return AuthoringDraft(
+            body="\n".join(lines).rstrip() + "\n",
+            citations=citations,
+            unverified_claims=[],
+            warnings=warnings,
+            suggested_related_ids=[r.document_id for r in request.references],
+            insufficient_data=insufficient_data,
+        )
+
     async def status(self) -> IntegrationStatus:
         return IntegrationStatus(
             name="ai_provider",
             title="AI-провайдер",
             kind="ai",
             state="mock",
-            capabilities=["extractive_answers"],
+            capabilities=["extractive_answers", "template_drafts"],
             human_readable_message=(
                 "Демо-режим (mock): детерминированные дословные выдержки из документов, "
                 "без языковой модели и без сетевых запросов."
@@ -201,6 +306,7 @@ class MockAIProvider:
 class DisabledAIProvider:
     mode: AIMode = "disabled"
     supports_edit_suggestions = False
+    supports_authoring = False
 
     async def answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
@@ -210,6 +316,11 @@ class DisabledAIProvider:
         )
 
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
+        raise AIProviderError(
+            "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
+        )
+
+    async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
         raise AIProviderError(
             "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
         )

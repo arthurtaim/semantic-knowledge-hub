@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import ssl
 from dataclasses import dataclass
+from pathlib import Path
 
 from app.adapters.ai.base import AIProvider
 from app.adapters.ai.mock import DisabledAIProvider, MockAIProvider
@@ -26,7 +27,9 @@ from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
 from app.authz import AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
 from app.config import Settings, tls_verify
 from app.domain.models import UserContext
+from app.domain.templates import DEFAULT_TEMPLATES_DIR, load_templates
 from app.services.assistant import AssistantService
+from app.services.authoring import AuthoringService
 from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
 from app.services.proposals import ProposalService, ProposalStore
@@ -54,6 +57,7 @@ class Container:
     search: SearchService
     assistant: AssistantService
     proposals: ProposalService
+    authoring: AuthoringService
     integrations: IntegrationService
     policy: AuthorizationPolicy
 
@@ -187,6 +191,21 @@ def build_container(settings: Settings) -> Container:
     tasks = DisabledTaskSystem()
     store = ProposalStore(settings.app_state_file)
     knowledge = KnowledgeService(repository, search_provider, review_stale_days=settings.review_stale_days)
+    knowledge_prefix = settings.gitlab_knowledge_path if settings.knowledge_backend == "gitlab" else ""
+    templates_dir = (
+        settings.resolve_path(Path(settings.document_templates_dir))
+        if settings.document_templates_dir
+        else DEFAULT_TEMPLATES_DIR
+    )
+    authoring = AuthoringService(
+        templates=load_templates(templates_dir),
+        repository=repository,
+        knowledge=knowledge,
+        store=store,
+        ai=ai,
+        knowledge_prefix=knowledge_prefix,
+        max_document_bytes=settings.max_document_bytes,
+    )
     return Container(
         settings=settings,
         repository=repository,
@@ -206,10 +225,12 @@ def build_container(settings: Settings) -> Container:
             proposal_publisher,
             ai,
             max_document_bytes=settings.max_document_bytes,
-            knowledge_prefix=settings.gitlab_knowledge_path if settings.knowledge_backend == "gitlab" else "",
+            knowledge_prefix=knowledge_prefix,
             app_public_url=settings.app_public_url,
             on_merged=lambda: knowledge.refresh(),
+            authoring=authoring,
         ),
+        authoring=authoring,
         integrations=IntegrationService(
             settings=settings,
             repository=repository,

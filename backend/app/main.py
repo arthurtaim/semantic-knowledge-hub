@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.adapters.knowledge.base import RepositoryUnavailableError
-from app.api import assistant, drafts, knowledge, system
+from app.api import assistant, authoring, drafts, knowledge, system
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
 from app.container import build_container
 from app.errors import error_body, install_error_handlers, request_id_of
@@ -94,6 +94,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(HostGuardMiddleware, allowed_hosts=settings.allowed_host_list)
     app.add_middleware(RequestContextMiddleware)  # outermost: request id for every response
 
-    for router in (system.router, knowledge.router, assistant.router, drafts.router):
+    for router in (system.router, knowledge.router, assistant.router, drafts.router, authoring.router):
         app.include_router(router)
     return app

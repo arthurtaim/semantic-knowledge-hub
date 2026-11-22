@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     max_document_bytes: int = Field(default=512 * 1024, ge=1024, le=10 * 1024 * 1024)
     review_stale_days: int = Field(default=180, ge=1)
     repository_refresh_seconds: float = Field(default=2.0, ge=0.0)
+    # Directory with document templates (*.md). Empty: the built-in app/document_templates.
+    document_templates_dir: str = ""
 
     gitlab_url: str = ""
     gitlab_project_id: str = ""

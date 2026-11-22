@@ -125,6 +125,11 @@ class KnowledgeRepository(Protocol):
         Used for conflict detection before any write."""
         ...
 
+    async def file_exists(self, path: str) -> bool:
+        """Whether a file exists at this repository-relative path NOW (fresh, bypasses caches).
+        Used before creating a new document so that no file is ever overwritten."""
+        ...
+
     async def refresh(self, *, full: bool = False) -> KnowledgeSnapshot:
         """Re-synchronise with the source now (manual re-index). `full` drops incremental caches."""
         ...

@@ -218,6 +218,7 @@ def test_session_reports_demo_mode(client: TestClient) -> None:
         "ai_mode": "mock",
         "ai_provider": "mock",
         "ai_edit_suggestions": False,
+        "ai_authoring": True,
         "corporate_search": "disabled",
         "gitlab_proposals": False,
         "confluence_publish": False,

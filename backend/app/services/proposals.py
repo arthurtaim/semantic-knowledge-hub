@@ -9,6 +9,11 @@ Lifecycle (docs/GITLAB_KNOWLEDGE_WORKFLOW.md):
 
 The local status and the GitLab MR state are stored separately; `merged` is set only after GitLab
 reported the MR as merged. Proposals live in local derived state (SQLite under the ignored workspace).
+
+Operations: `update` changes an existing document (base revision = its commit SHA); `create` adds a new
+file (no base revision; the path must not exist). A proposal in `draft` is an editable, persistent
+draft (save with optimistic versioning, delete with confirmation). After GitLab confirms the merge, the
+knowledge base is re-synced and the merged revision is recorded; publication is a separate lifecycle.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.adapters.ai.base import AIProvider, AIProviderError
 from app.adapters.knowledge.base import (
@@ -41,10 +46,14 @@ from app.adapters.publishers.base import (
 from app.domain.models import DocStatus, DocumentRecord, UserContext, ValidationIssue
 from app.domain.proposals import (
     LEGACY_STATUS_MAP,
+    OPEN_STATUSES,
     DiffLine,
     DiffResult,
     DraftCreate,
+    DraftUpdate,
     MergeRequestInfo,
+    NewDocumentDraftCreate,
+    NewDocumentView,
     ProposalDetail,
     ProposalEvent,
     ProposalList,
@@ -56,8 +65,11 @@ from app.domain.proposals import (
     SuggestRequest,
     SuggestResponse,
 )
-from app.domain.schema import is_valid_document_id, parse_document
+from app.domain.schema import FrontmatterError, is_valid_document_id, parse_document
 from app.errors import ApiError
+
+if TYPE_CHECKING:
+    from app.services.authoring import AuthoringService, NewDocumentCheck
 
 logger = logging.getLogger("skh.proposals")
 
@@ -79,10 +91,18 @@ def _normalize_newlines(text: str) -> str:
 
 
 def compute_diff(before: str, after: str, path: str) -> DiffResult:
-    old_lines = _normalize_newlines(before).split("\n")
+    """Line diff. A new file (`before == ""`) is shown as one hunk adding every line."""
+    old_lines = _normalize_newlines(before).split("\n") if before else []
     new_lines = _normalize_newlines(after).split("\n")
     unified = list(
-        difflib.unified_diff(old_lines, new_lines, fromfile=f"a/{path}", tofile=f"b/{path}", lineterm="", n=3)
+        difflib.unified_diff(
+            old_lines,
+            new_lines,
+            fromfile="/dev/null" if not before else f"a/{path}",
+            tofile=f"b/{path}",
+            lineterm="",
+            n=3,
+        )
     )
     lines: list[DiffLine] = []
     additions = deletions = 0
@@ -202,8 +222,29 @@ _NEW_COLUMNS = {
     "error_code": "TEXT",
     "error_message": "TEXT",
     "uncertain": "INTEGER NOT NULL DEFAULT 0",
+    "operation": "TEXT NOT NULL DEFAULT 'update'",
+    "template_id": "TEXT",
+    "edit_version": "INTEGER NOT NULL DEFAULT 1",
+    "merged_revision": "TEXT",
+    "synced_at": "TEXT",
 }
-_UPDATABLE = frozenset(_NEW_COLUMNS) | {"review_comment"}
+_UPDATABLE = frozenset(_NEW_COLUMNS) - {"operation", "template_id", "edit_version"} | {"review_comment"}
+# Fields a draft save may change (only while the proposal is still a `draft`).
+_DRAFT_FIELDS = frozenset(
+    {
+        "document_id",
+        "document_title",
+        "document_path",
+        "proposed_content",
+        "reason",
+        "origin",
+        "validation_json",
+        "additions",
+        "deletions",
+        "branch_name",
+    }
+)
+_OPEN = tuple(sorted(s.value for s in OPEN_STATUSES))
 
 
 class ProposalStore:
@@ -308,6 +349,53 @@ class ProposalStore:
     def set_external_url(self, proposal_id: str, url: str | None) -> None:
         self.update(proposal_id, external_url=url)
 
+    def save_draft(self, proposal_id: str, expected_version: int, **fields: Any) -> bool:
+        """Compare-and-set save of a draft: only while `draft` and only from the expected version."""
+        unknown = set(fields) - _DRAFT_FIELDS
+        if unknown or not fields:
+            raise ValueError(f"not a draft field: {sorted(unknown)}")
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                f"UPDATE proposals SET {assignments}, edit_version = edit_version + 1, updated_at = ? "
+                "WHERE id = ? AND status = 'draft' AND edit_version = ?",
+                (*fields.values(), _now().isoformat(), proposal_id, expected_version),
+            )
+            return cursor.rowcount == 1
+
+    def delete_draft(self, proposal_id: str) -> bool:
+        """Delete a proposal that never reached GitLab (draft, or a conflict before any submission).
+        The content-free audit trail is kept."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "DELETE FROM proposals WHERE id = ? AND (status = 'draft' OR "
+                "(status = 'conflict' AND submit_attempts = 0 AND mr_iid IS NULL))",
+                (proposal_id,),
+            )
+            return cursor.rowcount == 1
+
+    def open_create_conflicts(self, document_id: str, path: str, exclude_id: str | None) -> list[sqlite3.Row]:
+        """Unfinished `create` proposals that claim the same ID or path (case-insensitive)."""
+        placeholders = ", ".join("?" for _ in _OPEN)
+        with self._lock:
+            return list(
+                self._conn.execute(
+                    f"SELECT id, document_id, document_path, reason FROM proposals WHERE operation = 'create' "
+                    f"AND status IN ({placeholders}) AND id != ? "
+                    "AND (lower(document_id) = lower(?) OR lower(document_path) = lower(?))",
+                    (*_OPEN, exclude_id or "", document_id, path),
+                ).fetchall()
+            )
+
+    def open_create_ids(self) -> set[str]:
+        placeholders = ", ".join("?" for _ in _OPEN)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT document_id FROM proposals WHERE operation = 'create' AND status IN ({placeholders})",
+                _OPEN,
+            ).fetchall()
+        return {r[0] for r in rows}
+
     def audit(
         self,
         actor: str,
@@ -357,6 +445,8 @@ class ProposalService:
         knowledge_prefix: str = "",
         app_public_url: str = "",
         on_merged: Callable[[], Awaitable[object]] | None = None,
+        authoring: AuthoringService | None = None,
+        after_sync: Callable[[UserContext, str, str, str], Awaitable[None]] | None = None,
     ) -> None:
         self._store = store
         self._repository = repository
@@ -365,7 +455,17 @@ class ProposalService:
         self._max_bytes = max_document_bytes
         self._prefix = knowledge_prefix
         self._app_url = app_public_url.rstrip("/")
+        # on_merged: re-sync the knowledge base + index; after_sync(user, document_id, revision,
+        # proposal_id): next lifecycle (publication job), called only with a confirmed revision.
         self._on_merged = on_merged
+        self._authoring = authoring
+        self._after_sync = after_sync
+
+    @property
+    def authoring(self) -> AuthoringService:
+        if self._authoring is None:
+            raise ApiError(503, "authoring_unavailable", "Создание документов не настроено.")
+        return self._authoring
 
     # --- helpers ---------------------------------------------------------------------------------
     async def _document(self, document_id: str, user: UserContext) -> DocumentRecord:
@@ -411,6 +511,7 @@ class ProposalService:
         issues = self._issues(row)
         return ProposalSummary(
             id=row["id"],
+            operation=row["operation"] or "update",
             document_id=row["document_id"],
             document_title=row["document_title"],
             source=row["source"],
@@ -438,8 +539,12 @@ class ProposalService:
     async def _detail(self, row: Any, user: UserContext) -> ProposalDetail:
         summary = self._summary(row)
         status = summary.status
+        creating = summary.operation == "create"
         current = await self._snapshot_revision(row["document_id"], user)
-        is_stale = current != row["base_revision"]
+        # A new document has no base revision: it is "stale" only if its ID got taken meanwhile.
+        is_stale = (
+            (current is not None and status != S.merged) if creating else current != row["base_revision"]
+        )
         history = [
             ProposalEvent(
                 at=datetime.fromisoformat(e["at"]),
@@ -477,12 +582,23 @@ class ProposalService:
         source_state: SourceDocumentState
         if status == S.merged:
             source_state = "updated_by_this_proposal"
+        elif creating:
+            source_state = "id_taken" if current is not None else "new_document"
         elif current is None:
             source_state = "missing"
         elif is_stale:
             source_state = "changed_since_base"
         else:
             source_state = "unchanged"
+        new_document = None
+        if creating:
+            try:
+                from app.services.authoring import split_document
+
+                meta, body = split_document(row["proposed_content"])
+                new_document = NewDocumentView(metadata=meta, body=body)
+            except FrontmatterError:
+                new_document = None
         uncertain = bool(row["uncertain"])
         submittable = status in (S.ready_for_review, S.submission_failed) or self._submitting_is_stale(row)
         return ProposalDetail(
@@ -496,7 +612,7 @@ class ProposalService:
             diff=compute_diff(row["base_content"], row["proposed_content"], row["document_path"]),
             history=history,
             review_comment=row["review_comment"],
-            can_mark_ready=status == S.draft and summary.error_count == 0 and not is_stale,
+            can_mark_ready=status == S.draft and summary.error_count == 0 and not is_stale,  # create: ID free
             can_reject=status in (S.draft, S.ready_for_review)
             or (status == S.submission_failed and not uncertain),
             can_submit=self._publisher.enabled and submittable and summary.error_count == 0,
@@ -513,14 +629,39 @@ class ProposalService:
                 error_message=row["error_message"],
                 uncertain=uncertain,
             ),
+            template_id=row["template_id"],
+            edit_version=row["edit_version"] or 1,
+            can_edit=status == S.draft,
+            can_delete=status == S.draft
+            or (status == S.conflict and not (row["submit_attempts"] or 0) and not row["mr_iid"]),
+            new_document=new_document,
+            merged_revision=row["merged_revision"],
+            synced_at=_dt(row["synced_at"]),
         )
 
     def _mark_conflict(
-        self, user: UserContext, row: Any, allowed_from: set[str], current: str | None
+        self,
+        user: UserContext,
+        row: Any,
+        allowed_from: set[str],
+        current: str | None,
+        *,
+        reason: str | None = None,
     ) -> ApiError:
-        if self._store.transition(row["id"], allowed_from, S.conflict.value):
+        if self._store.transition(
+            row["id"], allowed_from, S.conflict.value, comment=reason, error_message=reason
+        ):
             self._store.audit(
                 user.user_id, "conflict_detected", row["id"], row["document_id"], current, S.conflict.value
+            )
+        if (row["operation"] or "update") == "create":
+            return ApiError(
+                409,
+                "document_exists",
+                reason
+                or "Документ с таким ID или файл с таким путём уже появился в базе знаний. Ничего не "
+                "перезаписано; измените ID в новом предложении.",
+                {"document_id": row["document_id"], "path": row["document_path"]},
             )
         return ApiError(
             409,
@@ -589,6 +730,162 @@ class ProposalService:
         )
         return await self._detail(self._row(proposal_id), user)
 
+    # --- new documents (operation=create) --------------------------------------------------------
+    @staticmethod
+    def _raise_taken(check: NewDocumentCheck) -> None:
+        issue = check.taken_issue()
+        if issue is not None:
+            raise ApiError(
+                409,
+                issue.code,
+                issue.message,
+                {"field": issue.field or "", "validation": [i.model_dump() for i in check.issues]},
+            )
+
+    async def create_new_document(self, user: UserContext, payload: NewDocumentDraftCreate) -> ProposalDetail:
+        """Persist a draft of a NEW document. Nothing is written to the knowledge base or GitLab."""
+        authoring = self.authoring
+        template = authoring.template(payload.template_id)
+        check = await authoring.check_new_document(
+            user, template.id, payload.metadata, payload.body, payload.path, payload.origin
+        )
+        self._raise_taken(check)
+        document_id = payload.metadata.id.strip()
+        diff = compute_diff("", check.content, check.path)
+        proposal_id = uuid.uuid4().hex
+        now = _now().isoformat()
+        self._store.insert(
+            {
+                "id": proposal_id,
+                "operation": "create",
+                "template_id": template.id,
+                "document_id": document_id,
+                "document_title": payload.metadata.title.strip(),
+                "document_path": check.path,
+                "source": self._repository.source,
+                "base_revision": "",
+                "base_content": "",
+                "proposed_content": check.content,
+                "reason": payload.reason.strip(),
+                "origin": payload.origin,
+                "author": user.user_id,
+                "status": S.draft.value,
+                "validation_json": json.dumps([i.model_dump() for i in check.issues], ensure_ascii=False),
+                "additions": diff.additions,
+                "deletions": diff.deletions,
+                "review_comment": None,
+                "created_at": now,
+                "updated_at": now,
+                "branch_name": self._publisher.branch_for(proposal_id, document_id),
+            }
+        )
+        self._store.audit(user.user_id, "created_new_document", proposal_id, document_id, None, S.draft.value)
+        logger.info("new-document draft created id=%s errors=%d", proposal_id, len(check.errors))
+        return await self._detail(self._row(proposal_id), user)
+
+    async def save_draft(self, user: UserContext, proposal_id: str, payload: DraftUpdate) -> ProposalDetail:
+        """Save an editable draft. Only `draft` proposals change; a stale `expected_version` is a 409."""
+        row = self._row(proposal_id)
+        if _status(row["status"]) != S.draft:
+            raise ApiError(
+                409, "draft_not_editable", "Редактировать можно только черновик (до «Готово к ревью»)."
+            )
+        if payload.expected_version != (row["edit_version"] or 1):
+            raise ApiError(
+                409,
+                "draft_modified",
+                "Черновик изменён в другом окне или другим пользователем. Ваш текст не потерян: "
+                "скопируйте его и обновите страницу.",
+                {"current_version": str(row["edit_version"] or 1)},
+            )
+        fields: dict[str, Any] = {}
+        origin = payload.origin or row["origin"]
+        if (row["operation"] or "update") == "create":
+            if payload.metadata is None or payload.body is None:
+                raise ApiError(422, "validation_failed", "Для нового документа нужны поля metadata и body.")
+            check = await self.authoring.check_new_document(
+                user,
+                row["template_id"],
+                payload.metadata,
+                payload.body,
+                payload.path,
+                origin,
+                exclude_proposal_id=proposal_id,
+            )
+            self._raise_taken(check)
+            document_id = payload.metadata.id.strip()
+            diff = compute_diff("", check.content, check.path)
+            fields.update(
+                document_id=document_id,
+                document_title=payload.metadata.title.strip(),
+                document_path=check.path,
+                proposed_content=check.content,
+                validation_json=json.dumps([i.model_dump() for i in check.issues], ensure_ascii=False),
+                additions=diff.additions,
+                deletions=diff.deletions,
+                branch_name=self._publisher.branch_for(proposal_id, document_id),
+            )
+        else:
+            if payload.proposed_content is None:
+                raise ApiError(
+                    422, "validation_failed", "Для изменения документа нужно поле proposed_content."
+                )
+            doc = await self._document(row["document_id"], user)
+            proposed = _normalize_newlines(payload.proposed_content)
+            issues = validate_proposal(
+                doc.model_copy(update={"raw": row["base_content"], "path": row["document_path"]}),
+                proposed,
+                origin,
+                max_bytes=self._max_bytes,
+                knowledge_prefix=self._prefix,
+            )
+            diff = compute_diff(row["base_content"], proposed, row["document_path"])
+            fields.update(
+                proposed_content=proposed,
+                validation_json=json.dumps([i.model_dump() for i in issues], ensure_ascii=False),
+                additions=diff.additions,
+                deletions=diff.deletions,
+            )
+        if payload.reason is not None:
+            fields["reason"] = payload.reason.strip()
+        fields["origin"] = origin
+        if not self._store.save_draft(proposal_id, payload.expected_version, **fields):
+            raise ApiError(409, "draft_modified", "Черновик изменился параллельно; обновите страницу.")
+        self._store.audit(
+            user.user_id,
+            "draft_saved",
+            proposal_id,
+            fields.get("document_id", row["document_id"]),
+            None,
+            S.draft.value,
+        )
+        return await self._detail(self._row(proposal_id), user)
+
+    async def delete_draft(self, user: UserContext, proposal_id: str) -> None:
+        row = self._row(proposal_id)
+        if not self._store.delete_draft(proposal_id):
+            raise ApiError(
+                409,
+                "draft_not_deletable",
+                "Удалить можно только черновик, который ещё не отправлялся в GitLab.",
+            )
+        self._store.audit(user.user_id, "draft_deleted", proposal_id, row["document_id"], None, None)
+        logger.info("draft deleted id=%s", proposal_id)
+
+    async def _fresh_new_document_check(self, user: UserContext, row: Any) -> NewDocumentCheck:
+        authoring = self.authoring
+        template = authoring.template(row["template_id"]) if row["template_id"] else None
+        return await authoring.check_content(
+            user,
+            template,
+            row["proposed_content"],
+            row["document_path"],
+            row["origin"],
+            row["document_id"],
+            exclude_proposal_id=row["id"],
+            fresh=True,
+        )
+
     async def get(self, user: UserContext, proposal_id: str) -> ProposalDetail:
         return await self._detail(self._row(proposal_id), user)
 
@@ -630,9 +927,20 @@ class ProposalService:
             )
         if any(i.severity == "error" for i in self._issues(row)):
             raise ApiError(422, "validation_failed", "Исправьте ошибки валидации перед отправкой на ревью.")
-        current = await self._fresh_revision(row["document_id"], user)
-        if current != row["base_revision"]:
-            raise self._mark_conflict(user, row, {S.draft.value}, current)
+        current: str | None = None
+        if (row["operation"] or "update") == "create":
+            check = await self._fresh_new_document_check(user, row)
+            taken = check.taken_issue()
+            if taken is not None:
+                raise self._mark_conflict(user, row, {S.draft.value}, None, reason=taken.message)
+            if check.errors:
+                raise ApiError(
+                    422, "validation_failed", "Документ не проходит валидацию: " + check.errors[0].message
+                )
+        else:
+            current = await self._fresh_revision(row["document_id"], user)
+            if current != row["base_revision"]:
+                raise self._mark_conflict(user, row, {S.draft.value}, current)
         if not self._store.transition(proposal_id, {S.draft.value}, S.ready_for_review.value):
             raise ApiError(409, "invalid_transition", "Статус предложения изменился параллельно.")
         self._store.audit(
@@ -665,22 +973,41 @@ class ProposalService:
                 "invalid_transition",
                 "Отправить в GitLab можно только предложение «Готово к ревью» или после ошибки отправки.",
             )
-        # Re-validate the stored content against the current rules before anything is written.
-        doc = await self._document(row["document_id"], user)
-        issues = validate_proposal(
-            doc.model_copy(update={"raw": row["base_content"], "path": row["document_path"]}),
-            row["proposed_content"],
-            row["origin"],
-            max_bytes=self._max_bytes,
-            knowledge_prefix=self._prefix,
-        )
-        if any(i.severity == "error" for i in issues):
-            raise ApiError(422, "validation_failed", "Предложение не проходит валидацию; отправка отменена.")
         uncertain_before = bool(row["uncertain"])
-        current = await self._fresh_revision(row["document_id"], user)
-        if current != row["base_revision"] and not (uncertain_before or row["mr_iid"]):
-            # With an uncertain earlier attempt the commit may be ours: the publisher decides by state.
-            raise self._mark_conflict(user, row, allowed, current)
+        creating = (row["operation"] or "update") == "create"
+        current: str | None = None
+        if creating:
+            # Re-validate and re-check ID/path against the fresh source. After an uncertain attempt
+            # the file may be OUR commit on the proposal branch — the publisher decides by state.
+            check = await self._fresh_new_document_check(user, row)
+            taken = check.taken_issue()
+            if taken is not None and not (uncertain_before or row["mr_iid"]):
+                raise self._mark_conflict(user, row, allowed, None, reason=taken.message)
+            if any(
+                i.severity == "error" and i.code not in ("document_id_taken", "document_path_taken")
+                for i in check.issues
+            ):
+                raise ApiError(
+                    422, "validation_failed", "Предложение не проходит валидацию; отправка отменена."
+                )
+        else:
+            # Re-validate the stored content against the current rules before anything is written.
+            doc = await self._document(row["document_id"], user)
+            issues = validate_proposal(
+                doc.model_copy(update={"raw": row["base_content"], "path": row["document_path"]}),
+                row["proposed_content"],
+                row["origin"],
+                max_bytes=self._max_bytes,
+                knowledge_prefix=self._prefix,
+            )
+            if any(i.severity == "error" for i in issues):
+                raise ApiError(
+                    422, "validation_failed", "Предложение не проходит валидацию; отправка отменена."
+                )
+            current = await self._fresh_revision(row["document_id"], user)
+            if current != row["base_revision"] and not (uncertain_before or row["mr_iid"]):
+                # With an uncertain earlier attempt the commit may be ours: the publisher decides by state.
+                raise self._mark_conflict(user, row, allowed, current)
         attempts = (row["submit_attempts"] or 0) + 1
         if not self._store.transition(
             proposal_id,
@@ -700,6 +1027,7 @@ class ProposalService:
         )
         publication = ProposalForPublication(
             proposal_id=row["id"],
+            operation="create" if creating else "update",
             document_id=row["document_id"],
             document_path=row["document_path"],
             base_revision=row["base_revision"],
@@ -729,7 +1057,9 @@ class ProposalService:
             )
             raise
         if result.state == "conflict" or result.merge_request is None:
-            raise self._mark_conflict(user, row, {S.submitting.value}, current)
+            raise self._mark_conflict(
+                user, row, {S.submitting.value}, current, reason=result.message if creating else None
+            )
         mr = result.merge_request
         self._store.transition(
             proposal_id,
@@ -828,11 +1158,9 @@ class ProposalService:
                     row["base_revision"],
                     S.merged.value,
                 )
-                if self._on_merged is not None:
-                    try:
-                        await self._on_merged()  # pull the merged revision into the knowledge base
-                    except RepositoryUnavailableError:
-                        logger.warning("knowledge refresh after merge failed; next sync will retry")
+                await self._sync_after_merge(user, proposal_id)
+        elif status == S.merged and not row["merged_revision"]:
+            await self._sync_after_merge(user, proposal_id)  # an earlier sync failed: try again
         elif status == S.submitted_to_gitlab and mr.state == "closed":
             if self._store.transition(
                 proposal_id,
@@ -858,6 +1186,31 @@ class ProposalService:
                 _status(self._row(proposal_id)["status"]).value,
             )
         return await self._detail(self._row(proposal_id), user)
+
+    async def _sync_after_merge(self, user: UserContext, proposal_id: str) -> None:
+        """After GitLab confirmed the merge: re-sync the knowledge base and the search index, record
+        the revision the document now has on the knowledge branch, then hand over to publication.
+        A failure here never undoes the merge; the next status check retries."""
+        row = self._row(proposal_id)
+        try:
+            if self._on_merged is not None:
+                await self._on_merged()
+            revision = await self._repository.current_revision(row["document_id"], user)
+        except RepositoryUnavailableError:
+            logger.warning("knowledge sync after merge failed for %s; next status check retries", proposal_id)
+            return
+        if revision is None:
+            logger.warning("merged document of %s is not visible on the knowledge branch yet", proposal_id)
+            return
+        self._store.update(proposal_id, merged_revision=revision, synced_at=_now().isoformat())
+        self._store.audit(
+            user.user_id, "knowledge_synced", proposal_id, row["document_id"], revision, S.merged.value
+        )
+        if self._after_sync is not None:
+            try:
+                await self._after_sync(user, row["document_id"], revision, proposal_id)
+            except Exception:  # publication is a separate lifecycle: it never blocks the merge
+                logger.exception("post-merge publication hook failed for %s", proposal_id)
 
     # Backwards-compatible name (POST /api/drafts/{id}/open-mr).
     open_merge_request = submit

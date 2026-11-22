@@ -17,7 +17,7 @@ class ProposalForPublication:
     proposal_id: str
     document_id: str
     document_path: str
-    base_revision: str
+    base_revision: str  # empty for operation="create"
     proposed_content: str
     reason: str
     document_title: str = ""
@@ -25,6 +25,7 @@ class ProposalForPublication:
     additions: int = 0
     deletions: int = 0
     proposal_url: str | None = None  # in-app link for reviewers, when APP_PUBLIC_URL is configured
+    operation: Literal["create", "update"] = "update"
 
 
 @dataclass(frozen=True)

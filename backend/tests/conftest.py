@@ -15,6 +15,8 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import create_app
 
+pytest_plugins = ["tests.support.gitlab_env"]
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = PROJECT_ROOT / "fixtures" / "knowledge"
 QA_FILE = PROJECT_ROOT / "fixtures" / "qa" / "curated_questions.yaml"

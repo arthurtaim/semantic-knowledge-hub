@@ -159,21 +159,26 @@ class GitLabMRPublisher:
             raise GitLabError("gitlab_branch_not_created", "GitLab не создал ветку для предложения.")
 
     async def _commit(self, proposal: ProposalForPublication, branch: str) -> None:
+        creating = proposal.operation == "create"
+        action: dict[str, Any] = {
+            "action": "create" if creating else "update",
+            "file_path": proposal.document_path,
+            "content": proposal.proposed_content,
+        }
+        if not creating:
+            action["last_commit_id"] = proposal.base_revision  # GitLab rejects a stale base
+        trailers = [_trailer(proposal.proposal_id), f"Operation: {proposal.operation}"]
+        if not creating:
+            trailers.append(f"Base-Revision: {proposal.base_revision}")
         payload: dict[str, Any] = {
             "branch": branch,
             "commit_message": (
-                f"docs({proposal.document_id}): {proposal.reason.splitlines()[0][:100]}\n\n"
-                f"{_trailer(proposal.proposal_id)}\nBase-Revision: {proposal.base_revision}"
+                f"docs({proposal.document_id}): {'create — ' if creating else ''}"
+                f"{proposal.reason.splitlines()[0][:100]}\n\n" + "\n".join(trailers)
             ),
-            # Exactly one `update` of the document's own file: no create/delete/move/chmod.
-            "actions": [
-                {
-                    "action": "update",
-                    "file_path": proposal.document_path,
-                    "content": proposal.proposed_content,
-                    "last_commit_id": proposal.base_revision,
-                }
-            ],
+            # Exactly one action on the document's own file: `create` of a new file or `update` of
+            # the existing one. Never delete/move/chmod, never another path.
+            "actions": [action],
         }
         await self._client.request("POST", self._client.project_path("/repository/commits"), json=payload)
 
@@ -183,9 +188,10 @@ class GitLabMRPublisher:
             "Предложение изменения из Semantic Knowledge Hub. Требует ревью по правилам защищённой ветки;",
             "создание этого MR не означает утверждение изменения.",
             "",
+            f"**Операция:** {'создание нового документа' if proposal.operation == 'create' else 'изменение документа'}",
             f"**Документ:** `{proposal.document_id}` — {proposal.document_title}".rstrip(" —"),
             f"**Файл:** `{proposal.document_path}`",
-            f"**Базовая ревизия:** `{proposal.base_revision}`",
+            f"**Базовая ревизия:** `{proposal.base_revision or '— (новый файл)'}`",
             f"**Изменения:** +{proposal.additions} / −{proposal.deletions} строк",
             f"**Автор предложения:** `{proposal.author or user.user_id}`",
             "",
@@ -209,7 +215,10 @@ class GitLabMRPublisher:
                 json={
                     "source_branch": branch,
                     "target_branch": self.target_branch,
-                    "title": f"Draft: {proposal.document_id} — {proposal.reason.splitlines()[0][:80]}",
+                    "title": (
+                        f"Draft: {'[новый] ' if proposal.operation == 'create' else ''}{proposal.document_id} — "
+                        f"{proposal.reason.splitlines()[0][:80]}"
+                    ),
                     "description": self._description(proposal, user),
                     "remove_source_branch": True,
                 },
@@ -284,10 +293,16 @@ class GitLabMRPublisher:
                     retryable=False,
                 )
             if state != "committed":
-                # 3. Conflict check right before writing (the authoritative check is GitLab's own
-                # last_commit_id precondition on the commit below).
+                # 3. Conflict check right before writing (the authoritative checks are GitLab's own:
+                # the last_commit_id precondition of `update`, the "file exists" refusal of `create`).
                 current = await self._repository.current_file_revision(proposal.document_path)
-                if current != proposal.base_revision:
+                if proposal.operation == "create" and current is not None:
+                    return PublishResult(
+                        state="conflict",
+                        merge_request=None,
+                        message=f"Файл {proposal.document_path} уже существует в GitLab; ничего не записано.",
+                    )
+                if proposal.operation == "update" and current != proposal.base_revision:
                     return PublishResult(
                         state="conflict",
                         merge_request=None,
@@ -301,7 +316,11 @@ class GitLabMRPublisher:
                     return PublishResult(
                         state="conflict",
                         merge_request=None,
-                        message="GitLab отклонил коммит: файл изменился после создания предложения. Ничего не записано.",
+                        message=(
+                            f"GitLab отклонил коммит: файл {proposal.document_path} уже существует. Ничего не записано."
+                            if proposal.operation == "create"
+                            else "GitLab отклонил коммит: файл изменился после создания предложения. Ничего не записано."
+                        ),
                     )
             # 4. Merge Request.
             return await self._create_mr(proposal, branch, user)
@@ -317,11 +336,12 @@ class GitLabMRPublisher:
             await self._commit(proposal, branch)
         except GitLabError as exc:
             if exc.status == 400:
-                # GitLab answers a stale `last_commit_id` with a generic 400: decide by state.
-                if (
-                    await self._repository.current_file_revision(proposal.document_path)
-                    != proposal.base_revision
-                ):
+                # GitLab answers a stale `last_commit_id` (update) or an existing file (create) with a
+                # generic 400: decide by state, never by message text.
+                current = await self._repository.current_file_revision(proposal.document_path)
+                if proposal.operation == "create" and current is not None:
+                    raise _Conflict() from exc
+                if proposal.operation == "update" and current != proposal.base_revision:
                     raise _Conflict() from exc
                 raise GitLabError(
                     "gitlab_commit_rejected", "GitLab отклонил коммит предложения (400).", 400

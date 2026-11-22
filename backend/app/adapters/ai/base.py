@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
-from app.domain.models import Confidence, DocStatus, IntegrationStatus, SourceType
+from app.domain.models import Confidence, DocStatus, DocType, IntegrationStatus, SourceType
 from app.domain.text import QueryTerm
 
 AIMode = Literal["mock", "internal_api", "disabled"]
@@ -52,6 +52,50 @@ class ProviderAnswer:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class AuthoringReference:
+    """An authorized, retrieved document offered to the provider as UNTRUSTED material."""
+
+    document_id: str
+    title: str
+    revision: str
+    status: DocStatus
+    source_type: SourceType
+    sections: tuple[tuple[str, str], ...]  # (heading, prepared text) — injection-redacted
+    is_demo: bool
+
+
+@dataclass(frozen=True)
+class AuthoringRequest:
+    """Contract of AI-assisted authoring (docs/AI_AUTHORING_CONTRACT.md). The same shape is meant for
+    a future agent runtime; the provider never stores, approves, merges or publishes anything."""
+
+    request: str  # what the author asked for (data, not instructions to bypass rules)
+    template_id: str
+    doc_type: DocType
+    title: str
+    sections: tuple[tuple[str, str], ...]  # template sections: (heading, placeholder hint)
+    references: tuple[AuthoringReference, ...]
+    access_scope: str  # e.g. "team": the only scope the references were retrieved from
+
+
+@dataclass(frozen=True)
+class AuthoringCitation:
+    document_id: str
+    section: str | None
+    quote: str  # must be verbatim in the referenced document; verified by AuthoringService
+
+
+@dataclass
+class AuthoringDraft:
+    body: str  # Markdown body (no frontmatter): a suggestion for a human to edit
+    citations: list[AuthoringCitation]
+    unverified_claims: list[str]
+    warnings: list[str]
+    suggested_related_ids: list[str]
+    insufficient_data: bool
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -62,6 +106,7 @@ class AIProviderError(RuntimeError):
 class AIProvider(Protocol):
     mode: AIMode
     supports_edit_suggestions: bool
+    supports_authoring: bool
 
     async def answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
@@ -69,6 +114,11 @@ class AIProvider(Protocol):
 
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         """Return a full proposed Markdown document. Raises AIProviderError if unsupported."""
+        ...
+
+    async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
+        """Draft the body of a new document from a template and references. Raises AIProviderError
+        if unsupported."""
         ...
 
     async def status(self) -> IntegrationStatus: ...

@@ -515,6 +515,9 @@ class GitLabKnowledgeRepository:
         value = str(payload.get("last_commit_id") or "") if isinstance(payload, dict) else ""
         return value or None
 
+    async def file_exists(self, path: str) -> bool:
+        return await self.current_file_revision(path) is not None
+
     async def current_revision(self, document_id: str, user: UserContext) -> str | None:
         try:
             record = await self.get_document(document_id, user)

@@ -28,6 +28,7 @@ class SessionFeatures(BaseModel):
     ai_mode: str
     ai_provider: str
     ai_edit_suggestions: bool
+    ai_authoring: bool
     corporate_search: str
     gitlab_proposals: bool
     confluence_publish: bool
@@ -64,6 +65,7 @@ async def session(
             ai_mode=container.ai.mode,
             ai_provider=container.settings.ai_provider,
             ai_edit_suggestions=container.ai.supports_edit_suggestions,
+            ai_authoring=container.ai.mode != "disabled" and container.ai.supports_authoring,
             corporate_search=corporate_status.state,
             gitlab_proposals=container.proposal_publisher.enabled,
             confluence_publish=container.confluence_publisher.enabled,

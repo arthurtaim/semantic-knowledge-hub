@@ -245,6 +245,12 @@ class LocalKnowledgeRepository:
             return False
         return True
 
+    async def file_exists(self, path: str) -> bool:
+        candidate = self._root / path
+        if not _is_within(candidate.resolve(), self._root) or candidate.is_symlink():
+            return True  # never treat an escaping or linked path as free to use
+        return candidate.exists()
+
     async def current_revision(self, document_id: str, user: UserContext) -> str | None:
         # Re-read the workspace now: a cached snapshot must not hide a concurrent edit.
         snapshot = await self.refresh()

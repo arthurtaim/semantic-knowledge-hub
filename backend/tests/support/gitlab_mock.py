@@ -14,7 +14,9 @@ Modelled endpoints (documented GitLab REST v4 shapes, trimmed to the fields the 
   GET  /api/v4/projects/:id/repository/branches/:name
   POST /api/v4/projects/:id/repository/branches
   GET  /api/v4/projects/:id/repository/commits         GET .../commits/:sha
-  POST /api/v4/projects/:id/repository/commits         (protected branch → 403, stale last_commit_id → 400)
+  GET  /api/v4/projects/:id/repository/commits/:sha/merge_requests   (MRs that contain the commit)
+  POST /api/v4/projects/:id/repository/commits         (protected branch → 403, stale last_commit_id → 400,
+                                                         `create` of an existing file → 400)
   GET  /api/v4/projects/:id/repository/compare
   GET  /api/v4/projects/:id/merge_requests             GET .../merge_requests/:iid
   POST /api/v4/projects/:id/merge_requests             (duplicate open MR → 409)
@@ -182,7 +184,8 @@ class MockState:
         return None
 
     def mr_json(self, mr: dict[str, Any]) -> dict[str, Any]:
-        return {**mr, "web_url": f"{self.base_url}/{PROJECT_PATH}/-/merge_requests/{mr['iid']}"}
+        public = {k: v for k, v in mr.items() if k != "commit_shas"}  # internal bookkeeping only
+        return {**public, "web_url": f"{self.base_url}/{PROJECT_PATH}/-/merge_requests/{mr['iid']}"}
 
 
 def _error(status: int, message: Any) -> JSONResponse:
@@ -286,6 +289,14 @@ class GitLabMock:
                 return JSONResponse([])
             per_page = int(q.get("per_page", "20"))
             return JSONResponse([state.commits[s].as_json() for s in state.ancestry(head.id)[:per_page]])
+        if rest.startswith("/repository/commits/") and rest.endswith("/merge_requests") and method == "GET":
+            sha = rest[len("/repository/commits/") : -len("/merge_requests")]
+            if sha not in state.commits:
+                return _error(404, "404 Commit Not Found")
+            found = [
+                m for m in state.mrs if sha in m.get("commit_shas", []) or m.get("merge_commit_sha") == sha
+            ]
+            return JSONResponse([state.mr_json(m) for m in found])
         if rest.startswith("/repository/commits/") and method == "GET":
             commit = state.commits.get(rest[len("/repository/commits/") :])
             return JSONResponse(commit.as_json()) if commit else _error(404, "404 Commit Not Found")
@@ -393,9 +404,15 @@ class GitLabMock:
         head = state.commits[state.branches[branch]]
         changes: dict[str, str | None] = {}
         for action in actions:
-            if action.get("action") != "update":
-                return _error(400, "only `update` is modelled by the mock")
+            kind = action.get("action")
             path = str(action.get("file_path", ""))
+            if kind == "create":
+                if path in head.files:
+                    return _error(400, "A file with this name already exists")
+                changes[path] = str(action.get("content", ""))
+                continue
+            if kind != "update":
+                return _error(400, "only `create` and `update` are modelled by the mock")
             if path not in head.files:
                 return _error(400, "A file with this name doesn't exist")
             expected = action.get("last_commit_id")
@@ -484,6 +501,8 @@ class GitLabMock:
                         return _error(405, "MR is not open")
                     source = state.commits[state.branches[mr["source_branch"]]]
                     target = state.commits[state.branches[mr["target_branch"]]]
+                    known = set(state.ancestry(target.id))
+                    mr["commit_shas"] = [c for c in state.ancestry(source.id) if c not in known]
                     merged = state.new_commit(
                         [target.id, source.id],
                         f"Merge branch '{mr['source_branch']}' into '{mr['target_branch']}'",
@@ -494,6 +513,7 @@ class GitLabMock:
                     )
                     state.branches[mr["target_branch"]] = merged.id
                     mr["state"], mr["merge_commit_sha"] = "merged", merged.id
+                    mr["merged_at"] = merged.committed_date.isoformat().replace("+00:00", "Z")
                     if mr.get("remove_source_branch"):
                         state.branches.pop(mr["source_branch"], None)
                 return JSONResponse(state.mr_json(mr))

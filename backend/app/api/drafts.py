@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query
+from fastapi import APIRouter, Depends, Path, Query, Response
 
 from app.api.deps import get_container
 from app.authz import Action, require
@@ -12,6 +12,7 @@ from app.container import Container
 from app.domain.models import UserContext
 from app.domain.proposals import (
     DraftCreate,
+    DraftUpdate,
     ProposalDetail,
     ProposalList,
     ProposalStatus,
@@ -59,6 +60,28 @@ async def get_draft(
     user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
 ) -> ProposalDetail:
     return await container.proposals.get(user, draft_id)
+
+
+@router.put("/{draft_id}", response_model=ProposalDetail)
+async def save_draft(
+    draft_id: DraftId,
+    payload: DraftUpdate,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.create_proposal))],
+) -> ProposalDetail:
+    """Save an editable draft (status `draft` only; optimistic `expected_version`)."""
+    return await container.proposals.save_draft(user, draft_id, payload)
+
+
+@router.delete("/{draft_id}", status_code=204)
+async def delete_draft(
+    draft_id: DraftId,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.create_proposal))],
+) -> Response:
+    """Delete a draft that never reached GitLab. The content-free audit trail is kept."""
+    await container.proposals.delete_draft(user, draft_id)
+    return Response(status_code=204)
 
 
 @router.post("/{draft_id}/reject", response_model=ProposalDetail)
