@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/.venv
+.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+workspace
+workspaces
+.env
+.env.*
+!.env.example
+.git
+**/playwright-report
+**/test-results
+*.sqlite3

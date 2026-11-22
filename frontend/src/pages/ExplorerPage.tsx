@@ -1,0 +1,290 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { api } from "../api/client";
+import type { DocStatus, DocType, FacetCount } from "../api/types";
+import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
+import { Highlighted } from "../components/Highlighted";
+import { StatusStamp } from "../components/StatusStamp";
+import {
+  pluralRu,
+  REVIEW_LABEL,
+  SOURCE_LABEL,
+  STATUS_LABEL,
+  STATUS_ORDER,
+  TYPE_LABEL,
+  TYPE_ORDER,
+} from "../lib/labels";
+import { useAsync } from "../lib/useAsync";
+
+const PAGE_SIZE = 20;
+const FILTER_KEYS = ["type", "status", "owner", "tag", "source"] as const;
+type FilterKey = (typeof FILTER_KEYS)[number];
+
+interface FilterGroupProps {
+  title: string;
+  name: FilterKey;
+  options: { value: string; label: string; count?: number }[];
+  active: string | null;
+  onToggle: (name: FilterKey, value: string) => void;
+  collapsed?: boolean;
+}
+
+function FilterGroup({ title, name, options, active, onToggle, collapsed = false }: FilterGroupProps) {
+  if (options.length === 0) return null;
+  return (
+    <details className="filter-group" open={!collapsed || active !== null}>
+      <summary>
+        {title}
+        {active ? <span className="filter-group__active"> (выбрано)</span> : null}
+      </summary>
+      <ul role="group" aria-label={title}>
+        {options.map((option) => (
+          <li key={option.value}>
+            <button
+              type="button"
+              className="filter-option"
+              aria-pressed={active === option.value}
+              onClick={() => onToggle(name, option.value)}
+            >
+              <span>{option.label}</span>
+              {option.count !== undefined ? <span className="filter-option__count">{option.count}</span> : null}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function counts(facets: FacetCount[] | undefined): Map<string, number> {
+  return new Map(facets?.map((f) => [f.value, f.count]) ?? []);
+}
+
+export function ExplorerPage() {
+  const [params, setParams] = useSearchParams();
+  const query = params.get("query") ?? "";
+  const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
+  const filters = Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k)])) as Record<FilterKey, string | null>;
+  const [draftQuery, setDraftQuery] = useState(query);
+
+  useEffect(() => setDraftQuery(query), [query]);
+
+  const facets = useAsync(() => api.facets(), "facets");
+  const key = params.toString();
+  const list = useAsync(
+    () =>
+      api.documents({
+        query,
+        page,
+        size: PAGE_SIZE,
+        type: filters.type ?? undefined,
+        status: filters.status ?? undefined,
+        owner: filters.owner ?? undefined,
+        tag: filters.tag ?? undefined,
+        source: filters.source ?? undefined,
+      }),
+    key,
+  );
+
+  function update(changes: Record<string, string | null>) {
+    const next = new URLSearchParams(params);
+    for (const [name, value] of Object.entries(changes)) {
+      if (value === null || value === "") next.delete(name);
+      else next.set(name, value);
+    }
+    if (!("page" in changes)) next.delete("page");
+    setParams(next);
+  }
+
+  function toggle(name: FilterKey, value: string) {
+    update({ [name]: filters[name] === value ? null : value });
+  }
+
+  function onSearch(event: FormEvent) {
+    event.preventDefault();
+    update({ query: draftQuery.trim() || null });
+  }
+
+  const typeCounts = counts(facets.data?.types);
+  const statusCounts = counts(facets.data?.statuses);
+  const hasFilters = Boolean(query) || FILTER_KEYS.some((k) => filters[k]);
+  const total = list.data?.total ?? 0;
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const activeType = filters.type as DocType | null;
+
+  return (
+    <div className="explorer">
+      <div className="page-head">
+        <h1>{activeType && TYPE_LABEL[activeType] ? TYPE_LABEL[activeType] : "База знаний"}</h1>
+        <form className="search-box search-box--compact" role="search" onSubmit={onSearch}>
+          <label htmlFor="explorer-search" className="visually-hidden">
+            Поиск по документам
+          </label>
+          <input
+            id="explorer-search"
+            type="search"
+            value={draftQuery}
+            onChange={(e) => setDraftQuery(e.target.value)}
+            placeholder="Название, текст, теги, связанные ID"
+            maxLength={200}
+            autoComplete="off"
+          />
+          <button type="submit" className="button button--primary">
+            Найти
+          </button>
+        </form>
+      </div>
+
+      <div className="explorer__body">
+        <aside className="filters" aria-label="Фильтры">
+          <FilterGroup
+            title="Раздел"
+            name="type"
+            active={filters.type}
+            onToggle={toggle}
+            options={TYPE_ORDER.filter((t) => typeCounts.has(t)).map((t) => ({
+              value: t,
+              label: TYPE_LABEL[t],
+              count: typeCounts.get(t),
+            }))}
+          />
+          <FilterGroup
+            title="Статус"
+            name="status"
+            active={filters.status}
+            onToggle={toggle}
+            options={STATUS_ORDER.filter((s) => statusCounts.has(s)).map((s) => ({
+              value: s,
+              label: STATUS_LABEL[s as DocStatus],
+              count: statusCounts.get(s),
+            }))}
+          />
+          <FilterGroup
+            title="Владелец"
+            name="owner"
+            collapsed
+            active={filters.owner}
+            onToggle={toggle}
+            options={(facets.data?.owners ?? []).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
+          />
+          <FilterGroup
+            title="Источник"
+            name="source"
+            collapsed
+            active={filters.source}
+            onToggle={toggle}
+            options={(facets.data?.sources ?? []).map((f) => ({
+              value: f.value,
+              label: SOURCE_LABEL[f.value as keyof typeof SOURCE_LABEL] ?? f.value,
+              count: f.count,
+            }))}
+          />
+          <FilterGroup
+            title="Тег"
+            name="tag"
+            collapsed
+            active={filters.tag}
+            onToggle={toggle}
+            options={(facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
+          />
+          {hasFilters ? (
+            <button type="button" className="button button--ghost" onClick={() => setParams(new URLSearchParams())}>
+              Сбросить фильтры
+            </button>
+          ) : null}
+        </aside>
+
+        <section className="results" aria-labelledby="results-title" aria-busy={list.loading}>
+          <h2 id="results-title" className="results__summary" aria-live="polite">
+            {list.loading
+              ? "Поиск…"
+              : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
+          </h2>
+          {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
+          {list.loading && !list.data ? <Loading /> : null}
+          {list.data && list.data.items.length === 0 && !list.loading ? (
+            <EmptyState title={query ? `По запросу «${query}» ничего не найдено` : "Документов с такими фильтрами нет"}>
+              <p>Проверьте написание, попробуйте другое слово или сбросьте фильтры. Поиск ищет по названию, тексту, тегам и связанным ID.</p>
+              {hasFilters ? (
+                <button type="button" className="button button--secondary" onClick={() => setParams(new URLSearchParams())}>
+                  Сбросить фильтры
+                </button>
+              ) : null}
+            </EmptyState>
+          ) : null}
+          {list.data && list.data.items.length > 0 ? (
+            <ol className="result-list">
+              {list.data.items.map((doc) => (
+                <li key={doc.id} className="result">
+                  <div className="result__head">
+                    <Link to={`/documents/${doc.id}`} className="result__title">
+                      {doc.title}
+                    </Link>
+                    <StatusStamp status={doc.status} />
+                  </div>
+                  <p className="result__excerpt">
+                    {doc.highlights ? <Highlighted segments={doc.highlights} /> : doc.excerpt}
+                  </p>
+                  <dl className="result__meta">
+                    <div>
+                      <dt>ID</dt>
+                      <dd>
+                        <code className="doc-id">{doc.id}</code>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Раздел</dt>
+                      <dd>{TYPE_LABEL[doc.type]}</dd>
+                    </div>
+                    <div>
+                      <dt>Владелец</dt>
+                      <dd className={doc.owner_missing ? "flag" : undefined}>
+                        {doc.owner_missing ? "не назначен" : doc.owner}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Источник</dt>
+                      <dd>{SOURCE_LABEL[doc.source]}</dd>
+                    </div>
+                    {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
+                      <div>
+                        <dt>Проверка</dt>
+                        <dd className="flag">{REVIEW_LABEL[doc.review_state]}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          {pages > 1 ? (
+            <nav className="pager" aria-label="Страницы результатов">
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={page <= 1}
+                onClick={() => update({ page: String(page - 1) })}
+              >
+                Назад
+              </button>
+              <span>
+                Страница {page} из {pages}
+              </span>
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={page >= pages}
+                onClick={() => update({ page: String(page + 1) })}
+              >
+                Вперёд
+              </button>
+            </nav>
+          ) : null}
+          {list.data?.items.some((d) => d.is_demo) ? (
+            <Notice tone="info">Показаны синтетические демо-документы. Они не являются фактами о банке.</Notice>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}

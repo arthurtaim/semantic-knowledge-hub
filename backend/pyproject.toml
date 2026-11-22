@@ -1,0 +1,65 @@
+[project]
+name = "semantic-knowledge-hub-backend"
+version = "0.1.0"
+description = "Semantic Knowledge Hub — local-first knowledge API (FastAPI)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn>=0.32,<1.0",
+    "pydantic>=2.9,<3.0",
+    "pydantic-settings>=2.6,<3.0",
+    "PyYAML>=6.0,<7.0",
+    "markdown-it-py>=3.0,<5.0",
+    "nh3>=0.2.18,<1.0",
+    "httpx>=0.27,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<10.0",
+    "ruff>=0.7,<1.0",
+    "mypy>=1.13,<2.0",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = [
+    "error::DeprecationWarning:app.*",
+    # FastAPI's TestClient still wraps httpx; the transport warning is upstream, not ours.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = [
+    "E501",   # long lines are handled by `ruff format`; remaining ones are user-facing strings
+    "S101",   # asserts are fine in tests
+    "RUF001", # Cyrillic text in UI strings is intentional
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S104", "S105", "S106", "S108"]
+# SQL text is assembled only from fixed column names/placeholders; values are always bound parameters.
+"app/adapters/search/sqlite_fts.py" = ["S608"]
+"app/services/proposals.py" = ["S608"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = ["tests/"]

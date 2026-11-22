@@ -1,0 +1,39 @@
+# Secrets and per-developer config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.token
+.claude/settings.local.json
+CLAUDE.local.md
+# Working knowledge content and credentials must never be pushed to code GitHub
+workspace/
+workspaces/
+local-data/
+private-data/
+data/
+.mcp.json
+# Python / JS / editor
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.py[cod]
+node_modules/
+dist/
+build/
+.coverage
+coverage/
+*.sqlite
+*.sqlite3
+.DS_Store
+.idea/
+.vscode/
+.mypy_cache/
+*.egg-info/
+# Playwright artifacts
+test-results/
+playwright-report/

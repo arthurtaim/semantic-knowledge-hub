@@ -1,0 +1,113 @@
+import { expect, test, type Page } from "@playwright/test";
+
+/** Collects console errors and CSP violations so the smoke test fails on them. */
+function watch(page: Page): string[] {
+  const problems: string[] = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") problems.push(msg.text());
+  });
+  page.on("pageerror", (err) => problems.push(String(err)));
+  return problems;
+}
+
+test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ page }) => {
+  const problems = watch(page);
+  await page.goto("/");
+  await expect(page.getByRole("note")).toContainText("Демо-данные.");
+  await expect(page.getByRole("heading", { name: "Разделы" })).toBeVisible();
+
+  await page.getByLabel("Поиск по базе знаний").fill("ARIS");
+  await page.getByRole("button", { name: "Найти" }).click();
+  const result = page.getByRole("link", { name: "ARIS integration — questions for discovery" });
+  await expect(result).toBeVisible();
+  await expect(page.locator(".result").first()).toContainText("Черновик");
+  await expect(page.locator(".result").first()).toContainText("Локальный workspace");
+
+  await result.click();
+  const passport = page.getByRole("complementary", { name: "Паспорт документа" });
+  await expect(passport).toContainText("Черновик");
+  await expect(passport).toContainText("demo-team");
+  await expect(passport).toContainText("local://SEM-INT-ARIS-001");
+  await expect(passport).toContainText("sha256:");
+
+  await page.goto("/documents?query=квазизвездный");
+  await expect(page.getByText("По запросу «квазизвездный» ничего не найдено")).toBeVisible();
+  expect(problems).toEqual([]);
+});
+
+test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, corporate disabled", async ({ page }) => {
+  const problems = watch(page);
+  await page.goto("/ask");
+  await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
+  await page.getByLabel("Оба").check({ force: true });
+  await expect(page.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeVisible();
+  await page.getByRole("button", { name: "Спросить" }).click();
+  await expect(page.getByText("Подтверждено источником")).toBeVisible();
+  await expect(page.locator(".scope-status")).toContainText("Не подключено");
+
+  const citation = page.locator(".citation").first();
+  await expect(citation).toContainText("Каноническая база знаний команды хранится в отдельном репозитории GitLab");
+  await citation.getByRole("link").first().click();
+  await expect(page).toHaveURL(/\/documents\/SEM-OVERVIEW-001#/);
+  await expect(page.locator(".prose .is-targeted")).toBeVisible();
+
+  await page.goto("/ask");
+  await page.getByLabel("Вопрос").fill("Какой SLA у интеграции с ЦФТ?");
+  await page.getByRole("button", { name: "Спросить" }).click();
+  await expect(page.locator(".confidence")).toHaveText("Недостаточно данных");
+  await expect(page.locator(".citations")).toHaveCount(0);
+  expect(problems).toEqual([]);
+});
+
+test("AC-08..AC-10: propose, inspect diff, reject and mark ready without touching the source", async ({ page }) => {
+  const problems = watch(page);
+  await page.goto("/documents/SEM-PROC-001");
+  const revision = await page.locator(".passport__fields .doc-id").nth(1).textContent();
+
+  for (const decision of ["reject", "ready"] as const) {
+    await page.goto("/proposals/new?document=SEM-PROC-001");
+    const editor = page.getByLabel(/Текст документа/);
+    const raw = await editor.inputValue();
+    await editor.fill(raw.replace("4. Authorized team members decide whether to merge.", "4. Authorized reviewers decide whether to merge."));
+    await page.getByLabel("Причина изменения").fill(`E2E ${decision}`);
+    await page.getByRole("button", { name: "Создать предложение" }).click();
+
+    const diff = page.getByRole("table", { name: "Изменения построчно" });
+    await expect(diff).toContainText("Authorized reviewers decide whether to merge.");
+    await expect(page.getByText("Проверка метаданных и содержимого пройдена.")).toBeVisible();
+
+    if (decision === "reject") {
+      await page.getByRole("button", { name: "Отклонить" }).click();
+      await page.getByRole("button", { name: "Подтвердить отклонение" }).click();
+      await expect(page.getByText("Предложение отклонено. Документ не изменён.")).toBeVisible();
+    } else {
+      await page.getByRole("button", { name: "Отметить «Готово к ревью»" }).click();
+      await expect(page.getByText(/отмечено «Готово к ревью»\. Документ не изменён/)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Открыть MR в GitLab" })).toBeDisabled();
+    }
+  }
+
+  await page.goto("/documents/SEM-PROC-001");
+  await expect(page.locator(".passport__fields .doc-id").nth(1)).toHaveText(revision ?? "");
+  await expect(page.locator(".passport")).toContainText("Утверждён");
+  expect(problems).toEqual([]);
+});
+
+test("Integration status is honest", async ({ page }) => {
+  await page.goto("/integrations");
+  const gitlab = page.locator(".integration", { hasText: "GitLab (каноническая база знаний)" });
+  await expect(gitlab).toContainText("Не подключено");
+  await expect(page.locator(".integration", { hasText: "Confluence Data Center" })).toContainText("Не подключено");
+  await expect(page.locator(".integration", { hasText: "AI-провайдер" })).toContainText("Демо (mock)");
+  await expect(page.locator(".integration", { hasText: "Система задач" })).toContainText("Не подключено");
+});
+
+test("@mobile phone layout has no horizontal scroll and a working menu", async ({ page }) => {
+  await page.goto("/documents/SEM-ARCH-001");
+  await expect(page.getByRole("complementary", { name: "Паспорт документа" })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+  await page.getByRole("button", { name: "Меню" }).click();
+  await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Спросить" }).click();
+  await expect(page.getByRole("heading", { name: "Спросить базу знаний" })).toBeVisible();
+});
