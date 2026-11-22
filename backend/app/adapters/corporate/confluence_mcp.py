@@ -141,6 +141,7 @@ class ConfluenceMCPConnector:
         result_map: dict[str, tuple[str, ...]] | None = None,
         web_base_url: str = "",
         result_map_valid: bool = True,
+        status_ttl_seconds: float = STATUS_TTL_SECONDS,
     ) -> None:
         self._client = client
         self._map = tool_map
@@ -151,6 +152,7 @@ class ConfluenceMCPConnector:
         self._result_map_valid = result_map_valid
         self._web_base = web_base_url.rstrip("/")
         self._verified_at = 0.0
+        self._ttl = status_ttl_seconds
         self._status_cache: tuple[float, IntegrationStatus] | None = None
 
     # --- configuration checks ----------------------------------------------------------------------
@@ -191,7 +193,7 @@ class ConfluenceMCPConnector:
         problem = self._config_problem()
         if problem or self._map is None:
             raise ConnectorUnavailableError("corporate_source_misconfigured", f"Confluence MCP: {problem}")
-        if time.monotonic() - self._verified_at > STATUS_TTL_SECONDS:
+        if time.monotonic() - self._verified_at > self._ttl or self._ttl == 0:
             try:
                 await self._verify_tools()
             except McpError as exc:
@@ -297,7 +299,7 @@ class ConfluenceMCPConnector:
             "kind": "corporate_knowledge",
         }
         now = time.monotonic()
-        if self._status_cache and now - self._status_cache[0] < STATUS_TTL_SECONDS:
+        if self._status_cache and now - self._status_cache[0] < self._ttl:
             return self._status_cache[1]
         problem = self._config_problem()
         if problem:

@@ -145,6 +145,8 @@ class Settings(BaseSettings):
     #  "read": {"tool": "<name>", "id_arg": "page_id"}}
     confluence_mcp_tool_map: str = ""
     confluence_mcp_timeout_seconds: float = Field(default=15.0, gt=0, le=120)
+    # How long a successful tools/list discovery and the status are reused (0 = always re-check).
+    confluence_mcp_status_ttl_seconds: float = Field(default=60.0, ge=0, le=3600)
     confluence_mcp_allow_insecure_http: bool = False
     confluence_link_hosts: str = ""
     confluence_max_body_chars: int = Field(default=4000, ge=200, le=50_000)

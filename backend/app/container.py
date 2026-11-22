@@ -167,6 +167,7 @@ def build_corporate(settings: Settings) -> CorporateKnowledgeConnector:
         result_map=result_map,
         result_map_valid=result_map is not None,
         web_base_url=settings.confluence_web_base_url,
+        status_ttl_seconds=settings.confluence_mcp_status_ttl_seconds,
     )
 
 
