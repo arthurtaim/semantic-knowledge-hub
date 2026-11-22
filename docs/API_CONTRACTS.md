@@ -2,6 +2,8 @@
 
 These are proposed MVP HTTP contracts. Claude Code may refine field details but must document changes, keep tests consistent and preserve adapter boundaries. All routes prefixed `/api`.
 
+**Current implemented contract: v0.3 (M4.6 authoring + M4 readiness + M5 publication)** — see the last section. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
+
 ## 1. Health and integrations
 - `GET /api/health` -> `{ "status": "ok", "mode": "local_demo" }` (no secrets).
 - `GET /api/integrations/status` -> provider status list with `name`, `state` (`connected|disabled|mock|error`), `capabilities`, `human_readable_message`. Never report `connected` solely because an environment variable is set; probe if enabled.
@@ -116,3 +118,132 @@ Changes on top of v0.1 (OpenAPI checked by `tests/test_knowledge_rules.py::test_
   - History actions: `created, marked_ready_for_review, rejected, conflict_detected, submission_started, submission_failed, merge_request_opened, merge_request_found, merge_request_checked, merged_in_gitlab, merge_request_closed`.
 - **Authorization.** Every route except `/api/health` declares an action (`app/authz.py`); a refusal is `403 forbidden` with `details.action`. `GET /api/session` adds `authorization_policy` and `features.ai_provider`.
 - **Repository protocol** (`backend/app/adapters/knowledge/base.py`): `snapshot`, `get_document`, `get_document_at_revision` (`RevisionNotAvailableError`), `exists`, `current_revision` (fresh, bypasses caches), `refresh(full)`, `sync_info`, `status`. Publisher protocol (`publishers/base.py`): `branch_for`, `publish_proposal → PublishResult{created|existing|conflict}`, `merge_request_state`, `status`; failures raise `PublicationError{code, uncertain, retryable}`.
+
+## Implemented contract (v0.3, M4.6 + M4 + M5)
+
+Changes on top of v0.2. All routes require an `Action` (`app/authz.py`); state-changing routes require
+`X-SKH-Client`. Errors keep the shape `{code, message, request_id, details?}`. Nothing in this section was
+validated against real GitLab/Confluence — only against the stateful test doubles.
+
+### Authoring of new documents
+
+`NewDocumentMetadata` (extra fields forbidden): `id` (1–128), `title` (1–300), `status`
+(`draft` default; `deprecated` is rejected by validation), `owner` (1–100), `tags[]` (≤ 30), `related_ids[]`
+(≤ 50), `source_refs[]` (≤ 50), `summary?` (≤ 1000). The type is taken from the template; the server
+generates the front matter (`docs/DOCUMENT_TEMPLATES.md`).
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/authoring/templates` | `read_knowledge` | — | `DocumentTemplateInfo[]`: `{id, title, description, doc_type, id_prefix, default_tags[], sections[], skeleton, suggested_id, suggested_path}`; `suggested_id` skips IDs of documents and unfinished `create` proposals | `503` (knowledge source code) |
+| `POST /api/authoring/check` | `create_proposal` | `{template_id, metadata, body, path?, origin: manual\|ai_suggestion, exclude_proposal_id?}` | `{content, path, validation: ValidationIssue[], preview_html, id_available, path_available, error_count, warning_count}`; nothing is stored; a taken ID/path is reported in `validation`, not as an HTTP error | `404 template_not_found`, `422`, `503` |
+| `POST /api/authoring/ai-draft` | `create_proposal` | `{template_id, title (1–300), request (3–2000), related_ids[] (≤ 10)}` | `AiDraftResponse {mode, body, references[{document_id, title, revision, status, source, is_demo}], citations[{document_id, title, revision, status, section, quote}], unverified_claims[], warnings[], insufficient_data, suggested_related_ids[], access_scope}`; not stored (`docs/AI_AUTHORING_CONTRACT.md`) | `404 template_not_found`, `503 ai_authoring_unavailable`, `503 assistant_disabled\|ai_misconfigured`, `502` other provider errors (e.g. `ai_invalid_response`), `503` source unavailable |
+| `POST /api/authoring/drafts` | `create_proposal` | `{template_id, metadata, body, path?, reason (3–2000), origin}` | `201 ProposalDetail` with `operation=create`, `status=draft`, `base_revision=""`, `edit_version=1`; a draft with other validation errors is stored with them | `409 document_id_taken\|document_path_taken` (`details.field` = `id`\|`path`, `details.validation`; **nothing stored**), `404 template_not_found`, `422`, `503 authoring_unavailable` / source unavailable |
+
+### Editable drafts
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `PUT /api/drafts/{id}` | `create_proposal` | `DraftUpdate {expected_version (≥ 1), reason?, origin?}` plus `proposed_content` (operation `update`) **or** `metadata` + `body` + `path?` (operation `create`) | `200 ProposalDetail`, `edit_version` + 1; for `update` the base revision is unchanged | `404 proposal_not_found`, `409 draft_not_editable` (status ≠ `draft`), `409 draft_modified` (stale version, `details.current_version`), `409 document_id_taken\|document_path_taken` (create), `422 validation_failed` (fields missing for the operation), `404 document_not_found` (update) |
+| `DELETE /api/drafts/{id}` | `create_proposal` | — | `204`; the content-free audit trail is kept | `404 proposal_not_found`, `409 draft_not_deletable` (allowed only for `draft`, or `conflict` with no submission attempt and no MR) |
+
+### Proposal changes
+
+- `ProposalSummary.operation`: `create | update` (stores from earlier builds are migrated to `update`).
+- `ProposalDetail` adds `template_id`, `edit_version`, `can_edit` (`status == draft`), `can_delete`,
+  `new_document {metadata, body}` (form view of a `create` proposal, parsed from the stored Markdown),
+  `merged_revision` (revision of the document on the knowledge branch after the confirmed merge and sync),
+  `synced_at`.
+- `source_document_state` adds `new_document` (create: the document does not exist yet — expected before
+  merge), `id_taken` (create: a document with this ID appeared before the merge) and `merged_pending_sync`
+  (GitLab confirmed the merge, the knowledge base has not been re-synced yet). `can_refresh_status` is also
+  `true` for `merged` proposals without `merged_revision` (retries the post-merge sync).
+- `create` proposals: the diff is a single hunk `@@ -0,0 +1,N @@` adding every line; `mark-ready` and
+  `submit` re-check ID/path against a fresh read of the source — taken → `409 document_exists`, status
+  `conflict`, nothing written; the GitLab commit uses one `create` action without `last_commit_id`, trailers
+  `Proposal-Id`, `Operation: create`; MR title `Draft: [новый] <ID> — …`.
+- History actions add `created_new_document`, `draft_saved`, `draft_deleted` (audit only), `knowledge_synced`.
+
+### Session and integration status
+
+- `GET /api/session` → `features.ai_authoring` (`true` when the AI provider is not disabled and supports
+  `draft_document`). `features.confluence_publish` is `true` when a Confluence REST publisher is
+  **configured** (also in dry-run-only mode); whether writes are allowed is `publisher.mode` in the
+  document publication status.
+- `GET /api/integrations/status`: every item adds `target` (`none|local|mock|real`), `access`
+  (`none|read|write|read_write`) and `checked_at`; the response adds `checked_at`. New item
+  `confluence_publisher` ("Confluence Data Center (REST, публикация)"): `state=connected` only after reading
+  the space and the parent page; capabilities `read_pages`, `dry_run` and, with writes enabled,
+  `create_page`, `update_page`. `target=real` never means live-validated.
+
+### Publication (M5)
+
+No publication route accepts a request body, a page ID, a space or a URL; the target comes from
+configuration only.
+
+| Route | Action | Response | Errors |
+|---|---|---|---|
+| `GET /api/documents/{id}/publication` | `read_knowledge` | `DocumentPublicationStatus` | `400 invalid_document_id`, `404 document_not_found`, `422 duplicate_document_id`, `503` source unavailable |
+| `POST /api/documents/{id}/publication/prepare` | `prepare_publication` | `PublicationJobDetail` — job for the **current** revision (reused if one is active for it; an active job of an older revision becomes `superseded`), then a dry-run | `503 publication_disabled`, `409 publication_in_progress` (`details.job_id`; a job is `publishing`/`result_unknown`), `409 invalid_transition`, `502`/`503` `confluence_*` or GitLab errors (the job stays `pending`), plus the document errors above |
+| `GET /api/publications/jobs?document_id=` | `read_knowledge` | `{items: PublicationJobSummary[], total}` (newest first, ≤ 50) | — |
+| `GET /api/publications/jobs/{job_id}` | `read_knowledge` | `PublicationJobDetail` | `404 publication_job_not_found` |
+| `POST /api/publications/jobs/{job_id}/dry-run` | `prepare_publication` | `PublicationJobDetail` (read requests only) | `503 publication_disabled`, `404`, `409 invalid_transition`, `502`/`503` |
+| `POST /api/publications/jobs/{job_id}/publish` | `publish_confluence` | `PublicationJobDetail` in its final state: `published`, or `failed` / `conflict` / `result_unknown` for write failures (still HTTP `200`) | `503 publication_disabled`, `503 publish_disabled` (writes off), `404`, `409 invalid_transition` (not `dry_run_ready`), `409 plan_changed` (`details.state`; the stored plan was refreshed, nothing written), `409 publication_in_progress`, `502`/`503` `confluence_*` or GitLab errors while re-planning before the write (job stays `dry_run_ready`); an unexpected server error during the write is `500` and leaves the job `result_unknown` |
+| `POST /api/publications/jobs/{job_id}/reconcile` | `prepare_publication` | `PublicationJobDetail`: for `result_unknown` — read-only inspection (`published` if the write is confirmed, otherwise `failed` + fresh dry-run); for `failed`/`conflict` — fresh dry-run | `503 publication_disabled`, `404`, `409 invalid_transition`, `502 confluence_write_uncertain` (inspection impossible; job stays `result_unknown`) |
+| `POST /api/publications/jobs/{job_id}/release-missing-page` | `publish_confluence` | `PublicationJobDetail` after a fresh dry-run (action `create`); allowed only for a `mapped_page_missing` conflict when the page is verified absent; the mapping is forgotten, nothing is written | `503 publication_disabled`, `404`, `409 invalid_transition` / `page_exists`, `502` if Confluence cannot be read |
+| `POST /api/publications/jobs/{job_id}/acknowledge-manual-edit` | `publish_confluence` | `PublicationJobDetail` after a fresh dry-run; the current page becomes the mapping baseline, nothing is written to Confluence | `503 publication_disabled`, `404`, `409 invalid_transition` (not a `manual_edit` conflict, or page/mapping missing) |
+
+Confluence errors during dry-run map to `503` when not retryable (`confluence_auth_failed`,
+`confluence_forbidden`, `confluence_bad_request`) and `502` otherwise (`confluence_unavailable`,
+`confluence_timeout`, `confluence_unreachable`, `confluence_rate_limited`, `confluence_not_found`,
+`confluence_invalid_response`, `confluence_response_too_large`).
+
+Shapes:
+
+```text
+DocumentPublicationStatus {
+  document_id, current_revision, state: disabled|not_published|pending|validating|dry_run_ready|publishing|
+         published|outdated|conflict|failed|result_unknown,
+  message, publisher {mode: disabled|dry_run_only|write, target_kind: none|local|mock|real, space_key, parent_id, message},
+  mapping {page_id, space_key, parent_id, page_title, page_version, published_revision, last_published_at, url} | null,
+  latest_job: PublicationJobSummary | null, can_prepare }
+
+PublicationJobSummary {
+  id, document_id, document_path, revision, state: pending|validating|dry_run_ready|publishing|published|
+  conflict|failed|result_unknown|superseded, action: create|update|noop|conflict|null, proposal_id,
+  created_at, updated_at, attempts, error_code, error_message, uncertain, page_id, version_after, published_at }
+
+PublicationJobDetail = PublicationJobSummary + {
+  plan: PublicationPlan | null, history: [{at, actor, action, state, revision}],
+  can_dry_run, can_publish, can_reconcile, publish_enabled, publish_disabled_reason }
+
+PublicationPlan {
+  action, revision, target {space_key, parent_id, page_id, title, url}, storage, diff,
+  diff_kind: new_page|page_update|manual_edit|none, warnings: ValidationIssue[], problems: ValidationIssue[],
+  remote_version, rendered_hash, merge_request {iid, url, merged_at} | null, checked_at }
+```
+
+Problem codes: `revision_superseded`, `not_merged`, `status_not_publishable`, `space_not_found`,
+`parent_not_found`, `unsafe_link`, `mapped_page_missing`, `foreign_page`, `title_taken`, `page_moved`,
+`manual_edit`. Warning codes: `frontmatter_page_id_ignored`, `managed_page_found`, `version_changed`,
+`image_not_published`, `diagram_as_code`, `internal_link_as_text`, `link_as_text`, `raw_html_as_text`,
+`list_start_ignored`. Semantics: `docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`, `docs/CONFLUENCE_MAPPING.md`.
+
+### Authorization additions
+
+| Action | Routes |
+|---|---|
+| `create_proposal` | + `POST /api/authoring/check`, `POST /api/authoring/ai-draft`, `POST /api/authoring/drafts`, `PUT /api/drafts/{id}`, `DELETE /api/drafts/{id}` |
+| `read_knowledge` | + `GET /api/authoring/templates`, `GET /api/documents/{id}/publication`, `GET /api/publications/jobs*` |
+| `prepare_publication` (new) | `POST …/publication/prepare`, `POST …/dry-run`, `POST …/reconcile` — Confluence reads only |
+| `publish_confluence` (new) | `POST …/publish`, `POST …/acknowledge-manual-edit`, `POST …/release-missing-page` |
+
+### Provider and publisher protocols
+
+- `AIProvider` adds `supports_authoring` and `draft_document(AuthoringRequest) -> AuthoringDraft`
+  (`backend/app/adapters/ai/base.py`).
+- `ProposalForPublication.operation`: `create | update` (`base_revision` empty for `create`).
+- `ConfluencePublisher` (`backend/app/adapters/publishers/base.py`): `enabled`, `write_enabled`, `mode`,
+  `target_kind`, `space_key`, `parent_id`, `property_key`, `page_url`, `read_space`, `read_page`, `find_pages`,
+  `read_marker`, `create_page`, `update_page`, `write_marker`, `status`; failures raise `PublicationError`
+  (`uncertain`, `retryable`).
+- `KnowledgeRepository` protocol adds `file_exists(path)` (local and GitLab; fresh read for ID/path checks); `GitLabKnowledgeRepository` adds `merged_merge_request(revision)` (merge evidence for publication).

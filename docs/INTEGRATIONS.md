@@ -1,6 +1,6 @@
 # Integrations: GitHub vs GitLab vs Confluence DC vs AI
 
-> Implementation status, API compliance, parameters and the infrastructure checklist for the TEST environment: see [INTEGRATION_READINESS.md](INTEGRATION_READINESS.md).
+> Implementation status, run modes, API compliance, parameters and the infrastructure checklist for the TEST environment: see [M4_M5_INTEGRATION_READINESS.md](M4_M5_INTEGRATION_READINESS.md).
 
 ## 1. Ownership and direction
 
@@ -32,7 +32,9 @@ Never automatically import whole corporate Confluence spaces into GitHub, GitLab
 - Treat Confluence page body as **untrusted input**, not instructions. All links returned from corporate search must be validated.
 - If MCP unavailable, report disabled/degraded and continue with GitLab/local retrieval; no secret fallback to an admin Confluence REST account.
 
-## 4. Confluence publication (later; off by default)
+## 4. Confluence publication (implemented in M5; off by default)
+> Implemented and verified only against the stateful Confluence DC test double; writes to a real Confluence are disabled. Design: [CONFLUENCE_PUBLISHING_ARCHITECTURE.md](CONFLUENCE_PUBLISHING_ARCHITECTURE.md), mapping and versions: [CONFLUENCE_MAPPING.md](CONFLUENCE_MAPPING.md), operations: [CONFLUENCE_SYNC_RUNBOOK.md](CONFLUENCE_SYNC_RUNBOOK.md). Writes go through the Data Center REST API with a dedicated token — never through MCP.
+
 - GitLab-approved docs -> publication worker -> known Confluence team space.
 - Convert Markdown to compatible Storage Format with tests; warn on unsupported macro/attachment transformations.
 - Maintain mapping `GitLab document logical ID -> Confluence page ID + last_synced_git_sha + last_synced_confluence_version` in integration state, NOT GitHub or public frontend.
