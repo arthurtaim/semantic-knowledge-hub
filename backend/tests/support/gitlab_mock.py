@@ -535,11 +535,17 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="TEST DOUBLE of a GitLab REST v4 subset (not GitLab).")
     parser.add_argument("--port", type=int, default=8929)
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="0.0.0.0 only inside an isolated Docker test network"
+    )
+    parser.add_argument(
+        "--public-url", default="", help="base URL the app uses (default http://127.0.0.1:<port>)"
+    )
     parser.add_argument("--token", default=DEFAULT_TOKEN)
     parser.add_argument("--fixtures", type=Path, default=DEFAULT_FIXTURES)
     args = parser.parse_args()
-    app = create_app(f"http://127.0.0.1:{args.port}", args.token, args.fixtures)
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")  # loopback only
+    app = create_app(args.public_url or f"http://127.0.0.1:{args.port}", args.token, args.fixtures)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":

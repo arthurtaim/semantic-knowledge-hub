@@ -5,9 +5,11 @@ PY := $(VENV)/bin/python
 
 INTEGRATION_ENV ?= deploy/integration/integration.env
 COMPOSE_INTEGRATION = docker compose --env-file $(INTEGRATION_ENV) -f docker-compose.yml -f docker-compose.integration.yml
+# integration_mock profile: separate compose project + volume, UI on 127.0.0.1:5174, doubles not published.
+COMPOSE_MOCK = FRONTEND_PORT=5174 docker compose -p skh-mock -f docker-compose.yml -f docker-compose.mock.yml
 
 .PHONY: setup backend frontend dev test test-backend test-frontend lint e2e e2e-gitlab gitlab-mock up down logs reset-workspace check \
-	preflight preflight-integration integration-up test-live
+	preflight preflight-integration integration-up test-live readiness mock-up mock-down mock-e2e mock-readiness mock-logs
 
 setup: ## Create .venv, install backend (dev) and frontend dependencies
 	$(PYTHON) -m venv $(VENV)
@@ -62,6 +64,24 @@ reset-workspace: ## Delete local derived state and re-seed synthetic fixtures on
 
 preflight: ## Offline check of the current configuration (no network connections)
 	cd backend && ../$(PY) -m app.preflight
+
+readiness: ## Opt-in READ-ONLY probe of the configured integrations (contacts them; never writes)
+	cd backend && ../$(PY) -m app.readiness
+
+mock-up: ## integration_mock profile: app + stateful GitLab/MCP/Confluence TEST DOUBLES (UI :5174)
+	$(COMPOSE_MOCK) up --build -d
+
+mock-e2e: ## Scripted full scenario inside the integration_mock network (needs `make mock-up`)
+	$(COMPOSE_MOCK) --profile tools run --rm mock-scenario
+
+mock-readiness: ## Readiness probe from inside the integration_mock backend container
+	$(COMPOSE_MOCK) exec backend python -m app.readiness
+
+mock-logs:
+	$(COMPOSE_MOCK) logs -f
+
+mock-down: ## Stop the integration_mock profile and drop its volume
+	$(COMPOSE_MOCK) --profile tools down -v
 
 preflight-integration: ## Offline check of $(INTEGRATION_ENV) inside the container (needs SKH_SECRETS_DIR)
 	$(COMPOSE_INTEGRATION) run --rm --no-deps backend python -m app.preflight
