@@ -83,7 +83,7 @@ test("AC-08..AC-10: propose, inspect diff, reject and mark ready without touchin
     } else {
       await page.getByRole("button", { name: "Отметить «Готово к ревью»" }).click();
       await expect(page.getByText(/отмечено «Готово к ревью»\. Документ не изменён/)).toBeVisible();
-      await expect(page.getByRole("button", { name: "Открыть MR в GitLab" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Отправить в GitLab" })).toBeDisabled();
     }
   }
 

@@ -6,7 +6,7 @@ PY := $(VENV)/bin/python
 INTEGRATION_ENV ?= deploy/integration/integration.env
 COMPOSE_INTEGRATION = docker compose --env-file $(INTEGRATION_ENV) -f docker-compose.yml -f docker-compose.integration.yml
 
-.PHONY: setup backend frontend dev test test-backend test-frontend lint e2e up down logs reset-workspace check \
+.PHONY: setup backend frontend dev test test-backend test-frontend lint e2e e2e-gitlab gitlab-mock up down logs reset-workspace check \
 	preflight preflight-integration integration-up test-live
 
 setup: ## Create .venv, install backend (dev) and frontend dependencies
@@ -37,8 +37,14 @@ lint: ## Static checks: ruff, mypy (strict), tsc, eslint
 	cd backend && ../$(PY) -m ruff check app tests && ../$(PY) -m ruff format --check app tests && ../$(PY) -m mypy app
 	cd frontend && npx tsc --noEmit -p tsconfig.json && npx eslint .
 
-e2e: ## Browser smoke test against a running stack (E2E_BASE_URL, default http://127.0.0.1:5173)
+e2e: ## Browser E2E: offline stack at E2E_BASE_URL (default :5173, `make up`) + a self-started GitLab-mock stack
 	cd frontend && npx playwright test
+
+e2e-gitlab: ## Only the GitLab-mock lifecycle scenarios (starts the loopback GitLab TEST DOUBLE itself)
+	cd frontend && npx playwright test --project=gitlab-mock
+
+gitlab-mock: ## Run the loopback GitLab TEST DOUBLE on :8929 (not GitLab; for manual exploration)
+	cd backend && ../$(PY) -m tests.support.gitlab_mock --port 8929
 
 check: lint test ## Everything that runs without a started stack
 
