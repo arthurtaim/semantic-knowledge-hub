@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { AskResponse, Citation, SearchScope } from "../api/types";
@@ -113,15 +113,69 @@ function CitationItem({ citation }: { citation: Citation }) {
   );
 }
 
-function AnswerView({ answer }: { answer: AskResponse }) {
-  const modeLabel = answer.mode === "mock" ? "Демо-режим, без языковой модели" : "Внутренняя модель, цитаты сверены с источниками";
+const MODE_LABEL: Record<AskResponse["mode"], string> = {
+  mock: "Демо-режим, без языковой модели",
+  disabled: "Языковая модель отключена — только выдержки из источников",
+  internal_api: "Внутренняя модель, цитаты сверены с источниками",
+};
+
+/** Corporate scope the user asked for but which did not answer as a connected source. */
+function CorporateGap({ answer, asked }: { answer: AskResponse; asked: SearchScope[] }) {
+  if (!asked.includes("corporate")) return null;
+  const corporate = answer.scopes.find((s) => s.scope === "corporate");
+  if (corporate?.state === "connected") return null;
+  if (corporate?.state === "mock") {
+    return (
+      <Notice tone="info">
+        Корпоративные источники представлены mock-коннектором с синтетическими страницами — это не Confluence.
+      </Notice>
+    );
+  }
+  const onlyCorporate = !asked.includes("team");
+  const reason =
+    corporate?.state === "error"
+      ? "Confluence Data Center сейчас недоступен (ошибка подключения к MCP)"
+      : "Confluence Data Center не подключён";
   return (
-    <section className="answer" aria-labelledby="answer-title">
+    <Notice tone="warning" className="answer__scope-gap">
+      <p>
+        <strong>Корпоративные источники не использованы.</strong>{" "}
+        {onlyCorporate
+          ? `${reason} — корпоративных данных в ответе нет.`
+          : `${reason} — ответ построен только по документам команды.`}
+      </p>
+    </Notice>
+  );
+}
+
+function AnswerView({ answer, asked }: { answer: AskResponse; asked: SearchScope[] }) {
+  const insufficient = answer.confidence === "insufficient_evidence";
+  return (
+    <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby="answer-title">
       <div className="answer__head">
         <h2 id="answer-title">Ответ</h2>
         <span className={`confidence confidence--${answer.confidence}`}>{CONFIDENCE_LABEL[answer.confidence]}</span>
-        <span className="answer__mode">{modeLabel}</span>
+        <span className="answer__mode">{MODE_LABEL[answer.mode]}</span>
       </div>
+      <CorporateGap answer={answer} asked={asked} />
+      {insufficient ? (
+        <div className="answer__insufficient">
+          <p>
+            <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
+            доказательств — уточните вопрос, включите черновики или проверьте документы вручную.
+          </p>
+          {answer.unmatched_terms.length > 0 ? (
+            <p>
+              Не найдено в источниках:{" "}
+              {answer.unmatched_terms.map((term, index) => (
+                <span key={term}>
+                  {index > 0 ? ", " : ""}«{term}»
+                </span>
+              ))}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <AnswerText text={answer.answer} citations={answer.citations} />
 
       {answer.warnings.length > 0 ? (
@@ -177,39 +231,54 @@ export function AskPage() {
   const [params] = useSearchParams();
   const session = useSession();
   const about = params.get("about");
-  const [question, setQuestion] = useState(about ? `Что известно о «${about}»?` : "");
+  const initial = params.get("q");
+  const [question, setQuestion] = useState(about ? `Что известно о «${about}»?` : (initial ?? "").slice(0, 2000));
   const [scope, setScope] = useState("team");
   const [includeDrafts, setIncludeDrafts] = useState(false);
   const [includeDeprecated, setIncludeDeprecated] = useState(false);
-  const [answer, setAnswer] = useState<AskResponse | null>(null);
+  const [result, setResult] = useState<{ answer: AskResponse; asked: SearchScope[] } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
+  const inFlight = useRef(false);
   const corporateState = session?.features.corporate_search;
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
+  async function ask() {
+    if (inFlight.current) return;
     const text = question.trim();
     if (text.length < 3) {
       setError(new ApiError(400, "question_too_short", "Введите вопрос длиной не менее 3 символов.", null));
       return;
     }
+    inFlight.current = true;
     setPending(true);
     setError(null);
+    const scopes = SCOPES.find((s) => s.value === scope)?.scopes ?? ["team"];
     try {
-      const scopes = SCOPES.find((s) => s.value === scope)?.scopes ?? ["team"];
-      setAnswer(
-        await api.ask({
-          question: text,
-          sources: scopes,
-          include_drafts: includeDrafts,
-          include_deprecated: includeDeprecated,
-        }),
-      );
+      const answer = await api.ask({
+        question: text,
+        sources: scopes,
+        include_drafts: includeDrafts,
+        include_deprecated: includeDeprecated,
+      });
+      setResult({ answer, asked: scopes });
     } catch (err) {
-      setAnswer(null);
+      setResult(null);
       setError(err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null));
     } finally {
+      inFlight.current = false;
       setPending(false);
+    }
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void ask();
+  }
+
+  function onQuestionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      void ask();
     }
   }
 
@@ -232,7 +301,12 @@ export function AskPage() {
           rows={3}
           maxLength={2000}
           placeholder="Например: где хранится каноническая база знаний команды?"
+          aria-describedby="question-hint"
+          onKeyDown={onQuestionKeyDown}
         />
+        <p id="question-hint" className="field-hint">
+          Ctrl+Enter (⌘+Enter на Mac) — отправить вопрос.
+        </p>
         <div className="ask__examples">
           <span className="muted">Примеры:</span>
           {EXAMPLES.map((example) => (
@@ -285,8 +359,14 @@ export function AskPage() {
       </form>
 
       <div aria-live="polite" aria-busy={pending}>
-        {error ? <ErrorState error={error} /> : null}
-        {answer ? <AnswerView answer={answer} /> : null}
+        {error ? (
+          <ErrorState
+            error={error}
+            onRetry={error.code === "question_too_short" ? undefined : () => void ask()}
+            retryLabel="Повторить запрос"
+          />
+        ) : null}
+        {result ? <AnswerView answer={result.answer} asked={result.asked} /> : null}
       </div>
     </div>
   );

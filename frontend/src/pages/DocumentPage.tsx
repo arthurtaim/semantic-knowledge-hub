@@ -3,17 +3,30 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { DocumentDetail, ProposalList } from "../api/types";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
+import { ProposalStateLabel } from "../components/ProposalState";
 import { SafeHtml } from "../components/SafeHtml";
+import { StaleMark } from "../components/StaleMark";
 import { StatusStamp } from "../components/StatusStamp";
-import {
-  formatDate,
-  formatDateTime,
-  PROPOSAL_STATUS_LABEL,
-  REVIEW_LABEL,
-  SOURCE_LABEL,
-  TYPE_LABEL,
-} from "../lib/labels";
+import { formatDate, formatDateTime, REVIEW_LABEL, SOURCE_LABEL, TYPE_LABEL } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+
+const isHttpUrl = (value: string | null): value is string => Boolean(value && /^https?:\/\//i.test(value));
+
+/** Where the document lives: a validated link to this exact revision, or an honest "local workspace" note. */
+function SourceLocation({ doc }: { doc: DocumentDetail }) {
+  if (isHttpUrl(doc.web_url)) {
+    return (
+      <a href={doc.web_url} className="passport__source-link" target="_blank" rel="noopener noreferrer">
+        {doc.source === "gitlab" ? "Открыть в GitLab" : "Открыть в источнике"}
+        <span aria-hidden="true"> ↗</span>
+      </a>
+    );
+  }
+  if (doc.source === "local") {
+    return <span className="passport__note">Документ хранится в локальном workspace — внешней ссылки нет.</span>;
+  }
+  return <span className="passport__note">Ссылка на ревизию в источнике не указана.</span>;
+}
 
 async function loadDocument(id: string): Promise<{ doc: DocumentDetail; proposals: ProposalList }> {
   const [doc, proposals] = await Promise.all([api.document(id), api.drafts({ document_id: id })]);
@@ -59,6 +72,13 @@ function Passport({ doc }: { doc: DocumentDetail }) {
           <dt>Ревизия</dt>
           <dd>
             <code className="doc-id">{doc.revision}</code>
+            {doc.index_state === "stale" ? <StaleMark /> : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Дата ревизии</dt>
+          <dd>
+            {doc.updated_at ? <time dateTime={doc.updated_at}>{formatDateTime(doc.updated_at)}</time> : "не указана"}
           </dd>
         </div>
         <div>
@@ -66,6 +86,7 @@ function Passport({ doc }: { doc: DocumentDetail }) {
           <dd>
             {SOURCE_LABEL[doc.source]}
             <code className="passport__uri">{doc.source_uri}</code>
+            <SourceLocation doc={doc} />
           </dd>
         </div>
         <div>
@@ -73,10 +94,6 @@ function Passport({ doc }: { doc: DocumentDetail }) {
           <dd>
             <code className="passport__uri">{doc.path}</code>
           </dd>
-        </div>
-        <div>
-          <dt>Изменён</dt>
-          <dd>{formatDateTime(doc.updated_at)}</dd>
         </div>
         {doc.tags.length > 0 ? (
           <div>
@@ -172,7 +189,7 @@ export function DocumentPage() {
   }
   if (!data) return null;
   const { doc, proposals } = data;
-  const openProposals = proposals.items.filter((p) => p.status !== "rejected");
+  const openProposals = proposals.items.filter((p) => p.status !== "rejected" && p.status !== "merged");
 
   return (
     <article className="document">
@@ -202,6 +219,14 @@ export function DocumentPage() {
 
       <div className="document__layout">
         <div className="document__main">
+          {doc.index_state === "stale" ? (
+            <Notice tone="warning">
+              <strong>Версия может быть устаревшей.</strong> Последняя синхронизация не смогла обновить этот документ —
+              показана последняя известная ревизия <code>{doc.revision}</code>
+              {doc.updated_at ? ` от ${formatDateTime(doc.updated_at)}` : ""}. Актуальный текст в источнике может
+              отличаться.
+            </Notice>
+          ) : null}
           {doc.is_demo ? (
             <Notice tone="warning">
               <strong>Демо-данные.</strong> Синтетический документ для проверки приложения — не источник фактов о
@@ -232,7 +257,7 @@ export function DocumentPage() {
               <ul>
                 {openProposals.map((p) => (
                   <li key={p.id}>
-                    <Link to={`/proposals/${p.id}`}>{p.reason}</Link> — {PROPOSAL_STATUS_LABEL[p.status]}
+                    <Link to={`/proposals/${p.id}`}>{p.reason}</Link> <ProposalStateLabel status={p.status} />
                   </li>
                 ))}
               </ul>

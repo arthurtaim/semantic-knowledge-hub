@@ -1,12 +1,27 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocumentSummary } from "../api/types";
-import { ErrorState, Loading } from "../components/Feedback";
+import type { ProposalSummary } from "../api/types";
+import { EmptyState, ErrorState, Loading } from "../components/Feedback";
+import { IndexStatusNotice } from "../components/IndexStatusNotice";
+import { ProposalStateLabel } from "../components/ProposalState";
+import { StaleMark } from "../components/StaleMark";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
-import { formatDate, REVIEW_LABEL, TYPE_LABEL, TYPE_ORDER } from "../lib/labels";
+import {
+  formatDate,
+  formatDateTime,
+  PROPOSAL_NEEDS_ACTION,
+  REVIEW_LABEL,
+  SOURCE_LABEL,
+  TYPE_LABEL,
+  TYPE_ORDER,
+} from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+
+const RECENT_LIMIT = 5;
+const PROPOSALS_LIMIT = 5;
+const NEEDS_ACTION = new Set(PROPOSAL_NEEDS_ACTION);
 
 async function loadHome() {
   const [facets, documents, integrations] = await Promise.all([
@@ -17,8 +32,102 @@ async function loadHome() {
   return { facets, documents: documents.items, integrations: integrations.items };
 }
 
-function byReviewDate(a: DocumentSummary, b: DocumentSummary): number {
-  return (b.reviewed_at ?? "").localeCompare(a.reviewed_at ?? "");
+function byUpdatedDesc(a: ProposalSummary, b: ProposalSummary): number {
+  return b.updated_at.localeCompare(a.updated_at);
+}
+
+function RecentlyUpdated() {
+  const recent = useAsync(() => api.documents({ sort: "updated", size: RECENT_LIMIT }), "home-recent");
+  // The server puts documents without a date last; they are not "recent", so they are not listed here.
+  const items = (recent.data?.items ?? []).filter((d) => d.updated_at);
+  return (
+    <section aria-labelledby="recent-title" className="panel">
+      <h2 id="recent-title">Недавно обновлённые</h2>
+      {recent.loading && !recent.data ? <Loading /> : null}
+      {recent.error ? <ErrorState error={recent.error} onRetry={recent.reload} /> : null}
+      {recent.data && items.length === 0 ? (
+        <p className="muted">
+          {recent.data.total === 0
+            ? "В базе знаний пока нет документов."
+            : "Источник не сообщает даты обновления документов — список недоступен."}
+        </p>
+      ) : null}
+      {items.length > 0 ? (
+        <>
+          <ul className="doc-rows">
+            {items.map((doc) => (
+              <li key={doc.id} className="doc-row">
+                <Link to={`/documents/${doc.id}`} className="doc-row__title">
+                  {doc.title}
+                </Link>
+                <span className="doc-row__meta">
+                  <code className="doc-id">{doc.id}</code>
+                  <span>
+                    обновлён <time dateTime={doc.updated_at ?? undefined}>{formatDate(doc.updated_at)}</time>
+                  </span>
+                  <span>{SOURCE_LABEL[doc.source]}</span>
+                  {doc.index_state === "stale" ? <StaleMark /> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <Link to="/documents?sort=updated" className="text-link">
+            Все документы по дате обновления
+          </Link>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function ProposalsNeedingAction() {
+  const drafts = useAsync(() => api.drafts(), "home-proposals");
+  const items = (drafts.data?.items ?? []).filter((p) => NEEDS_ACTION.has(p.status)).sort(byUpdatedDesc);
+  return (
+    <section aria-labelledby="proposals-title" className="panel">
+      <h2 id="proposals-title">Предложения, требующие действия</h2>
+      {drafts.loading && !drafts.data ? <Loading /> : null}
+      {drafts.error ? <ErrorState error={drafts.error} onRetry={drafts.reload} /> : null}
+      {drafts.data && items.length === 0 ? (
+        <EmptyState title="Нет предложений, требующих действия">
+          <p>Чтобы предложить правку, откройте документ и нажмите «Предложить изменение».</p>
+          <Link to="/documents" className="text-link">
+            Перейти в каталог документов
+          </Link>
+        </EmptyState>
+      ) : null}
+      {items.length > 0 ? (
+        <>
+          <ul className="doc-rows">
+            {items.slice(0, PROPOSALS_LIMIT).map((p) => (
+              <li key={p.id} className="doc-row">
+                <Link to={`/proposals/${p.id}`} className="doc-row__title">
+                  {p.document_title}
+                </Link>
+                <span className="doc-row__meta">
+                  <ProposalStateLabel status={p.status} />
+                  <span>{p.reason}</span>
+                  <span>обновлено {formatDateTime(p.updated_at)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {items.length > PROPOSALS_LIMIT ? (
+            <p className="muted">Показаны {PROPOSALS_LIMIT} из {items.length}.</p>
+          ) : null}
+        </>
+      ) : null}
+      <Link to="/proposals" className="text-link">
+        Все предложения
+      </Link>
+    </section>
+  );
+}
+
+function HomeIndexStatus() {
+  const index = useAsync(() => api.indexStatus(), "home-index");
+  if (index.error) return <p className="muted">Не удалось получить состояние синхронизации базы знаний.</p>;
+  return index.data ? <IndexStatusNotice status={index.data} /> : null;
 }
 
 export function HomePage() {
@@ -33,13 +142,10 @@ export function HomePage() {
   }
 
   const typeCounts = new Map(data?.facets.types.map((f) => [f.value, f.count]) ?? []);
-  const verified = (data?.documents ?? [])
-    .filter((d) => d.status === "approved" && d.review_state === "ok")
-    .sort(byReviewDate)
-    .slice(0, 5);
   const attention = (data?.documents ?? []).filter(
     (d) => d.owner_missing || d.review_state === "stale" || d.review_state === "never_reviewed",
   );
+  const askHref = query.trim() ? `/ask?q=${encodeURIComponent(query.trim())}` : "/ask";
 
   return (
     <div className="home">
@@ -49,30 +155,40 @@ export function HomePage() {
           Ищите документы команды, задавайте вопросы с проверяемыми ссылками на источники и предлагайте правки через
           ревью.
         </p>
-        <form className="search-box" role="search" onSubmit={onSearch}>
-          <label htmlFor="home-search" className="visually-hidden">
-            Поиск по базе знаний
-          </label>
-          <input
-            id="home-search"
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Например: ARIS, ревизия, FTS5"
-            maxLength={200}
-            autoComplete="off"
-          />
-          <button type="submit" className="button button--primary">
-            Найти
-          </button>
-        </form>
+        <div className="home__actions">
+          <form className="search-box" role="search" onSubmit={onSearch}>
+            <label htmlFor="home-search" className="visually-hidden">
+              Поиск по базе знаний
+            </label>
+            <input
+              id="home-search"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Например: ARIS, ревизия, FTS5"
+              maxLength={200}
+              autoComplete="off"
+            />
+            <button type="submit" className="button button--primary">
+              Найти
+            </button>
+          </form>
+          <Link to={askHref} className="button button--ask">
+            Спросить ассистента
+          </Link>
+        </div>
+        <p className="home__hint muted">
+          Ассистент отвечает только по найденным документам и показывает ссылки на источники.
+        </p>
       </section>
+
+      <HomeIndexStatus />
 
       {loading && !data ? <Loading /> : null}
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
 
-      {data ? (
-        <div className="home__grid">
+      <div className="home__grid">
+        {data ? (
           <section aria-labelledby="sections-title" className="panel">
             <h2 id="sections-title">Разделы</h2>
             <ul className="index-list">
@@ -91,27 +207,12 @@ export function HomePage() {
               })}
             </ul>
           </section>
+        ) : null}
 
-          <section aria-labelledby="verified-title" className="panel">
-            <h2 id="verified-title">Недавно проверенные</h2>
-            {verified.length === 0 ? (
-              <p className="muted">Утверждённых документов с актуальной проверкой пока нет.</p>
-            ) : (
-              <ul className="doc-rows">
-                {verified.map((doc) => (
-                  <li key={doc.id} className="doc-row">
-                    <Link to={`/documents/${doc.id}`} className="doc-row__title">
-                      {doc.title}
-                    </Link>
-                    <span className="doc-row__meta">
-                      <code className="doc-id">{doc.id}</code> проверен {formatDate(doc.reviewed_at)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+        <RecentlyUpdated />
+        <ProposalsNeedingAction />
 
+        {data ? (
           <section aria-labelledby="attention-title" className="panel">
             <h2 id="attention-title">Требуют внимания</h2>
             {attention.length === 0 ? (
@@ -135,7 +236,9 @@ export function HomePage() {
               </ul>
             )}
           </section>
+        ) : null}
 
+        {data ? (
           <section aria-labelledby="integrations-title" className="panel">
             <h2 id="integrations-title">Источники и интеграции</h2>
             <ul className="integration-mini">
@@ -150,8 +253,8 @@ export function HomePage() {
               Подробнее о подключениях
             </Link>
           </section>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }

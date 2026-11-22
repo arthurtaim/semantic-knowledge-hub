@@ -1,8 +1,142 @@
-import { api } from "../api/client";
+import { useRef, useState } from "react";
+import { ApiError, api } from "../api/client";
+import type { SyncStatus } from "../api/types";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
-import { formatDateTime } from "../lib/labels";
+import { formatDateTime, pluralRu, SOURCE_LABEL, SYNC_STATE_LABEL } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+
+function SyncFacts({ status }: { status: SyncStatus }) {
+  return (
+    <dl className="sync__facts">
+      <div>
+        <dt>Источник</dt>
+        <dd>
+          {SOURCE_LABEL[status.source]}
+          {status.branch ? (
+            <>
+              , ветка <code>{status.branch}</code>
+            </>
+          ) : null}
+        </dd>
+      </div>
+      <div>
+        <dt>Последняя успешная синхронизация</dt>
+        <dd>{status.last_success_at ? formatDateTime(status.last_success_at) : "не было"}</dd>
+      </div>
+      <div>
+        <dt>Последняя попытка</dt>
+        <dd>{status.last_attempt_at ? formatDateTime(status.last_attempt_at) : "не было"}</dd>
+      </div>
+      <div>
+        <dt>Документов в источнике</dt>
+        <dd>{status.documents}</dd>
+      </div>
+      <div>
+        <dt>Документов в поисковом индексе</dt>
+        <dd>{status.indexed_documents}</dd>
+      </div>
+      <div>
+        <dt>Проблемных файлов</dt>
+        <dd>{status.issues}</dd>
+      </div>
+      {status.head_commit || status.source_version ? (
+        <div>
+          <dt>Версия источника</dt>
+          <dd>
+            <code className="doc-id">{status.head_commit ?? status.source_version}</code>
+          </dd>
+        </div>
+      ) : null}
+      {status.indexed_version ? (
+        <div>
+          <dt>Версия индекса</dt>
+          <dd>
+            <code className="doc-id">{status.indexed_version}</code>
+            {status.indexed_at ? <span className="muted"> от {formatDateTime(status.indexed_at)}</span> : null}
+          </dd>
+        </div>
+      ) : null}
+    </dl>
+  );
+}
+
+function SyncSection() {
+  const status = useAsync(() => api.indexStatus(), "index-status");
+  const [pending, setPending] = useState(false);
+  const [syncError, setSyncError] = useState<ApiError | null>(null);
+  const [result, setResult] = useState<string>("");
+  const inFlight = useRef(false);
+
+  async function sync() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending(true);
+    setSyncError(null);
+    setResult("");
+    try {
+      const next = await api.syncIndex();
+      status.setData(next);
+      setResult(
+        next.state === "fresh"
+          ? `Синхронизация завершена: ${next.indexed_documents} ${pluralRu(next.indexed_documents, "документ", "документа", "документов")} в индексе.`
+          : `Синхронизация выполнена с проблемами: ${SYNC_STATE_LABEL[next.state].toLowerCase()}.`,
+      );
+    } catch (err) {
+      setSyncError(err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null));
+    } finally {
+      inFlight.current = false;
+      setPending(false);
+    }
+  }
+
+  const data = status.data;
+  return (
+    <section className="panel sync" aria-labelledby="sync-title">
+      <div className="sync__head">
+        <h2 id="sync-title">Синхронизация и поисковый индекс</h2>
+        {data ? <span className={`sync-state sync-state--${data.state}`}>{SYNC_STATE_LABEL[data.state]}</span> : null}
+      </div>
+      {status.loading && !data ? <Loading label="Загрузка состояния синхронизации…" /> : null}
+      {status.error && !data ? <ErrorState error={status.error} onRetry={status.reload} /> : null}
+      {data ? (
+        <>
+          {data.message ? <p>{data.message}</p> : null}
+          {data.state === "stale" || data.state === "error" ? (
+            <Notice tone={data.state === "error" ? "danger" : "warning"}>
+              Показанные в базе знаний документы — версии последней успешной синхронизации
+              {data.last_success_at ? ` (${formatDateTime(data.last_success_at)})` : ""}. Они могут не совпадать с
+              текущим состоянием источника.
+            </Notice>
+          ) : null}
+          <SyncFacts status={data} />
+          {data.failed_paths.length > 0 ? (
+            <details className="sync__failed" open={data.failed_paths.length <= 5}>
+              <summary>Не удалось обновить файлов: {data.failed_paths.length}</summary>
+              <ul>
+                {data.failed_paths.map((path) => (
+                  <li key={path}>
+                    <code>{path}</code>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </>
+      ) : null}
+      <div className="button-row sync__actions">
+        <button type="button" className="button button--secondary" onClick={sync} disabled={pending || (!data && status.loading)}>
+          Синхронизировать сейчас
+        </button>
+      </div>
+      <div aria-live="polite" role="status">
+        {pending ? <p className="muted">Синхронизация выполняется…</p> : null}
+        {result && !pending ? <p className="success">{result}</p> : null}
+      </div>
+      {syncError ? <ErrorState error={syncError} title="Синхронизация не выполнена" /> : null}
+    </section>
+  );
+}
 
 export function IntegrationsPage() {
   const { data, error, loading, reload } = useAsync(() => api.integrations(), "integrations");
@@ -43,6 +177,7 @@ export function IntegrationsPage() {
           <p className="muted">Проверено: {formatDateTime(data.checked_at)}</p>
         </>
       ) : null}
+      <SyncSection />
       {issues.data && issues.data.length > 0 ? (
         <section aria-labelledby="issues-title">
           <h2 id="issues-title">Проблемы загрузки документов</h2>

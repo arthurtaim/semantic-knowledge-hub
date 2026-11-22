@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
-import type { DocumentDetail } from "../api/types";
+import type { DocumentDetail, ProposalDetail } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { StatusStamp } from "../components/StatusStamp";
 import { useSession } from "../lib/session";
@@ -10,10 +10,13 @@ import { useAsync } from "../lib/useAsync";
 export function ProposalEditorPage() {
   const [params] = useSearchParams();
   const documentId = params.get("document") ?? "";
+  // ?from=<proposal id>: start from an earlier proposal's text (e.g. after a revision conflict).
+  const fromId = params.get("from") ?? "";
   const { data: doc, error, loading, reload } = useAsync(
     () => (documentId ? api.document(documentId) : Promise.resolve(null)),
     documentId,
   );
+  const source = useAsync(() => (fromId ? api.draft(fromId) : Promise.resolve(null)), `from-${fromId}`);
   const [previousDraft, setPreviousDraft] = useState<string | null>(null);
 
   if (!documentId) {
@@ -28,12 +31,23 @@ export function ProposalEditorPage() {
   }
   if (loading && !doc) return <Loading />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (fromId && source.loading && !source.data && !source.error) {
+    return <Loading label="Загрузка исходного предложения…" />;
+  }
   if (!doc) return null;
+  const basis = source.data && source.data.document_id === doc.id ? source.data : null;
+  let basisProblem: string | null = null;
+  if (fromId && source.error) basisProblem = source.error.message;
+  else if (fromId && source.data && !basis) basisProblem = "Это предложение относится к другому документу.";
+  // After a conflict reload the editor starts from the current text; the earlier version stays visible below.
+  const activeBasis = previousDraft === null ? basis : null;
   // Keyed by revision: the form state starts from the loaded text and resets if the document is reloaded.
   return (
     <ProposalEditor
-      key={doc.revision}
+      key={`${doc.revision}-${activeBasis?.id ?? ""}`}
       doc={doc}
+      basis={activeBasis}
+      basisProblem={basisProblem}
       previousDraft={previousDraft}
       onReload={(draft) => {
         setPreviousDraft(draft);
@@ -45,17 +59,20 @@ export function ProposalEditorPage() {
 
 interface EditorProps {
   doc: DocumentDetail;
+  /** Earlier proposal whose text pre-fills the editor; the new proposal is based on the CURRENT revision. */
+  basis: ProposalDetail | null;
+  basisProblem: string | null;
   previousDraft: string | null;
   onReload: (draft: string) => void;
 }
 
-function ProposalEditor({ doc, previousDraft, onReload }: EditorProps) {
+function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: EditorProps) {
   const navigate = useNavigate();
   const session = useSession();
-  const [content, setContent] = useState(doc.raw);
-  const [reason, setReason] = useState("");
+  const [content, setContent] = useState(basis?.proposed_content ?? doc.raw);
+  const [reason, setReason] = useState(basis?.reason ?? "");
   const [instruction, setInstruction] = useState("");
-  const [origin, setOrigin] = useState<"manual" | "ai_suggestion">("manual");
+  const [origin, setOrigin] = useState<"manual" | "ai_suggestion">(basis?.origin ?? "manual");
   const [submitError, setSubmitError] = useState<ApiError | null>(null);
   const [suggestNote, setSuggestNote] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
@@ -161,6 +178,33 @@ function ProposalEditor({ doc, previousDraft, onReload }: EditorProps) {
         )}
       </section>
 
+      {basisProblem ? (
+        <Notice tone="warning">
+          Не удалось взять текст из предыдущего предложения: {basisProblem} Редактор открыт с актуальным текстом документа.
+        </Notice>
+      ) : null}
+      {basis ? (
+        <Notice tone="warning" className="basis-notice">
+          <p>
+            <strong>Текст взят из предложения «{basis.reason}»</strong> (базовая ревизия{" "}
+            <code className="doc-id">{basis.base_revision}</code>). Новое предложение будет создано относительно
+            актуальной ревизии <code className="doc-id">{doc.revision}</code>.
+          </p>
+          <p>
+            Документ изменился после того предложения: этот текст может отменить правки других авторов. Сравните его с
+            актуальной версией и обязательно проверьте diff после создания предложения.
+          </p>
+          <details>
+            <summary>Показать актуальный текст документа</summary>
+            <pre className="raw-source">
+              <code>{doc.raw}</code>
+            </pre>
+          </details>
+          <Link to={`/proposals/${basis.id}`} className="text-link">
+            Вернуться к исходному предложению
+          </Link>
+        </Notice>
+      ) : null}
       {previousDraft !== null && previousDraft !== doc.raw ? (
         <Notice tone="warning">
           <p>Документ обновлён до актуальной ревизии. Ваша прежняя версия сохранена ниже — перенесите нужные правки.</p>

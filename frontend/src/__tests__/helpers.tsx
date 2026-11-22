@@ -10,6 +10,7 @@ export interface MockRoute {
   method?: string;
   path: string | RegExp;
   status?: number;
+  /** A value, or a function called per request (e.g. to return a changed state on a reload). */
   body: unknown;
 }
 
@@ -36,7 +37,8 @@ export function mockApi(routes: MockRoute[]): RecordedCall[] {
         status: 404,
       });
     }
-    return new Response(JSON.stringify(route.body), {
+    const body = typeof route.body === "function" ? (route.body as () => unknown)() : route.body;
+    return new Response(JSON.stringify(body), {
       status: route.status ?? 200,
       headers: { "Content-Type": "application/json", "X-Request-ID": "req-test" },
     });

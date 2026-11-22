@@ -15,7 +15,25 @@ export type IntegrationState = "connected" | "disabled" | "mock" | "error";
 export type Confidence = "supported" | "partial" | "insufficient_evidence";
 export type SearchScope = "team" | "corporate";
 export type ReviewState = "ok" | "stale" | "never_reviewed" | "not_required";
-export type ProposalStatus = "open" | "ready_for_review" | "submitted" | "rejected";
+export type SyncState = "fresh" | "stale" | "error" | "never_synced";
+/** "stale": the last sync could not refresh this document; it is shown with its last known revision. */
+export type IndexState = "current" | "stale";
+export type DocumentSort = "relevance" | "title" | "updated" | "status";
+/**
+ * Local lifecycle of a proposal. Deliberately separate from the GitLab MR state:
+ * `ready_for_review` does not mean an MR exists, `submitted_to_gitlab` does not mean approval.
+ */
+export type ProposalStatus =
+  | "draft"
+  | "ready_for_review"
+  | "submitting"
+  | "submitted_to_gitlab"
+  | "merged"
+  | "rejected"
+  | "conflict"
+  | "submission_failed";
+export type MergeRequestState = "opened" | "merged" | "closed" | "locked" | "unknown";
+export type SourceDocumentState = "unchanged" | "changed_since_base" | "updated_by_this_proposal" | "missing";
 
 export interface HighlightSegment {
   text: string;
@@ -38,6 +56,9 @@ export interface DocumentSummary {
   updated_at: string | null;
   review_state: ReviewState;
   owner_missing: boolean;
+  /** Link to this exact revision in the source system (host validated by the backend); null for local. */
+  web_url: string | null;
+  index_state: IndexState;
   highlights?: HighlightSegment[] | null;
 }
 
@@ -165,11 +186,29 @@ export interface IntegrationsResponse {
   checked_at: string;
 }
 
+/** State of the knowledge source synchronisation and of the derived search index. */
+export interface SyncStatus {
+  source: SourceType;
+  state: SyncState;
+  message: string;
+  documents: number;
+  issues: number;
+  failed_paths: string[];
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  source_version: string | null;
+  branch: string | null;
+  head_commit: string | null;
+  indexed_documents: number;
+  indexed_version: string | null;
+  indexed_at: string | null;
+}
+
 export interface SessionResponse {
   user: { user_id: string; display_name: string; roles: string[]; is_demo: boolean };
   auth_mode: string;
   demo_content: boolean;
-  knowledge_backend: string;
+  knowledge_backend: string; // "local" | "gitlab"
   features: {
     ai_mode: "mock" | "internal_api" | "disabled";
     ai_edit_suggestions: boolean;
@@ -217,6 +256,33 @@ export interface ProposalSummary {
   deletions: number;
   error_count: number;
   warning_count: number;
+  merge_request_url: string | null;
+  merge_request_state: MergeRequestState | null;
+}
+
+export interface PublicationState {
+  state: "local_only" | "disabled" | "submitted";
+  message: string;
+  external_url: string | null;
+}
+
+/** What GitLab reported about the proposal's MR (never inferred locally). */
+export interface MergeRequestInfo {
+  iid: string | null;
+  url: string | null;
+  state: MergeRequestState | null;
+  source_branch: string | null;
+  target_branch: string | null;
+  checked_at: string | null;
+}
+
+export interface SubmissionInfo {
+  attempts: number;
+  last_attempt_at: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  /** GitLab may have applied a write whose answer was lost; the next attempt inspects GitLab first. */
+  uncertain: boolean;
 }
 
 export interface ProposalDetail extends ProposalSummary {
@@ -231,7 +297,13 @@ export interface ProposalDetail extends ProposalSummary {
   review_comment: string | null;
   can_mark_ready: boolean;
   can_reject: boolean;
-  publication: { state: "local_only" | "disabled" | "submitted"; message: string; external_url: string | null };
+  can_submit: boolean;
+  can_refresh_status: boolean;
+  publication: PublicationState;
+  source_document_state: SourceDocumentState;
+  branch_name: string | null;
+  merge_request: MergeRequestInfo | null;
+  submission: SubmissionInfo;
 }
 
 export interface ProposalList {

@@ -1,13 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocStatus, DocType, FacetCount } from "../api/types";
+import type { DocStatus, DocType, DocumentSort, FacetCount } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { Highlighted } from "../components/Highlighted";
+import { IndexStatusNotice } from "../components/IndexStatusNotice";
+import { StaleMark } from "../components/StaleMark";
 import { StatusStamp } from "../components/StatusStamp";
 import {
+  formatDate,
   pluralRu,
   REVIEW_LABEL,
+  SORT_LABEL,
   SOURCE_LABEL,
   STATUS_LABEL,
   STATUS_ORDER,
@@ -17,6 +21,12 @@ import {
 import { useAsync } from "../lib/useAsync";
 
 const PAGE_SIZE = 20;
+/** Explicit orders; relevance (with a query) and section/title order (without) are the server default. */
+const EXPLICIT_SORTS: DocumentSort[] = ["title", "updated", "status"];
+
+function parseSort(value: string | null): DocumentSort | null {
+  return value && (EXPLICIT_SORTS as string[]).includes(value) ? (value as DocumentSort) : null;
+}
 const FILTER_KEYS = ["type", "status", "owner", "tag", "source"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
 
@@ -65,11 +75,13 @@ export function ExplorerPage() {
   const query = params.get("query") ?? "";
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
   const filters = Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k)])) as Record<FilterKey, string | null>;
+  const sort = parseSort(params.get("sort"));
   const [draftQuery, setDraftQuery] = useState(query);
 
   useEffect(() => setDraftQuery(query), [query]);
 
   const facets = useAsync(() => api.facets(), "facets");
+  const index = useAsync(() => api.indexStatus(), "index-status");
   const key = params.toString();
   const list = useAsync(
     () =>
@@ -82,6 +94,7 @@ export function ExplorerPage() {
         owner: filters.owner ?? undefined,
         tag: filters.tag ?? undefined,
         source: filters.source ?? undefined,
+        sort: sort ?? undefined,
       }),
     key,
   );
@@ -134,6 +147,8 @@ export function ExplorerPage() {
           </button>
         </form>
       </div>
+
+      {index.data ? <IndexStatusNotice status={index.data} /> : null}
 
       <div className="explorer__body">
         <aside className="filters" aria-label="Фильтры">
@@ -195,11 +210,24 @@ export function ExplorerPage() {
         </aside>
 
         <section className="results" aria-labelledby="results-title" aria-busy={list.loading}>
-          <h2 id="results-title" className="results__summary" aria-live="polite">
-            {list.loading
-              ? "Поиск…"
-              : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
-          </h2>
+          <div className="results__bar">
+            <h2 id="results-title" className="results__summary" aria-live="polite">
+              {list.loading
+                ? "Поиск…"
+                : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
+            </h2>
+            <div className="sort-control">
+              <label htmlFor="explorer-sort">Сортировка</label>
+              <select id="explorer-sort" value={sort ?? ""} onChange={(e) => update({ sort: e.target.value || null })}>
+                <option value="">{query ? SORT_LABEL.relevance : "По разделам"}</option>
+                {EXPLICIT_SORTS.map((value) => (
+                  <option key={value} value={value}>
+                    {SORT_LABEL[value]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
           {list.loading && !list.data ? <Loading /> : null}
           {list.data && list.data.items.length === 0 && !list.loading ? (
@@ -220,7 +248,10 @@ export function ExplorerPage() {
                     <Link to={`/documents/${doc.id}`} className="result__title">
                       {doc.title}
                     </Link>
-                    <StatusStamp status={doc.status} />
+                    <span className="result__badges">
+                      {doc.index_state === "stale" ? <StaleMark /> : null}
+                      <StatusStamp status={doc.status} />
+                    </span>
                   </div>
                   <p className="result__excerpt">
                     {doc.highlights ? <Highlighted segments={doc.highlights} /> : doc.excerpt}
@@ -245,6 +276,12 @@ export function ExplorerPage() {
                     <div>
                       <dt>Источник</dt>
                       <dd>{SOURCE_LABEL[doc.source]}</dd>
+                    </div>
+                    <div>
+                      <dt>Обновлён</dt>
+                      <dd>
+                        {doc.updated_at ? <time dateTime={doc.updated_at}>{formatDate(doc.updated_at)}</time> : "не указано"}
+                      </dd>
                     </div>
                     {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
                       <div>

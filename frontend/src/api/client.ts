@@ -5,6 +5,7 @@ import type {
   DocumentDetail,
   DocumentFacets,
   DocumentPage,
+  DocumentSort,
   DraftCreate,
   IntegrationsResponse,
   LoadIssue,
@@ -13,6 +14,7 @@ import type {
   ProposalStatus,
   SessionResponse,
   SuggestResponse,
+  SyncStatus,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
@@ -100,6 +102,7 @@ export interface DocumentListParams {
   owner?: string;
   source?: string;
   tag?: string;
+  sort?: DocumentSort;
   page?: number;
   size?: number;
 }
@@ -110,6 +113,8 @@ export const api = {
   documents: (params: DocumentListParams = {}) => request<DocumentPage>(`/documents${query({ ...params })}`),
   document: (id: string) => request<DocumentDetail>(`/documents/${encodeURIComponent(id)}`),
   facets: () => request<DocumentFacets>("/knowledge/facets"),
+  indexStatus: () => request<SyncStatus>("/index/status"),
+  syncIndex: () => request<SyncStatus>("/index/sync", { method: "POST" }),
   issues: () => request<LoadIssue[]>("/knowledge/issues"),
   ask: (payload: AskRequest) => request<AskResponse>("/assistant/ask", { method: "POST", body: json(payload) }),
   corporatePage: (id: string) => request<CorporatePage>(`/corporate/pages/${encodeURIComponent(id)}`),
@@ -123,8 +128,11 @@ export const api = {
       body: json({ comment: comment || null }),
     }),
   markReady: (id: string) => request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/mark-ready`, { method: "POST" }),
-  openMergeRequest: (id: string) =>
-    request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/open-mr`, { method: "POST" }),
+  /** Creates the GitLab branch, commit and MR. Idempotent and retry-safe on the server. */
+  submitDraft: (id: string) => request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/submit`, { method: "POST" }),
+  /** Asks GitLab for the MR state; only GitLab can move a proposal to "merged". */
+  refreshDraftStatus: (id: string) =>
+    request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/refresh-status`, { method: "POST" }),
   suggestDraft: (payload: { document_id: string; base_revision: string; instruction: string }) =>
     request<SuggestResponse>("/drafts/suggest", { method: "POST", body: json(payload) }),
 };

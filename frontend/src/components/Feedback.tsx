@@ -50,6 +50,14 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
   );
 }
 
-export function Notice({ tone, children }: { tone: "info" | "warning" | "danger"; children: ReactNode }) {
-  return <div className={`notice notice--${tone}`}>{children}</div>;
+export function Notice({
+  tone,
+  children,
+  className,
+}: {
+  tone: "info" | "warning" | "danger" | "success";
+  children: ReactNode;
+  className?: string;
+}) {
+  return <div className={`notice notice--${tone}${className ? ` ${className}` : ""}`}>{children}</div>;
 }

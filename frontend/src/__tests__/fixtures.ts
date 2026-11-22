@@ -5,7 +5,10 @@ import type {
   DocumentPage,
   IntegrationsResponse,
   ProposalDetail,
+  ProposalList,
+  ProposalSummary,
   SessionResponse,
+  SyncStatus,
 } from "../api/types";
 
 export const session: SessionResponse = {
@@ -20,6 +23,13 @@ export const session: SessionResponse = {
     gitlab_proposals: false,
     confluence_publish: false,
   },
+};
+
+/** Session of a deployment where GitLab is the knowledge source and MR creation is enabled. */
+export const gitlabSession: SessionResponse = {
+  ...session,
+  knowledge_backend: "gitlab",
+  features: { ...session.features, gitlab_proposals: true },
 };
 
 export const arisSummary = {
@@ -38,6 +48,8 @@ export const arisSummary = {
   updated_at: "2026-11-22T00:00:00Z",
   review_state: "not_required" as const,
   owner_missing: false,
+  web_url: null,
+  index_state: "current" as const,
   highlights: [
     { text: "Real ", highlight: false },
     { text: "ARIS", highlight: true },
@@ -72,6 +84,47 @@ export const arisDetail: DocumentDetail = {
   sections: [{ heading: "ARIS", anchor: "aris", level: 1, text: "Body" }],
   warnings: [],
   extra_metadata: {},
+};
+
+/** The same document served from GitLab: a validated link to the exact revision and a stale index marker. */
+export const gitlabDetail: DocumentDetail = {
+  ...arisDetail,
+  source: "gitlab",
+  source_uri: "gitlab://semantic-kb/docs/SEM-INT-ARIS-001.md",
+  revision: "3f2a9c1d",
+  updated_at: "2026-11-20T09:30:00Z",
+  web_url: "https://gitlab.example.test/semantic-kb/-/blob/3f2a9c1d/docs/SEM-INT-ARIS-001.md",
+  index_state: "stale",
+};
+
+export const freshSync: SyncStatus = {
+  source: "local",
+  state: "fresh",
+  message: "Синхронизировано.",
+  documents: 12,
+  issues: 0,
+  failed_paths: [],
+  last_attempt_at: "2026-11-22T08:00:00Z",
+  last_success_at: "2026-11-22T08:00:00Z",
+  source_version: "sha256:abc",
+  branch: null,
+  head_commit: null,
+  indexed_documents: 12,
+  indexed_version: "sha256:abc",
+  indexed_at: "2026-11-22T08:00:00Z",
+};
+
+export const staleSync: SyncStatus = {
+  ...freshSync,
+  source: "gitlab",
+  state: "stale",
+  message: "GitLab недоступен: тайм-аут соединения.",
+  issues: 1,
+  failed_paths: ["docs/SEM-INT-ARIS-001.md"],
+  last_attempt_at: "2026-11-22T09:00:00Z",
+  last_success_at: "2026-11-21T18:45:00Z",
+  branch: "main",
+  head_commit: "3f2a9c1d",
 };
 
 export const supportedAnswer: AskResponse = {
@@ -138,7 +191,7 @@ export function proposal(overrides: Partial<ProposalDetail> = {}): ProposalDetai
     document_id: "SEM-INT-ARIS-001",
     document_title: "ARIS integration — questions for discovery",
     source: "local",
-    status: "open",
+    status: "draft",
     reason: "Уточнение формулировки",
     origin: "manual",
     author: "local-demo-user",
@@ -168,11 +221,90 @@ export function proposal(overrides: Partial<ProposalDetail> = {}): ProposalDetai
       deletions: 1,
       changed: true,
     },
-    history: [{ at: "2026-11-22T00:00:00Z", actor: "local-demo-user", action: "created", status: "open" }],
+    history: [{ at: "2026-11-22T00:00:00Z", actor: "local-demo-user", action: "created", status: "draft" }],
     review_comment: null,
     can_mark_ready: true,
     can_reject: true,
+    can_submit: false,
+    can_refresh_status: false,
     publication: { state: "disabled", message: "GitLab MR отключён.", external_url: null },
+    merge_request_url: null,
+    merge_request_state: null,
+    source_document_state: "unchanged",
+    branch_name: null,
+    merge_request: null,
+    submission: { attempts: 0, last_attempt_at: null, error_code: null, error_message: null, uncertain: false },
     ...overrides,
   };
 }
+
+export const MR_URL = "https://gitlab.example.test/semantic-kb/-/merge_requests/42";
+
+/** A proposal with an MR in GitLab (status and MR state given by the caller). */
+export function submittedProposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail {
+  return proposal({
+    status: "submitted_to_gitlab",
+    can_mark_ready: false,
+    can_reject: false,
+    can_refresh_status: true,
+    publication: { state: "submitted", message: "MR открыт.", external_url: MR_URL },
+    merge_request_url: MR_URL,
+    merge_request_state: "opened",
+    branch_name: "skh/proposal-aaaaaaaa",
+    merge_request: {
+      iid: "42",
+      url: MR_URL,
+      state: "opened",
+      source_branch: "skh/proposal-aaaaaaaa",
+      target_branch: "main",
+      checked_at: "2026-11-22T10:00:00Z",
+    },
+    submission: { attempts: 1, last_attempt_at: "2026-11-22T09:59:00Z", error_code: null, error_message: null, uncertain: false },
+    history: [
+      { at: "2026-11-22T00:00:00Z", actor: "local-demo-user", action: "created", status: "draft" },
+      { at: "2026-11-22T01:00:00Z", actor: "local-demo-user", action: "marked_ready_for_review", status: "ready_for_review" },
+      { at: "2026-11-22T09:59:00Z", actor: "local-demo-user", action: "merge_request_opened", status: "submitted_to_gitlab" },
+    ],
+    ...overrides,
+  });
+}
+
+export function proposalSummary(overrides: Partial<ProposalSummary> = {}): ProposalSummary {
+  const p = proposal();
+  return {
+    id: p.id,
+    document_id: p.document_id,
+    document_title: p.document_title,
+    source: p.source,
+    status: p.status,
+    reason: p.reason,
+    origin: p.origin,
+    author: p.author,
+    created_at: p.created_at,
+    updated_at: p.updated_at,
+    base_revision: p.base_revision,
+    additions: p.additions,
+    deletions: p.deletions,
+    error_count: p.error_count,
+    warning_count: p.warning_count,
+    merge_request_url: null,
+    merge_request_state: null,
+    ...overrides,
+  };
+}
+
+export const actionableProposals: ProposalList = {
+  items: [
+    proposalSummary({ id: "p-draft", status: "draft", reason: "Новая формулировка" }),
+    proposalSummary({ id: "p-failed", status: "submission_failed", reason: "Не ушло в GitLab" }),
+    proposalSummary({
+      id: "p-mr",
+      status: "submitted_to_gitlab",
+      reason: "Уже в GitLab",
+      merge_request_url: MR_URL,
+      merge_request_state: "opened",
+    }),
+    proposalSummary({ id: "p-merged", status: "merged", reason: "Уже принято" }),
+  ],
+  total: 4,
+};

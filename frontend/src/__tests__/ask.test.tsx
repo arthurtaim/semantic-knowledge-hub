@@ -38,6 +38,37 @@ describe("Ask the knowledge base", () => {
     expect(await screen.findByText("Недостаточно данных")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Источники" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Не использованы как доказательство" })).toBeInTheDocument();
+    expect(screen.getByText("Подтверждений в доступных источниках не найдено.")).toBeInTheDocument();
+    expect(screen.getByText(/Не найдено в источниках/)).toHaveTextContent("«ЦФТ»");
+  });
+
+  it("submits with Ctrl+Enter from the question field", async () => {
+    const calls = mockApi([{ method: "POST", path: "/api/assistant/ask", body: supportedAnswer }]);
+    renderAt("/ask", "/ask", <AskPage />);
+    const field = screen.getByLabelText("Вопрос");
+    expect(field).toHaveAccessibleDescription(/Ctrl\+Enter/);
+    await userEvent.type(field, "Что такое ревизия?");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    expect(await screen.findByText("Подтверждено источником")).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
+    expect(field).toHaveValue("Что такое ревизия?");
+  });
+
+  it("states near the top of the answer that corporate sources were not used", async () => {
+    const calls = mockApi([{ method: "POST", path: "/api/assistant/ask", body: supportedAnswer }]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await userEvent.type(screen.getByLabelText("Вопрос"), "Какие слои у архитектуры?");
+    await userEvent.click(screen.getByLabelText("Оба"));
+    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    expect(await screen.findByText("Корпоративные источники не использованы.")).toBeInTheDocument();
+    expect(screen.getByText(/ответ построен только по документам команды/)).toBeInTheDocument();
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ sources: ["team", "corporate"] });
+  });
+
+  it("prefills the question from the home page search", () => {
+    mockApi([]);
+    renderAt("/ask?q=FTS5", "/ask", <AskPage />);
+    expect(screen.getByLabelText("Вопрос")).toHaveValue("FTS5");
   });
 
   it("explains that corporate sources are not connected", async () => {
@@ -68,5 +99,10 @@ describe("Ask the knowledge base", () => {
     await userEvent.type(screen.getByLabelText("Вопрос"), "Что такое ревизия?");
     await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
     expect(await screen.findByText("Интеграция недоступна")).toBeInTheDocument();
+
+    mockApi([{ method: "POST", path: "/api/assistant/ask", body: supportedAnswer }]);
+    await userEvent.click(screen.getByRole("button", { name: "Повторить запрос" }));
+    expect(await screen.findByText("Подтверждено источником")).toBeInTheDocument();
+    expect(screen.queryByText("Интеграция недоступна")).toBeNull();
   });
 });

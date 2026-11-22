@@ -1,8 +1,9 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { formatDate } from "../lib/labels";
 import { ExplorerPage } from "../pages/ExplorerPage";
-import { documentPage, emptyPage, facets } from "./fixtures";
+import { arisSummary, documentPage, emptyPage, facets, staleSync } from "./fixtures";
 import { mockApi, renderAt } from "./helpers";
 
 describe("Knowledge explorer", () => {
@@ -53,5 +54,50 @@ describe("Knowledge explorer", () => {
     renderAt("/documents", "/documents", <ExplorerPage />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Внутренняя ошибка сервера.");
     expect(screen.getByText("abc123")).toBeInTheDocument();
+  });
+
+  it("sorts through the URL-backed sort param and shows the update date", async () => {
+    const calls = mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: /\/api\/documents\?/, body: documentPage },
+    ]);
+    renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    const result = link.closest("li") as HTMLElement;
+    expect(within(result).getByText("Обновлён")).toBeInTheDocument();
+    expect(within(result).getByText(formatDate(arisSummary.updated_at))).toBeInTheDocument();
+
+    const sort = screen.getByLabelText("Сортировка");
+    expect(sort).toHaveValue("");
+    expect(within(sort).getByRole("option", { name: "Релевантность" })).toBeInTheDocument();
+    await userEvent.selectOptions(sort, "Сначала новые");
+    expect(sort).toHaveValue("updated");
+    expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=20&sort=updated")).toBe(true);
+  });
+
+  it("restores the sort from the URL and offers relevance only with a query", async () => {
+    const calls = mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: /\/api\/documents\?/, body: { ...documentPage, items: [{ ...arisSummary, index_state: "stale", updated_at: null }] } },
+    ]);
+    renderAt("/documents?sort=status", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    const result = link.closest("li") as HTMLElement;
+    expect(within(result).getByText("Версия может быть устаревшей")).toBeInTheDocument();
+    expect(within(result).getByText("не указано")).toBeInTheDocument();
+    const sort = screen.getByLabelText("Сортировка");
+    expect(sort).toHaveValue("status");
+    expect(within(sort).queryByRole("option", { name: "Релевантность" })).toBeNull();
+    expect(calls.some((c) => c.url === "/api/documents?page=1&size=20&sort=status")).toBe(true);
+  });
+
+  it("says when the listed documents come from a stale index", async () => {
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/index/status", body: staleSync },
+      { path: /\/api\/documents\?/, body: documentPage },
+    ]);
+    renderAt("/documents", "/documents", <ExplorerPage />);
+    expect(await screen.findByText("Данные могут быть устаревшими.")).toBeInTheDocument();
   });
 });

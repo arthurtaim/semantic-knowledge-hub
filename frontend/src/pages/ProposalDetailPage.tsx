@@ -1,42 +1,282 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
-import type { ProposalDetail } from "../api/types";
+import type { ProposalDetail, SourceDocumentState } from "../api/types";
 import { DiffView } from "../components/DiffView";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
-import { formatDateTime, PROPOSAL_ACTION_LABEL, PROPOSAL_STATUS_LABEL } from "../lib/labels";
+import { ProposalLifecycle } from "../components/ProposalLifecycle";
+import { MergeRequestStateLabel, ProposalStateLabel } from "../components/ProposalState";
+import {
+  formatDateTime,
+  pluralRu,
+  PROPOSAL_ACTION_LABEL,
+  PROPOSAL_ERROR_HINT,
+  PROPOSAL_ERROR_TITLE,
+  PROPOSAL_STATUS_LABEL,
+} from "../lib/labels";
+import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
+
+type ActionKind = "mark_ready" | "submit" | "refresh" | "reject";
+
+const PENDING_TEXT: Record<ActionKind, string> = {
+  mark_ready: "Сохраняем отметку «Готово к ревью»…",
+  submit: "Отправляем в GitLab: создаются ветка, коммит и Merge Request…",
+  refresh: "Запрашиваем состояние Merge Request в GitLab…",
+  reject: "Отклоняем предложение…",
+};
+
+const isHttpUrl = (value: string | null | undefined): value is string => Boolean(value && /^https?:\/\//i.test(value));
+
+function toApiError(err: unknown): ApiError {
+  return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
+}
+
+/** Treats a legacy `is_stale` flag as a base-revision conflict if the server did not classify it yet. */
+function effectiveSourceState(p: ProposalDetail): SourceDocumentState {
+  return p.source_document_state === "unchanged" && p.is_stale ? "changed_since_base" : p.source_document_state;
+}
+
+function SourceStatement({ proposal: p }: { proposal: ProposalDetail }) {
+  const state = effectiveSourceState(p);
+  let tone: "info" | "danger" | "success" = "info";
+  let text: string;
+  let detail: string | null = null;
+  if (state === "unchanged") {
+    text = "Исходный документ не изменён — пока существует только предложение.";
+  } else if (state === "changed_since_base") {
+    tone = "danger";
+    text = "Исходный документ изменился после создания предложения.";
+    detail = `Базовая ревизия предложения — ${p.base_revision}, текущая ревизия документа — ${
+      p.current_revision ?? "неизвестна"
+    }. Ничего не перезаписано: ни документ, ни предложение не изменены автоматически.`;
+  } else if (state === "updated_by_this_proposal") {
+    tone = "success";
+    text = "Изменение принято в GitLab и попало в базу знаний.";
+    detail = p.current_revision ? `Текущая ревизия документа — ${p.current_revision}.` : null;
+  } else {
+    tone = "danger";
+    text = "Исходный документ больше не найден в базе знаний.";
+    detail = `Документ ${p.document_id} удалён или переименован — это предложение нельзя применить.`;
+  }
+  return (
+    <Notice tone={tone} className="source-statement">
+      <p className="source-statement__text" data-source-state={state}>
+        <strong>{text}</strong>
+      </p>
+      {detail ? <p>{detail}</p> : null}
+      <p className="source-statement__note">
+        «Готово к ревью» — это не утверждение и не merge. Открытый Merge Request — тоже ещё не merge: решение принимают
+        ревьюеры в GitLab.
+      </p>
+    </Notice>
+  );
+}
+
+function MergeRequestPanel({ proposal: p }: { proposal: ProposalDetail }) {
+  const mr = p.merge_request;
+  const url = mr?.url ?? p.merge_request_url ?? (p.publication.state === "submitted" ? p.publication.external_url : null);
+  const state = mr?.state ?? p.merge_request_state;
+  const branch = p.branch_name ?? mr?.source_branch ?? null;
+  if (!mr && !url) return null;
+  return (
+    <section className="panel mr-panel" aria-labelledby="mr-title">
+      <h2 id="mr-title">Merge Request в GitLab</h2>
+      <dl className="mr-panel__fields">
+        <div>
+          <dt>Ветка</dt>
+          <dd>
+            {branch ? <code className="doc-id">{branch}</code> : "не указана"}
+            {mr?.target_branch ? (
+              <>
+                {" "}
+                → <code className="doc-id">{mr.target_branch}</code>
+              </>
+            ) : null}
+          </dd>
+        </div>
+        {mr?.iid ? (
+          <div>
+            <dt>Номер</dt>
+            <dd>!{mr.iid}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Состояние MR</dt>
+          <dd>{state ? <MergeRequestStateLabel state={state} /> : "не получено от GitLab"}</dd>
+        </div>
+        <div>
+          <dt>Проверено</dt>
+          <dd>{mr?.checked_at ? formatDateTime(mr.checked_at) : "ещё не проверялось"}</dd>
+        </div>
+      </dl>
+      {isHttpUrl(url) ? (
+        <a href={url} className="button button--secondary" target="_blank" rel="noopener noreferrer">
+          Открыть Merge Request в GitLab
+          <span aria-hidden="true">↗</span>
+        </a>
+      ) : url ? (
+        <p>
+          Адрес MR: <code className="doc-id">{url}</code>
+        </p>
+      ) : null}
+      <p className="muted">
+        Состояние MR показано так, как его последний раз сообщил GitLab. Статус «Принято (merge)» появляется только после
+        подтверждения от GitLab.
+      </p>
+    </section>
+  );
+}
+
+function SubmissionFailurePanel({ proposal: p }: { proposal: ProposalDetail }) {
+  const s = p.submission;
+  return (
+    <section className="panel failure-panel" aria-labelledby="failure-title">
+      <h2 id="failure-title">Отправка в GitLab не удалась</h2>
+      <p>{s.error_message ?? "GitLab не принял изменения."}</p>
+      <dl className="inline-meta">
+        {s.error_code ? (
+          <div>
+            <dt>Код ошибки</dt>
+            <dd>
+              <code>{s.error_code}</code>
+            </dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Попыток</dt>
+          <dd>{s.attempts}</dd>
+        </div>
+        <div>
+          <dt>Последняя попытка</dt>
+          <dd>{formatDateTime(s.last_attempt_at)}</dd>
+        </div>
+      </dl>
+      {s.uncertain ? (
+        <Notice tone="warning">
+          Ответ GitLab на последнюю запись не получен (например, из-за тайм-аута) — изменения могли быть применены. Перед
+          повторной записью приложение сначала проверит GitLab и не создаст дубликат ветки, коммита или MR. Можно также
+          нажать «Проверить статус в GitLab»: если MR уже создан, он будет найден и привязан к предложению.
+        </Notice>
+      ) : null}
+      <p className="muted">Предложение сохранено локально — ничего не потеряно. Отправку можно повторить.</p>
+    </section>
+  );
+}
+
+function ConflictPanel({ proposal: p }: { proposal: ProposalDetail }) {
+  const href = `/proposals/new?document=${encodeURIComponent(p.document_id)}&from=${encodeURIComponent(p.id)}`;
+  return (
+    <section className="panel conflict-panel" aria-labelledby="conflict-title">
+      <h2 id="conflict-title">Как продолжить после конфликта</h2>
+      <p>
+        Пока предложение ждало ревью, документ изменился. Чтобы не затереть чужие правки, это предложение не будет
+        отправлено. Создайте новое предложение на основе актуальной версии и перенесите в него свои изменения.
+      </p>
+      <dl className="inline-meta">
+        <div>
+          <dt>Базовая ревизия предложения</dt>
+          <dd>
+            <code className="doc-id">{p.base_revision}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Актуальная ревизия документа</dt>
+          <dd>
+            <code className="doc-id">{p.current_revision ?? "неизвестна"}</code>
+          </dd>
+        </div>
+      </dl>
+      {p.source_document_state !== "missing" ? (
+        <Link to={href} className="button button--primary">
+          Создать новое предложение на основе актуальной версии
+        </Link>
+      ) : null}
+    </section>
+  );
+}
+
+function successMessage(kind: ActionKind, result: ProposalDetail): string {
+  if (kind === "mark_ready") return "Предложение отмечено «Готово к ревью». Документ не изменён.";
+  if (kind === "reject") return "Предложение отклонено. Документ не изменён.";
+  if (kind === "submit") {
+    return result.status === "submitted_to_gitlab"
+      ? "Предложение отправлено в GitLab: создан Merge Request. Документ изменится только после merge."
+      : `Отправка обработана, статус: «${PROPOSAL_STATUS_LABEL[result.status]}».`;
+  }
+  if (result.status === "merged") return "GitLab подтвердил merge.";
+  if (result.status === "rejected") return "Merge Request закрыт в GitLab без merge — предложение отклонено.";
+  return `Статус проверен в GitLab: «${PROPOSAL_STATUS_LABEL[result.status]}».`;
+}
 
 export function ProposalDetailPage() {
   const { id = "" } = useParams();
+  const session = useSession();
   const { data, error, loading, reload, setData } = useAsync(() => api.draft(id), id);
   const [actionError, setActionError] = useState<ApiError | null>(null);
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState<ActionKind | null>(null);
   const [confirmReject, setConfirmReject] = useState(false);
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState("");
+  const inFlight = useRef(false);
 
-  async function run(action: () => Promise<ProposalDetail>, done: string) {
-    setPending(true);
+  async function run(kind: ActionKind, action: () => Promise<ProposalDetail>) {
+    if (inFlight.current) return; // guards against a double click before React re-renders
+    inFlight.current = true;
+    setPending(kind);
     setActionError(null);
     setMessage("");
     try {
-      setData(await action());
-      setMessage(done);
+      const result = await action();
+      setData(result);
+      setMessage(successMessage(kind, result));
       setConfirmReject(false);
     } catch (err) {
-      setActionError(err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null));
+      setActionError(toApiError(err));
+      // The server may have changed the status (conflict, submission_failed): show the current state.
+      try {
+        setData(await api.draft(id));
+      } catch {
+        // keep the last known state; the error above is already visible
+      }
     } finally {
-      setPending(false);
+      inFlight.current = false;
+      setPending(null);
     }
   }
 
-  if (loading && !data) return <Loading />;
-  if (error) return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Предложение не найдено" : undefined} />;
+  if (loading && !data) return <Loading label="Загрузка предложения…" />;
+  if (error && !data) {
+    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Предложение не найдено" : undefined} />;
+  }
   if (!data) return null;
   const p = data;
   const errors = p.validation.filter((i) => i.severity === "error");
   const warnings = p.validation.filter((i) => i.severity === "warning");
+  const busy = pending !== null;
+  const gitlabEnabled = session ? session.features.gitlab_proposals : p.publication.state !== "disabled";
+  const sourceState = effectiveSourceState(p);
+  const showConflict =
+    p.status === "conflict" || (sourceState === "changed_since_base" && p.status !== "merged" && p.status !== "rejected");
+  const showMarkReady = p.status === "draft";
+  const showSubmit = p.status === "draft" || p.status === "ready_for_review" || p.status === "submitting";
+  const showRetry = p.status === "submission_failed";
+  const showRefresh = p.can_refresh_status || p.status === "submitted_to_gitlab";
+  const settled = p.status === "merged" || p.status === "rejected";
+
+  let submitHint: string | null = null;
+  if (showSubmit || showRetry) {
+    if (!gitlabEnabled) submitHint = "Отправка в GitLab не настроена — предложение остаётся локальным.";
+    else if (p.status === "draft") submitHint = "Отправить в GitLab можно после отметки «Готово к ревью».";
+    else if (p.status === "submitting") submitHint = "Отправка уже выполняется. Проверьте статус чуть позже.";
+    else if (!p.can_submit && errors.length > 0) submitHint = "Сначала исправьте ошибки проверки в новом предложении.";
+    else if (!p.can_submit) submitHint = "Отправка сейчас недоступна для этого предложения.";
+    else if (showRetry && p.submission.uncertain) {
+      submitHint = "Перед повторной записью приложение проверит, что уже создано в GitLab.";
+    } else {
+      submitHint = "Будут созданы ветка, коммит и Merge Request. Документ изменится только после merge в GitLab.";
+    }
+  }
 
   return (
     <div className="proposal">
@@ -53,7 +293,7 @@ export function ProposalDetailPage() {
       </div>
 
       <div className="proposal__status">
-        <span className={`proposal-state proposal-state--${p.status}`}>{PROPOSAL_STATUS_LABEL[p.status]}</span>
+        <ProposalStateLabel status={p.status} />
         <dl className="inline-meta">
           <div>
             <dt>Автор</dt>
@@ -82,16 +322,20 @@ export function ProposalDetailPage() {
         </dl>
       </div>
 
-      <Notice tone="info">
-        Исходный документ не изменяется. «Готово к ревью» — это не утверждение и не merge: решение принимают
-        ревьюеры в GitLab.
-      </Notice>
-      {p.is_stale ? (
-        <Notice tone="danger">
-          Исходный документ изменился после создания предложения (ревизия {p.current_revision ?? "—"}). Отправить на
-          ревью нельзя — создайте новое предложение на основе актуального текста.
+      <ProposalLifecycle proposal={p} />
+      <SourceStatement proposal={p} />
+
+      {!gitlabEnabled && !settled ? (
+        <Notice tone="info">
+          Отправка в GitLab не настроена — предложение остаётся локальным в этом приложении. Ревью и merge нужно выполнить
+          вне приложения; документ в базе знаний от этого не изменится.
         </Notice>
       ) : null}
+
+      {showConflict ? <ConflictPanel proposal={p} /> : null}
+      {p.status === "submission_failed" ? <SubmissionFailurePanel proposal={p} /> : null}
+      <MergeRequestPanel proposal={p} />
+
       {errors.length > 0 ? (
         <Notice tone="danger">
           <p>Ошибки проверки — исправьте их в новом предложении:</p>
@@ -122,51 +366,79 @@ export function ProposalDetailPage() {
       </section>
 
       <section className="proposal__actions" aria-labelledby="actions-title">
-        <h2 id="actions-title">Решение</h2>
-        <div aria-live="polite">{message ? <p className="success">{message}</p> : null}</div>
-        {actionError ? <ErrorState error={actionError} /> : null}
+        <h2 id="actions-title">Действия</h2>
+        <div aria-live="polite" role="status" className="proposal__live">
+          {pending ? <p className="muted">{PENDING_TEXT[pending]}</p> : null}
+          {message && !pending ? <p className="success">{message}</p> : null}
+        </div>
+        {actionError ? (
+          <div className="stack">
+            <ErrorState error={actionError} title={PROPOSAL_ERROR_TITLE[actionError.code]} />
+            {PROPOSAL_ERROR_HINT[actionError.code] ? <p>{PROPOSAL_ERROR_HINT[actionError.code]}</p> : null}
+            <p className="muted">
+              Состояние предложения обновлено: «{PROPOSAL_STATUS_LABEL[p.status]}». Локальное предложение сохранено.
+            </p>
+          </div>
+        ) : null}
         <div className="button-row">
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={!p.can_mark_ready || pending}
-            onClick={() => run(() => api.markReady(p.id), "Предложение отмечено «Готово к ревью». Документ не изменён.")}
-          >
-            Отметить «Готово к ревью»
-          </button>
-          {!confirmReject ? (
+          {showMarkReady ? (
             <button
               type="button"
-              className="button button--danger"
-              disabled={!p.can_reject || pending}
-              onClick={() => setConfirmReject(true)}
+              className="button button--primary"
+              disabled={!p.can_mark_ready || busy}
+              onClick={() => run("mark_ready", () => api.markReady(p.id))}
             >
+              Отметить «Готово к ревью»
+            </button>
+          ) : null}
+          {showSubmit ? (
+            <button
+              type="button"
+              className={`button ${p.status === "ready_for_review" ? "button--primary" : "button--secondary"}`}
+              disabled={!p.can_submit || !gitlabEnabled || busy}
+              aria-describedby={submitHint ? "submit-hint" : undefined}
+              onClick={() => run("submit", () => api.submitDraft(p.id))}
+            >
+              Отправить в GitLab
+            </button>
+          ) : null}
+          {showRetry ? (
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={!p.can_submit || !gitlabEnabled || busy}
+              aria-describedby={submitHint ? "submit-hint" : undefined}
+              onClick={() => run("submit", () => api.submitDraft(p.id))}
+            >
+              Повторить отправку
+            </button>
+          ) : null}
+          {showRefresh ? (
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={!p.can_refresh_status || busy}
+              onClick={() => run("refresh", () => api.refreshDraftStatus(p.id))}
+            >
+              Проверить статус в GitLab
+            </button>
+          ) : null}
+          {p.can_reject && !confirmReject ? (
+            <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmReject(true)}>
               Отклонить
             </button>
           ) : null}
-          <button
-            type="button"
-            className="button button--secondary"
-            disabled={pending || p.status !== "ready_for_review" || p.publication.state === "disabled"}
-            onClick={() => run(() => api.openMergeRequest(p.id), "Merge Request создан.")}
-            aria-describedby="mr-hint"
-          >
-            Открыть MR в GitLab
-          </button>
         </div>
-        {p.publication.state === "submitted" && p.publication.external_url ? (
-          <p>
-            Merge Request:{" "}
-            <a href={p.publication.external_url} target="_blank" rel="noopener noreferrer nofollow">
-              {p.publication.external_url}
-            </a>
+        {submitHint ? (
+          <p id="submit-hint" className="muted">
+            {submitHint}
           </p>
         ) : null}
-        <p id="mr-hint" className="muted">
-          {p.publication.state === "disabled"
-            ? "Создание Merge Request отключено в конфигурации (GITLAB_PROPOSALS_ENABLED=false)."
-            : "MR можно открыть после статуса «Готово к ревью»."}
-        </p>
+        {settled && !showRefresh ? (
+          <p className="muted">
+            {p.status === "merged" ? "Предложение завершено: merge подтверждён GitLab." : "Предложение закрыто без изменений документа."}
+          </p>
+        ) : null}
         {confirmReject ? (
           <div className="reject-box">
             <label htmlFor="reject-comment">Комментарий к отклонению (необязательно)</label>
@@ -175,12 +447,12 @@ export function ProposalDetailPage() {
               <button
                 type="button"
                 className="button button--danger"
-                disabled={pending}
-                onClick={() => run(() => api.rejectDraft(p.id, comment), "Предложение отклонено. Документ не изменён.")}
+                disabled={busy}
+                onClick={() => run("reject", () => api.rejectDraft(p.id, comment))}
               >
                 Подтвердить отклонение
               </button>
-              <button type="button" className="button button--ghost" onClick={() => setConfirmReject(false)}>
+              <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmReject(false)}>
                 Отмена
               </button>
             </div>
@@ -198,11 +470,19 @@ export function ProposalDetailPage() {
         <ol className="history">
           {p.history.map((event, index) => (
             <li key={index}>
-              <time dateTime={event.at}>{formatDateTime(event.at)}</time> — {PROPOSAL_ACTION_LABEL[event.action] ?? event.action}
+              <time dateTime={event.at}>{formatDateTime(event.at)}</time> —{" "}
+              {PROPOSAL_ACTION_LABEL[event.action] ?? event.action}
+              {event.status ? <span className="muted"> → {PROPOSAL_STATUS_LABEL[event.status] ?? event.status}</span> : null}
               <span className="muted"> ({event.actor})</span>
             </li>
           ))}
         </ol>
+        {p.submission.attempts > 0 && p.status !== "submission_failed" ? (
+          <p className="muted">
+            {p.submission.attempts} {pluralRu(p.submission.attempts, "попытка", "попытки", "попыток")} отправки в GitLab,
+            последняя — {formatDateTime(p.submission.last_attempt_at)}.
+          </p>
+        ) : null}
       </section>
     </div>
   );
