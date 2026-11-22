@@ -82,10 +82,12 @@ export function lifecycleSteps(p: ProposalDetail): LifecycleStep[] {
       break;
   }
 
-  return STEP_TITLES.map(([key, title], index) => {
+  return STEP_TITLES.map(([key, defaultTitle], index) => {
     let state: StepState = "pending";
     if (index < at) state = "done";
     else if (index === at) state = failed ? "failed" : "current";
+    // A new document is not "updated" in the knowledge base: it appears there after the merge.
+    const title = key === "knowledge_base" && p.operation === "create" ? "Добавлено в базу знаний" : defaultTitle;
     return { key, title, state, note: index === at ? note : null };
   });
 }

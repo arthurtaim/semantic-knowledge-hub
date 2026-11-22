@@ -1,29 +1,32 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { ProposalDetail, SourceDocumentState } from "../api/types";
 import { DiffView } from "../components/DiffView";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { ProposalLifecycle } from "../components/ProposalLifecycle";
-import { MergeRequestStateLabel, ProposalStateLabel } from "../components/ProposalState";
+import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../components/ProposalState";
 import {
+  AUTHORING_ERROR_TITLE,
   formatDateTime,
   pluralRu,
   PROPOSAL_ACTION_LABEL,
   PROPOSAL_ERROR_HINT,
   PROPOSAL_ERROR_TITLE,
   PROPOSAL_STATUS_LABEL,
+  shortRevision,
 } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 
-type ActionKind = "mark_ready" | "submit" | "refresh" | "reject";
+type ActionKind = "mark_ready" | "submit" | "refresh" | "reject" | "delete";
 
 const PENDING_TEXT: Record<ActionKind, string> = {
   mark_ready: "Сохраняем отметку «Готово к ревью»…",
   submit: "Отправляем в GitLab: создаются ветка, коммит и Merge Request…",
   refresh: "Запрашиваем состояние Merge Request в GitLab…",
   reject: "Отклоняем предложение…",
+  delete: "Удаляем черновик…",
 };
 
 const isHttpUrl = (value: string | null | undefined): value is string => Boolean(value && /^https?:\/\//i.test(value));
@@ -42,7 +45,19 @@ function SourceStatement({ proposal: p }: { proposal: ProposalDetail }) {
   let tone: "info" | "danger" | "success" = "info";
   let text: string;
   let detail: string | null = null;
-  if (state === "unchanged") {
+  if (state === "new_document") {
+    text = "Документ появится в базе знаний только после merge в GitLab.";
+    detail = `Сейчас существует только предложение: файл ${p.document_path} ещё не создан, документ не виден в каталоге, поиске и ответах ассистента.`;
+  } else if (state === "id_taken") {
+    tone = "danger";
+    text = `Документ с ID ${p.document_id} уже появился в базе знаний.`;
+    detail = `Пока предложение ждало ревью, этот ID или путь занял другой документ. Ничего не перезаписано. ${
+      p.can_edit ? "Измените ID, продолжив редактирование черновика." : "Создайте новый черновик с другим ID."
+    }`;
+  } else if (state === "updated_by_this_proposal" && p.operation === "create") {
+    tone = "success";
+    text = "Документ создан в GitLab и добавлен в базу знаний.";
+  } else if (state === "unchanged") {
     text = "Исходный документ не изменён — пока существует только предложение.";
   } else if (state === "changed_since_base") {
     tone = "danger";
@@ -165,6 +180,35 @@ function SubmissionFailurePanel({ proposal: p }: { proposal: ProposalDetail }) {
 }
 
 function ConflictPanel({ proposal: p }: { proposal: ProposalDetail }) {
+  if (p.operation === "create") {
+    return (
+      <section className="panel conflict-panel" aria-labelledby="conflict-title">
+        <h2 id="conflict-title">Как продолжить после конфликта</h2>
+        <p>
+          Пока предложение ждало ревью, документ с таким ID или файл с таким путём появился в базе знаний. Чтобы ничего
+          не перезаписать, это предложение не будет отправлено. Создайте новый черновик с другим ID — текст можно взять
+          из этого предложения.
+        </p>
+        <dl className="inline-meta">
+          <div>
+            <dt>ID</dt>
+            <dd>
+              <code className="doc-id">{p.document_id}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Путь в репозитории</dt>
+            <dd>
+              <code className="doc-id">{p.document_path}</code>
+            </dd>
+          </div>
+        </dl>
+        <Link to={`/documents/new?from=${encodeURIComponent(p.id)}`} className="button button--primary">
+          Создать новый черновик с этим текстом
+        </Link>
+      </section>
+    );
+  }
   const href = `/proposals/new?document=${encodeURIComponent(p.document_id)}&from=${encodeURIComponent(p.id)}`;
   return (
     <section className="panel conflict-panel" aria-labelledby="conflict-title">
@@ -212,10 +256,12 @@ function successMessage(kind: ActionKind, result: ProposalDetail): string {
 export function ProposalDetailPage() {
   const { id = "" } = useParams();
   const session = useSession();
+  const navigate = useNavigate();
   const { data, error, loading, reload, setData } = useAsync(() => api.draft(id), id);
   const [actionError, setActionError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState<ActionKind | null>(null);
   const [confirmReject, setConfirmReject] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [comment, setComment] = useState("");
   const [message, setMessage] = useState("");
   const inFlight = useRef(false);
@@ -245,6 +291,29 @@ export function ProposalDetailPage() {
     }
   }
 
+  async function deleteDraft() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setPending("delete");
+    setActionError(null);
+    setMessage("");
+    try {
+      await api.deleteDraft(id);
+      navigate("/proposals", { state: { notice: "Черновик удалён. Документы базы знаний не изменялись." } });
+    } catch (err) {
+      setActionError(toApiError(err));
+      setConfirmDelete(false);
+      try {
+        setData(await api.draft(id));
+      } catch {
+        // keep the last known state; the error above is already visible
+      }
+    } finally {
+      inFlight.current = false;
+      setPending(null);
+    }
+  }
+
   if (loading && !data) return <Loading label="Загрузка предложения…" />;
   if (error && !data) {
     return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Предложение не найдено" : undefined} />;
@@ -263,6 +332,10 @@ export function ProposalDetailPage() {
   const showRetry = p.status === "submission_failed";
   const showRefresh = p.can_refresh_status || p.status === "submitted_to_gitlab";
   const settled = p.status === "merged" || p.status === "rejected";
+  const creating = p.operation === "create";
+  const editHref = creating
+    ? `/documents/new?draft=${encodeURIComponent(p.id)}`
+    : `/proposals/new?edit=${encodeURIComponent(p.id)}`;
 
   let submitHint: string | null = null;
   if (showSubmit || showRetry) {
@@ -287,12 +360,19 @@ export function ProposalDetailPage() {
       </nav>
       <div className="page-head">
         <h1>
-          Изменение документа «<Link to={`/documents/${p.document_id}`}>{p.document_title}</Link>»
+          {creating ? "Новый документ" : "Изменение документа"} «
+          {creating && p.status !== "merged" ? (
+            p.document_title
+          ) : (
+            <Link to={`/documents/${p.document_id}`}>{p.document_title}</Link>
+          )}
+          »
         </h1>
         <p className="lead">{p.reason}</p>
       </div>
 
       <div className="proposal__status">
+        <OperationBadge operation={p.operation} />
         <ProposalStateLabel status={p.status} />
         <dl className="inline-meta">
           <div>
@@ -307,16 +387,28 @@ export function ProposalDetailPage() {
             <dt>Происхождение</dt>
             <dd>{p.origin === "ai_suggestion" ? "черновик ИИ, проверен человеком" : "ручная правка"}</dd>
           </div>
+          {creating ? (
+            <div>
+              <dt>Путь в репозитории</dt>
+              <dd>
+                <code className="doc-id">{p.document_path}</code>
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt>Базовая ревизия</dt>
-            <dd>
-              <code className="doc-id">{p.base_revision}</code>
-            </dd>
+            <dd>{creating || !p.base_revision ? "новый файл" : <code className="doc-id">{p.base_revision}</code>}</dd>
           </div>
           <div>
             <dt>Текущая ревизия</dt>
             <dd>
-              <code className="doc-id">{p.current_revision ?? "документ недоступен"}</code>
+              {p.current_revision ? (
+                <code className="doc-id">{p.current_revision}</code>
+              ) : creating ? (
+                "документа ещё нет в базе знаний"
+              ) : (
+                <code className="doc-id">документ недоступен</code>
+              )}
             </dd>
           </div>
         </dl>
@@ -324,6 +416,18 @@ export function ProposalDetailPage() {
 
       <ProposalLifecycle proposal={p} />
       <SourceStatement proposal={p} />
+      {p.status === "merged" && p.merged_revision ? (
+        <Notice tone="success" className="sync-notice">
+          <p>
+            <strong>Синхронизировано с базой знаний:</strong> ревизия{" "}
+            <code className="doc-id">{shortRevision(p.merged_revision)}</code>
+            {p.synced_at ? `, ${formatDateTime(p.synced_at)}` : ""}.
+          </p>
+          <Link to={`/documents/${encodeURIComponent(p.document_id)}`} className="text-link">
+            Открыть документ в базе знаний
+          </Link>
+        </Notice>
+      ) : null}
 
       {!gitlabEnabled && !settled ? (
         <Notice tone="info">
@@ -338,7 +442,11 @@ export function ProposalDetailPage() {
 
       {errors.length > 0 ? (
         <Notice tone="danger">
-          <p>Ошибки проверки — исправьте их в новом предложении:</p>
+          <p>
+            {p.can_edit
+              ? "Ошибки проверки — исправьте их, продолжив редактирование черновика:"
+              : "Ошибки проверки — исправьте их в новом предложении:"}
+          </p>
           <ul>
             {errors.map((issue) => (
               <li key={`${issue.code}-${issue.field ?? ""}`}>{issue.message}</li>
@@ -361,8 +469,13 @@ export function ProposalDetailPage() {
       ) : null}
 
       <section aria-labelledby="diff-title">
-        <h2 id="diff-title">Изменения</h2>
-        <DiffView diff={p.diff} />
+        <h2 id="diff-title">{creating ? "Содержимое нового файла" : "Изменения"}</h2>
+        {creating ? (
+          <p className="muted">
+            Файл <code className="doc-id">{p.document_path}</code> создаётся целиком: все строки добавлены.
+          </p>
+        ) : null}
+        <DiffView diff={p.diff} newFile={creating} />
       </section>
 
       <section className="proposal__actions" aria-labelledby="actions-title">
@@ -373,7 +486,10 @@ export function ProposalDetailPage() {
         </div>
         {actionError ? (
           <div className="stack">
-            <ErrorState error={actionError} title={PROPOSAL_ERROR_TITLE[actionError.code]} />
+            <ErrorState
+              error={actionError}
+              title={PROPOSAL_ERROR_TITLE[actionError.code] ?? AUTHORING_ERROR_TITLE[actionError.code]}
+            />
             {PROPOSAL_ERROR_HINT[actionError.code] ? <p>{PROPOSAL_ERROR_HINT[actionError.code]}</p> : null}
             <p className="muted">
               Состояние предложения обновлено: «{PROPOSAL_STATUS_LABEL[p.status]}». Локальное предложение сохранено.
@@ -381,6 +497,11 @@ export function ProposalDetailPage() {
           </div>
         ) : null}
         <div className="button-row">
+          {p.can_edit ? (
+            <Link to={editHref} className="button button--secondary">
+              Продолжить редактирование
+            </Link>
+          ) : null}
           {showMarkReady ? (
             <button
               type="button"
@@ -428,6 +549,11 @@ export function ProposalDetailPage() {
               Отклонить
             </button>
           ) : null}
+          {p.can_delete && !confirmDelete ? (
+            <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+              Удалить черновик
+            </button>
+          ) : null}
         </div>
         {submitHint ? (
           <p id="submit-hint" className="muted">
@@ -454,6 +580,24 @@ export function ProposalDetailPage() {
               </button>
               <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmReject(false)}>
                 Отмена
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {confirmDelete ? (
+          <div className="reject-box" role="group" aria-labelledby="confirm-delete-proposal">
+            <p id="confirm-delete-proposal">
+              <strong>Удалить черновик безвозвратно?</strong>{" "}
+              {creating
+                ? "Текст нового документа будет удалён; в базе знаний он не создавался."
+                : "Предложенная правка будет удалена; документ не изменится."}
+            </p>
+            <div className="button-row">
+              <button type="button" className="button button--danger" disabled={busy} onClick={deleteDraft}>
+                Удалить безвозвратно
+              </button>
+              <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>
+                Не удалять
               </button>
             </div>
           </div>

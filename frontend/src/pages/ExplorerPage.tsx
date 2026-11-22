@@ -146,6 +146,9 @@ export function ExplorerPage() {
             Найти
           </button>
         </form>
+        <Link to="/documents/new" className="button button--secondary">
+          Создать документ
+        </Link>
       </div>
 
       {index.data ? <IndexStatusNotice status={index.data} /> : null}

@@ -38,6 +38,7 @@ describe("Home page", () => {
     expect(ask).toHaveAttribute("href", "/ask");
     await userEvent.type(screen.getByLabelText("Поиск по базе знаний"), "ревизия");
     expect(ask).toHaveAttribute("href", "/ask?q=%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F");
+    expect(screen.getByRole("link", { name: "Создать документ" })).toHaveAttribute("href", "/documents/new");
     expect(await screen.findByRole("heading", { name: "Разделы" })).toBeInTheDocument();
   });
 
@@ -57,6 +58,7 @@ describe("Home page", () => {
     const links = await within(proposals).findAllByRole("link", { name: "ARIS integration — questions for discovery" });
     expect(links.map((l) => l.getAttribute("href")).sort()).toEqual(["/proposals/p-draft", "/proposals/p-failed"]);
     expect(within(proposals).getByText("Ошибка отправки")).toBeInTheDocument();
+    expect(within(proposals).getAllByText("Изменение документа")).toHaveLength(2);
     expect(within(proposals).queryByText("Уже в GitLab")).toBeNull();
     expect(within(proposals).queryByText("Уже принято")).toBeNull();
     expect(screen.queryByText(/Данные могут быть устаревшими/)).toBeNull();

@@ -1,8 +1,11 @@
 import type {
+  AiDraftResponse,
   AskResponse,
+  AuthoringCheckResponse,
   DocumentDetail,
   DocumentFacets,
   DocumentPage,
+  DocumentTemplateInfo,
   IntegrationsResponse,
   ProposalDetail,
   ProposalList,
@@ -19,6 +22,7 @@ export const session: SessionResponse = {
   features: {
     ai_mode: "mock",
     ai_edit_suggestions: false,
+    ai_authoring: true,
     corporate_search: "disabled",
     gitlab_proposals: false,
     confluence_publish: false,
@@ -186,8 +190,10 @@ export const integrations: IntegrationsResponse = {
 };
 
 export function proposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail {
+  const status = overrides.status ?? "draft";
   return {
     id: "a".repeat(32),
+    operation: "update",
     document_id: "SEM-INT-ARIS-001",
     document_title: "ARIS integration — questions for discovery",
     source: "local",
@@ -234,6 +240,13 @@ export function proposal(overrides: Partial<ProposalDetail> = {}): ProposalDetai
     branch_name: null,
     merge_request: null,
     submission: { attempts: 0, last_attempt_at: null, error_code: null, error_message: null, uncertain: false },
+    template_id: null,
+    edit_version: 1,
+    can_edit: status === "draft",
+    can_delete: status === "draft",
+    new_document: null,
+    merged_revision: null,
+    synced_at: null,
     ...overrides,
   };
 }
@@ -273,6 +286,7 @@ export function proposalSummary(overrides: Partial<ProposalSummary> = {}): Propo
   const p = proposal();
   return {
     id: p.id,
+    operation: p.operation,
     document_id: p.document_id,
     document_title: p.document_title,
     source: p.source,
@@ -308,3 +322,145 @@ export const actionableProposals: ProposalList = {
   ],
   total: 4,
 };
+
+// --- authoring of new documents ---
+
+export const architectureTemplate: DocumentTemplateInfo = {
+  id: "architecture",
+  title: "Архитектура",
+  description: "Архитектура системы, компонента или контура семантического слоя.",
+  doc_type: "architecture",
+  id_prefix: "SEM-ARCH",
+  default_tags: ["architecture"],
+  sections: ["Назначение", "Контекст", "Компоненты"],
+  skeleton:
+    "## Назначение\n> Требует уточнения: какую задачу решает система.\n\n" +
+    "## Контекст\n> Требует уточнения: окружение и границы.\n\n" +
+    "## Компоненты\n> Требует уточнения: основные компоненты.\n",
+  suggested_id: "SEM-ARCH-002",
+  suggested_path: "docs/SEM-ARCH-002.md",
+};
+
+export const adrTemplate: DocumentTemplateInfo = {
+  id: "adr",
+  title: "ADR",
+  description: "Архитектурное решение: контекст, альтернативы, решение и последствия.",
+  doc_type: "decision",
+  id_prefix: "SEM-ADR",
+  default_tags: ["adr"],
+  sections: ["Контекст", "Проблема", "Решение"],
+  skeleton: "## Контекст\n> Требует уточнения: контекст.\n\n## Проблема\n> Требует уточнения: проблема.\n\n## Решение\n> Требует уточнения: решение.\n",
+  suggested_id: "SEM-ADR-001",
+  suggested_path: "docs/SEM-ADR-001.md",
+};
+
+export const templates: DocumentTemplateInfo[] = [architectureTemplate, adrTemplate];
+
+export function checkResponse(overrides: Partial<AuthoringCheckResponse> = {}): AuthoringCheckResponse {
+  return {
+    content:
+      "---\nid: SEM-ARCH-002\ntitle: Витрина метрик\ntype: architecture\nstatus: draft\nowner: local-demo-user\n" +
+      "tags: [architecture]\nrelated_ids: []\nsource_refs: []\nreviewed_at: null\n---\n\n# Витрина метрик\n",
+    path: "docs/SEM-ARCH-002.md",
+    validation: [
+      {
+        severity: "warning",
+        code: "unresolved_placeholders",
+        message: "Осталось мест с пометкой «Требует уточнения»: 3.",
+        field: null,
+      },
+    ],
+    preview_html: "<h1>Витрина метрик</h1><p>Предпросмотр документа</p>",
+    id_available: true,
+    path_available: true,
+    error_count: 0,
+    warning_count: 1,
+    ...overrides,
+  };
+}
+
+export const aiDraft: AiDraftResponse = {
+  mode: "mock",
+  body:
+    "# Витрина метрик\n\n## Назначение\n> Требует уточнения: какую задачу решает система.\n\n" +
+    "## Контекст\n> This local demonstration models a knowledge base with four layers\n",
+  references: [
+    {
+      document_id: "SEM-ARCH-001",
+      title: "Semantic Layer — demonstration architecture",
+      revision: "sha256:0b52b3c354720bc",
+      status: "approved",
+      source: "local",
+      is_demo: true,
+    },
+  ],
+  citations: [
+    {
+      document_id: "SEM-ARCH-001",
+      title: "Semantic Layer — demonstration architecture",
+      revision: "sha256:0b52b3c354720bc",
+      status: "approved",
+      section: "Overview",
+      quote: "This local demonstration models a knowledge base with four layers",
+    },
+  ],
+  unverified_claims: ["Состав компонентов витрины не подтверждён источниками."],
+  warnings: ["Документ SEM-INT-ARIS-001 не утверждён и не используется как источник."],
+  insufficient_data: true,
+  suggested_related_ids: ["SEM-ARCH-001"],
+  access_scope: "team",
+};
+
+export const NEW_DOC_ID = "b".repeat(32);
+export const NEW_DOC_BODY = "# Витрина метрик\n\n## Назначение\nСобирает метрики клиентов.\n";
+
+/** A stored `create` proposal (a draft of a new document) as the server returns it. */
+export function newDocumentProposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail {
+  const content =
+    "---\nid: SEM-ARCH-002\ntitle: Витрина метрик\ntype: architecture\nstatus: draft\nowner: semantic-team\n" +
+    "tags: [architecture]\n---\n\n" +
+    NEW_DOC_BODY;
+  const lines = content.replace(/\n$/, "").split("\n");
+  return proposal({
+    id: NEW_DOC_ID,
+    operation: "create",
+    template_id: "architecture",
+    document_id: "SEM-ARCH-002",
+    document_title: "Витрина метрик",
+    document_path: "docs/SEM-ARCH-002.md",
+    reason: "Описать витрину клиентских метрик",
+    base_revision: "",
+    base_content: "",
+    proposed_content: content,
+    current_revision: null,
+    source_document_state: "new_document",
+    additions: lines.length,
+    deletions: 0,
+    diff: {
+      unified: "",
+      lines: [
+        { kind: "hunk", old_no: null, new_no: null, text: `@@ -0,0 +1,${lines.length} @@` },
+        ...lines.map((text, index) => ({ kind: "add" as const, old_no: null, new_no: index + 1, text })),
+      ],
+      additions: lines.length,
+      deletions: 0,
+      changed: true,
+    },
+    history: [{ at: "2026-11-22T00:00:00Z", actor: "local-demo-user", action: "created_new_document", status: "draft" }],
+    new_document: {
+      metadata: {
+        id: "SEM-ARCH-002",
+        title: "Витрина метрик",
+        type: "architecture",
+        status: "draft",
+        owner: "semantic-team",
+        tags: ["architecture"],
+        related_ids: [],
+        source_refs: [],
+        reviewed_at: null,
+      },
+      body: NEW_DOC_BODY,
+    },
+    ...overrides,
+  });
+}

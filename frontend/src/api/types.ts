@@ -33,7 +33,22 @@ export type ProposalStatus =
   | "conflict"
   | "submission_failed";
 export type MergeRequestState = "opened" | "merged" | "closed" | "locked" | "unknown";
-export type SourceDocumentState = "unchanged" | "changed_since_base" | "updated_by_this_proposal" | "missing";
+/**
+ * `new_document`: a `create` proposal whose document is not in the knowledge base yet (expected before merge);
+ * `id_taken`: a document with the proposed ID/path appeared in the knowledge base before this proposal merged.
+ */
+export type SourceDocumentState =
+  | "unchanged"
+  | "changed_since_base"
+  | "updated_by_this_proposal"
+  | "missing"
+  | "new_document"
+  | "id_taken";
+/** `create`: a new file in the knowledge base; `update`: a change of an existing document. */
+export type ProposalOperation = "create" | "update";
+export type ProposalOrigin = "manual" | "ai_suggestion";
+/** Statuses a NEW document may have; `deprecated` is invalid for a new document. */
+export type NewDocumentStatus = Exclude<DocStatus, "deprecated">;
 
 export interface HighlightSegment {
   text: string;
@@ -212,6 +227,8 @@ export interface SessionResponse {
   features: {
     ai_mode: "mock" | "internal_api" | "disabled";
     ai_edit_suggestions: boolean;
+    /** AI-assisted authoring of new documents (POST /api/authoring/ai-draft) is available. */
+    ai_authoring: boolean;
     corporate_search: IntegrationState;
     gitlab_proposals: boolean;
     confluence_publish: boolean;
@@ -242,15 +259,17 @@ export interface ProposalEvent {
 
 export interface ProposalSummary {
   id: string;
+  operation: ProposalOperation;
   document_id: string;
   document_title: string;
   source: SourceType;
   status: ProposalStatus;
   reason: string;
-  origin: "manual" | "ai_suggestion";
+  origin: ProposalOrigin;
   author: string;
   created_at: string;
   updated_at: string;
+  /** Empty for `create` proposals: a new file has no base revision. */
   base_revision: string;
   additions: number;
   deletions: number;
@@ -304,6 +323,21 @@ export interface ProposalDetail extends ProposalSummary {
   branch_name: string | null;
   merge_request: MergeRequestInfo | null;
   submission: SubmissionInfo;
+  template_id: string | null;
+  /** Optimistic-locking version for PUT /api/drafts/{id} (`expected_version`). */
+  edit_version: number;
+  can_edit: boolean;
+  can_delete: boolean;
+  /** Form view of a `create` proposal (frontmatter fields + Markdown body); null for updates. */
+  new_document: NewDocumentView | null;
+  /** Revision of the document in the knowledge base after the confirmed merge and sync. */
+  merged_revision: string | null;
+  synced_at: string | null;
+}
+
+export interface NewDocumentView {
+  metadata: Record<string, unknown>;
+  body: string;
 }
 
 export interface ProposalList {
@@ -316,7 +350,7 @@ export interface DraftCreate {
   base_revision: string;
   proposed_content: string;
   reason: string;
-  origin?: "manual" | "ai_suggestion";
+  origin?: ProposalOrigin;
 }
 
 export interface SuggestResponse {
@@ -336,4 +370,120 @@ export interface CorporatePage {
   version: string;
   updated_at: string | null;
   is_mock: boolean;
+}
+
+// --- authoring of new documents (backend/app/domain/proposals.py, api/authoring.py) ---
+
+export interface DocumentTemplateInfo {
+  id: string;
+  title: string;
+  description: string;
+  doc_type: DocType;
+  id_prefix: string;
+  default_tags: string[];
+  sections: string[];
+  /** Markdown body skeleton WITHOUT the `# Title` heading. */
+  skeleton: string;
+  suggested_id: string;
+  suggested_path: string;
+}
+
+export interface NewDocumentMetadata {
+  id: string;
+  title: string;
+  status: NewDocumentStatus;
+  owner: string;
+  tags: string[];
+  related_ids: string[];
+  source_refs: string[];
+  summary: string | null;
+}
+
+export interface AuthoringCheckRequest {
+  template_id: string;
+  metadata: NewDocumentMetadata;
+  body: string;
+  path?: string | null;
+  origin: ProposalOrigin;
+  /** The draft being edited, so that it does not collide with itself. */
+  exclude_proposal_id?: string | null;
+}
+
+export interface AuthoringCheckResponse {
+  /** The full Markdown file that would be proposed (generated YAML frontmatter + body). */
+  content: string;
+  path: string;
+  validation: ValidationIssue[];
+  /** Sanitized HTML; render only through <SafeHtml>. */
+  preview_html: string;
+  id_available: boolean;
+  path_available: boolean;
+  error_count: number;
+  warning_count: number;
+}
+
+export interface AiDraftRequest {
+  template_id: string;
+  title: string;
+  request: string;
+  related_ids: string[];
+}
+
+export interface AuthoringReference {
+  document_id: string;
+  title: string;
+  revision: string;
+  status: DocStatus;
+  source: SourceType;
+  is_demo: boolean;
+}
+
+export interface AuthoringCitation {
+  document_id: string;
+  title: string;
+  revision: string;
+  status: DocStatus;
+  section: string | null;
+  quote: string;
+}
+
+/** A text suggestion only: not stored, never a proposal by itself. */
+export interface AiDraftResponse {
+  mode: "mock" | "internal_api" | "disabled";
+  /** Markdown body including the `# title` heading. */
+  body: string;
+  references: AuthoringReference[];
+  citations: AuthoringCitation[];
+  unverified_claims: string[];
+  warnings: string[];
+  insufficient_data: boolean;
+  suggested_related_ids: string[];
+  access_scope: string;
+}
+
+export interface NewDocumentDraftCreate {
+  template_id: string;
+  metadata: NewDocumentMetadata;
+  body: string;
+  path?: string | null;
+  reason: string;
+  origin: ProposalOrigin;
+}
+
+/** PUT /api/drafts/{id} for a `create` draft. */
+export interface NewDocumentDraftUpdate {
+  expected_version: number;
+  reason?: string;
+  origin?: ProposalOrigin;
+  metadata: NewDocumentMetadata;
+  body: string;
+  path?: string | null;
+}
+
+/** PUT /api/drafts/{id} for an `update` draft. */
+export interface ChangeDraftUpdate {
+  expected_version: number;
+  reason?: string;
+  origin?: ProposalOrigin;
+  proposed_content: string;
 }

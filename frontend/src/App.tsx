@@ -6,6 +6,7 @@ import { Layout } from "./components/Layout";
 import { SessionContext } from "./lib/session";
 import { AskPage } from "./pages/AskPage";
 import { CorporatePage } from "./pages/CorporatePage";
+import { DocumentCreatePage } from "./pages/DocumentCreatePage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { ExplorerPage } from "./pages/ExplorerPage";
 import { HomePage } from "./pages/HomePage";
@@ -17,6 +18,7 @@ import { ProposalsPage } from "./pages/ProposalsPage";
 
 const TITLES: [RegExp, string][] = [
   [/^\/$/, "Главная"],
+  [/^\/documents\/new$/, "Новый документ"],
   [/^\/documents\/[^/]+/, "Документ"],
   [/^\/documents/, "База знаний"],
   [/^\/ask/, "Спросить"],
@@ -48,6 +50,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/documents" element={<ExplorerPage />} />
+          <Route path="/documents/new" element={<DocumentCreatePage />} />
           <Route path="/documents/:id" element={<DocumentPage />} />
           <Route path="/ask" element={<AskPage />} />
           <Route path="/proposals" element={<ProposalsPage />} />

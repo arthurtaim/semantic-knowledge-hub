@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { vi } from "vitest";
 import type { SessionResponse } from "../api/types";
 import { SessionContext } from "../lib/session";
@@ -38,7 +38,8 @@ export function mockApi(routes: MockRoute[]): RecordedCall[] {
       });
     }
     const body = typeof route.body === "function" ? (route.body as () => unknown)() : route.body;
-    return new Response(JSON.stringify(body), {
+    // A 204 response must not carry a body.
+    return new Response(route.status === 204 ? null : JSON.stringify(body), {
       status: route.status ?? 200,
       headers: { "Content-Type": "application/json", "X-Request-ID": "req-test" },
     });
@@ -59,6 +60,32 @@ export function renderAt(
           <Route path={routePattern} element={element} />
           <Route path="*" element={<p>Другая страница</p>} />
         </Routes>
+      </MemoryRouter>
+    </SessionContext.Provider>,
+  );
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
+}
+
+/** Renders several routes and exposes the current URL as `getByTestId("location")`. */
+export function renderRoutes(
+  path: string,
+  routes: Record<string, ReactElement>,
+  session: SessionResponse | null = defaultSession,
+) {
+  return render(
+    <SessionContext.Provider value={session}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          {Object.entries(routes).map(([pattern, element]) => (
+            <Route key={pattern} path={pattern} element={element} />
+          ))}
+          <Route path="*" element={<p>Другая страница</p>} />
+        </Routes>
+        <LocationProbe />
       </MemoryRouter>
     </SessionContext.Provider>,
   );

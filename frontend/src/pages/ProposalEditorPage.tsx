@@ -1,13 +1,24 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { DocumentDetail, ProposalDetail } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { StatusStamp } from "../components/StatusStamp";
+import { AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 
+/**
+ * `/proposals/new?document=<id>` creates a change proposal; `?edit=<proposal id>` continues editing a stored
+ * change draft (saved with PUT and optimistic locking). New documents are edited in `/documents/new?draft=<id>`.
+ */
 export function ProposalEditorPage() {
+  const [params] = useSearchParams();
+  const editId = params.get("edit") ?? "";
+  return editId ? <EditChangeDraft key={editId} id={editId} /> : <NewProposal />;
+}
+
+function NewProposal() {
   const [params] = useSearchParams();
   const documentId = params.get("document") ?? "";
   // ?from=<proposal id>: start from an earlier proposal's text (e.g. after a revision conflict).
@@ -253,6 +264,217 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
           </button>
           {!changed ? <span className="muted">Измените текст, чтобы создать предложение.</span> : null}
         </div>
+      </form>
+    </div>
+  );
+}
+
+// --- editing a stored change draft ------------------------------------------------------------------
+
+function toApiError(err: unknown): ApiError {
+  return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
+}
+
+function EditChangeDraft({ id }: { id: string }) {
+  const { data, error, loading, reload } = useAsync(() => api.draft(id), `edit-${id}`);
+  // After a lost-update conflict the stored version is reloaded; the author's text stays visible.
+  const [previousText, setPreviousText] = useState<string | null>(null);
+
+  if (loading && !data) return <Loading label="Загрузка черновика…" />;
+  if (error && !data) {
+    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Черновик не найден" : undefined} />;
+  }
+  if (!data) return null;
+  if (data.operation === "create") return <Navigate to={`/documents/new?draft=${encodeURIComponent(id)}`} replace />;
+  if (!data.can_edit) {
+    return (
+      <Notice tone="warning">
+        <p>
+          <strong>Черновик больше нельзя редактировать</strong>: статус предложения — «{PROPOSAL_STATUS_LABEL[data.status]}».
+        </p>
+        <Link to={`/proposals/${encodeURIComponent(id)}`} className="text-link">
+          Открыть предложение
+        </Link>
+      </Notice>
+    );
+  }
+  return (
+    <ChangeDraftForm
+      key={data.edit_version}
+      proposal={data}
+      previousText={previousText}
+      onReload={(text) => {
+        setPreviousText(text);
+        reload();
+      }}
+    />
+  );
+}
+
+interface ChangeDraftFormProps {
+  proposal: ProposalDetail;
+  previousText: string | null;
+  onReload: (text: string) => void;
+}
+
+function ChangeDraftForm({ proposal: p, previousText, onReload }: ChangeDraftFormProps) {
+  const navigate = useNavigate();
+  const [content, setContent] = useState(p.proposed_content);
+  const [reason, setReason] = useState(p.reason);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [pending, setPending] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const dirty = content !== p.proposed_content || reason.trim() !== p.reason;
+  const back = `/proposals/${encodeURIComponent(p.id)}`;
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+    try {
+      await api.saveDraft(p.id, { expected_version: p.edit_version, reason: reason.trim(), proposed_content: content });
+      navigate(back);
+    } catch (err) {
+      setError(toApiError(err)); // the text stays in the editor
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function onCancel(event: MouseEvent<HTMLAnchorElement>) {
+    if (!dirty) return;
+    event.preventDefault();
+    setConfirmLeave(true);
+  }
+
+  return (
+    <div className="editor">
+      <nav className="breadcrumbs" aria-label="Путь">
+        <Link to="/proposals">Предложения</Link>
+        <span aria-hidden="true">/</span>
+        <Link to={back}>{p.document_id}</Link>
+        <span aria-hidden="true">/</span>
+        <span aria-current="page">Редактирование черновика</span>
+      </nav>
+      <div className="page-head">
+        <h1>Редактирование черновика</h1>
+        <p className="lead">
+          Изменение документа «{p.document_title}». Сохранение обновит черновик предложения — сам документ не меняется до
+          merge в GitLab.
+        </p>
+      </div>
+      <dl className="inline-meta">
+        <div>
+          <dt>Документ</dt>
+          <dd>
+            <code className="doc-id">{p.document_id}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Базовая ревизия</dt>
+          <dd>
+            <code className="doc-id">{p.base_revision}</code>
+          </dd>
+        </div>
+      </dl>
+      {previousText !== null && previousText !== p.proposed_content ? (
+        <Notice tone="warning">
+          <p>Загружена сохранённая версия черновика. Ваш прежний текст — ниже: перенесите нужные правки.</p>
+          <details>
+            <summary>Показать прежний текст</summary>
+            <pre className="raw-source">
+              <code>{previousText}</code>
+            </pre>
+          </details>
+        </Notice>
+      ) : null}
+      <form className="editor__form" onSubmit={save}>
+        <label htmlFor="content">Текст документа (Markdown с YAML-заголовком)</label>
+        <textarea
+          id="content"
+          className="editor__source"
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          rows={22}
+          spellCheck={false}
+        />
+        <label htmlFor="reason">Причина изменения</label>
+        <input
+          id="reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={2000}
+          required
+          minLength={3}
+        />
+        {error ? (
+          <div className="stack">
+            <ErrorState
+              error={error}
+              title={AUTHORING_ERROR_TITLE[error.code]}
+              onRetry={error.code === "draft_modified" ? () => onReload(content) : undefined}
+              retryLabel="Загрузить сохранённую версию"
+            />
+            {error.code === "draft_not_editable" ? (
+              <Link to={back} className="text-link">
+                Открыть предложение
+              </Link>
+            ) : (
+              <p className="muted">Ваш текст остаётся в редакторе.</p>
+            )}
+          </div>
+        ) : null}
+        <p className="save-state" role="status" aria-live="polite">
+          {dirty ? "Есть несохранённые изменения" : "Изменений после последнего сохранения нет"}
+        </p>
+        <div className="editor__actions">
+          <button
+            type="submit"
+            className="button button--primary"
+            disabled={pending || !dirty || reason.trim().length < 3}
+          >
+            Сохранить черновик
+          </button>
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={() => {
+              setContent(p.proposed_content);
+              setReason(p.reason);
+            }}
+            disabled={!dirty || pending}
+          >
+            Вернуть сохранённый текст
+          </button>
+          <Link to={back} className="button button--ghost" onClick={onCancel}>
+            Отмена
+          </Link>
+        </div>
+        {confirmLeave ? (
+          <div className="reject-box" role="group" aria-labelledby="confirm-leave-change">
+            <p id="confirm-leave-change">
+              <strong>Есть несохранённые изменения.</strong> Если уйти сейчас, они будут потеряны.
+            </p>
+            <div className="button-row">
+              <button type="button" className="button button--danger" onClick={() => navigate(back)}>
+                Уйти без сохранения
+              </button>
+              <button type="button" className="button button--ghost" onClick={() => setConfirmLeave(false)}>
+                Остаться
+              </button>
+            </div>
+          </div>
+        ) : null}
       </form>
     </div>
   );

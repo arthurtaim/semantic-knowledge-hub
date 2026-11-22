@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import type { ProposalSummary } from "../api/types";
 import { EmptyState, ErrorState, Loading } from "../components/Feedback";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
-import { ProposalStateLabel } from "../components/ProposalState";
+import { OperationBadge, ProposalStateLabel } from "../components/ProposalState";
 import { StaleMark } from "../components/StaleMark";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
@@ -105,6 +105,7 @@ function ProposalsNeedingAction() {
                   {p.document_title}
                 </Link>
                 <span className="doc-row__meta">
+                  <OperationBadge operation={p.operation} />
                   <ProposalStateLabel status={p.status} />
                   <span>{p.reason}</span>
                   <span>обновлено {formatDateTime(p.updated_at)}</span>
@@ -175,6 +176,9 @@ export function HomePage() {
           </form>
           <Link to={askHref} className="button button--ask">
             Спросить ассистента
+          </Link>
+          <Link to="/documents/new" className="button button--secondary home__create">
+            Создать документ
           </Link>
         </div>
         <p className="home__hint muted">

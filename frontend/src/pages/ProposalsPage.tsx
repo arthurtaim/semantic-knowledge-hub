@@ -1,8 +1,8 @@
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { ProposalStatus } from "../api/types";
-import { EmptyState, ErrorState, Loading } from "../components/Feedback";
-import { MergeRequestStateLabel, ProposalStateLabel } from "../components/ProposalState";
+import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
+import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../components/ProposalState";
 import { formatDateTime, PROPOSAL_STATUS_LABEL, PROPOSAL_STATUS_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
 
@@ -14,8 +14,15 @@ const FILTERS: { value: ProposalStatus | ""; label: string }[] = [
 const KNOWN = new Set<string>(PROPOSAL_STATUS_ORDER);
 const isHttpUrl = (value: string | null): value is string => Boolean(value && /^https?:\/\//i.test(value));
 
+function routeNotice(state: unknown): string | null {
+  if (state && typeof state === "object" && "notice" in state && typeof state.notice === "string") return state.notice;
+  return null;
+}
+
 export function ProposalsPage() {
   const [params, setParams] = useSearchParams();
+  // e.g. "Черновик удалён" after deleting a draft on another page
+  const notice = routeNotice(useLocation().state);
   const raw = params.get("status") ?? "";
   const status = (KNOWN.has(raw) ? raw : "") as ProposalStatus | "";
   const { data, error, loading, reload } = useAsync(
@@ -31,7 +38,15 @@ export function ProposalsPage() {
           Все правки проходят через предложения: они не меняют документы до ревью и merge в GitLab. «Готово к ревью» и
           открытый MR — это ещё не merge.
         </p>
+        <Link to="/documents/new" className="button button--secondary">
+          Создать документ
+        </Link>
       </div>
+      {notice ? (
+        <div role="status">
+          <Notice tone="success">{notice}</Notice>
+        </div>
+      ) : null}
       <div className="filter-chips" role="group" aria-label="Фильтр по статусу">
         {FILTERS.map((filter) => (
           <button
@@ -51,7 +66,10 @@ export function ProposalsPage() {
       </div>
       {data && data.items.length === 0 ? (
         <EmptyState title={status ? `Нет предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»` : "Предложений пока нет"}>
-          <p>Откройте документ и нажмите «Предложить изменение», чтобы подготовить правку с diff.</p>
+          <p>
+            Откройте документ и нажмите «Предложить изменение», чтобы подготовить правку с diff, или создайте новый
+            документ.
+          </p>
           <div className="button-row">
             <Link to="/documents" className="button button--secondary">
               Перейти к документам
@@ -71,6 +89,7 @@ export function ProposalsPage() {
             <thead>
               <tr>
                 <th scope="col">Документ</th>
+                <th scope="col">Операция</th>
                 <th scope="col">Причина</th>
                 <th scope="col">Статус</th>
                 <th scope="col">Merge Request</th>
@@ -85,6 +104,9 @@ export function ProposalsPage() {
                   <td>
                     <Link to={`/proposals/${p.id}`}>{p.document_title}</Link>
                     <code className="doc-id doc-id--block">{p.document_id}</code>
+                  </td>
+                  <td>
+                    <OperationBadge operation={p.operation} />
                   </td>
                   <td>{p.reason}</td>
                   <td>

@@ -1,14 +1,22 @@
 import type {
+  AiDraftRequest,
+  AiDraftResponse,
   AskRequest,
   AskResponse,
+  AuthoringCheckRequest,
+  AuthoringCheckResponse,
+  ChangeDraftUpdate,
   CorporatePage,
   DocumentDetail,
   DocumentFacets,
   DocumentPage,
   DocumentSort,
+  DocumentTemplateInfo,
   DraftCreate,
   IntegrationsResponse,
   LoadIssue,
+  NewDocumentDraftCreate,
+  NewDocumentDraftUpdate,
   ProposalDetail,
   ProposalList,
   ProposalStatus,
@@ -135,4 +143,20 @@ export const api = {
     request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/refresh-status`, { method: "POST" }),
   suggestDraft: (payload: { document_id: string; base_revision: string; instruction: string }) =>
     request<SuggestResponse>("/drafts/suggest", { method: "POST", body: json(payload) }),
+  /** Saves an editable draft; `expected_version` guards against lost updates (409 `draft_modified`). */
+  saveDraft: (id: string, payload: NewDocumentDraftUpdate | ChangeDraftUpdate) =>
+    request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}`, { method: "PUT", body: json(payload) }),
+  deleteDraft: (id: string) => request<null>(`/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  // --- authoring of new documents ---
+  templates: () => request<DocumentTemplateInfo[]>("/authoring/templates"),
+  /** Stateless validation + safe preview of a new document; stores nothing. */
+  checkNewDocument: (payload: AuthoringCheckRequest) =>
+    request<AuthoringCheckResponse>("/authoring/check", { method: "POST", body: json(payload) }),
+  /** A text suggestion only (503 `ai_authoring_unavailable` when AI is off). */
+  aiDraft: (payload: AiDraftRequest) =>
+    request<AiDraftResponse>("/authoring/ai-draft", { method: "POST", body: json(payload) }),
+  /** Persists a draft of a NEW document (proposal with operation=create). 409 when the ID/path is taken. */
+  createNewDocumentDraft: (payload: NewDocumentDraftCreate) =>
+    request<ProposalDetail>("/authoring/drafts", { method: "POST", body: json(payload) }),
 };

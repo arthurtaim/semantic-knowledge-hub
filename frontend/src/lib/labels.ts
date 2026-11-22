@@ -5,6 +5,8 @@ import type {
   DocumentSort,
   IntegrationState,
   MergeRequestState,
+  NewDocumentStatus,
+  ProposalOperation,
   ProposalStatus,
   ReviewState,
   SourceType,
@@ -98,6 +100,10 @@ export const PROPOSAL_NEEDS_ACTION: ProposalStatus[] = ["draft", "ready_for_revi
 /** Labels for ProposalEvent.action; unknown actions fall back to the raw value. */
 export const PROPOSAL_ACTION_LABEL: Record<string, string> = {
   created: "Создано",
+  created_new_document: "Создан черновик нового документа",
+  draft_saved: "Черновик сохранён",
+  draft_deleted: "Черновик удалён",
+  knowledge_synced: "База знаний синхронизирована после merge",
   marked_ready_for_review: "Отмечено «Готово к ревью»",
   rejected: "Отклонено",
   conflict_detected: "Обнаружен конфликт версий",
@@ -108,6 +114,30 @@ export const PROPOSAL_ACTION_LABEL: Record<string, string> = {
   merge_request_checked: "Состояние MR проверено в GitLab",
   merged_in_gitlab: "Merge подтверждён GitLab",
   merge_request_closed: "MR закрыт без merge",
+};
+
+/** What a proposal does to the knowledge base. */
+export const OPERATION_LABEL: Record<ProposalOperation, string> = {
+  create: "Новый документ",
+  update: "Изменение документа",
+};
+
+/** Statuses selectable for a new document, in lifecycle order (`deprecated` is invalid for new documents). */
+export const NEW_DOCUMENT_STATUSES: NewDocumentStatus[] = ["draft", "in_review", "approved"];
+
+/** Titles for errors of the authoring endpoints and of draft save/delete. */
+export const AUTHORING_ERROR_TITLE: Record<string, string> = {
+  document_id_taken: "ID уже занят",
+  document_path_taken: "Путь в репозитории уже занят",
+  document_exists: "ID или путь уже занят в базе знаний",
+  draft_modified: "Черновик изменён в другом окне или другим пользователем",
+  draft_not_editable: "Черновик больше нельзя редактировать",
+  draft_not_deletable: "Черновик нельзя удалить",
+  ai_authoring_unavailable: "AI-помощник недоступен",
+  validation_failed: "Документ не прошёл проверку",
+  invalid_request: "Некорректные данные формы",
+  template_not_found: "Шаблон документа не найден",
+  invalid_transition: "Действие недоступно в текущем статусе",
 };
 
 export const MR_STATE_LABEL: Record<MergeRequestState, string> = {
@@ -179,6 +209,23 @@ export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : dateTimeFormat.format(date);
+}
+
+/** Short form of a revision for display: `sha256:` + 8 hex characters, or the first 8 characters of a commit. */
+export function shortRevision(revision: string | null | undefined): string {
+  if (!revision) return "—";
+  if (revision.startsWith("sha256:")) return revision.slice(0, 15);
+  return revision.length > 12 ? revision.slice(0, 8) : revision;
+}
+
+const timeFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" });
+
+/** `HH:MM` for today, a full date and time otherwise. */
+export function formatSavedAt(value: string | Date | null | undefined): string {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toDateString() === new Date().toDateString() ? timeFormat.format(date) : dateTimeFormat.format(date);
 }
 
 export function pluralRu(n: number, one: string, few: string, many: string): string {

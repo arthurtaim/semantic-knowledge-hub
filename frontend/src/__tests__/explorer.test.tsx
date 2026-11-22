@@ -22,6 +22,7 @@ describe("Knowledge explorer", () => {
     expect(within(result).getByText("Локальный workspace")).toBeInTheDocument();
     expect(within(result).getByText("ARIS", { selector: "mark" })).toBeInTheDocument();
     expect(screen.getByText(/1 документ по запросу «ARIS»/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Создать документ" })).toHaveAttribute("href", "/documents/new");
   });
 
   it("shows an explicit empty state instead of inventing results", async () => {

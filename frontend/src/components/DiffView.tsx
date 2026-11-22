@@ -33,28 +33,41 @@ export function toSideBySide(lines: DiffLine[]): SideRow[] {
 
 const SIGN: Record<DiffLine["kind"], string> = { add: "+", remove: "−", context: " ", hunk: "" };
 
-export function DiffView({ diff }: { diff: DiffResult }) {
-  const [mode, setMode] = useState<"unified" | "split">("unified");
+/**
+ * `newFile`: the diff of a file that does not exist yet — every line is an addition, so the before/after
+ * view (an empty left column) is not offered.
+ */
+export function DiffView({ diff, newFile = false }: { diff: DiffResult; newFile?: boolean }) {
+  const [selected, setMode] = useState<"unified" | "split">("unified");
+  const mode = newFile ? "unified" : selected;
   if (!diff.changed) return <p className="muted">Изменений нет.</p>;
   return (
     <div className="diff">
       <div className="diff__toolbar">
-        <p className="diff__stats">
-          <span className="diff__add">+{diff.additions}</span> <span className="diff__del">−{diff.deletions}</span>{" "}
-          строк
-        </p>
-        <div className="tabs tabs--small" role="tablist" aria-label="Вид сравнения">
-          <button type="button" role="tab" aria-selected={mode === "unified"} onClick={() => setMode("unified")}>
-            Построчно
-          </button>
-          <button type="button" role="tab" aria-selected={mode === "split"} onClick={() => setMode("split")}>
-            До и после
-          </button>
-        </div>
+        {newFile ? (
+          <p className="diff__stats">
+            <span className="diff__add">+{diff.additions}</span> строк · новый файл
+          </p>
+        ) : (
+          <p className="diff__stats">
+            <span className="diff__add">+{diff.additions}</span> <span className="diff__del">−{diff.deletions}</span>{" "}
+            строк
+          </p>
+        )}
+        {newFile ? null : (
+          <div className="tabs tabs--small" role="tablist" aria-label="Вид сравнения">
+            <button type="button" role="tab" aria-selected={mode === "unified"} onClick={() => setMode("unified")}>
+              Построчно
+            </button>
+            <button type="button" role="tab" aria-selected={mode === "split"} onClick={() => setMode("split")}>
+              До и после
+            </button>
+          </div>
+        )}
       </div>
       <div className="diff__scroll">
         {mode === "unified" ? (
-          <table className="diff__table" aria-label="Изменения построчно">
+          <table className="diff__table" aria-label={newFile ? "Содержимое нового файла" : "Изменения построчно"}>
             <thead className="visually-hidden">
               <tr>
                 <th>Было, строка</th>
