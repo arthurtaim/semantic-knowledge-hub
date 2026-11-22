@@ -144,3 +144,19 @@ def test_unmerged_new_document_never_enters_the_knowledge_base(gitlab: Env) -> N
     closed = gitlab.client.post(f"/api/drafts/{draft['id']}/refresh-status").json()
     assert closed["status"] == "rejected" and closed["merged_revision"] is None
     assert gitlab.client.get(f"/api/documents/{NEW_ID}").status_code == 404
+
+
+def test_merge_without_successful_sync_is_not_reported_as_in_the_knowledge_base(gitlab: Env) -> None:
+    draft = new_document(gitlab)
+    ready(gitlab, draft["id"])
+    gitlab.client.post(f"/api/drafts/{draft['id']}/submit")
+    merge(gitlab, 1)
+    # the knowledge branch cannot be read right after GitLab confirmed the merge
+    gitlab.fault("GET", "/repository/branches/main", status=503, times=10)
+    merged = gitlab.client.post(f"/api/drafts/{draft['id']}/refresh-status").json()
+    assert merged["status"] == "merged" and merged["merged_revision"] is None
+    assert merged["source_document_state"] == "merged_pending_sync" and merged["can_refresh_status"]
+    gitlab.state.faults.clear()
+    synced = gitlab.client.post(f"/api/drafts/{draft['id']}/refresh-status").json()
+    assert synced["source_document_state"] == "updated_by_this_proposal" and synced["merged_revision"]
+    assert not synced["can_refresh_status"]

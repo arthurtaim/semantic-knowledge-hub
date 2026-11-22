@@ -581,7 +581,7 @@ class ProposalService:
             )
         source_state: SourceDocumentState
         if status == S.merged:
-            source_state = "updated_by_this_proposal"
+            source_state = "updated_by_this_proposal" if row["merged_revision"] else "merged_pending_sync"
         elif creating:
             source_state = "id_taken" if current is not None else "new_document"
         elif current is None:
@@ -617,7 +617,11 @@ class ProposalService:
             or (status == S.submission_failed and not uncertain),
             can_submit=self._publisher.enabled and submittable and summary.error_count == 0,
             can_refresh_status=self._publisher.enabled
-            and (status == S.submitted_to_gitlab or (status == S.submission_failed and uncertain)),
+            and (
+                status == S.submitted_to_gitlab
+                or (status == S.submission_failed and uncertain)
+                or (status == S.merged and not row["merged_revision"])  # retry the post-merge sync
+            ),
             publication=publication,
             source_document_state=source_state,
             branch_name=row["branch_name"] or self._publisher.branch_for(row["id"], row["document_id"]),

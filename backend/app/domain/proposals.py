@@ -33,8 +33,15 @@ TERMINAL_STATUSES = frozenset({ProposalStatus.merged, ProposalStatus.rejected, P
 MergeRequestState = Literal["opened", "merged", "closed", "locked", "unknown"]
 # new_document: a `create` proposal whose document does not exist yet (expected before merge);
 # id_taken: a document with the proposed ID appeared in the knowledge base before this proposal merged.
+# merged_pending_sync: GitLab confirmed the merge, but the knowledge base has not been re-synced yet.
 SourceDocumentState = Literal[
-    "unchanged", "changed_since_base", "updated_by_this_proposal", "missing", "new_document", "id_taken"
+    "unchanged",
+    "changed_since_base",
+    "updated_by_this_proposal",
+    "merged_pending_sync",
+    "missing",
+    "new_document",
+    "id_taken",
 ]
 # create: a new file in the knowledge base; update: a change of an existing document.
 ProposalOperation = Literal["create", "update"]
