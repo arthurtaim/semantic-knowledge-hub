@@ -175,6 +175,19 @@ SKH_LIVE_TESTS=1 SKH_CLAUDE_LIVE_URL=http://127.0.0.1:5180 \
 Проверка авторизации без UI: `deploy/claude-test/stack.sh exec -T claude-worker python -m claude_worker check`
 (выводит только `check_ok`, код и длительность).
 
+**Публичная ссылка (по решению владельца).** Чтобы открыть стенд из любого браузера без SSH-туннеля, в
+`deploy/claude-test/claude-test.env` включается `SKH_PUBLIC_ACCESS=true` (плюс `SKH_PUBLIC_IP`, `SKH_PUBLIC_HOST`,
+`SKH_PUBLIC_AUTH_DIR`). Тогда `stack.sh` добавляет `docker-compose.claude-public.yml`: шлюз Caddy на портах 80/443
+перед frontend.
+
+- `http://<ip>/` и `https://<ip-через-дефисы>.sslip.io/` (сертификат Let's Encrypt выпускается автоматически).
+- Вход по логину и паролю (basic auth). Их один раз генерирует `deploy.sh`; открытый текст хранится только на
+  сервере в `/opt/semantic-kb-claude-test/public-access.txt`. Пароль нужен не для защиты данных (они синтетические),
+  а чтобы боты, сканирующие IP, не расходовали подписку Claude.
+- Само приложение по-прежнему слушает только loopback: шлюз передаёт запросы с `Host: 127.0.0.1`, поэтому проверки
+  backend при старте и на каждом запросе не меняются.
+- Выключить: `SKH_PUBLIC_ACCESS=false` и `deploy/claude-test/stack.sh up -d --remove-orphans`.
+
 **Авторизация.** Токен создаётся только официальной командой `claude setup-token` (вход в claude.ai в браузере)
 и хранится в одном файле `/opt/semantic-kb-claude-test/secrets/claude_code_oauth_token` (владелец — uid воркера,
 права 600). Авторизационные файлы других проектов и пользователей не копируются и не монтируются. Отзыв —
@@ -200,7 +213,8 @@ deploy/claude-test/rollback.sh                                                  
 
 ## 10. Ограничения
 
-- Только один оператор (localhost через SSH-туннель); нет SSO/RBAC — `docs/PRODUCTION_BLOCKERS.md`.
+- Только один оператор: через SSH-туннель или публичную ссылку с общим логином; нет SSO/RBAC —
+  `docs/PRODUCTION_BLOCKERS.md`.
 - Подписочная авторизация — для личного использования; провайдер нельзя превращать в общий AI-сервис.
 - Запросы уходят в Anthropic: допустимы только синтетические данные (`fixtures/`).
 - Холодный старт CLI добавляет несколько секунд к каждому ответу; длинные черновики — до нескольких минут.
