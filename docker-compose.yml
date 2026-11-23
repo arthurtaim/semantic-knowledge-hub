@@ -1,0 +1,70 @@
+# Local offline demo. Every published port is bound to 127.0.0.1 only.
+# BIND_ADDRESS drives both the published port and the backend's fail-closed check: changing it to a
+# non-loopback address makes the backend refuse to start in AUTH_MODE=local_demo.
+# The backend sits on an internal network without internet egress (docs/SECURITY.md).
+name: semantic-knowledge-hub
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      AUTH_MODE: ${AUTH_MODE:-local_demo}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      KNOWLEDGE_BACKEND: ${KNOWLEDGE_BACKEND:-local}
+      SEED_FIXTURES: ${SEED_FIXTURES:-true}
+      AI_PROVIDER: ${AI_PROVIDER:-mock}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_ALLOWED_HOSTS: ${AI_ALLOWED_HOSTS:-}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-30}
+      CONFLUENCE_CONNECTOR: ${CONFLUENCE_CONNECTOR:-disabled}
+      CONFLUENCE_ALLOWLISTED_SPACES: ${CONFLUENCE_ALLOWLISTED_SPACES:-}
+      CONFLUENCE_PUBLISH_ENABLED: ${CONFLUENCE_PUBLISH_ENABLED:-false}
+      GITLAB_PROPOSALS_ENABLED: ${GITLAB_PROPOSALS_ENABLED:-false}
+      APP_PUBLISHED_HOST: ${BIND_ADDRESS:-127.0.0.1}
+      APP_PUBLIC_URL: http://${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-5173}
+    volumes:
+      - workspace:/data/workspace
+    networks:
+      - internal
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-5173}:8080"
+    networks:
+      - internal
+      - edge
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+networks:
+  internal:
+    internal: true # no route to the internet for the backend
+  edge: {}
+
+volumes:
+  workspace: {}

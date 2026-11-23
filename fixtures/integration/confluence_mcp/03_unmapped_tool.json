@@ -1,0 +1,20 @@
+{
+  "description": "Сервер не объявляет сопоставленный инструмент: коннектор не угадывает имена и сообщает об ошибке конфигурации.",
+  "transport": "json",
+  "session_id": "replay-3",
+  "config": {
+    "tool_map": {
+      "search": {"tool": "search_pages", "query_arg": "query", "limit_arg": null, "spaces_arg": null},
+      "read": {"tool": "get_page", "id_arg": "page_id"}
+    },
+    "allowlisted_spaces": ["SKHTEST"],
+    "link_hosts": ["confluence.test.example"],
+    "web_base_url": "",
+    "result_map": null
+  },
+  "server": {
+    "tools_pages": [[{"name": "search", "inputSchema": {"type": "object", "properties": {"q": {"type": "string"}}}}]],
+    "calls": []
+  },
+  "expect": {"status": "error", "status_message_contains": "search_pages", "search_error": "mcp_tool_missing"}
+}

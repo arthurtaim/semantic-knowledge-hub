@@ -1,0 +1,70 @@
+# INTEGRATION_PROFILE=integration_mock: the backend talks ONLY to local stateful TEST DOUBLES on the
+# internal Docker network (no internet route, no host ports for the doubles). Writes (GitLab branch/
+# commit/MR, Confluence page create/update) are allowed only because every target is a declared double.
+# The tokens below belong to the test doubles and are not secrets.
+#   make mock-up      # UI on http://127.0.0.1:5174 (separate compose project and volume)
+#   make mock-e2e     # scripted full scenario inside the network
+#   make mock-down
+x-mock-service: &mock-service
+  build:
+    context: .
+    dockerfile: deploy/mocks/Dockerfile
+  networks: [internal]
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  gitlab-mock:
+    <<: *mock-service
+    command: ["python", "-m", "tests.support.gitlab_mock", "--host", "0.0.0.0", "--port", "8929",
+              "--public-url", "http://gitlab-mock:8929", "--fixtures", "/mocks/fixtures/knowledge"]
+  mcp-mock:
+    <<: *mock-service
+    command: ["python", "-m", "tests.support.mcp_mock", "--host", "0.0.0.0", "--port", "8930"]
+  confluence-mock:
+    <<: *mock-service
+    command: ["python", "-m", "tests.support.confluence_mock", "--host", "0.0.0.0", "--port", "8931",
+              "--public-url", "http://confluence-mock:8931/confluence"]
+
+  backend:
+    depends_on: [gitlab-mock, mcp-mock, confluence-mock]
+    environment:
+      INTEGRATION_PROFILE: integration_mock
+      MOCK_SERVICE_HOSTS: gitlab-mock,mcp-mock,confluence-mock
+      SEED_FIXTURES: "false"
+      KNOWLEDGE_BACKEND: gitlab
+      GITLAB_URL: http://gitlab-mock:8929
+      GITLAB_ALLOW_INSECURE_HTTP: "true"
+      GITLAB_PROJECT_ID: "4242"
+      GITLAB_TOKEN: mock-gitlab-token-not-a-secret
+      GITLAB_KNOWLEDGE_PATH: docs
+      GITLAB_DEFAULT_BRANCH: main
+      GITLAB_PROPOSALS_ENABLED: "true"
+      GITLAB_REFRESH_SECONDS: "5"
+      CONFLUENCE_CONNECTOR: mcp
+      CONFLUENCE_MCP_URL: http://mcp-mock:8930/mcp
+      CONFLUENCE_MCP_ALLOW_INSECURE_HTTP: "true"
+      CONFLUENCE_MCP_AUTH_TOKEN: mock-mcp-token-not-a-secret
+      CONFLUENCE_MCP_TOOL_MAP: '{"search":{"tool":"kb_search_pages","query_arg":"query","limit_arg":"limit","spaces_arg":"spaces"},"read":{"tool":"kb_read_page","id_arg":"page_id"}}'
+      CONFLUENCE_MCP_RESULT_MAP: '{"items":"results","id":"content.id","space":"content.space.key","title":"content.title","url":"content._links.webui","version":"content.version.number","updated":"content.version.when","body":["excerpt","body.storage.value"]}'
+      CONFLUENCE_ALLOWLISTED_SPACES: TEST,ARCH
+      CONFLUENCE_LINK_HOSTS: confluence.mock.example
+      CONFLUENCE_WEB_BASE_URL: https://confluence.mock.example
+      CONFLUENCE_REST_URL: http://confluence-mock:8931/confluence
+      CONFLUENCE_REST_ALLOW_INSECURE_HTTP: "true"
+      CONFLUENCE_REST_TOKEN: mock-confluence-publish-token-not-a-secret
+      CONFLUENCE_TARGET_SPACE: SKHTEST
+      CONFLUENCE_PARENT_PAGE_ID: "5000001"
+      CONFLUENCE_PUBLISH_ENABLED: "true"
+
+  # Scripted end-to-end scenario run INSIDE the internal network (drives the API and the doubles'
+  # control endpoints). Started only via `make mock-e2e`.
+  mock-scenario:
+    <<: *mock-service
+    restart: "no"
+    profiles: [tools]
+    command: ["python", "-m", "tests.support.mock_scenario", "--backend", "http://backend:8000",
+              "--gitlab", "http://gitlab-mock:8929", "--confluence", "http://confluence-mock:8931"]

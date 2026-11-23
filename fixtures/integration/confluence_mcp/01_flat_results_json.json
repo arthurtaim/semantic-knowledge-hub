@@ -1,0 +1,34 @@
+{
+  "description": "Плоские результаты в structuredContent, ответы application/json. Синтетические данные.",
+  "transport": "json",
+  "session_id": "replay-1",
+  "config": {
+    "tool_map": {
+      "search": {"tool": "search_pages", "query_arg": "query", "limit_arg": "limit", "spaces_arg": "spaces"},
+      "read": {"tool": "get_page", "id_arg": "page_id"}
+    },
+    "allowlisted_spaces": ["SKHTEST"],
+    "link_hosts": ["confluence.test.example"],
+    "web_base_url": "",
+    "result_map": null
+  },
+  "server": {
+    "tools_pages": [[
+      {"name": "search_pages", "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}, "spaces": {"type": "array"}}}},
+      {"name": "get_page", "inputSchema": {"type": "object", "properties": {"page_id": {"type": "string"}}}}
+    ]],
+    "calls": [
+      {"tool": "search_pages", "match": {}, "result": {"structuredContent": {"results": [
+        {"id": "1001", "space": "SKHTEST", "title": "[TEST] Регламент описания интеграций", "excerpt": "Тестовая страница: описание интеграции указывает владельца и дату проверки.", "url": "https://confluence.test.example/pages/1001", "version": {"number": 3}}
+      ]}}},
+      {"tool": "get_page", "match": {"page_id": "1001"}, "result": {"structuredContent": {"id": "1001", "space": "SKHTEST", "title": "[TEST] Регламент описания интеграций", "body": "<p>Тестовая страница: описание интеграции указывает <b>владельца</b> и дату проверки.</p>", "url": "https://confluence.test.example/pages/1001", "version": {"number": 3}}}},
+      {"tool": "get_page", "match": {}, "result": {"isError": true, "content": [{"type": "text", "text": "page not found"}]}}
+    ]
+  },
+  "expect": {
+    "status": "connected",
+    "search": {"query": "описание интеграции", "page_ids": ["1001"], "links": {"1001": "https://confluence.test.example/pages/1001"}},
+    "read": {"page_id": "1001", "title": "[TEST] Регламент описания интеграций", "body_contains": "указывает владельца"},
+    "read_not_found": ["9999"]
+  }
+}

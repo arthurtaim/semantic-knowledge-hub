@@ -1,0 +1,69 @@
+import { useEffect, useState } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
+import { api } from "./api/client";
+import type { SessionResponse } from "./api/types";
+import { Layout } from "./components/Layout";
+import { SessionContext } from "./lib/session";
+import { AskPage } from "./pages/AskPage";
+import { CorporatePage } from "./pages/CorporatePage";
+import { DocumentCreatePage } from "./pages/DocumentCreatePage";
+import { DocumentPage } from "./pages/DocumentPage";
+import { ExplorerPage } from "./pages/ExplorerPage";
+import { HomePage } from "./pages/HomePage";
+import { IntegrationsPage } from "./pages/IntegrationsPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
+import { ProposalDetailPage } from "./pages/ProposalDetailPage";
+import { ProposalEditorPage } from "./pages/ProposalEditorPage";
+import { ProposalsPage } from "./pages/ProposalsPage";
+import { PublicationJobPage } from "./pages/PublicationJobPage";
+
+const TITLES: [RegExp, string][] = [
+  [/^\/$/, "Главная"],
+  [/^\/documents\/new$/, "Новый документ"],
+  [/^\/documents\/[^/]+/, "Документ"],
+  [/^\/documents/, "База знаний"],
+  [/^\/ask/, "Спросить"],
+  [/^\/proposals\/new/, "Новое предложение"],
+  [/^\/proposals\/.+/, "Предложение"],
+  [/^\/proposals/, "Предложения"],
+  [/^\/publications\//, "Публикация"],
+  [/^\/integrations/, "Интеграции"],
+];
+
+function useDocumentTitle() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const title = TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? "Semantic Knowledge Hub";
+    document.title = `${title} — база знаний семантического слоя`;
+  }, [pathname]);
+}
+
+export function App() {
+  const [session, setSession] = useState<SessionResponse | null>(null);
+  useDocumentTitle();
+
+  useEffect(() => {
+    api.session().then(setSession).catch(() => setSession(null));
+  }, []);
+
+  return (
+    <SessionContext.Provider value={session}>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/documents" element={<ExplorerPage />} />
+          <Route path="/documents/new" element={<DocumentCreatePage />} />
+          <Route path="/documents/:id" element={<DocumentPage />} />
+          <Route path="/ask" element={<AskPage />} />
+          <Route path="/proposals" element={<ProposalsPage />} />
+          <Route path="/proposals/new" element={<ProposalEditorPage />} />
+          <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+          <Route path="/publications/:jobId" element={<PublicationJobPage />} />
+          <Route path="/integrations" element={<IntegrationsPage />} />
+          <Route path="/corporate/:id" element={<CorporatePage />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </Layout>
+    </SessionContext.Provider>
+  );
+}

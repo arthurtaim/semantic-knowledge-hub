@@ -1,0 +1,37 @@
+# Curated synthetic QA set (PRODUCT.md success metric: 10 questions are either source-grounded
+# or explicitly report missing evidence). Runs against fixtures/knowledge with AI_PROVIDER=mock.
+# Synthetic only — answers are about the demo application, never about the bank.
+- id: QA-01
+  question: What layers does the demonstration architecture have?
+  expect: {confidence: [supported], cited_any: [SEM-ARCH-001]}
+- id: QA-02
+  question: Who decides whether to merge a proposal?
+  expect: {confidence: [supported], cited_any: [SEM-PROC-001]}
+- id: QA-03
+  question: Почему для поиска выбран SQLite FTS5?
+  expect: {confidence: [supported], cited_any: [SEM-DEC-001]}
+- id: QA-04
+  question: Что такое ревизия документа?
+  expect: {confidence: [supported, partial], cited_any: [SEM-GLOSS-001]}
+- id: QA-05
+  question: Где хранится каноническая база знаний команды?
+  expect: {confidence: [supported], cited_any: [SEM-OVERVIEW-001]}
+- id: QA-06
+  question: Какие статусы бывают у документов?
+  expect: {confidence: [supported, partial], cited_any: [SEM-OVERVIEW-001, SEM-STD-001]}
+- id: QA-07
+  question: Какие ограничения у интеграции ARIS?
+  expect: {confidence: [insufficient_evidence], excluded_any: [SEM-INT-ARIS-001]}
+- id: QA-08
+  question: Какие атрибуты ARIS передаёт в семантический слой?
+  include_drafts: true
+  expect: {confidence: [partial], cited_any: [SEM-INT-ARIS-001]}
+- id: QA-09
+  question: Какой SLA у интеграции с ЦФТ?
+  expect: {confidence: [insufficient_evidence]}
+- id: QA-10
+  question: Какой бюджет проекта на 2027 год?
+  expect: {confidence: [insufficient_evidence]}
+- id: QA-11
+  question: Как согласовывать правки по электронной почте?
+  expect: {not_cited: [SEM-PROC-OLD-001], excluded_any: [SEM-PROC-OLD-001]}
