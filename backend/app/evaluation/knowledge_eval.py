@@ -1,0 +1,457 @@
+"""Deterministic knowledge evaluation (make knowledge-eval): no external model, no network, no tokens.
+
+Runs the gold cases (fixtures/eval/*.yaml) against a fresh copy of a knowledge snapshot through the real
+HTTP API (FastAPI TestClient, mock AI provider) and reports retrieval / grounding / graph / lifecycle
+metrics. Every report records the code commit, the snapshot hash, the case-set hash and the index
+generation, so a baseline and an "after" run are comparable only when they used the same inputs.
+
+    python -m app.evaluation.knowledge_eval --kb ../fixtures/knowledge --cases ../fixtures/eval \
+        --label after --out ../reports/knowledge-eval
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import csv
+import hashlib
+import json
+import shutil
+import statistics
+import subprocess
+import tempfile
+import time
+import warnings
+from collections import defaultdict
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+warnings.filterwarnings("ignore", message="Using `httpx` with `starlette.testclient` is deprecated")
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.config import Settings  # noqa: E402
+from app.main import create_app  # noqa: E402
+
+HEADERS = {"X-SKH-Client": "eval"}
+SEARCH_PAGE = 10
+NON_AUTHORITATIVE = {"draft", "in_review", "deprecated"}
+
+
+@dataclass
+class CaseResult:
+    case_id: str
+    category: str
+    method: str
+    holdout: bool
+    status: str  # pass | fail | unsupported | error
+    detail: str = ""
+    rank: int | None = None  # 1-based rank of the first expected document (search)
+    recall_at_1: float | None = None
+    recall_at_5: float | None = None
+    leaks: int = 0
+    latency_ms: float = 0.0
+    returned: list[str] = field(default_factory=list)
+
+
+def _sha256_dir(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def _git(*args: str) -> str | None:
+    try:
+        return subprocess.run(  # noqa: S603 - fixed argument list, no shell
+            ["git", *args],  # noqa: S607 - git from PATH, read-only metadata
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def load_cases(path: Path) -> list[dict[str, Any]]:
+    files = sorted(path.glob("*.yaml")) if path.is_dir() else [path]
+    cases: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for file in files:
+        data = yaml.safe_load(file.read_text(encoding="utf-8")) or []
+        for case in data:
+            case_id = str(case["case_id"])
+            if case_id in seen:
+                raise ValueError(f"duplicate case_id {case_id} in {file.name}")
+            seen.add(case_id)
+            case["_file"] = file.name
+            cases.append(case)
+    return cases
+
+
+@contextmanager
+def eval_client(
+    kb: Path, *, connector: str = "mock", extra: dict[str, Any] | None = None
+) -> Iterator[TestClient]:
+    with tempfile.TemporaryDirectory(prefix="skh-eval-") as tmp:
+        root = Path(tmp)
+        workspace = root / "workspace" / "knowledge"
+        shutil.copytree(kb, workspace)
+        values: dict[str, Any] = {
+            "app_env": "test",
+            "project_root": root,
+            "local_knowledge_dir": workspace,
+            "fixtures_dir": kb,
+            "seed_fixtures": False,
+            "search_index_path": root / "workspace" / "search.sqlite3",
+            "app_state_path": root / "workspace" / "app_state.sqlite3",
+            "publication_state_path": root / "workspace" / "publications.sqlite3",
+            "repository_refresh_seconds": 0.0,
+            "ai_provider": "mock",
+            "confluence_connector": connector,
+        }
+        values.update(extra or {})
+        app = create_app(Settings(_env_file=None, **values))
+        with TestClient(app, base_url="http://localhost", headers=HEADERS) as client:
+            yield client
+
+
+def _filter_params(filters: dict[str, Any] | None) -> dict[str, str]:
+    params: dict[str, str] = {}
+    for key, value in (filters or {}).items():
+        if key in ("type", "status", "owner", "tag", "source"):
+            params[key] = ",".join(value) if isinstance(value, list) else str(value)
+    return params
+
+
+def _expected(case: dict[str, Any]) -> list[str]:
+    return [str(i) for i in case.get("expected_doc_ids") or []]
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def run_search(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
+    params = {"query": case["question"], "size": str(SEARCH_PAGE), **_filter_params(case.get("filters"))}
+    response = client.get("/api/documents", params=params)
+    if response.status_code != 200:
+        r.status, r.detail = "error", f"HTTP {response.status_code}"
+        return
+    ids = [item["id"] for item in response.json()["items"]]
+    r.returned = ids
+    expected = _expected(case)
+    k = int(case.get("k", 5))
+    lowered = [i.lower() for i in ids]
+    ranks = [lowered.index(e.lower()) + 1 for e in expected if e.lower() in lowered]
+    r.rank = min(ranks) if ranks else None
+    if expected:
+        r.recall_at_1 = sum(1 for e in expected if e.lower() in lowered[:1]) / len(expected)
+        r.recall_at_5 = sum(1 for e in expected if e.lower() in lowered[:5]) / len(expected)
+    if case.get("expected_no_answer"):
+        r.status = "pass" if not ids else "fail"
+        r.detail = "" if not ids else f"expected no results, got {ids[:3]}"
+        return
+    ok = all(e.lower() in lowered[:k] for e in expected)
+    r.status = "pass" if ok else "fail"
+    if not ok:
+        r.detail = f"expected {expected} within top {k}, got {ids[:k]}"
+
+
+def run_catalog(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
+    params = {"size": "100", **_filter_params(case.get("filters"))}
+    if case.get("question") and case.get("use_query"):
+        params["query"] = case["question"]
+    response = client.get("/api/documents", params=params)
+    if response.status_code != 200:
+        r.status, r.detail = "error", f"HTTP {response.status_code}"
+        return
+    ids = sorted(item["id"] for item in response.json()["items"])
+    r.returned = ids
+    expected = sorted(_expected(case))
+    r.status = "pass" if ids == expected else "fail"
+    if ids != expected:
+        r.detail = f"missing {sorted(set(expected) - set(ids))}, extra {sorted(set(ids) - set(expected))}"
+
+
+def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
+    body = {
+        "question": case["question"],
+        "include_drafts": bool(case.get("include_drafts", False)),
+        "include_deprecated": bool(case.get("include_deprecated", False)),
+        "sources": case.get("sources", ["team"]),
+    }
+    response = client.post("/api/assistant/ask", json=body)
+    if response.status_code != 200:
+        r.status, r.detail = "error", f"HTTP {response.status_code}"
+        return
+    answer = response.json()
+    cited = [c["document_id"] for c in answer["citations"]]
+    r.returned = cited
+    if not body["include_drafts"] and not body["include_deprecated"]:
+        r.leaks = sum(1 for c in answer["citations"] if (c.get("status") or "") in NON_AUTHORITATIVE)
+    text = _norm(answer["answer"] + " " + " ".join(c["excerpt"] for c in answer["citations"]))
+    problems: list[str] = []
+    if case.get("expected_no_answer"):
+        if answer["confidence"] != "insufficient_evidence":
+            problems.append(f"expected no answer, got {answer['confidence']} citing {cited}")
+    else:
+        missing = [e for e in _expected(case) if e not in cited]
+        if missing:
+            problems.append(f"not cited: {missing} (cited {cited}, confidence {answer['confidence']})")
+        lost = [f for f in case.get("facts_required") or [] if _norm(str(f)) not in text]
+        if lost:
+            problems.append(f"facts missing from the grounded answer: {lost}")
+    forbidden = [f for f in case.get("facts_forbidden") or [] if _norm(str(f)) in text]
+    if forbidden:
+        problems.append(f"forbidden facts present: {forbidden}")
+    if r.leaks:
+        problems.append(f"{r.leaks} non-authoritative citation(s)")
+    r.status = "fail" if problems else "pass"
+    r.detail = "; ".join(problems)
+
+
+def _graph_unsupported(response: Any) -> bool:
+    return response.status_code in (404, 405) and "graph" not in response.text.lower()
+
+
+def run_graph_neighbors(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
+    params = {"depth": str(case.get("max_depth", 1)), "direction": case.get("direction", "both")}
+    if case.get("relation"):
+        params["relation"] = case["relation"]
+    response = client.get(f"/api/graph/nodes/doc:{case['start']}/neighbors", params=params)
+    if _graph_unsupported(response):
+        r.status, r.detail = "unsupported", "graph API not available"
+        return
+    if response.status_code != 200:
+        r.status, r.detail = "error", f"HTTP {response.status_code}"
+        return
+    ids = sorted(
+        {n["document_id"] for n in response.json()["nodes"] if n.get("document_id")} - {case["start"]}
+    )
+    r.returned = ids
+    missing = [e for e in _expected(case) if e not in ids]
+    r.status = "fail" if missing else "pass"
+    r.detail = f"missing neighbours {missing}" if missing else ""
+
+
+def run_graph_path(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
+    expected_path = [str(p) for p in case.get("expected_path") or []]
+    start = case.get("start") or (expected_path[0] if expected_path else None)
+    end = case.get("end") or (expected_path[-1] if expected_path else None)
+    params = {"source": f"doc:{start}", "target": f"doc:{end}", "max_depth": str(case.get("max_depth", 6))}
+    response = client.get("/api/graph/path", params=params)
+    if _graph_unsupported(response):
+        r.status, r.detail = "unsupported", "graph API not available"
+        return
+    if response.status_code != 200:
+        r.status, r.detail = "error", f"HTTP {response.status_code}"
+        return
+    path = [n["document_id"] for n in response.json().get("nodes", [])]
+    r.returned = path
+    if expected_path:
+        ok = path == expected_path or (
+            bool(path)
+            and path[0] == expected_path[0]
+            and path[-1] == expected_path[-1]
+            and len(path) <= len(expected_path)
+        )
+    else:
+        ok = bool(path)
+    r.status = "pass" if ok else "fail"
+    r.detail = "" if ok else f"expected {expected_path}, got {path}"
+
+
+METHODS: dict[str, Callable[[TestClient, dict[str, Any], CaseResult], None]] = {
+    "search": run_search,
+    "catalog": run_catalog,
+    "assistant": run_assistant,
+    "graph_neighbors": run_graph_neighbors,
+    "graph_path": run_graph_path,
+}
+# Lifecycle methods need their own snapshots; they are registered by app.evaluation.scenarios.
+SCENARIO_METHODS: dict[str, Callable[[Path, dict[str, Any], CaseResult], None]] = {}
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, round(pct / 100 * (len(ordered) - 1))))
+    return round(ordered[index], 2)
+
+
+def summarize(results: list[CaseResult]) -> dict[str, Any]:
+    def block(items: list[CaseResult]) -> dict[str, Any]:
+        executed = [r for r in items if r.status != "unsupported"]
+        searches = [r for r in items if r.method == "search" and r.recall_at_5 is not None]
+        mrr_values = [1 / r.rank if r.rank else 0.0 for r in searches]
+        return {
+            "cases": len(items),
+            "passed": sum(1 for r in items if r.status == "pass"),
+            "failed": sum(1 for r in items if r.status == "fail"),
+            "errors": sum(1 for r in items if r.status == "error"),
+            "unsupported": sum(1 for r in items if r.status == "unsupported"),
+            "pass_rate": round(sum(1 for r in items if r.status == "pass") / len(items), 4)
+            if items
+            else None,
+            "pass_rate_executed": (
+                round(sum(1 for r in executed if r.status == "pass") / len(executed), 4) if executed else None
+            ),
+            "recall_at_1": round(statistics.mean(r.recall_at_1 or 0 for r in searches), 4)
+            if searches
+            else None,
+            "recall_at_5": round(statistics.mean(r.recall_at_5 or 0 for r in searches), 4)
+            if searches
+            else None,
+            "mrr": round(statistics.mean(mrr_values), 4) if mrr_values else None,
+            "leaks": sum(r.leaks for r in items),
+            "latency_p50_ms": _percentile([r.latency_ms for r in items], 50),
+            "latency_p95_ms": _percentile([r.latency_ms for r in items], 95),
+        }
+
+    by_category: dict[str, list[CaseResult]] = defaultdict(list)
+    for r in results:
+        by_category[r.category].append(r)
+    return {
+        "overall": block(results),
+        "tuning_set": block([r for r in results if not r.holdout]),
+        "holdout": block([r for r in results if r.holdout]),
+        "by_category": {c: block(items) for c, items in sorted(by_category.items())},
+        "by_method": {
+            m: block([r for r in results if r.method == m]) for m in sorted({r.method for r in results})
+        },
+    }
+
+
+def evaluate(kb: Path, cases: list[dict[str, Any]], *, connector: str = "mock") -> dict[str, Any]:
+    results: list[CaseResult] = []
+    index_generation: Any = None
+    with eval_client(kb, connector=connector) as client:
+        status = client.get("/api/index/status").json()
+        index_generation = status.get("generation", status.get("indexed_version"))
+        for case in cases:
+            method = str(case.get("method", "search"))
+            r = CaseResult(
+                case_id=str(case["case_id"]),
+                category=str(case.get("category", "?")),
+                method=method,
+                holdout=bool(case.get("holdout", False)),
+                status="error",
+            )
+            started = time.perf_counter()
+            try:
+                if method in METHODS:
+                    METHODS[method](client, case, r)
+                elif method in SCENARIO_METHODS:
+                    SCENARIO_METHODS[method](kb, case, r)
+                else:
+                    r.status, r.detail = "unsupported", f"method {method} not implemented"
+            except Exception as exc:
+                r.status, r.detail = "error", f"{type(exc).__name__}: {exc}"
+            r.latency_ms = round((time.perf_counter() - started) * 1000, 2)
+            results.append(r)
+    return {"index_generation": index_generation, "results": results}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Deterministic knowledge evaluation (no LLM).")
+    parser.add_argument("--kb", type=Path, required=True)
+    parser.add_argument("--cases", type=Path, required=True)
+    parser.add_argument("--label", default="run")
+    parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--connector", default="mock", choices=["mock", "disabled"])
+    parser.add_argument("--only", default="", help="comma-separated categories or case ids")
+    args = parser.parse_args(argv)
+
+    with contextlib.suppress(ImportError):  # registers lifecycle scenario methods when that module exists
+        import app.evaluation.scenarios  # noqa: F401
+
+    kb = args.kb.resolve()
+    cases = load_cases(args.cases.resolve())
+    if args.only:
+        wanted = {w.strip() for w in args.only.split(",") if w.strip()}
+        cases = [c for c in cases if c["case_id"] in wanted or c.get("category") in wanted]
+    run = evaluate(kb, cases, connector=args.connector)
+    results: list[CaseResult] = run["results"]
+    report = {
+        "label": args.label,
+        "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+        "commit": _git("rev-parse", "--short", "HEAD"),
+        "worktree_dirty": bool(_git("status", "--porcelain")),
+        "kb_snapshot_hash": _sha256_dir(kb),
+        "cases_hash": _sha256_dir(args.cases.resolve()) if args.cases.is_dir() else None,
+        "cases": len(cases),
+        "index_generation": run["index_generation"],
+        "provider": "mock (deterministic, no LLM)",
+        "summary": summarize(results),
+        "results": [r.__dict__ for r in results],
+    }
+    overall = report["summary"]["overall"]
+    print(
+        f"[{args.label}] cases={overall['cases']} pass={overall['passed']} fail={overall['failed']} "
+        f"error={overall['errors']} unsupported={overall['unsupported']} "
+        f"R@1={overall['recall_at_1']} R@5={overall['recall_at_5']} MRR={overall['mrr']} leaks={overall['leaks']}"
+    )
+    for category, block in report["summary"]["by_category"].items():
+        print(f"  {category:16} {block['passed']}/{block['cases']} (unsupported {block['unsupported']})")
+    if args.out:
+        args.out.mkdir(parents=True, exist_ok=True)
+        (args.out / f"{args.label}.json").write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+        )
+        with (args.out / f"{args.label}_metrics.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "scope",
+                    "cases",
+                    "passed",
+                    "failed",
+                    "unsupported",
+                    "recall_at_1",
+                    "recall_at_5",
+                    "mrr",
+                    "leaks",
+                    "latency_p50_ms",
+                    "latency_p95_ms",
+                ]
+            )
+            rows = {
+                "overall": report["summary"]["overall"],
+                "holdout": report["summary"]["holdout"],
+                **{f"category:{k}": v for k, v in report["summary"]["by_category"].items()},
+            }
+            for scope, b in rows.items():
+                writer.writerow(
+                    [
+                        scope,
+                        b["cases"],
+                        b["passed"],
+                        b["failed"],
+                        b["unsupported"],
+                        b["recall_at_1"],
+                        b["recall_at_5"],
+                        b["mrr"],
+                        b["leaks"],
+                        b["latency_p50_ms"],
+                        b["latency_p95_ms"],
+                    ]
+                )
+        failures = [r for r in results if r.status != "pass"]
+        lines = [f"# Failures — {args.label}", ""]
+        lines += [f"- `{r.case_id}` ({r.category}, {r.method}, {r.status}): {r.detail}" for r in failures]
+        (args.out / f"{args.label}_failures.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

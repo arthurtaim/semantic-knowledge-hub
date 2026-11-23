@@ -11,7 +11,15 @@ from datetime import datetime
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.domain.markdown import first_meaningful_paragraph
-from app.domain.models import DocStatus, DocType, DocumentRecord, LoadIssue, SourceType
+from app.domain.models import (
+    DeclaredRelation,
+    DocStatus,
+    DocType,
+    DocumentRecord,
+    LoadIssue,
+    RelationType,
+    SourceType,
+)
 from app.domain.schema import parse_document
 
 
@@ -45,6 +53,16 @@ def build_record(
     meta = parsed.metadata
     doc_id: str = meta["id"]
     tags: list[str] = meta.get("tags", [])
+    relations = [
+        DeclaredRelation(type=RelationType(rel_type), target=target, field=f"relations.{rel_type}")
+        for rel_type, target in meta.get("relations", [])
+    ]
+    typed_targets = {r.target.lower() for r in relations}
+    relations += [
+        DeclaredRelation(type=RelationType.references, target=target, field="related_ids")
+        for target in meta.get("related_ids", [])
+        if target.lower() not in typed_targets  # a typed edge already states the link more precisely
+    ]
     return DocumentRecord(
         id=doc_id,
         title=meta["title"],
@@ -53,6 +71,12 @@ def build_record(
         owner=meta["owner"],
         tags=tuple(tags),
         related_ids=tuple(meta.get("related_ids", [])),
+        relations=tuple(relations),
+        aliases=tuple(meta.get("aliases", [])),
+        version=meta.get("version"),
+        synthetic=bool(meta.get("synthetic", False)),
+        template_id=meta.get("template"),
+        template_version=meta.get("template_version"),
         source_refs=tuple(meta.get("source_refs", [])),
         reviewed_at=meta.get("reviewed_at"),
         summary=meta.get("summary") or first_meaningful_paragraph(parsed.markdown.paragraphs) or None,
@@ -64,7 +88,7 @@ def build_record(
         revision=revision,
         path=path,
         updated_at=updated_at,
-        is_demo=is_demo or "demo" in tags,
+        is_demo=is_demo or "demo" in tags or bool(meta.get("synthetic", False)),
         extra_metadata=parsed.extra_metadata,
         warnings=tuple(parsed.warnings),
     )

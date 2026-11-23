@@ -171,3 +171,54 @@ def test_heading_anchors_match_sections() -> None:
 
 def test_slugify_keeps_cyrillic() -> None:
     assert slugify("Открытые вопросы (v2)") == "открытые-вопросы-v2"
+
+
+# --- M5.6.2: typed relations, document version, synthetic flag, aliases, template reference ----------
+
+
+def _typed(extra: str, doc_type: str = "integration") -> str:
+    return make_doc("DEMO-INT-900", doc_type=doc_type, extra=extra)
+
+
+def test_typed_relations_are_parsed_in_declaration_order() -> None:
+    parsed = parse_document(
+        _typed(
+            "relations:\n  depends_on: [DEMO-INT-001]\n  maps_to: [DEMO-SEM-002, DEMO-SEM-003]\n"
+            'version: "1.2"\nsynthetic: true\naliases: [ARIS mapping]\ntemplate: integration\ntemplate_version: 2\n'
+        )
+    )
+    assert parsed.is_valid, parsed.issues
+    assert parsed.metadata["relations"] == [
+        ("depends_on", "DEMO-INT-001"),
+        ("maps_to", "DEMO-SEM-002"),
+        ("maps_to", "DEMO-SEM-003"),
+    ]
+    assert parsed.metadata["version"] == "1.2"
+    assert parsed.metadata["synthetic"] is True
+    assert parsed.metadata["aliases"] == ["ARIS mapping"]
+    assert parsed.metadata["template"] == "integration"
+    assert parsed.metadata["template_version"] == 2
+    assert not [i for i in parsed.issues if i.code == "unknown_field"]
+
+
+@pytest.mark.parametrize(
+    ("extra", "code"),
+    [
+        ("relations: [DEMO-INT-001]\n", "invalid_relations"),
+        ("relations:\n  owns: [DEMO-INT-001]\n", "unknown_relation_type"),
+        ("relations:\n  references: [DEMO-INT-001]\n", "unknown_relation_type"),
+        ("relations:\n  depends_on: ['../etc/passwd']\n", "invalid_relation_target"),
+        ("relations:\n  depends_on: [DEMO-INT-900]\n", "self_relation"),
+        ('version: "v2"\n', "invalid_version"),
+        ("synthetic: yes-please\n", "invalid_synthetic"),
+        ("template: Integration Spec\n", "invalid_template_ref"),
+        ("template_version: 0\n", "invalid_template_version"),
+    ],
+)
+def test_invalid_m56_fields_are_errors(extra: str, code: str) -> None:
+    assert code in codes(_typed(extra))
+
+
+@pytest.mark.parametrize("doc_type", ["source", "dataset", "guide"])
+def test_new_document_types(doc_type: str) -> None:
+    assert parse_document(_typed("", doc_type=doc_type)).is_valid

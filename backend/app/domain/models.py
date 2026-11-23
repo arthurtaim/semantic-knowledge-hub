@@ -12,12 +12,34 @@ from pydantic import BaseModel, ConfigDict, Field
 class DocType(StrEnum):
     overview = "overview"
     architecture = "architecture"
-    domain = "domain"
+    source = "source"  # a source system profile
+    domain = "domain"  # semantic entities, logical/physical models, mappings
+    dataset = "dataset"
     integration = "integration"
     process = "process"
     decision = "decision"
     standard = "standard"
+    guide = "guide"
     glossary = "glossary"
+
+
+class RelationType(StrEnum):
+    """Typed, directed relation declared by a document (`relations:` in the frontmatter).
+
+    The edge goes FROM the declaring document TO each listed target (see docs/MOCK_KNOWLEDGE_BASE.md).
+    `references` is the implicit type of plain `related_ids`.
+    """
+
+    references = "references"
+    depends_on = "depends_on"
+    consumes = "consumes"
+    produces = "produces"
+    maps_to = "maps_to"
+    derived_from = "derived_from"
+    describes = "describes"
+    constrains = "constrains"
+    supersedes = "supersedes"
+    uses_template = "uses_template"
 
 
 class DocStatus(StrEnum):
@@ -60,6 +82,16 @@ class ValidationIssue(BaseModel):
     field: str | None = None
 
 
+class DeclaredRelation(BaseModel):
+    """One typed edge as written in a document's frontmatter (provenance: the declaring file + field)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: RelationType
+    target: str
+    field: str  # frontmatter field that declares it: `relations.<type>` or `related_ids`
+
+
 class DocumentRecord(BaseModel):
     """A parsed knowledge document as returned by a KnowledgeRepository adapter."""
 
@@ -72,6 +104,12 @@ class DocumentRecord(BaseModel):
     owner: str
     tags: tuple[str, ...]
     related_ids: tuple[str, ...] = ()
+    relations: tuple[DeclaredRelation, ...] = ()
+    aliases: tuple[str, ...] = ()
+    version: str | None = None  # human document version (e.g. "1.2"); `revision` is the content revision
+    synthetic: bool = False
+    template_id: str | None = None
+    template_version: int | None = None
     source_refs: tuple[str, ...] = ()
     reviewed_at: date | None = None
     summary: str | None = None
