@@ -387,9 +387,6 @@ export function ExplorerPage() {
               </button>
             </nav>
           ) : null}
-          {list.data?.items.some((d) => d.is_demo) ? (
-            <Notice tone="info">Показаны синтетические демо-документы. Они не являются фактами о банке.</Notice>
-          ) : null}
         </section>
       </div>
     </div>

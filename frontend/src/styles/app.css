@@ -320,22 +320,143 @@ textarea {
   color: var(--bar-ink);
 }
 
-.demo-band {
-  background: var(--draft-wash);
-  border-bottom: 1px solid #e6d3a6;
-  color: #5b3f00;
-  font-size: var(--step--1);
-  line-height: 1.45;
+/* Tool row under the bar: the AI mode and the demo status (and, from phase 4 E1, the composer). It replaces the
+   full-width demo band; it is quiet paper with one rule, not a coloured slab. */
+.toolbar {
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
 }
 
-.demo-band__inner {
+.toolbar__inner {
   max-width: calc(var(--content-max) + 2 * var(--gutter));
   margin: 0 auto;
   padding: var(--space-2) var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
 }
 
-.demo-band__label {
+.toolbar__status {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.header-status__item {
+  position: relative;
+}
+
+.ai-chip,
+.demo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line-input);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step--1);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ai-chip:hover,
+.demo-pill:hover {
+  border-color: var(--ink-soft);
+}
+
+.ai-chip[aria-expanded="true"] {
+  border-color: var(--accent-ink);
+  background: var(--accent-wash);
+}
+
+/* AI: neutral ink, no sparkle. Demo AI is dashed; disabled is muted. */
+.ai-chip--mock {
+  border-style: dashed;
+}
+
+.ai-chip--disabled {
+  color: var(--ink-soft);
+  background: transparent;
+}
+
+/* Demo status: draft hue with a striped edge, so a screenshot cannot pass for real data. */
+.demo-pill {
+  color: var(--draft);
+  background: var(--draft-wash);
+  border-color: var(--draft);
+  padding-left: 0;
+  overflow: hidden;
+}
+
+.demo-pill:hover,
+.demo-pill[aria-expanded="true"] {
+  border-color: var(--draft);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.demo-pill::before {
+  content: "";
+  align-self: stretch;
+  width: 0.55rem;
+  border-right: 1px solid var(--draft);
+  background: repeating-linear-gradient(-45deg, var(--draft) 0 2px, transparent 2px 5px);
+}
+
+.popover {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: 30;
+  width: min(24rem, calc(100vw - 2 * var(--gutter)));
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-size: var(--step--1);
+  white-space: normal;
+}
+
+.popover[hidden] {
+  display: none;
+}
+
+.popover p {
+  margin: 0 0 var(--space-2);
+}
+
+.popover p:last-child {
+  margin-bottom: 0;
+}
+
+.popover__title {
   font-weight: 600;
+  font-size: var(--step-0);
+}
+
+.popover__facts {
+  margin: 0 0 var(--space-3);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.popover__facts dt {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.popover__facts dd {
+  margin: 0;
 }
 
 .content {
@@ -4117,6 +4238,16 @@ h1 a:hover {
     display: none;
   }
 
+  /* «Демо» on narrow screens; the full word stays for screen readers. */
+  .demo-pill__rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
   .topbar__inner {
     gap: var(--space-4);
   }
@@ -4278,10 +4409,6 @@ h1 a:hover {
     width: 100%;
   }
 
-  .demo-band {
-    font-size: 0.75rem;
-  }
-
   .mr-panel__fields {
     grid-template-columns: minmax(0, 1fr);
     gap: 0 var(--space-4);
@@ -4334,7 +4461,7 @@ h1 a:hover {
    caveat) after the prose; status and ID stay under the title. Interactive controls are not printed. */
 @media print {
   .topbar,
-  .demo-band,
+  .toolbar,
   .skip-link,
   .document__actions,
   .tabs,

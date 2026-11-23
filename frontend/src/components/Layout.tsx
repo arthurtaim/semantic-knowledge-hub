@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSession } from "../lib/session";
+import { AiModeChip, DemoPill } from "./HeaderStatus";
 
 const NAV = [
   { to: "/", label: "Главная", end: true },
@@ -12,31 +13,8 @@ const NAV = [
   { to: "/integrations", label: "Интеграции", end: false },
 ];
 
-function demoFacts(session: ReturnType<typeof useSession>): string[] {
-  if (!session) return ["Документы синтетические и не описывают банк."];
-  const facts: string[] = [];
-  if (session.demo_content) facts.push("Документы синтетические и не описывают банк.");
-  if (session.knowledge_backend === "local") facts.push("GitLab не подключён.");
-  if (session.features.corporate_search === "disabled") facts.push("Confluence не подключён.");
-  if (session.features.corporate_search === "mock") facts.push("Confluence заменён mock-коннектором.");
-  if (session.features.ai_mode === "mock") facts.push("Ассистент отвечает дословными выдержками, без языковой модели.");
-  return facts;
-}
-
 function modeLabel(mode: string): string {
   return mode === "local_demo" ? "локальное демо" : mode;
-}
-
-function DemoBand() {
-  const facts = demoFacts(useSession());
-  if (facts.length === 0) return null;
-  return (
-    <div className="demo-band" role="note">
-      <div className="demo-band__inner">
-        <strong className="demo-band__label">Демо-данные.</strong> <span>{facts.join(" ")}</span>
-      </div>
-    </div>
-  );
 }
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -102,7 +80,15 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      <DemoBand />
+      {/* The tool row under the bar: the AI mode and the demo status (replaces the full-width demo band). */}
+      <div className="toolbar">
+        <div className="toolbar__inner">
+          <div className="toolbar__status">
+            <AiModeChip />
+            <DemoPill />
+          </div>
+        </div>
+      </div>
       <main id="main" className="content" tabIndex={-1}>
         {children}
       </main>
