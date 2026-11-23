@@ -220,44 +220,47 @@ function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: Sea
   const insufficient = answer.confidence === "insufficient_evidence";
   return (
     <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby={`answer-title-${turnNo}`}>
-      <div className="answer__head">
-        <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
-        <span className={`confidence confidence--${answer.confidence}`}>{CONFIDENCE_LABEL[answer.confidence]}</span>
-        <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
-      </div>
-      <CorporateGap answer={answer} asked={asked} />
-      {insufficient ? (
-        <div className="answer__insufficient">
-          <p>
-            <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
-            доказательств — уточните вопрос, включите черновики или проверьте документы вручную.
-          </p>
-          {answer.unmatched_terms.length > 0 ? (
-            <p>
-              Не найдено в источниках:{" "}
-              {answer.unmatched_terms.map((term, index) => (
-                <span key={term}>
-                  {index > 0 ? ", " : ""}«{term}»
-                </span>
-              ))}
-            </p>
-          ) : null}
+      {/* ≥ 1200 px: the answer on the left (68ch), its sources in a column on the right. */}
+      <div className="answer__body">
+        <div className="answer__head">
+          <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
+          <span className={`confidence confidence--${answer.confidence}`}>{CONFIDENCE_LABEL[answer.confidence]}</span>
+          <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
         </div>
-      ) : null}
-      <AnswerText text={answer.answer} citations={answer.citations} turnNo={turnNo} />
+        <CorporateGap answer={answer} asked={asked} />
+        {insufficient ? (
+          <div className="answer__insufficient">
+            <p>
+              <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
+              доказательств — уточните вопрос, включите черновики или проверьте документы вручную.
+            </p>
+            {answer.unmatched_terms.length > 0 ? (
+              <p>
+                Не найдено в источниках:{" "}
+                {answer.unmatched_terms.map((term, index) => (
+                  <span key={term}>
+                    {index > 0 ? ", " : ""}«{term}»
+                  </span>
+                ))}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        <AnswerText text={answer.answer} citations={answer.citations} turnNo={turnNo} />
 
-      {answer.warnings.length > 0 ? (
-        <Notice tone="warning">
-          <ul>
-            {answer.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-        </Notice>
-      ) : null}
+        {answer.warnings.length > 0 ? (
+          <Notice tone="warning">
+            <ul>
+              {answer.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </Notice>
+        ) : null}
+      </div>
 
       {answer.citations.length > 0 ? (
-        <section aria-labelledby={`sources-title-${turnNo}`}>
+        <section className="answer__sources" aria-labelledby={`sources-title-${turnNo}`}>
           <h3 id={`sources-title-${turnNo}`}>Источники</h3>
           <ol className="citations">
             {answer.citations.map((citation) => (

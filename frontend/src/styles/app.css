@@ -1488,11 +1488,10 @@ h1 a:hover {
 
 /* ---------- ask ---------- */
 
+/* The question form is ruled, not boxed: a heavy rule above, the fields on the paper. */
 .ask__form {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: var(--space-5);
+  border-top: 2px solid var(--ink);
+  padding-top: var(--space-5);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
@@ -1762,6 +1761,11 @@ h1 a:hover {
   margin-bottom: 0;
 }
 
+/* a 68-character measure for the answer itself */
+.answer__text > p {
+  max-width: 68ch;
+}
+
 .answer__line {
   display: block;
 }
@@ -1824,6 +1828,47 @@ h1 a:hover {
 
 .citation__meta {
   margin-left: 2.25rem;
+}
+
+/* Wide screens: each answer gets its sources in a column on the right, next to the text they support. */
+@media (min-width: 1200px) {
+  .conversation {
+    max-width: none;
+  }
+
+  .turn__question,
+  .answer-preliminary,
+  .ask__form {
+    max-width: 46rem;
+  }
+
+  .answer {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(0, 46rem) minmax(0, 1fr);
+    column-gap: var(--space-7);
+    align-items: start;
+  }
+
+  .answer > * {
+    grid-column: 1;
+  }
+
+  .answer > .answer__sources {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+  }
+
+  .answer__sources > h3 {
+    font-size: var(--step-0);
+    padding-bottom: var(--space-2);
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 0;
+  }
+
+  .answer__sources .citation:first-child {
+    border-top: 0;
+  }
 }
 
 .excluded ul {
@@ -3440,6 +3485,12 @@ h1 a:hover {
 
   .citation__head {
     grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  /* the stamp goes under the title; in the number column it would push the title to the right */
+  .citation__head > .stamp {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .citation__excerpt,
