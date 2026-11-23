@@ -1,0 +1,90 @@
+# Status, versions, conflicts, ambiguity and no-answer cases (base set, M5.6.2 Appendix 3 §2).
+- case_id: KE-ST-001
+  category: status
+  question: "Как часто метаданные ARIS обновляются в каталоге?"
+  method: assistant
+  expected_doc_ids: [DEMO-INT-013]
+  facts_required: ["каждые 6 ч"]
+  facts_forbidden: ["каждый час"]
+  not_cited: [DEMO-INT-017]
+  notes: "Approved schedule wins; the hourly draft DEMO-INT-017 is not evidence."
+- case_id: KE-ST-002
+  category: status
+  question: "Как часто метаданные ARIS обновляются в каталоге?"
+  method: assistant
+  include_drafts: true
+  expected_doc_ids: [DEMO-INT-013]
+  facts_required: ["каждые 6 ч"]
+  notes: "With drafts allowed the approved schedule is still cited; a cited draft must be labelled."
+- case_id: KE-ST-003
+  category: status
+  question: "Как устроена ночная полная выгрузка ARIS в 03:00?"
+  method: assistant
+  not_cited: [DEMO-INT-018]
+  expected_excluded: [DEMO-INT-018]
+  notes: "Deprecated (superseded by DEMO-INT-001) is never evidence by default."
+- case_id: KE-ST-004
+  category: status
+  question: "Как обозначать ревизию документа датой в имени файла?"
+  method: assistant
+  not_cited: [DEMO-GOV-013]
+  holdout: true
+  notes: "The old rule of DEMO-GOV-013 is deprecated."
+- case_id: KE-ST-005
+  category: status
+  question: "Какие правила разрешения неоднозначных сущностей с одинаковыми названиями?"
+  method: assistant
+  not_cited: [DEMO-SEM-012]
+  expected_excluded: [DEMO-SEM-012]
+  notes: "in_review is not authoritative."
+- case_id: KE-ST-006
+  category: status
+  question: "Какие правила разрешения неоднозначных сущностей с одинаковыми названиями?"
+  method: assistant
+  include_drafts: true
+  expected_doc_ids: [DEMO-SEM-012]
+  notes: "Explicitly allowed: the in_review document is used and labelled."
+- case_id: KE-ST-007
+  category: status
+  question: "Какой порог полноты действует для датасета Process Overview?"
+  method: assistant
+  cited_any: [DEMO-SEM-009, DEMO-GOV-003]
+  facts_required: ["98 %"]
+  notes: "Scope-specific stricter rule (98 %) vs default 95 % of DEMO-GOV-003: a scope difference, not a contradiction."
+- case_id: KE-ST-008
+  category: status
+  question: "Какая максимальная задержка актуальности допустима для Process Overview?"
+  method: assistant
+  expected_doc_ids: [DEMO-SEM-009]
+  facts_required: ["12 ч"]
+  holdout: true
+- case_id: KE-ST-009
+  category: status
+  question: ""
+  method: catalog
+  filters: {status: deprecated}
+  expected_doc_ids: [DEMO-GOV-013, DEMO-INT-018, SEM-PROC-OLD-001]
+- case_id: KE-ST-010
+  category: status
+  question: "расписание обновления ARIS"
+  method: search
+  filters: {status: approved}
+  expected_doc_ids: [DEMO-INT-013]
+  not_returned: [DEMO-INT-017, DEMO-INT-018]
+  k: 3
+- case_id: KE-NA-001
+  category: no_answer
+  question: "Сколько стоит лицензия ARIS для команды?"
+  method: assistant
+  expected_no_answer: true
+- case_id: KE-NA-002
+  category: no_answer
+  question: "Что означает поле customer_segment_score в датасете Process Overview?"
+  method: assistant
+  expected_no_answer: true
+- case_id: KE-NA-003
+  category: no_answer
+  question: "Какой бюджет проекта метаданных на 2027 год?"
+  method: assistant
+  expected_no_answer: true
+  holdout: true

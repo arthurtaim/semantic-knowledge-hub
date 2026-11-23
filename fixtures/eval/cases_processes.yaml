@@ -1,0 +1,135 @@
+# Gold evaluation cases — group E: processes and template descriptions (DEMO-PROC-001…010).
+# Synthetic only (docs/MOCK_KNOWLEDGE_BASE.md §6). facts_required strings appear verbatim in an expected document.
+
+- case_id: KE-PROC-001
+  category: exact_id
+  question: "DEMO-PROC-006"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-006]
+  k: 1
+  facts_required: ["Data Lineage", "template_version: 2"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id resolves to the Integration Specification template description."
+
+- case_id: KE-PROC-002
+  category: exact_id
+  question: "DEMO-PROC-010"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-010]
+  k: 1
+  facts_required: ["template_version", "явная миграция"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id resolves to the template version change policy."
+
+- case_id: KE-PROC-003
+  category: synonym
+  question: "шаблон спецификации датасета: какие разделы обязательны"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-007]
+  k: 3
+  facts_required: ["Mapping Rules", "Refresh Policy", "Access Restrictions"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Russian paraphrase of 'Dataset Specification'; the document names the template both ways."
+
+- case_id: KE-PROC-004
+  category: synonym
+  question: "integration spec template sections"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-006]
+  k: 3
+  facts_required: ["Update Frequency", "Validation Constraints"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "English shorthand 'spec' for 'Specification'; DEMO-ADR-005 and DEMO-PROC-001 also mention the template and may rank nearby."
+
+- case_id: KE-PROC-005
+  category: abbreviation
+  question: "ADR template"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-009]
+  k: 3
+  facts_required: ["Architecture Decision Record", "Average Daily Rows"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "ADR = Architecture Decision Record here; the document warns about the DQ Monitor metric Average Daily Rows. The ADR documents themselves (DEMO-ADR-*) may rank above it."
+
+- case_id: KE-PROC-006
+  category: metadata_filter
+  question: "Какие описания шаблонов и политики ведёт проектный офис процессов?"
+  method: catalog
+  filters: {owner: demo-process-office, type: standard}
+  expected_doc_ids: [DEMO-PROC-006, DEMO-PROC-007, DEMO-PROC-008, DEMO-PROC-009, DEMO-PROC-010]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: template descriptions PROC-006…009 and the template version policy PROC-010."
+
+- case_id: KE-PROC-007
+  category: metadata_filter
+  question: "Покажи все процессы, которыми владеет demo-process-office"
+  method: catalog
+  filters: {owner: demo-process-office, type: process}
+  expected_doc_ids: [DEMO-PROC-001, DEMO-PROC-002, DEMO-PROC-003, DEMO-PROC-004, DEMO-PROC-005]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set. SEM-PROC-001 and SEM-PROC-OLD-001 are also processes but owned by demo-team."
+
+- case_id: KE-PROC-008
+  category: relation
+  question: "Через какой шаблон процесс изменения атрибутов датасета связан с логической моделью Dataset?"
+  method: graph_path
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-002, DEMO-PROC-007, DEMO-SEM-004]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  start: DEMO-PROC-002
+  direction: out
+  expected_path: [DEMO-PROC-002, DEMO-PROC-007, DEMO-SEM-004]
+  max_depth: 2
+  notes: "DEMO-PROC-002 —uses_template→ DEMO-PROC-007 —describes→ DEMO-SEM-004 (catalog edges; first part of the required chain to DEMO-SEM-009)."
+
+- case_id: KE-PROC-009
+  category: relation
+  question: "Какой шаблон использует процесс создания новой интеграции?"
+  method: graph_neighbors
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-006]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  start: DEMO-PROC-001
+  relation: uses_template
+  direction: out
+  max_depth: 1
+  notes: "Only uses_template edge of DEMO-PROC-001 points to the Integration Specification description."
+
+- case_id: KE-PROC-010
+  category: synthesis
+  question: "Какие разделы добавляет версия v2 шаблона Integration Specification и что происходит с черновиками, созданными по v1?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-PROC-006, DEMO-PROC-010]
+  facts_required: ["Data Quality Rules", "Validation Constraints", "остаются на v1"]
+  facts_forbidden: ["ежечасно"]
+  expected_no_answer: false
+  holdout: false
+  notes: "PROC-006 lists the four v2 sections; PROC-010 states that v1 drafts keep v1 until an explicit migration by the author. DEMO-ADR-005 may also be cited."

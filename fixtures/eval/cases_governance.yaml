@@ -1,0 +1,134 @@
+# Gold evaluation cases — group D: governance (DEMO-GOV-001…013).
+# Synthetic only (docs/MOCK_KNOWLEDGE_BASE.md §6). facts_required strings appear verbatim in an expected document.
+
+- case_id: KE-GOV-001
+  category: exact_id
+  question: "DEMO-GOV-006"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-006]
+  k: 1
+  facts_required: ["MAP_ARIS_PROCESS"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id of the referential integrity standard; the lookup table MAP_ARIS_PROCESS is its key fact."
+
+- case_id: KE-GOV-002
+  category: exact_id
+  question: "DEMO-GOV-013"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-013]
+  k: 1
+  facts_required: ["_2025-03-01", "DEMO-GOV-009"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "A deprecated document must still resolve by exact id; its text names the old file-name suffix and the successor."
+
+- case_id: KE-GOV-003
+  category: synonym
+  question: "What is the freshness limit for metadata in the catalog?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-005]
+  k: 3
+  facts_required: ["24 ч", "source_changed_at"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "English 'freshness' vs the Russian body term 'актуальность'; the standard sets 24 h for the catalog and 12 h for Process Overview."
+
+- case_id: KE-GOV-004
+  category: synonym
+  question: "Какая доля записей с заполненными обязательными полями нужна, чтобы пакет загрузки приняли?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-003]
+  k: 3
+  facts_required: ["95 %"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "'Доля заполненных обязательных полей' paraphrases 'полнота (completeness)'. DEMO-INT-003 and DEMO-SRC-011 may also rank; the standard must be in the top 3."
+
+- case_id: KE-GOV-005
+  category: abbreviation
+  question: "DQ-проверка: у одного process_id разные названия в разных системах"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-004]
+  k: 3
+  facts_required: ["dq_consistency", "DQ-CONS-SEM009"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "DQ = data quality (качество данных). The consistency standard defines the 'разные названия' violation; DEMO-SRC-011 may also rank."
+
+- case_id: KE-GOV-006
+  category: metadata_filter
+  question: "Какие регламенты команды управления знаниями устарели?"
+  method: catalog
+  filters: {owner: demo-governance-team, status: deprecated}
+  expected_doc_ids: [DEMO-GOV-013]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: the only deprecated governance document (superseded by DEMO-GOV-009)."
+
+- case_id: KE-GOV-007
+  category: metadata_filter
+  question: "Что из регламентов governance сейчас на ревью?"
+  method: catalog
+  filters: {owner: demo-governance-team, status: in_review}
+  expected_doc_ids: [DEMO-GOV-012]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: the test approval process is the only governance document in review."
+
+- case_id: KE-GOV-008
+  category: relation
+  question: "Как правила ревизий через статусы документов связаны с требованиями к цитатам?"
+  method: graph_path
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-009, DEMO-GOV-001, DEMO-GOV-011]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  start: DEMO-GOV-009
+  expected_path: [DEMO-GOV-009, DEMO-GOV-001, DEMO-GOV-011]
+  max_depth: 3
+  notes: "Required chain: DEMO-GOV-001 depends_on DEMO-GOV-009, DEMO-GOV-011 depends_on DEMO-GOV-001. A path of the same length via DEMO-ADR-003 (referenced by both ends) is also acceptable to the runner."
+
+- case_id: KE-GOV-009
+  category: relation
+  question: "На какие документы накладывает ограничения регламент ссылочной целостности?"
+  method: graph_neighbors
+  filters: {}
+  expected_doc_ids: [DEMO-INT-002, DEMO-SEM-006]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  start: DEMO-GOV-006
+  relation: constrains
+  direction: out
+  max_depth: 1
+  notes: "Typed outgoing constrains edges declared in DEMO-GOV-006."
+
+- case_id: KE-GOV-010
+  category: synthesis
+  question: "Какой порог полноты действует для Process Overview и почему он не противоречит общему порогу?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-GOV-003, DEMO-SEM-009]
+  facts_required: ["95 %", "98 %"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Grounded answer must cite both the general standard (95 % default) and the dataset (98 % for process_id, process_name, owner_role) and present it as a scope difference, not a contradiction."

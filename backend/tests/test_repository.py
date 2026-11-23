@@ -101,7 +101,7 @@ def test_changes_on_disk_are_picked_up(workspace: Path) -> None:
 
 def test_seed_copies_only_into_empty_workspace(tmp_path: Path) -> None:
     target = tmp_path / "ws"
-    assert seed_from_fixtures(FIXTURES_DIR, target) == len(list(FIXTURES_DIR.glob("*.md")))
+    assert seed_from_fixtures(FIXTURES_DIR, target) == len(list(FIXTURES_DIR.rglob("*.md")))
     marker = target / "SEM-ARCH-001.md"
     marker.write_text(marker.read_text(encoding="utf-8") + "\nlocal edit\n", encoding="utf-8")
     assert seed_from_fixtures(FIXTURES_DIR, target) == 0

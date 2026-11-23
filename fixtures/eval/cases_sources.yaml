@@ -1,0 +1,174 @@
+# Gold evaluation cases — group A (sources): DEMO-SRC-001 … DEMO-SRC-012.
+# Synthetic only: every question is about the fictional training model in fixtures/knowledge/sources/,
+# never about real bank systems. Format: docs/MOCK_KNOWLEDGE_BASE.md §6.
+
+- case_id: KE-SRC-001
+  category: exact_id
+  question: "DEMO-SRC-011"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-011]
+  k: 1
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact document id of the Data Quality Monitor profile."
+
+- case_id: KE-SRC-002
+  category: exact_id
+  question: "CATIA: условная модель метаданных изделий"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-003]
+  k: 1
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact title of the CATIA source profile."
+
+- case_id: KE-SRC-003
+  category: synonym
+  question: "Which source system keeps golden records and the master copies of reference dictionaries?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-006]
+  k: 3
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "English question about the Russian-titled MDM profile (мастер-данные, эталонные справочники, мастер-запись)."
+
+- case_id: KE-SRC-004
+  category: synonym
+  question: "Через какую шину приходят оповещения о том, что объект в источнике поменялся?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-008]
+  k: 3
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "RU paraphrase (шина, оповещения, поменялся) of «Event Hub: уведомления об изменениях»."
+
+- case_id: KE-SRC-005
+  category: abbreviation
+  question: "Что означает ADR в отчётах монитора качества данных?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-011]
+  k: 3
+  facts_required: ["Average Daily Rows"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "ADR here is the DQ volume metric, not Architecture Decision Record; the DQ context must win."
+
+- case_id: KE-SRC-006
+  category: abbreviation
+  question: "Как устроен идентификатор мастер-записи в MDM?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-006]
+  k: 3
+  facts_required: ["mdm_golden_id"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "MDM = Master Data Management (SYS-MDM), not the «MDM-модель» of ARIS texts."
+
+- case_id: KE-SRC-007
+  category: metadata_filter
+  question: "Какие профили источников пока в черновике?"
+  method: catalog
+  filters: {owner: demo-source-owners, status: draft}
+  expected_doc_ids: [DEMO-SRC-009]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: only External Registry is a draft source profile (DEMO-SRC-010 is in_review and owner unassigned)."
+
+- case_id: KE-SRC-008
+  category: metadata_filter
+  question: "Утверждённые профили источников с тегом cdc"
+  method: catalog
+  filters: {owner: demo-source-owners, status: approved, tag: cdc}
+  expected_doc_ids: [DEMO-SRC-004, DEMO-SRC-006, DEMO-SRC-008]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: CRM, MDM and Event Hub carry the tag cdc; DEMO-SRC-004 is approved but stale (reviewed_at 2026-03-02)."
+
+- case_id: KE-SRC-009
+  category: relation
+  question: "Какие системы описывает обзор ландшафта источников?"
+  method: graph_neighbors
+  filters: {}
+  start: DEMO-SRC-001
+  relation: describes
+  direction: out
+  expected_doc_ids: [DEMO-SRC-002, DEMO-SRC-003, DEMO-SRC-004, DEMO-SRC-005, DEMO-SRC-006, DEMO-SRC-007, DEMO-SRC-008, DEMO-SRC-009, DEMO-SRC-010, DEMO-SRC-011]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Ten outgoing describes edges; DEMO-SRC-012 is only a plain reference, not described."
+
+- case_id: KE-SRC-010
+  category: relation
+  question: "Какие профили источников зависят от правил владения и границ?"
+  method: graph_neighbors
+  filters: {}
+  start: DEMO-SRC-012
+  relation: depends_on
+  direction: in
+  expected_doc_ids: [DEMO-SRC-002, DEMO-SRC-003]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Incoming depends_on edges declared by the ARIS and CATIA profiles."
+
+- case_id: KE-SRC-011
+  category: relation
+  question: "Как профиль ARIS связан с регламентом ролей Owner, Reviewer, Steward?"
+  method: graph_path
+  filters: {}
+  start: DEMO-SRC-002
+  expected_doc_ids: [DEMO-SRC-012, DEMO-GOV-002]
+  expected_path: [DEMO-SRC-002, DEMO-SRC-012, DEMO-GOV-002]
+  max_depth: 2
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "Two depends_on hops: SRC-002 → SRC-012 → GOV-002; the only 2-hop path between the ends."
+
+- case_id: KE-SRC-012
+  category: synthesis
+  question: "Как изменения справочных карточек CRM попадают в MDM, за какое время и как MDM решает, что две карточки — одна мастер-запись?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-004, DEMO-SRC-006]
+  facts_required: ["до 15 минут", "crm_card_id", "mdm_golden_id", "mdm_match_score"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Needs both the CRM profile (CDC events, delay, crm_card_id) and the MDM profile (mdm_golden_id, match score 90 / 70–89)."
+
+- case_id: KE-SRC-013
+  category: synthesis
+  question: "Какие проверки выполняет монитор качества данных, с какими порогами полноты и актуальности, и что в нём значит ADR?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-SRC-011]
+  facts_required: ["DQ-COMP-001", "95 %", "24 ч", "Average Daily Rows"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Grounded answer from the DQM profile; must cite DEMO-SRC-011 and keep the 95 % / 98 % scope difference."
