@@ -21,7 +21,7 @@ _RU_STOPWORDS = (
     "они оно от очень по под при про с так также такой такое такая такие там те тем то того тоже той только "
     "том ты у уже хотя чего чей чем что чтобы чье чья эта эти это этот я сколько зачем почему расскажи скажи "
     "покажи опиши объясни нужно нужен нужна бывают бывает должен должна должно должны обязан обязана обязаны "
-    "могут"
+    "могут значение значения означает означают"
 )
 _EN_STOPWORDS = (
     "a an and are as at be been but by can could do does did for from has have how i if in into is it its me "
@@ -214,6 +214,8 @@ def fts_term(term: QueryTerm) -> str:
         parts = term.parts()
         return f'"{" ".join(parts)}"' if parts else '""'  # exact phrase: DEMO-INT-002 ≠ DEMO-INT-003
     groups = [g for g in (_fts_group(stems) for stems in term.stem_groups()) if g]
+    if len(term.stem) <= SHORT_STEM and term.token != term.stem and term.token.isalpha():
+        groups.append(f'"{term.token}"')  # «поле» → stem «пол» (whole token) OR the word itself
     groups = list(dict.fromkeys(groups))
     if not groups:
         return '""'

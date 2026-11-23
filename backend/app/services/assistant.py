@@ -102,6 +102,13 @@ def local_insufficiency(
         return "unmatched_entities"
     if len(unmatched) * 3 > len(terms):
         return "low_term_coverage"
+    # Words scattered over several documents are not an answer: one passage must cover ≥ 2/3 of the question.
+    best = max(
+        sum(1 for t in terms if term_matches_text(t, tokenize(f"{p.title} {p.section or ''} {p.text}")))
+        for p in passages
+    )
+    if best * 3 < len(terms) * 2:
+        return "no_single_local_passage"
     return None
 
 

@@ -19,6 +19,7 @@ import json
 import shutil
 import statistics
 import subprocess
+import sys
 import tempfile
 import time
 import warnings
@@ -39,6 +40,8 @@ from app.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
 
 HEADERS = {"X-SKH-Client": "eval"}
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+MOCK_CORPUS = PROJECT_ROOT / "fixtures" / "confluence_mock" / "pages.yaml"
 SEARCH_PAGE = 10
 NON_AUTHORITATIVE = {"draft", "in_review", "deprecated"}
 
@@ -57,6 +60,9 @@ class CaseResult:
     leaks: int = 0
     latency_ms: float = 0.0
     returned: list[str] = field(default_factory=list)
+    # assistant cases: were the expected documents / facts in the CONTEXT given to the model?
+    # (retrieval grounding, measured separately from what the deterministic mock chose to quote)
+    context_ok: bool | None = None
 
 
 def _sha256_dir(root: Path) -> str:
@@ -117,6 +123,9 @@ def eval_client(
             "repository_refresh_seconds": 0.0,
             "ai_provider": "mock",
             "confluence_connector": connector,
+            # the synthetic Confluence corpus (separate from the curated base) and its scenario state
+            "confluence_mock_pages_path": MOCK_CORPUS,
+            "confluence_mock_state_path": root / "mock_confluence_state.json",
         }
         values.update(extra or {})
         app = create_app(Settings(_env_file=None, **values))
@@ -197,6 +206,7 @@ def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> No
         r.status, r.detail = "error", f"HTTP {response.status_code}"
         return
     answer = response.json()
+    r.context_ok = _context_ok(client, case, body)
     cited = [c["document_id"] for c in answer["citations"]]
     r.returned = cited
     if not body["include_drafts"] and not body["include_deprecated"]:
@@ -223,6 +233,24 @@ def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> No
     not_excluded = [d for d in case.get("expected_excluded") or [] if d not in excluded]
     if not_excluded:
         problems.append(f"expected among excluded sources: {not_excluded} (excluded {sorted(excluded)})")
+    external = answer.get("external") or {}
+    if "expect_external_called" in case and bool(external.get("called")) != bool(
+        case["expect_external_called"]
+    ):
+        problems.append(
+            f"external called={bool(external.get('called'))}, expected {case['expect_external_called']}"
+        )
+    rejected = {x["page_id"]: x["reason"] for x in external.get("rejected") or []}
+    for page, reason in (case.get("expected_rejected") or {}).items():
+        if not str(rejected.get(str(page), "")).startswith(str(reason)):
+            problems.append(f"page {page} not rejected as {reason} (rejected {rejected})")
+    for needle in case.get("warning_contains") or []:
+        if not any(needle in w for w in answer.get("warnings") or []):
+            problems.append(f"no warning containing «{needle}»")
+    limits = case.get("max_external") or {}
+    for key, bound in limits.items():
+        if int(external.get(key, 0)) > int(bound):
+            problems.append(f"external {key}={external.get(key)} > {bound}")
     forbidden = [f for f in case.get("facts_forbidden") or [] if _norm(str(f)) in text]
     if forbidden:
         problems.append(f"forbidden facts present: {forbidden}")
@@ -230,6 +258,31 @@ def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> No
         problems.append(f"{r.leaks} non-authoritative citation(s)")
     r.status = "fail" if problems else "pass"
     r.detail = "; ".join(problems)
+
+
+def _context_ok(client: TestClient, case: dict[str, Any], body: dict[str, Any]) -> bool | None:
+    """Expected documents and facts present in the passages the assistant hands to the provider."""
+    if case.get("expected_no_answer"):
+        return None
+    container: Any = getattr(getattr(client.app, "state", None), "container", None)
+    prepare = getattr(getattr(container, "assistant", None), "_prepare", None)
+    portal = getattr(client, "portal", None)
+    if container is None or prepare is None or portal is None:
+        return None
+    from app.domain.models import AskRequest
+
+    try:
+        prepared = portal.call(prepare, container.demo_user(), AskRequest(**body))
+    except Exception:
+        return None
+    docs = {p.document_id for p in prepared.passages}
+    text = _norm(" ".join(p.text for p in prepared.passages))
+    wanted_docs = _expected(case) or [str(i) for i in case.get("cited_any") or []]
+    docs_ok = not wanted_docs or (
+        set(wanted_docs) & docs if case.get("cited_any") else set(wanted_docs) <= docs
+    )
+    facts_ok = all(_norm(str(f)) in text for f in case.get("facts_required") or [])
+    return bool(docs_ok) and facts_ok
 
 
 def _graph_unsupported(response: Any) -> bool:
@@ -327,6 +380,11 @@ def summarize(results: list[CaseResult]) -> dict[str, Any]:
             else None,
             "mrr": round(statistics.mean(mrr_values), 4) if mrr_values else None,
             "leaks": sum(r.leaks for r in items),
+            "context_ok": (
+                round(sum(1 for r in items if r.context_ok) / n, 4)
+                if (n := sum(1 for r in items if r.context_ok is not None))
+                else None
+            ),
             "latency_p50_ms": _percentile([r.latency_ms for r in items], 50),
             "latency_p95_ms": _percentile([r.latency_ms for r in items], 95),
         }
@@ -386,7 +444,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     with contextlib.suppress(ImportError):  # registers lifecycle scenario methods when that module exists
-        import app.evaluation.scenarios  # noqa: F401
+        import app.evaluation.scenarios
+    with contextlib.suppress(ImportError):
+        import app.evaluation.scenarios_external  # noqa: F401
+    # Run as `python -m`, this module is `__main__`; the scenarios registered into the importable copy.
+    registry = sys.modules.get("app.evaluation.knowledge_eval")
+    if registry is not None and registry is not sys.modules[__name__]:
+        SCENARIO_METHODS.update(registry.SCENARIO_METHODS)
 
     kb = args.kb.resolve()
     cases = load_cases(args.cases.resolve())

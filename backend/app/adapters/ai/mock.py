@@ -174,6 +174,20 @@ class MockAIProvider:
                 warnings,
             )
 
+        # Words scattered over different passages are not an answer: one passage must cover half the question.
+        per_passage: dict[str, set[str]] = {}
+        for sentence in candidates:
+            per_passage.setdefault(sentence.cid, set()).update(sentence.matched)
+        entity_hit = any(
+            t.is_entity_like and t.stem in matched for t in terms for matched in per_passage.values()
+        )
+        if len(terms) >= 2 and not entity_hit and max(len(m) for m in per_passage.values()) * 2 < len(terms):
+            return insufficient(
+                "Недостаточно данных: ни один найденный фрагмент не отвечает на вопрос — слова вопроса "
+                "встречаются только разрозненно в разных документах.",
+                warnings,
+            )
+
         best = max(c.weight for c in candidates)
         threshold = max(1, (best + 1) // 2)
         selected: dict[str, set[int]] = {}

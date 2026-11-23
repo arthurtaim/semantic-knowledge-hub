@@ -76,6 +76,7 @@ def test_external_only_page_is_cited_without_importing_it(ext_client: TestClient
         "no_local_passages",
         "unmatched_entities",
         "low_term_coverage",
+        "no_single_local_passage",
     )
     assert answer["retrieval_trace_id"].startswith("TRACE-")
     # the curated knowledge base is untouched

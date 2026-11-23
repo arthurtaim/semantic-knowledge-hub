@@ -118,6 +118,11 @@ class _CacheEntry:
     fragments: list[Fragment]
     page: CorporatePage
     stored_at: float
+    truncated: bool = False
+
+
+def _truncation_warning(page: CorporatePage) -> str:
+    return f"Страница «{page.title}» слишком большая: использована только её начальная часть."
 
 
 class _Breaker:
@@ -387,6 +392,8 @@ class ExternalEvidenceService:
             self._cache.move_to_end(key)
             result.cache_hits += 1
             self.counters["cache_hits"] += 1
+            if cached.truncated:
+                result.warnings.append(_truncation_warning(cached.page))
             return cached
         self.counters["cache_misses"] += 1
         try:
@@ -410,10 +417,10 @@ class ExternalEvidenceService:
         self.purge_page(page.instance, page.page_id, keep_version=page.version)  # older versions are stale
         text, truncated = storage_to_text(page.storage or page.body, max_chars=self.limits.max_page_chars)
         if truncated:
-            result.warnings.append(
-                f"Страница «{page.title}» слишком большая: использована только её начальная часть."
-            )
-        entry = _CacheEntry(fragments=fragments(text), page=page, stored_at=time.monotonic())
+            result.warnings.append(_truncation_warning(page))
+        entry = _CacheEntry(
+            fragments=fragments(text), page=page, stored_at=time.monotonic(), truncated=truncated
+        )
         self._store(self._key(page, scope), entry)
         return entry
 
