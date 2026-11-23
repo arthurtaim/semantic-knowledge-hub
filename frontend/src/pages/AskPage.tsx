@@ -16,6 +16,7 @@ import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
 import { AI_ERROR_TITLE, CONFIDENCE_LABEL, SOURCE_LABEL, pluralRu } from "../lib/labels";
+import { canAsk } from "../lib/aiMode";
 import { useSession } from "../lib/session";
 import { When } from "../components/When";
 
@@ -493,16 +494,27 @@ function TurnView({ turn, turnNo, onRetry }: TurnViewProps) {
   );
 }
 
+/** `?scope=` from the composer: team by default; corporate only when the user chose it. */
+function scopeFromParam(value: string | null): string {
+  return SCOPES.some((s) => s.value === value) ? (value as string) : "team";
+}
+
 export function AskPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const session = useSession();
   const about = params.get("about");
   const initial = params.get("q");
   const [question, setQuestion] = useState(about ? `Что известно о «${about}»?` : (initial ?? "").slice(0, 2000));
-  const [scope, setScope] = useState("team");
+  const [scope, setScope] = useState(() => scopeFromParam(params.get("scope")));
+  // `?run=1` (from «Спросить или найти»): ask at once. The flag is removed from the URL first, so a reload
+  // or a second effect run (React StrictMode) never asks twice.
+  const runRequested = params.get("run") === "1";
+  const aiMode = session?.features.ai_mode;
   const [includeDrafts, setIncludeDrafts] = useState(false);
   const [includeDeprecated, setIncludeDeprecated] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const turnsRef = useRef<Turn[]>([]);
+  turnsRef.current = turns;
   const [formError, setFormError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
@@ -514,6 +526,35 @@ export function AskPage() {
 
   // Leaving the page cancels a running generation on the server.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!runRequested || !canAsk(aiMode)) return undefined;
+    const timer = window.setTimeout(() => {
+      const text = (params.get("q") ?? "").trim().slice(0, 2000);
+      const chosen = scopeFromParam(params.get("scope"));
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.delete("run");
+          return next;
+        },
+        { replace: true },
+      );
+      if (text.length < 3) return;
+      setQuestion(text);
+      setScope(chosen);
+      void run({
+        question: text,
+        sources: SCOPES.find((s) => s.value === chosen)?.scopes ?? ["team"],
+        include_drafts: false,
+        include_deprecated: false,
+        history: historyFrom(turnsRef.current),
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // run/params are read at the moment of the request; the effect reacts to the flag only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runRequested, aiMode]);
 
   function patchTurn(id: number, patch: Partial<Turn> | ((turn: Turn) => Partial<Turn>)) {
     setTurns((list) =>

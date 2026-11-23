@@ -78,7 +78,7 @@ test("M5.6 ask with both sources: a Confluence citation and the evidence graph o
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill(question);
   await page.getByLabel("Оба").check({ force: true });
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   await expect(page.getByText("Подтверждено источником")).toBeVisible();
 
   const citation = page.locator(".citation", { hasText: "Регламент заморозки изменений метаданных (демо)" }).first();

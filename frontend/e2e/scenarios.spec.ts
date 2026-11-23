@@ -73,7 +73,7 @@ test("E2E-04 assistant answer with a verified citation (demo mode)", async ({ pa
 test("E2E-05 question without evidence → «Недостаточно данных»", async ({ page }) => {
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Какой SLA у интеграции с ЦФТ?");
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   await expect(page.locator(".confidence")).toHaveText("Недостаточно данных");
   await expect(page.getByText("Подтверждений в доступных источниках не найдено.")).toBeVisible();
   await expect(page.locator(".citation")).toHaveCount(0);

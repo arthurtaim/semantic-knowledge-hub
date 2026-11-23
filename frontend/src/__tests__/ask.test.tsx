@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError, api } from "../api/client";
 import type { AskResponse, AskStreamEvent, Citation } from "../api/types";
 import { AskPage } from "../pages/AskPage";
-import { insufficientAnswer, supportedAnswer } from "./fixtures";
+import { insufficientAnswer, session, supportedAnswer } from "./fixtures";
 import { mockApi, ndjsonStream, renderAt, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 const STREAM = "/api/assistant/ask/stream";
@@ -38,6 +38,27 @@ const send = (stream: ReturnType<typeof ndjsonStream>, ...events: (object | stri
   act(async () => {
     stream.push(...events);
   });
+
+describe("Asking from «Спросить или найти» (?run=1)", () => {
+  it("asks once at once in the chosen scope and removes the flag from the URL", async () => {
+    const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
+    renderRoutes("/ask?q=%D0%93%D0%B4%D0%B5%20%D0%B1%D0%B0%D0%B7%D0%B0%3F&run=1&scope=both", { "/ask": <AskPage /> });
+    expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
+    expect(posts(calls)).toHaveLength(1);
+    expect(posts(calls)[0]?.body).toMatchObject({ question: "Где база?", sources: ["team", "corporate"] });
+    expect(screen.getByTestId("location")).toHaveTextContent("/ask?q=");
+    expect(screen.getByTestId("location")).not.toHaveTextContent("run=1");
+    expect(screen.getByLabelText("Оба")).toBeChecked();
+  });
+
+  it("does not ask when the AI is disabled; the question stays in the field", async () => {
+    const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
+    const disabled = { ...session, features: { ...session.features, ai_mode: "disabled" as const } };
+    renderRoutes("/ask?q=%D0%93%D0%B4%D0%B5%20%D0%B1%D0%B0%D0%B7%D0%B0%3F&run=1", { "/ask": <AskPage /> }, disabled);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(posts(calls)).toHaveLength(0);
+  });
+});
 
 describe("Ask the knowledge base", () => {
   it("shows a grounded demo answer with clickable citations", async () => {

@@ -43,7 +43,7 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
   await page.getByLabel("Оба").check({ force: true });
   await expect(page.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeVisible();
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   await expect(page.getByText("Подтверждено источником")).toBeVisible();
   await expect(page.locator(".scope-status")).toContainText("Не подключено");
 
@@ -55,7 +55,7 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
 
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Какой SLA у интеграции с ЦФТ?");
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   await expect(page.locator(".confidence")).toHaveText("Недостаточно данных");
   await expect(page.locator(".citations")).toHaveCount(0);
   expect(problems).toEqual([]);

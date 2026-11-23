@@ -111,7 +111,7 @@ test("@gitlab E2E-11 unavailable Confluence MCP is shown as such", async ({ page
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
   await page.getByLabel("Оба").check({ force: true });
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   await expect(page.getByText("Корпоративные источники не использованы.")).toBeVisible();
   await expect(page.getByText(/сейчас недоступен/)).toBeVisible();
   await expect(page.locator(".citation").first()).toContainText("GitLab");
@@ -122,7 +122,7 @@ test("@gitlab E2E-11b available Confluence MCP double gives a corporate citation
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
   await page.getByLabel("Корпоративные").check({ force: true });
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   const corporate = page.locator(".citation", { hasText: "Регламент публикации тестовых страниц (MOCK)" });
   await expect(corporate).toBeVisible();
   await expect(corporate).toContainText("Confluence");

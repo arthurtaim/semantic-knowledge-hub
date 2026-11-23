@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSession } from "../lib/session";
+import { ComposerPalette, ComposerTrigger, isEditable } from "./ComposerPalette";
 import { AiModeChip, DemoPill } from "./HeaderStatus";
 
 const NAV = [
@@ -23,7 +24,27 @@ export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const session = useSession();
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const onHome = location.pathname === "/";
+
   useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // ⌘K / Ctrl+K anywhere, «/» outside text fields: the home page focuses its own field, other pages open
+  // the palette.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const commandK = (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k";
+      const slash = event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !isEditable(event.target);
+      if (!commandK && !slash) return;
+      event.preventDefault();
+      const hero = onHome ? document.getElementById("home-composer-input") : null;
+      if (hero) hero.focus();
+      else setPaletteOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onHome]);
 
   // Esc closes the open mobile menu and returns focus to «Меню» (focus is not lost inside a hidden list).
   useEffect(() => {
@@ -80,9 +101,12 @@ export function Layout({ children }: { children: ReactNode }) {
           </nav>
         </div>
       </header>
-      {/* The tool row under the bar: the AI mode and the demo status (replaces the full-width demo band). */}
+      {/* The tool row under the bar: «Спросить или найти», the AI mode and the demo status (it replaces the
+          full-width demo band). */}
       <div className="toolbar">
         <div className="toolbar__inner">
+          {/* The home page's hero is the same field, so the trigger is not repeated there. */}
+          {onHome ? null : <ComposerTrigger buttonRef={trigger} onOpen={() => setPaletteOpen(true)} />}
           <div className="toolbar__status">
             <AiModeChip />
             <DemoPill />
@@ -92,6 +116,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <main id="main" className="content" tabIndex={-1}>
         {children}
       </main>
+      {paletteOpen ? <ComposerPalette onClose={() => setPaletteOpen(false)} /> : null}
     </div>
   );
 }
