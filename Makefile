@@ -12,7 +12,7 @@ CLAUDE_TEST_ENV ?= deploy/claude-test/claude-test.env
 COMPOSE_CLAUDE_TEST = docker compose -p semantic-kb-claude-test --env-file $(CLAUDE_TEST_ENV) -f docker-compose.yml -f docker-compose.claude-test.yml
 
 .PHONY: setup backend frontend dev test test-backend test-frontend lint e2e e2e-gitlab gitlab-mock up down logs reset-workspace check \
-	mock-kb-validate mock-kb-sync knowledge-eval knowledge-eval-live \
+	mock-kb-validate mock-kb-sync knowledge-eval knowledge-demo knowledge-eval-live \
 	preflight preflight-integration integration-up test-live readiness mock-up mock-down mock-e2e mock-readiness mock-logs \
 	claude-test-up claude-test-down claude-test-ps claude-test-logs claude-test-check claude-test-restart-worker
 
@@ -64,6 +64,9 @@ mock-kb-sync: ## Sync fixtures/knowledge into ./workspace/knowledge (only files 
 
 knowledge-eval: ## Deterministic evaluation (no LLM, no network): 160 gold cases → reports/knowledge-eval/after*
 	cd backend && ../$(PY) -m app.evaluation.knowledge_eval --kb ../fixtures/knowledge --cases ../fixtures/eval --label after --out ../reports/knowledge-eval
+
+knowledge-demo: ## Five lifecycle demos (add/update/delete/relation/template) + example answer traces → reports/knowledge-eval/
+	cd backend && ../$(PY) -m app.evaluation.lifecycle_demo --out ../reports/knowledge-eval
 
 knowledge-eval-live: ## OPT-IN: SKH_LIVE_EVAL=1 SKH_EVAL_BASE_URL=http://127.0.0.1:5180 — assistant cases against a running stack
 	@test "$$SKH_LIVE_EVAL" = "1" || (echo "live evaluation is opt-in: set SKH_LIVE_EVAL=1 and SKH_EVAL_BASE_URL" && exit 2)
