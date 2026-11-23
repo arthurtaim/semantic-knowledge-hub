@@ -31,9 +31,11 @@ router = APIRouter(prefix="/api/authoring", tags=["authoring"])
 async def list_templates(
     container: Annotated[Container, Depends(get_container)],
     user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+    include_hidden: bool = False,
 ) -> list[DocumentTemplateInfo]:
-    """Templates with a suggested free document ID and file path."""
-    return await container.authoring.templates(user)
+    """Templates with a suggested free document ID and file path. `include_hidden`: also templates that are
+    not offered for new documents (`listed: false`, e.g. external_import) — needed to reopen their drafts."""
+    return await container.authoring.templates(user, include_hidden=include_hidden)
 
 
 @router.post("/check", response_model=AuthoringCheckResponse)

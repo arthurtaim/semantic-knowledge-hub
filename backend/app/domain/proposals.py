@@ -174,6 +174,8 @@ class DocumentTemplateInfo(BaseModel):
     suggested_id: str
     suggested_path: str
     version: int = 1
+    # False: not offered for new documents (still resolvable for its existing drafts, `include_hidden`).
+    listed: bool = True
     previous_versions: list[int] = Field(default_factory=list)
 
 

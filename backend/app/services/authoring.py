@@ -153,12 +153,14 @@ class AuthoringService:
         paths = {d.path for d in snapshot.documents.values()} | {i.path for i in snapshot.issues}
         return ids, paths
 
-    async def templates(self, user: UserContext) -> list[DocumentTemplateInfo]:
+    async def templates(
+        self, user: UserContext, *, include_hidden: bool = False
+    ) -> list[DocumentTemplateInfo]:
         ids, _ = await self._snapshot_ids(user)
         taken = ids | self._store.open_create_ids()
         result = []
         for template in self._templates.active().values():
-            if not template.listed:
+            if not template.listed and not include_hidden:
                 continue
             suggested = suggest_document_id(template.id_prefix, taken)
             result.append(
@@ -174,6 +176,7 @@ class AuthoringService:
                     suggested_id=suggested,
                     suggested_path=suggest_path(suggested, self._prefix),
                     version=template.version,
+                    listed=template.listed,
                     previous_versions=[
                         v.version
                         for v in self._templates.versions(template.id)

@@ -217,6 +217,14 @@ def test_feedback_scope_privacy_purge_and_proposal(
         draft["status"] == "draft" and draft["origin"] == "external_page" and draft["operation"] == "create"
     )
     assert ext_client.get(f"/api/documents/{draft['document_id']}").status_code == 404
+    # Its template is not offered for new documents, but stays resolvable to reopen this draft.
+    listed = {t["id"] for t in ext_client.get("/api/authoring/templates").json()}
+    every = {
+        t["id"]: t
+        for t in ext_client.get("/api/authoring/templates", params={"include_hidden": "true"}).json()
+    }
+    assert draft["template_id"] not in listed
+    assert every[draft["template_id"]]["listed"] is False and listed < set(every)
     # Erase: the trace, its graph and the derived cache disappear.
     purged = ext_client.delete("/api/discovery").json()
     assert purged["removed_records"] >= 1
