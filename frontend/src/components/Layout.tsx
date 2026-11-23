@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSession } from "../lib/session";
 
@@ -41,10 +41,23 @@ function DemoBand() {
 
 export function Layout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuToggle = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const session = useSession();
 
   useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // Esc closes the open mobile menu and returns focus to «Меню» (focus is not lost inside a hidden list).
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      menuToggle.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   return (
     <div className="shell">
@@ -61,6 +74,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </span>
           </NavLink>
           <button
+            ref={menuToggle}
             type="button"
             className="menu-toggle"
             aria-expanded={menuOpen}

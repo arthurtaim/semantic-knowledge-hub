@@ -341,7 +341,9 @@ export function ProposalDetailPage() {
 
   if (loading && !data) return <Loading label="Загрузка предложения…" />;
   if (error && !data) {
-    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Предложение не найдено" : undefined} />;
+    return (
+      <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Предложение не найдено" : undefined} page />
+    );
   }
   if (!data) return null;
   const p = data;

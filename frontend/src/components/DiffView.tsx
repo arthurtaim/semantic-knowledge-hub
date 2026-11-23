@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { DiffLine, DiffResult } from "../api/types";
+import { onTabListKeyDown } from "../lib/tabs";
 
 interface SideRow {
   left: DiffLine | null;
@@ -68,11 +69,23 @@ export function DiffView({
           </p>
         )}
         {newFile ? null : (
-          <div className="tabs tabs--small" role="tablist" aria-label="Вид сравнения">
-            <button type="button" role="tab" aria-selected={mode === "unified"} onClick={() => setMode("unified")}>
+          <div className="tabs tabs--small" role="tablist" aria-label="Вид сравнения" onKeyDown={onTabListKeyDown}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "unified"}
+              tabIndex={mode === "unified" ? 0 : -1}
+              onClick={() => setMode("unified")}
+            >
               Построчно
             </button>
-            <button type="button" role="tab" aria-selected={mode === "split"} onClick={() => setMode("split")}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === "split"}
+              tabIndex={mode === "split" ? 0 : -1}
+              onClick={() => setMode("split")}
+            >
               До и после
             </button>
           </div>

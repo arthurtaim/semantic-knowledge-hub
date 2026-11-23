@@ -56,6 +56,7 @@
   --space-6: 2rem;
   --space-7: 3rem;
   --content-max: 78rem;
+  --bar-height: 3.5rem;
   --gutter: var(--space-6);
   color-scheme: light;
 }
@@ -68,6 +69,8 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* Anchors and focused elements land below the sticky top bar, with a 16 px gap (WCAG 2.4.11). */
+  scroll-padding-top: calc(var(--bar-height) + var(--space-4));
 }
 
 body {
@@ -203,7 +206,7 @@ textarea {
   max-width: calc(var(--content-max) + 2 * var(--gutter));
   margin: 0 auto;
   padding: 0 var(--gutter);
-  min-height: 3.5rem;
+  min-height: var(--bar-height);
   display: flex;
   align-items: center;
   gap: var(--space-6);
@@ -722,6 +725,12 @@ label {
 .feedback__title {
   font-weight: 600;
   font-size: var(--step-1);
+}
+
+/* The whole page is this message: its title is the H1. */
+.feedback__title--page {
+  font-size: var(--step-3);
+  margin: 0 0 var(--space-3);
 }
 
 .feedback__meta {
@@ -1285,7 +1294,7 @@ h1 a:hover {
 .prose h3,
 .prose h4 {
   font-family: var(--font-ui);
-  scroll-margin-top: var(--space-5);
+  scroll-margin-top: 0; /* html scroll-padding-top clears the bar */
 }
 
 .prose h1 {
@@ -1800,7 +1809,7 @@ h1 a:hover {
 .citation {
   border-top: 1px solid var(--line);
   padding: var(--space-4) 0;
-  scroll-margin-top: var(--space-5);
+  scroll-margin-top: 0; /* html scroll-padding-top clears the bar */
 }
 
 .citation:target {

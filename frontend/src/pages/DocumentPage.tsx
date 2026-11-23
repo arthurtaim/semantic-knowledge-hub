@@ -14,6 +14,7 @@ import { StatusStamp } from "../components/StatusStamp";
 import { WikiLinkPreviewArea } from "../components/WikiLinkPreview";
 import { formatDate, formatDateTime, REVIEW_LABEL, SOURCE_LABEL, TYPE_LABEL } from "../lib/labels";
 import { useSession } from "../lib/session";
+import { onTabListKeyDown } from "../lib/tabs";
 import { useAsync } from "../lib/useAsync";
 
 const isHttpUrl = (value: string | null): value is string => Boolean(value && /^https?:\/\//i.test(value));
@@ -272,6 +273,7 @@ export function DocumentPage() {
           error={error}
           onRetry={error.status >= 500 || error.status === 0 ? reload : undefined}
           title={error.status === 404 ? "Документ не найден" : undefined}
+          page
         />
         <Link to="/documents" className="text-link">
           Вернуться к списку документов
@@ -356,12 +358,13 @@ export function DocumentPage() {
             </Notice>
           ) : null}
 
-          <div className="tabs" role="tablist" aria-label="Представление документа">
+          <div className="tabs" role="tablist" aria-label="Представление документа" onKeyDown={onTabListKeyDown}>
             <button
               type="button"
               role="tab"
               id="tab-rendered"
               aria-selected={view === "rendered"}
+              tabIndex={view === "rendered" ? 0 : -1}
               aria-controls="panel-document"
               onClick={() => setView("rendered")}
             >
@@ -372,6 +375,7 @@ export function DocumentPage() {
               role="tab"
               id="tab-metadata"
               aria-selected={view === "metadata"}
+              tabIndex={view === "metadata" ? 0 : -1}
               aria-controls="panel-document"
               onClick={() => setView("metadata")}
             >
@@ -382,6 +386,7 @@ export function DocumentPage() {
               role="tab"
               id="tab-raw"
               aria-selected={view === "raw"}
+              tabIndex={view === "raw" ? 0 : -1}
               aria-controls="panel-document"
               onClick={() => setView("raw")}
             >

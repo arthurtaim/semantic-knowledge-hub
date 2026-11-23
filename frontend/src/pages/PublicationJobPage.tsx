@@ -268,6 +268,7 @@ export function PublicationJobPage() {
         error={error}
         onRetry={reload}
         title={error.status === 404 ? "Задание публикации не найдено" : PUBLICATION_ERROR_TITLE[error.code]}
+        page
       />
     );
   }

@@ -282,6 +282,7 @@ export function TemplateDetailPage() {
           error={error}
           onRetry={error.status >= 500 || error.status === 0 ? reload : undefined}
           title={error.status === 404 ? "Шаблон не найден" : undefined}
+          page
         />
         <Link to="/templates" className="text-link">
           Все шаблоны

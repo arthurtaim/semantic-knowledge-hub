@@ -32,7 +32,7 @@ function NewProposal() {
 
   if (!documentId) {
     return (
-      <EmptyState title="Не выбран документ">
+      <EmptyState title="Не выбран документ" page>
         <p>Откройте документ в базе знаний и нажмите «Предложить изменение».</p>
         <Link to="/documents" className="button button--secondary">
           Перейти к документам
@@ -41,7 +41,7 @@ function NewProposal() {
     );
   }
   if (loading && !doc) return <Loading />;
-  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (error) return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Документ не найден" : undefined} page />;
   if (fromId && source.loading && !source.data && !source.error) {
     return <Loading label="Загрузка исходного предложения…" />;
   }
@@ -283,7 +283,7 @@ function EditChangeDraft({ id }: { id: string }) {
 
   if (loading && !data) return <Loading label="Загрузка черновика…" />;
   if (error && !data) {
-    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Черновик не найден" : undefined} />;
+    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Черновик не найден" : undefined} page />;
   }
   if (!data) return null;
   if (data.operation === "create") return <Navigate to={`/documents/new?draft=${encodeURIComponent(id)}`} replace />;
