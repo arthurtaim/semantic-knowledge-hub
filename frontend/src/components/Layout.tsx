@@ -21,12 +21,18 @@ function demoFacts(session: ReturnType<typeof useSession>): string[] {
   return facts;
 }
 
+function modeLabel(mode: string): string {
+  return mode === "local_demo" ? "локальное демо" : mode;
+}
+
 function DemoBand() {
   const facts = demoFacts(useSession());
   if (facts.length === 0) return null;
   return (
     <div className="demo-band" role="note">
-      <strong>Демо-данные.</strong> <span>{facts.join(" ")}</span>
+      <div className="demo-band__inner">
+        <strong className="demo-band__label">Демо-данные.</strong> <span>{facts.join(" ")}</span>
+      </div>
     </div>
   );
 }
@@ -43,27 +49,24 @@ export function Layout({ children }: { children: ReactNode }) {
       <a className="skip-link" href="#main">
         Перейти к содержимому
       </a>
-      <header className="sidebar">
-        {/* The header stretches to the full page height (dark column); its content stays in view while scrolling. */}
-        <div className="sidebar__inner">
-          <div className="sidebar__top">
-            <NavLink to="/" className="brand" aria-label="Semantic Knowledge Hub — на главную">
-              <span className="brand__mark" aria-hidden="true" />
-              <span className="brand__text">
-                <span className="brand__name">Semantic Knowledge Hub</span>
-                <span className="brand__team">команда семантического слоя</span>
-              </span>
-            </NavLink>
-            <button
-              type="button"
-              className="menu-toggle"
-              aria-expanded={menuOpen}
-              aria-controls="primary-nav"
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              {menuOpen ? "Закрыть" : "Меню"}
-            </button>
-          </div>
+      <header className="topbar">
+        <div className="topbar__inner">
+          <NavLink to="/" className="brand" aria-label="Semantic Knowledge Hub — на главную">
+            <span className="brand__mark" aria-hidden="true" />
+            <span className="brand__text">
+              <span className="brand__name">Semantic Knowledge Hub</span>
+              <span className="brand__team">команда семантического слоя</span>
+            </span>
+          </NavLink>
+          <button
+            type="button"
+            className="menu-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="primary-nav"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? "Закрыть" : "Меню"}
+          </button>
           <nav id="primary-nav" className={`nav${menuOpen ? " nav--open" : ""}`} aria-label="Основная навигация">
             <ul>
               {NAV.map((item) => (
@@ -75,21 +78,18 @@ export function Layout({ children }: { children: ReactNode }) {
               ))}
             </ul>
             {session ? (
-              <p className="nav__identity">
-                {session.user.display_name}
-                <br />
-                Режим: {session.auth_mode === "local_demo" ? "локальное демо" : session.auth_mode}
+              <p className="nav__identity" title={`Режим: ${modeLabel(session.auth_mode)}`}>
+                <span className="nav__user">{session.user.display_name}</span>
+                <span className="nav__mode">{modeLabel(session.auth_mode)}</span>
               </p>
             ) : null}
           </nav>
         </div>
       </header>
-      <div className="workspace">
-        <DemoBand />
-        <main id="main" className="content" tabIndex={-1}>
-          {children}
-        </main>
-      </div>
+      <DemoBand />
+      <main id="main" className="content" tabIndex={-1}>
+        {children}
+      </main>
     </div>
   );
 }

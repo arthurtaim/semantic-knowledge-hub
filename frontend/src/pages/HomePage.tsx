@@ -41,7 +41,7 @@ function RecentlyUpdated() {
   // The server puts documents without a date last; they are not "recent", so they are not listed here.
   const items = (recent.data?.items ?? []).filter((d) => d.updated_at);
   return (
-    <section aria-labelledby="recent-title" className="panel">
+    <section aria-labelledby="recent-title" className="home-section">
       <h2 id="recent-title">Недавно обновлённые</h2>
       {recent.loading && !recent.data ? <Loading /> : null}
       {recent.error ? <ErrorState error={recent.error} onRetry={recent.reload} /> : null}
@@ -84,7 +84,7 @@ function ProposalsNeedingAction() {
   const drafts = useAsync(() => api.drafts(), "home-proposals");
   const items = (drafts.data?.items ?? []).filter((p) => NEEDS_ACTION.has(p.status)).sort(byUpdatedDesc);
   return (
-    <section aria-labelledby="proposals-title" className="panel">
+    <section aria-labelledby="proposals-title" className="home-section">
       <h2 id="proposals-title">Предложения, требующие действия</h2>
       {drafts.loading && !drafts.data ? <Loading /> : null}
       {drafts.error ? <ErrorState error={drafts.error} onRetry={drafts.reload} /> : null}
@@ -156,34 +156,34 @@ export function HomePage() {
           Ищите документы команды, задавайте вопросы с проверяемыми ссылками на источники и предлагайте правки через
           ревью.
         </p>
+        <form className="search-box search-box--hero" role="search" onSubmit={onSearch}>
+          <label htmlFor="home-search" className="visually-hidden">
+            Поиск по базе знаний
+          </label>
+          <input
+            id="home-search"
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Например: ARIS, ревизия, FTS5"
+            maxLength={200}
+            autoComplete="off"
+          />
+          <button type="submit" className="button button--primary">
+            Найти
+          </button>
+        </form>
         <div className="home__actions">
-          <form className="search-box" role="search" onSubmit={onSearch}>
-            <label htmlFor="home-search" className="visually-hidden">
-              Поиск по базе знаний
-            </label>
-            <input
-              id="home-search"
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Например: ARIS, ревизия, FTS5"
-              maxLength={200}
-              autoComplete="off"
-            />
-            <button type="submit" className="button button--primary">
-              Найти
-            </button>
-          </form>
-          <Link to={askHref} className="button button--ask">
+          <Link to={askHref} className="button button--secondary">
             Спросить ассистента
           </Link>
-          <Link to="/documents/new" className="button button--secondary home__create">
+          <span className="home__hint muted">
+            Ассистент отвечает только по найденным документам и показывает ссылки на источники.
+          </span>
+          <Link to="/documents/new" className="button button--quiet home__create">
             Создать документ
           </Link>
         </div>
-        <p className="home__hint muted">
-          Ассистент отвечает только по найденным документам и показывает ссылки на источники.
-        </p>
       </section>
 
       <HomeIndexStatus />
@@ -192,72 +192,77 @@ export function HomePage() {
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
 
       <div className="home__grid">
-        {data ? (
-          <section aria-labelledby="sections-title" className="panel">
-            <h2 id="sections-title">Разделы</h2>
-            <ul className="index-list">
-              {TYPE_ORDER.map((type) => {
-                const count = typeCounts.get(type) ?? 0;
-                return (
-                  <li key={type}>
-                    <Link to={`/documents?type=${type}`} className="index-list__link">
-                      <span>{TYPE_LABEL[type]}</span>
-                      <span className="index-list__count" aria-label={`документов: ${count}`}>
-                        {count}
+        <div className="home__main">
+          <RecentlyUpdated />
+
+          {data ? (
+            <section aria-labelledby="attention-title" className="home-section">
+              <h2 id="attention-title">Требуют внимания</h2>
+              {attention.length === 0 ? (
+                <p className="muted">У всех документов есть владелец и актуальная проверка.</p>
+              ) : (
+                <ul className="doc-rows">
+                  {attention.map((doc) => (
+                    <li key={doc.id} className="doc-row">
+                      <Link to={`/documents/${doc.id}`} className="doc-row__title">
+                        {doc.title}
+                      </Link>
+                      <span className="doc-row__meta">
+                        <StatusStamp status={doc.status} />
+                        {doc.owner_missing ? <span className="flag">Владелец не назначен</span> : null}
+                        {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
+                          <span className="flag">{REVIEW_LABEL[doc.review_state]}</span>
+                        ) : null}
                       </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
 
-        <RecentlyUpdated />
-        <ProposalsNeedingAction />
+          <ProposalsNeedingAction />
+        </div>
 
-        {data ? (
-          <section aria-labelledby="attention-title" className="panel">
-            <h2 id="attention-title">Требуют внимания</h2>
-            {attention.length === 0 ? (
-              <p className="muted">У всех документов есть владелец и актуальная проверка.</p>
-            ) : (
-              <ul className="doc-rows">
-                {attention.map((doc) => (
-                  <li key={doc.id} className="doc-row">
-                    <Link to={`/documents/${doc.id}`} className="doc-row__title">
-                      {doc.title}
-                    </Link>
-                    <span className="doc-row__meta">
-                      <StatusStamp status={doc.status} />
-                      {doc.owner_missing ? <span className="flag">Владелец не назначен</span> : null}
-                      {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-                        <span className="flag">{REVIEW_LABEL[doc.review_state]}</span>
-                      ) : null}
-                    </span>
+        <div className="home__side">
+          {data ? (
+            <section aria-labelledby="sections-title" className="home-section">
+              <h2 id="sections-title">Разделы</h2>
+              <ul className="index-list">
+                {TYPE_ORDER.map((type) => {
+                  const count = typeCounts.get(type) ?? 0;
+                  return (
+                    <li key={type}>
+                      <Link to={`/documents?type=${type}`} className="index-list__link">
+                        <span>{TYPE_LABEL[type]}</span>
+                        <span className="index-list__count" aria-label={`документов: ${count}`}>
+                          {count}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {data ? (
+            <section aria-labelledby="integrations-title" className="home-section">
+              <h2 id="integrations-title">Источники и интеграции</h2>
+              <ul className="integration-mini">
+                {data.integrations.map((item) => (
+                  <li key={item.name}>
+                    <span>{item.title}</span>
+                    <StateBadge state={item.state} />
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
-        ) : null}
-
-        {data ? (
-          <section aria-labelledby="integrations-title" className="panel">
-            <h2 id="integrations-title">Источники и интеграции</h2>
-            <ul className="integration-mini">
-              {data.integrations.map((item) => (
-                <li key={item.name}>
-                  <span>{item.title}</span>
-                  <StateBadge state={item.state} />
-                </li>
-              ))}
-            </ul>
-            <Link to="/integrations" className="text-link">
-              Подробнее о подключениях
-            </Link>
-          </section>
-        ) : null}
+              <Link to="/integrations" className="text-link">
+                Подробнее о подключениях
+              </Link>
+            </section>
+          ) : null}
+        </div>
       </div>
     </div>
   );
