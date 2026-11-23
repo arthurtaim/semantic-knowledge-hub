@@ -11,6 +11,9 @@
   --ink-faint: #637067;
   --line: #d6ddd4;
   --line-strong: #adbaaf;
+  /* Boundary of a form control (input, select, segment, filter chip, toggle): ≥ 3:1 on white (3.61), paper (3.25),
+     sunk (3.04) and accent wash (3.02) — WCAG 1.4.11. Decorative rules keep --line-strong. */
+  --line-input: #7d8a80;
 
   --accent: #1d5c3c;
   --accent-ink: #12402a;
@@ -28,7 +31,7 @@
   --draft-wash: #faf0d9;
   --review: #345595;
   --review-wash: #e7ecf7;
-  --deprecated: #737a74;
+  --deprecated: #5f665f; /* 5.07:1 on its wash, 5.91:1 on white (was #737a74, 3.78:1) */
   --deprecated-wash: #eceeeb;
   --danger: #a3332b;
   --danger-wash: #fbe9e7;
@@ -445,7 +448,7 @@ input[type="text"],
 textarea {
   width: 100%;
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
   min-height: 2.5rem;
@@ -460,7 +463,7 @@ select {
   font: inherit;
   color: inherit;
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius);
   padding: var(--space-1) var(--space-2);
   min-height: 2.5rem;
@@ -1552,7 +1555,7 @@ h1 a:hover {
 .segmented__option span {
   display: inline-block;
   padding: var(--space-1) var(--space-4);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius);
   cursor: pointer;
 }
@@ -1812,7 +1815,7 @@ h1 a:hover {
 }
 
 .citation__ref {
-  font-weight: 700;
+  font-weight: 600;
   color: var(--accent);
   min-width: 1.5rem;
 }
@@ -2026,7 +2029,7 @@ h1 a:hover {
 
 .filter-chip {
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius);
   padding: var(--space-1) var(--space-3);
   font-size: var(--step--1);
@@ -2074,7 +2077,7 @@ h1 a:hover {
   height: 1.5rem;
   border-radius: 50%;
   border: 2px solid currentColor;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 0.75rem;
   line-height: 1;
   background: var(--paper);
@@ -2426,7 +2429,7 @@ h1 a:hover {
 
 .op-badge--create::before {
   content: "+ ";
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .home__create {
@@ -2641,7 +2644,7 @@ h1 a:hover {
 .field__issue::before {
   position: absolute;
   left: 0;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .field__issue--error {
@@ -2785,7 +2788,7 @@ h1 a:hover {
 
 .view-toggle {
   display: none;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface);
@@ -2839,7 +2842,7 @@ h1 a:hover {
   display: flex;
   flex-wrap: wrap;
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-bottom: 1px solid var(--line);
   border-radius: var(--radius) var(--radius) 0 0;
 }
@@ -3980,7 +3983,7 @@ h1 a:hover {
 
 .toggle-button {
   background: var(--surface);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line-input);
   border-radius: var(--radius);
   padding: 0.15rem var(--space-3);
   font-size: var(--step--1);
