@@ -127,3 +127,20 @@ Analysis:
 Passed live but not with the mock: KE-ADR-005, KE-SRC-013, KE-ST-006. Passed with the mock but not live: KE-PROC-010, KX-RAG-03.
 
 Live failures: KX-RAG-03 had the right fact and page (200103) but also cited the incomplete FAQ page 200111, which the case forbids. KX-RAG-04 (holdout) answered «недостаточно данных», because external evidence is not fetched (the same retrieval gap as with the mock). KE-INTA-012, KE-PROC-010, KE-SEM-011, KE-SEM-012 and KE-SRC-012 are multi-document synthesis cases where a required value or a second expected document is missing from the answer. No live answer cited an unverifiable source; the server drops those.
+
+## M5.6.3 addendum (same deterministic harness)
+
+Run `935eeb6`, 2026-11-23T14:18:15+00:00: **200 cases, 191 passed** (original 160: 151 passed — unchanged; R@1 0.9487, R@5 0.9744, MRR 0.9647, leaks 0).
+
+| Category | cases | passed |
+|---|---|---|
+| metadata | 10 | 10 |
+| wikilink | 10 | 10 |
+| ai_workflow | 10 | 10 |
+| template_hub | 10 | 10 |
+
+Latency after M5.6.3 (same bench, measured alternately with `a7caf04` on the same laptop): search p95 29.96 ms, catalog p95 45.07 ms, sync no-op 290.66 ms, rebuild 445.75 ms (M5.6.2: 30.0–30.5 / 44.6–45.0 / 289–358 / 439–530 ms).
+
+Hetzner CX23 (container loopback, no model): search p50/p95 23.6/79.5 ms, document_links p50/p95 3.6/4.1 ms, link_suggest p50/p95 2.7/4.4 ms, graph_overview p50/p95 6.8/38.2 ms; graph overview 97 nodes / 326 edges.
+
+Live Claude CLI on the deployed stack (`live_m563.json`): draft_from_prompt 201 15693 ms; accept_draft 200 70 ms; improve_section 201 4325 ms; summarize 201 4531 ms; suggest_metadata 201 4977 ms; reject rejected; explain 201 4270 ms; explain_relation 201 37 ms.

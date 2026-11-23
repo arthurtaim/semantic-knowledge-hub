@@ -1,0 +1,80 @@
+{
+ "host": "Hetzner CX23 (2 vCPU / 3.7 GB), inside the backend container, loopback, no model calls",
+ "index": {
+  "documents": 83,
+  "indexed_documents": 83,
+  "generation": 3,
+  "search_dictionary": "v1:30f06b6eeb",
+  "template_registry": "t14:9c351982ed"
+ },
+ "search": {
+  "n": 40,
+  "p50_ms": 23.6,
+  "p95_ms": 79.5,
+  "errors": 0
+ },
+ "catalog_query": {
+  "n": 40,
+  "p50_ms": 56.1,
+  "p95_ms": 106.5,
+  "errors": 0
+ },
+ "graph_overview": {
+  "n": 5,
+  "p50_ms": 6.8,
+  "p95_ms": 38.2,
+  "errors": 0
+ },
+ "graph_neighbors_d2": {
+  "n": 5,
+  "p50_ms": 5.4,
+  "p95_ms": 35.7,
+  "errors": 0
+ },
+ "graph_path": {
+  "n": 5,
+  "p50_ms": 3.2,
+  "p95_ms": 4.3,
+  "errors": 0
+ },
+ "document_links": {
+  "n": 10,
+  "p50_ms": 3.6,
+  "p95_ms": 4.1,
+  "errors": 0
+ },
+ "link_suggest": {
+  "n": 20,
+  "p50_ms": 2.7,
+  "p95_ms": 4.4,
+  "errors": 0
+ },
+ "templates": {
+  "architecture": 1,
+  "source_system": 1,
+  "integration": 2,
+  "dataset_spec": 1,
+  "business_entity": 1,
+  "mapping": 2,
+  "adr": 1,
+  "change_request": 1,
+  "data_quality_rule": 1,
+  "team_process": 1,
+  "runbook": 1,
+  "knowledge_article": 2
+ },
+ "graph_overview_size": {
+  "nodes": 97,
+  "edges": 326,
+  "total_nodes": 97,
+  "total_edges": 326,
+  "bytes": 161016
+ },
+ "sync_noop_ms": 723.1,
+ "last_sync": {
+  "generation": 3,
+  "checksum": "3fcfe441eec495a9",
+  "elapsed_ms": 0.0
+ },
+ "instructions": "instr-ae5e51c3c7"
+}

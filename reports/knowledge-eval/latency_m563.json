@@ -1,0 +1,1 @@
+{"label": "m563", "queries": 39, "rounds": 5, "search": {"p50_ms": 13.71, "p95_ms": 29.96, "max_ms": 35.14, "errors": 0}, "catalog_query": {"p50_ms": 22.25, "p95_ms": 45.07, "max_ms": 52.47, "errors": 0}, "sync_noop_ms": 290.66, "sync_rebuild_ms": 445.75}

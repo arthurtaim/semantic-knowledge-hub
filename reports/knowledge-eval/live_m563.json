@@ -1,0 +1,73 @@
+{
+ "base_url_kind": "remote",
+ "runs": [
+  {
+   "kind": "draft_from_prompt",
+   "status": 201,
+   "ms": 15693,
+   "mode": "claude_cli",
+   "template": "integration",
+   "template_version": 2,
+   "sections_kept": 12,
+   "verified_citations": 8,
+   "missing_sections": 2,
+   "warnings": 0
+  },
+  {
+   "kind": "accept_draft",
+   "status": 200,
+   "ms": 70,
+   "draft_status": "draft",
+   "origin": "ai_suggestion",
+   "template_version": 2
+  },
+  {
+   "kind": "improve_section",
+   "status": 201,
+   "ms": 4325,
+   "code": null,
+   "items": 1,
+   "applicable": 1,
+   "proposed_chars": 387,
+   "insufficient": false
+  },
+  {
+   "kind": "summarize",
+   "status": 201,
+   "ms": 4531,
+   "code": null,
+   "items": 1,
+   "applicable": 1,
+   "proposed_chars": 503,
+   "insufficient": false
+  },
+  {
+   "kind": "suggest_metadata",
+   "status": 201,
+   "ms": 4977,
+   "fields": [
+    "tags",
+    "summary",
+    "related_ids"
+   ]
+  },
+  {
+   "kind": "reject",
+   "status": "rejected"
+  },
+  {
+   "kind": "explain",
+   "status": 201,
+   "ms": 4270,
+   "citations": 4,
+   "insufficient": false
+  },
+  {
+   "kind": "explain_relation",
+   "status": 201,
+   "ms": 37,
+   "summary": "DEMO-INT-001 и DEMO-SRC-002 связаны через 1 шаг(а). Подтверждённых бизнес-связей: 1, упоминаний (references): 0. Упоминание не означает зависимость данных."
+  }
+ ],
+ "provider": "claude_cli"
+}

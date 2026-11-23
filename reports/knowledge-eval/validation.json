@@ -31,7 +31,7 @@
     "demo-team": 8,
     "unassigned": 2
   },
-  "edges": 291,
+  "edges": 375,
   "edges_by_type": {
     "constrains": 7,
     "consumes": 8,
@@ -40,7 +40,7 @@
     "describes": 16,
     "maps_to": 4,
     "produces": 4,
-    "references": 206,
+    "references": 290,
     "supersedes": 2,
     "uses_template": 3
   },
