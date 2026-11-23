@@ -1,0 +1,70 @@
+# PERSONAL TEST stack with the EXPERIMENTAL Claude Code CLI provider (docs/CLAUDE_CODE_CLI_INTEGRATION.md).
+# For the owner only, synthetic fixtures only, access through an SSH tunnel. Not a multi-user AI service.
+#
+#   docker compose -p semantic-kb-claude-test --env-file deploy/claude-test/claude-test.env \
+#     -f docker-compose.yml -f docker-compose.claude-test.yml up --build -d      (or: make claude-test-up)
+#
+# Isolation:
+# - own compose project → own containers, volumes and networks (prefix `semantic-kb-claude-test_`);
+# - backend: networks `internal` + `ai`, both internal → still NO internet egress, no Claude credentials;
+# - claude-worker: networks `ai` (backend only) + `egress` (HTTPS to Anthropic); no published port; read-only
+#   root filesystem; only the dedicated token directory is mounted read-only — no Docker socket, no home dir;
+# - frontend: the only published port, bound to 127.0.0.1 (reach it with `ssh -L`).
+
+services:
+  backend:
+    environment:
+      INTEGRATION_PROFILE: live_read_only
+      AI_PROVIDER: ${SKH_AI_PROVIDER:-claude_cli}
+      CLAUDE_CLI_WORKER_URL: http://claude-worker:8090
+      CLAUDE_CLI_PERSONAL_USE_ACK: "true"
+      CLAUDE_CLI_TIMEOUT_SECONDS: ${CLAUDE_CLI_TIMEOUT_SECONDS:-120}
+      CLAUDE_CLI_DRAFT_TIMEOUT_SECONDS: ${CLAUDE_CLI_DRAFT_TIMEOUT_SECONDS:-240}
+      CONFLUENCE_CONNECTOR: ${CONFLUENCE_CONNECTOR:-mock}
+    networks:
+      - internal
+      - ai
+    mem_limit: 448m
+    cpus: 0.75
+    pids_limit: 256
+
+  frontend:
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 64
+
+  claude-worker:
+    build:
+      context: .
+      dockerfile: deploy/claude-worker/Dockerfile
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CLAUDE_CODE_OAUTH_TOKEN_FILE: /run/secrets/claude/claude_code_oauth_token
+      CLAUDE_CLI_MODEL: ${CLAUDE_CLI_MODEL:-}
+      CLAUDE_WORKER_TIMEOUT_SECONDS: ${CLAUDE_CLI_TIMEOUT_SECONDS:-120}
+      CLAUDE_WORKER_MAX_TIMEOUT_SECONDS: "300"
+      CLAUDE_WORKER_MAX_CONCURRENCY: ${CLAUDE_WORKER_MAX_CONCURRENCY:-1}
+    volumes:
+      # A dedicated directory (owner uid 10002, mode 700) holding ONLY claude_code_oauth_token, created with the
+      # official `claude setup-token`. Read-only. Missing/empty token = "not authorized". Nothing else is mounted.
+      - ${SKH_CLAUDE_SECRETS_DIR:?set SKH_CLAUDE_SECRETS_DIR}:/run/secrets/claude:ro
+    networks:
+      - ai
+      - egress
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 900m
+    memswap_limit: 1200m
+    cpus: 1.0
+    pids_limit: 128
+    restart: unless-stopped
+
+networks:
+  ai:
+    internal: true # backend ↔ worker only
+  egress: {} # worker → Anthropic (HTTPS)

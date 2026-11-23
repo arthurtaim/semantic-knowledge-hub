@@ -41,3 +41,6 @@ playwright-report/
 deploy/integration/*.env
 secrets/
 .secrets/
+# Claude Code CLI personal test stack: local values and the OAuth token never go to git
+deploy/claude-test/*.env
+claude_code_oauth_token

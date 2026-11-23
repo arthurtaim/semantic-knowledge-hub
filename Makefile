@@ -7,9 +7,13 @@ INTEGRATION_ENV ?= deploy/integration/integration.env
 COMPOSE_INTEGRATION = docker compose --env-file $(INTEGRATION_ENV) -f docker-compose.yml -f docker-compose.integration.yml
 # integration_mock profile: separate compose project + volume, UI on 127.0.0.1:5174, doubles not published.
 COMPOSE_MOCK = FRONTEND_PORT=5174 docker compose -p skh-mock -f docker-compose.yml -f docker-compose.mock.yml
+# Personal test stack with the EXPERIMENTAL Claude Code CLI provider (docs/CLAUDE_CODE_CLI_INTEGRATION.md).
+CLAUDE_TEST_ENV ?= deploy/claude-test/claude-test.env
+COMPOSE_CLAUDE_TEST = docker compose -p semantic-kb-claude-test --env-file $(CLAUDE_TEST_ENV) -f docker-compose.yml -f docker-compose.claude-test.yml
 
 .PHONY: setup backend frontend dev test test-backend test-frontend lint e2e e2e-gitlab gitlab-mock up down logs reset-workspace check \
-	preflight preflight-integration integration-up test-live readiness mock-up mock-down mock-e2e mock-readiness mock-logs
+	preflight preflight-integration integration-up test-live readiness mock-up mock-down mock-e2e mock-readiness mock-logs \
+	claude-test-up claude-test-down claude-test-ps claude-test-logs claude-test-check claude-test-restart-worker
 
 setup: ## Create .venv, install backend (dev) and frontend dependencies
 	$(PYTHON) -m venv $(VENV)
@@ -36,7 +40,7 @@ test-frontend:
 	cd frontend && npx vitest run
 
 lint: ## Static checks: ruff, mypy (strict), tsc, eslint
-	cd backend && ../$(PY) -m ruff check app tests && ../$(PY) -m ruff format --check app tests && ../$(PY) -m mypy app
+	cd backend && ../$(PY) -m ruff check app claude_worker tests && ../$(PY) -m ruff format --check app claude_worker tests && ../$(PY) -m mypy app claude_worker
 	cd frontend && npx tsc --noEmit -p tsconfig.json && npx eslint .
 
 e2e: ## Browser E2E: offline stack at E2E_BASE_URL (default :5173, `make up`) + a self-started GitLab-mock stack
@@ -91,3 +95,21 @@ integration-up: ## Start against the TEST GitLab/Confluence MCP (only after appr
 
 test-live: ## Read-only smoke tests against the configured TEST environment (explicit opt-in)
 	cd backend && SKH_LIVE_TESTS=1 ../$(PY) -m pytest -m live tests/live -v
+
+claude-test-up: ## PERSONAL TEST: app + isolated Claude Code CLI worker (UI on 127.0.0.1:$$FRONTEND_PORT, default 5180)
+	$(COMPOSE_CLAUDE_TEST) up --build -d
+
+claude-test-ps:
+	$(COMPOSE_CLAUDE_TEST) ps
+
+claude-test-logs:
+	$(COMPOSE_CLAUDE_TEST) logs -f
+
+claude-test-check: ## One real request through the worker's CLI (prints only the outcome)
+	$(COMPOSE_CLAUDE_TEST) exec claude-worker python -m claude_worker check
+
+claude-test-restart-worker: ## Pick up a new token file
+	$(COMPOSE_CLAUDE_TEST) restart claude-worker
+
+claude-test-down: ## Stop the personal test stack (keeps its volume with the SQLite state)
+	$(COMPOSE_CLAUDE_TEST) down
