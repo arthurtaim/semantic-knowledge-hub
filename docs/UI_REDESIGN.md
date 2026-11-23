@@ -2,7 +2,8 @@
 
 Task specification for Claude Code (and GigaCode later) to make the interface simpler, more consistent and
 less templated, with a green visual identity. Functionality, Russian copy, accessible names and test
-contracts stay unchanged. Phases 1–3 are implemented; the dark colour scheme is deferred (see §3).
+contracts stay unchanged unless a phase says otherwise. Phases 1–4 are implemented (phase 4, the AI-first entry
+from the 2026 research: §5); the dark colour scheme is deferred (see §3).
 
 ## 1. Audit of the previous UI (2026-11-23)
 
@@ -38,16 +39,20 @@ in the passport). Everything else is quiet.
 |-------|-------|------|
 | `--bar` | `#143826` | top bar (ledger spine) |
 | `--accent` | `#1d5c3c` | primary action, links, active tab |
-| `--accent-ink` | `#12402a` | hover, selected segmented / chip / toggle |
-| `--accent-wash` | `#e2eee5` | hover wash, current step |
+| `--accent-ink` | `#12402a` | hover; text and border of a selected segment / chip / toggle (phase 4) |
+| `--accent-wash` | `#e2eee5` | hover wash, current step, background of a selected control (phase 4) |
 | `--accent-bright` | `#9fd3b0` | active nav underline and focus on the dark bar |
 | `--paper` | `#f1f4ef` | page background (cool sage, not cream) |
 | `--ink` | `#17231c` | text, section rules |
-| `--line` / `--line-strong` | `#d6ddd4` / `#adbaaf` | rules and inputs |
+| `--line` / `--line-strong` | `#d6ddd4` / `#adbaaf` | rules (decorative) |
+| `--line-input` | `#7d8a80` | boundary of a form control, ≥ 3:1 on every surface it sits on (phase 4) |
+| `--info` / `--info-wash` | `--ink-soft` / `--surface-sunk` | plain information, neutral (phase 4) |
 
-Statuses keep their own hues: approved `#23683f` (deliberately the brand green), in review `#345595`,
-draft `#8a5a00` (dashed), deprecated `#737a74` (struck through), danger `#a3332b`. State is always carried by
-text and shape too, never by colour alone.
+Statuses keep their own hues: in review `#345595` (blue belongs to review only), draft `#8a5a00` (dashed),
+deprecated `#5f665f` (struck through; 5.07:1), danger `#a3332b`. Since phase 4 «Утверждён» is a quiet seal
+glyph (muted `--approved` `#23683f`) with ink text in a neutral frame — approved is the normal state of the
+base, and green is the interactive accent. State is always carried by text and shape too, never by colour
+alone.
 
 **Type.** Golos Text (Paratype, built for Cyrillic UI) for interface; PT Serif for document prose; JetBrains
 Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4`). Headings get −0.02em tracking.
@@ -61,7 +66,9 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
 2. One primary (filled green) button per view. Secondary actions are outlined; tertiary are underlined
    text buttons (`.button--quiet`).
 3. List titles are ink-coloured and underline on hover; inline links in prose stay green and underlined.
-4. Selected / pressed state = `--accent-ink` fill. Focus = 3 px `--accent` outline (`--accent-bright` on the bar).
+4. Selected / pressed state = `--accent-wash` background with `--accent-ink` text (and border) and weight 600 —
+   never a solid fill, which belongs to the one primary button (phase 4). Focus = 3 px `--accent` outline
+   (`--accent-bright` on the bar).
 5. Numbered markers only for real sequences (lifecycle, authoring steps).
 6. No arrows appended to button text, no all-caps labels, no pill shapes.
 
@@ -188,35 +195,74 @@ Screens the research did not audit (Template Hub, Import, Graph, AI proposals, M
 
 Quick wins:
 
-- [ ] Q1 Contrast: `--deprecated: #5f665f`; `--line-input: #7d8a80` for inputs, selects, textareas, segmented,
-  filter chips and toggles (decorative rules keep `--line-strong`); faux-bold 700 → 600.
-- [ ] Q2 `scroll-padding-top` = bar height + 16 px; H1 on 404 and page-level errors; APG arrow/Home/End keys on
-  tabs; Esc closes the mobile menu and returns focus to «Меню».
-- [ ] Q3 AI-mode chip and striped «Демо» pill in the top bar (with a popover of facts); remove the full-width
-  band and the explorer's bottom notice; keep the passport fact and the text «Демо-данные.» (role `note`).
-- [ ] Q4 Selected = accent-wash + accent-ink border (never a solid fill); «Утверждён» = seal glyph + ink text,
-  no green fill; `info` gets its own neutral-blue-free tone, «На ревью» keeps the review hue.
-- [ ] Q5 One date formatter: relative for recent dates, full date in the tooltip, `nowrap` in tables.
-- [ ] Q6 Propose-change: body editor without YAML; metadata shown as fields; source with YAML behind a toggle.
+- [x] Q1 Contrast: `--deprecated: #5f665f`; `--line-input: #7d8a80` for inputs, selects, textareas, segments,
+  filter chips, toggles, the view toggle and the Markdown toolbar (decorative rules keep `--line-strong`);
+  faux-bold 700 → 600.
+- [x] Q2 `html { scroll-padding-top: bar height + 16 px }`; `ErrorState`/`EmptyState` take `page` and render
+  the title as the H1 (404, document, proposal, publication job, corporate page, template, proposal editor);
+  APG arrows/Home/End with a roving tabindex on the document and diff tabs (`lib/tabs.ts`); Esc closes the
+  mobile menu and returns focus to «Меню».
+- [x] Q3 A quiet tool row under the bar holds the AI-mode chip and the striped «Демо-данные» tag; each opens a
+  popover (Esc returns focus). The full-width band and the explorer's bottom demo notice are gone; the
+  document passport keeps its «Демо-документ» fact; the tag's wrapper is the page's one `role="note"` and
+  contains «Демо-данные.». The chip names provider, model (when reported), state, scope and limits.
+- [x] Q4 Selected = accent wash + accent-ink border/text + weight (segments, filter chips and options, view
+  toggles, toggle buttons, graph list); «Утверждён» = seal glyph + ink text; `--info` neutral for info notices,
+  «Новое», diff hunks, answered AI proposals and the internal-model label — blue stays with «На ревью».
+- [x] Q5 `formatWhen` + `<When>`: «только что / N мин. назад / сегодня, 15:50 / вчера, 15:50», else a short
+  date; full date as tooltip (and visually hidden for relative text); `nowrap`. Lists, tables, event logs,
+  citations, integrations, templates. The passport and future moments keep absolute dates.
+- [x] Q6 Propose change / edit change draft: «Текст документа» is the Markdown body (toolbar, `[[` links);
+  the YAML header is kept byte for byte and summarised read-only («Метаданные документа»); «Показать
+  исходный текст с YAML» for advanced edits.
 
 AI-first entry:
 
-- [ ] E1 «Спросить или найти» composer in the top bar: ⌘K / Ctrl+K and `/`, visible trigger, accessible
-  combobox with instant matches from `GET /api/documents?query=`; Enter on a question asks the AI and opens the
-  answer; Tab switches «Спросить ИИ» / «Найти»; disabled → search only, placeholder «Найти в базе знаний…».
-- [ ] E2 Home hero = the same composer with the scope switch «Команда / Корпоративные / Оба» (default «Команда»)
-  and the user's recent questions below; «Спросить ассистента» removed (tests updated in the same commit).
-- [ ] E3 Evidence-first answer: quotes and [n] markers before the explanation; marker hover card (passage,
-  document, source badge, revision, status); click opens the document at `section_anchor`; categorical support
-  level «Подтверждено источниками / Частично подтверждено / Недостаточно данных»; next actions «Открыть
-  документ», «Предложить правку по этому ответу», «Уточнить вопрос»; stages «Ищу источники → Формулирую ответ →
-  Проверяю цитаты»; team and corporate sources in separate lists.
-- [ ] E4 «Недостаточно данных» card («В базе знаний нет ответа на этот вопрос»): what and where was searched,
-  closest partial matches with citations, three steps (refine; a separate labelled corporate search; «Создать
-  черновик документа»). Four AI modes per the research table; no dead controls; demo answers labelled «Демо».
+- [x] E1 «Спросить или найти»: a field-like trigger in the tool row (not on the home page, whose hero is the
+  same field) opens a modal palette; ⌘K / Ctrl+K and `/` (outside text fields) open it, the trigger carries
+  `aria-keyshortcuts`. ARIA 1.2 combobox: debounced instant matches from `GET /api/documents?query=`
+  (nothing preselected, a moving pointer only), «Спросить ИИ: «…»», «Все результаты поиска»; Enter asks
+  (`/ask?q=…&run=1`, team scope) or searches; Tab switches modes while the list is open; visible mode
+  buttons. `disabled` → search only, «Найти в базе знаний…».
+- [x] E2 Home hero = the composer + «Где искать: Команда / Корпоративные / Оба» (team by default, a note when
+  Confluence is not connected) + «Недавние вопросы» (last five, this browser only, «Очистить»). «Спросить
+  ассистента» retired; tests and e2e updated in the same commit.
+- [x] E3 Evidence first: support level (category + shape, no %) → «Доказательства» («Документы команды» and
+  «Корпоративные источники» as separate lists) → «Объяснение» with [n] markers (hover/focus card: passage,
+  document, source, status, revision; click opens the document at `section_anchor`) → «Открыть документ»,
+  «Предложить правку по этому ответу», «Уточнить вопрос». Stages «Ищу источники → Формирую ответ →
+  Проверяю цитаты». «Демо» on mock answers, «ИИ» on generated text. The conversation is kept in memory
+  while the app is open, so following a citation and coming back keeps it.
+- [x] E4 «В базе знаний нет ответа на этот вопрос»: what/where was searched, unmatched terms, the closest
+  documents by the question's text (snippets, labelled as not evidence), three steps (refine; a separate
+  corporate-only request when Confluence or its mock is available, else a one-line reason; «Создать
+  черновик документа»). Modes: `disabled` hides every AI control (nav «Спросить», ask form, «Спросить ИИ об
+  этих документах», «Спросить ассистента», AI panels, «С помощью AI», «Создать с ИИ», «Черновик от ИИ»);
+  `mock` shows an unavailable AI edit disabled with a one-line reason.
+
+### 5.3 Deviations from the research and gaps
+
+- The composer sits in a tool row directly under the dark bar (with the chip and the demo tag) rather than
+  inside the bar: the bar already holds brand + seven links + identity at 1440 px; a sidebar shell (v2) is
+  deferred. The dark bar itself stays until shell v2 / tokens v2.
+- Backend gaps (no backend change in phase 4): per-claim span verification and «Нет подтверждения в
+  источниках» marks; partial matches of an insufficient answer are search snippets, not server-verified
+  citations; the AI chip shows a model only when `/api/integrations/status` reports one (`internal_api`) and
+  no retrieval limits are exposed; «Предложить правку по этому ответу» cannot pass the answer/instruction
+  into the proposal (no API field; `ai_edit_suggestions` is off in mock); recent questions live in the
+  browser until saved answers get a server-side decision.
 
 Deferred (not in phase 4): tokens v2 / OKLCH, dark and high-contrast themes, headless library and icons,
 sidebar shell v2, CollectionView, Peek, ⌘J context panel on every object, tasks / board / Gantt, AI delegates,
 backend span-level citation verification, server-side saved answers. Open owner decisions: the accent green
 (stays `--accent: #1d5c3c`; the research suggests `#18693f` or `#1f7a4d`), corporate sources only as a
 separate labelled step.
+
+### 5.4 Acceptance (phase 4)
+
+- `npx tsc --noEmit`, `npx eslint .` clean; `npx vitest run`: 138 tests before phase 4 → 195 after.
+- `npx playwright test`: desktop + mobile 25 passed, 1 skipped before → 26 passed, 1 skipped after (new
+  E2E-13: Ctrl+K → question → evidence first → marker opens the section → back keeps the answer);
+  gitlab-mock + gitlab-mock-mobile 10 passed.
+- Screenshots of every route at 1440×900 and 390×844 in `mock` and `disabled`, before and after, kept outside
+  the repository.
