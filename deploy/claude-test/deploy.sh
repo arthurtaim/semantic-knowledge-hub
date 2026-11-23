@@ -16,7 +16,9 @@ SECRETS=$ROOT/secrets
 WORKER_UID=10002                                   # claudeworker user in deploy/claude-worker/Dockerfile
 PROJECT=semantic-kb-claude-test
 
-umask 077
+# Code must stay readable by the non-root container users (backend uid 10001, worker uid 10002): umask 022.
+# Only the stack root (700) and the token directory (700/600) are restricted, explicitly below.
+umask 022
 mkdir -p "$ROOT"
 chmod 700 "$ROOT"
 
@@ -37,6 +39,8 @@ git -C "$APP" fetch --prune origin
 CURRENT=$(git -C "$APP" rev-parse HEAD)
 git -C "$APP" checkout --quiet --detach "$TARGET"
 NEW=$(git -C "$APP" rev-parse HEAD)
+# Repair files written by an earlier run with a restrictive umask (they would be unreadable in the images).
+(cd "$APP" && git ls-files -z | xargs -0 chmod go+r)
 if [ "$CURRENT" != "$NEW" ]; then
   echo "$CURRENT" > "$ROOT/previous_commit"      # used by rollback.sh
 fi
