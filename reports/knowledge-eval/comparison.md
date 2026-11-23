@@ -107,3 +107,23 @@ Analysis:
   tuning on the holdout, so it stays a reported miss.
 - **KE-ST-006**: the in_review document is correctly excluded by status, but the case expects it to be cited
   (that needs `include_drafts`). The mock cites approved neighbours instead.
+
+## Live generator (opt-in, Claude Code CLI on the personal test stack)
+
+`SKH_LIVE_EVAL=1 make knowledge-eval-live` against the deployed Hetzner stack (2026-11-23T13:13:53+00:00): provider `claude_cli`, CLI 2.1.318, runtime instructions `instr-425e9f3bfa`, same retrieval, synthetic questions only, one independent request per case. The deterministic run above stays the acceptance basis.
+
+| | cases | passed | p50 | p95 |
+|---|---|---|---|---|
+| live (Claude) | 33 | 26 | 3859 ms | 6069 ms |
+| same cases, mock | 33 | 25 | — | — |
+
+| Category | live passed / cases |
+|---|---|
+| external_rag | 10 / 12 |
+| no_answer | 3 / 3 |
+| status | 8 / 8 |
+| synthesis | 5 / 10 |
+
+Passed live but not with the mock: KE-ADR-005, KE-SRC-013, KE-ST-006. Passed with the mock but not live: KE-PROC-010, KX-RAG-03.
+
+Live failures: KX-RAG-03 had the right fact and page (200103) but also cited the incomplete FAQ page 200111, which the case forbids. KX-RAG-04 (holdout) answered «недостаточно данных», because external evidence is not fetched (the same retrieval gap as with the mock). KE-INTA-012, KE-PROC-010, KE-SEM-011, KE-SEM-012 and KE-SRC-012 are multi-document synthesis cases where a required value or a second expected document is missing from the answer. No live answer cited an unverifiable source; the server drops those.
