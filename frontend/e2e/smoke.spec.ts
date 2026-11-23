@@ -46,7 +46,7 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
   await page.getByLabel("Оба").check({ force: true });
   await expect(page.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeVisible();
   await page.getByRole("button", { name: "Спросить", exact: true }).click();
-  await expect(page.getByText("Подтверждено источником")).toBeVisible();
+  await expect(page.getByText("Подтверждено источниками")).toBeVisible();
   await expect(page.locator(".scope-status")).toContainText("Не подключено");
 
   const citation = page.locator(".citation").first();

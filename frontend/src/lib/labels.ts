@@ -84,9 +84,10 @@ export const INTEGRATION_STATE_LABEL: Record<IntegrationState, string> = {
   error: "Ошибка",
 };
 
+/** Support level of an answer: categorical, never a percentage (phase 4 copy). */
 export const CONFIDENCE_LABEL: Record<Confidence, string> = {
-  supported: "Подтверждено источником",
-  partial: "Подтверждено частично",
+  supported: "Подтверждено источниками",
+  partial: "Частично подтверждено",
   insufficient_evidence: "Недостаточно данных",
 };
 

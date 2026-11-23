@@ -67,10 +67,11 @@ describe("Ask the knowledge base", () => {
     await userEvent.type(screen.getByLabelText("Вопрос"), "What layers does the architecture have?");
     await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
 
-    expect(await screen.findByText("Подтверждено источником")).toBeInTheDocument();
+    expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
     expect(screen.getByText("Демо-режим, без языковой модели")).toBeInTheDocument();
+    // The marker opens the cited document at the cited section (evidence first: the quote is listed above).
     const marker = screen.getByRole("link", { name: "Источник 1" });
-    expect(marker).toHaveAttribute("href", "#cite-1-1");
+    expect(marker).toHaveAttribute("href", "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture");
     expect(document.getElementById("cite-1-1")).toHaveTextContent("This local demonstration models");
     const source = screen.getByRole("link", { name: "Semantic Layer — demonstration architecture" });
     expect(source).toHaveAttribute("href", "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture");
@@ -107,7 +108,7 @@ describe("Ask the knowledge base", () => {
     expect(field).toHaveAccessibleDescription(/Ctrl\+Enter/);
     await userEvent.type(field, "Что такое ревизия?");
     await userEvent.keyboard("{Control>}{Enter}{/Control}");
-    expect(await screen.findByText("Подтверждено источником")).toBeInTheDocument();
+    expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
     expect(posts(calls)).toHaveLength(1);
     expect(field).toHaveValue("");
     expect(screen.getByText("Что такое ревизия?")).toBeInTheDocument(); // the question stays in the conversation
@@ -163,7 +164,7 @@ describe("Ask the knowledge base", () => {
 
     mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     await userEvent.click(screen.getByRole("button", { name: "Повторить запрос" }));
-    expect(await screen.findByText("Подтверждено источником")).toBeInTheDocument();
+    expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
     expect(screen.queryByText("Интеграция недоступна")).toBeNull();
     expect(screen.getByLabelText("Вопрос")).toHaveValue("");
   });
@@ -177,13 +178,13 @@ describe("Streaming answers", () => {
     await userEvent.type(screen.getByLabelText("Вопрос"), "Какие слои у архитектуры?");
     await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
 
-    expect(await screen.findByText("Ищем источники…")).toBeInTheDocument();
+    expect(await screen.findByText("Ищу источники…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Отменить" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Ищем подтверждения…" })).toBeDisabled();
 
     await send(stream, { type: "status", stage: "retrieving" });
     await send(stream, { type: "status", stage: "generating", passages: 5, provider: "claude_cli" });
-    expect(await screen.findByText("Claude формирует ответ… (найдено 5 фрагментов)")).toBeInTheDocument();
+    expect(await screen.findByText("Формирую ответ с Claude Code CLI… (найдено 5 фрагментов)")).toBeInTheDocument();
 
     // A line split across chunks is buffered until its newline arrives.
     await send(stream, '{"type":"delta","te', 'xt":"Слоёв четыре [C1]"}\n', { type: "delta", text: ", включая витрину." });
@@ -194,16 +195,16 @@ describe("Streaming answers", () => {
     expect(screen.queryByRole("heading", { name: "Ответ" })).toBeNull();
 
     await send(stream, { type: "status", stage: "validating" });
-    expect(await screen.findByText("Проверяем цитаты…")).toBeInTheDocument();
+    expect(await screen.findByText("Проверяю цитаты…")).toBeInTheDocument();
     await send(stream, { type: "final", response: claudeAnswer });
     stream.close();
 
     expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
-    expect(screen.getByText("Подтверждено источником")).toBeInTheDocument();
+    expect(screen.getByText("Подтверждено источниками")).toBeInTheDocument();
     expect(screen.getByText("Claude Code CLI (личный тест), цитаты сверены с источниками")).toBeInTheDocument();
     expect(screen.queryByText("Предварительный текст модели — цитаты ещё не проверены")).toBeNull();
     expect(screen.queryByText(/Слоёв четыре/)).toBeNull();
-    expect(screen.queryByText("Проверяем цитаты…")).toBeNull();
+    expect(screen.queryByText("Проверяю цитаты…")).toBeNull();
     expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
     expect(screen.getByRole("button", { name: "Спросить" })).toBeEnabled();
   });
@@ -215,7 +216,7 @@ describe("Streaming answers", () => {
     await userEvent.type(screen.getByLabelText("Вопрос"), "Какие слои у архитектуры?");
     await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
     await send(stream, { type: "status", stage: "generating", passages: 1, provider: "internal_api" });
-    expect(await screen.findByText("Формируем ответ… (найден 1 фрагмент)")).toBeInTheDocument();
+    expect(await screen.findByText("Формирую ответ… (найден 1 фрагмент)")).toBeInTheDocument();
     await send(stream, { type: "final", response: { ...supportedAnswer, mode: "internal_api" } });
     expect(await screen.findByText("Внутренняя модель, цитаты сверены с источниками")).toBeInTheDocument();
   });
@@ -250,7 +251,7 @@ describe("Streaming answers", () => {
 
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     await userEvent.click(within(alert).getByRole("button", { name: "Повторить запрос" }));
-    expect(await screen.findByText("Подтверждено источником")).toBeInTheDocument();
+    expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getAllByText("Какие слои у архитектуры?")).toHaveLength(1); // the failed turn was replaced
     expect(posts(calls)[0]?.body).toMatchObject({ question: "Какие слои у архитектуры?", history: [] });
@@ -312,8 +313,11 @@ describe("Streaming answers", () => {
     // Ids stay unique per turn and the markers point at their own turn.
     expect(document.getElementById("answer-title-1")).toHaveTextContent("Ответ");
     expect(document.getElementById("answer-title-2")).toHaveTextContent("Ответ");
+    // Markers open the cited document; each has its own passage card, and each turn its own evidence anchors.
     const markers = screen.getAllByRole("link", { name: "Источник 1" });
-    expect(markers.map((m) => m.getAttribute("href"))).toEqual(["#cite-1-1", "#cite-2-1"]);
+    const cards = markers.map((m) => m.getAttribute("aria-describedby"));
+    expect(new Set(cards).size).toBe(2);
+    expect(document.getElementById("cite-1-1")).toBeInTheDocument();
     expect(document.getElementById("cite-2-1")).toBeInTheDocument();
   });
 
@@ -449,7 +453,7 @@ async function askExternal() {
   await userEvent.type(screen.getByLabelText("Вопрос"), "Когда действует окно заморозки?");
   await userEvent.click(screen.getByLabelText("Оба"));
   await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-  return screen.findByText("Подтверждено источником");
+  return screen.findByText("Подтверждено источниками");
 }
 
 describe("Ask: Confluence evidence and the answer graph", () => {
@@ -516,7 +520,7 @@ describe("Ask: Confluence evidence and the answer graph", () => {
     await userEvent.click(within(group).getByRole("button", { name: "Не подошёл" }));
     expect(await within(group).findByText(/Отзыв не сохранён: Источник этого ответа не найден/)).toBeInTheDocument();
     expect(within(group).getByRole("button", { name: "Не подошёл" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("Подтверждено источником")).toBeInTheDocument();
+    expect(screen.getByText("Подтверждено источниками")).toBeInTheDocument();
   });
 
   it("proposes a Confluence page as a draft and opens the proposal", async () => {
@@ -540,7 +544,7 @@ describe("Ask: Confluence evidence and the answer graph", () => {
     renderAt("/ask", "/ask", <AskPage />);
     await userEvent.type(screen.getByLabelText("Вопрос"), "What layers?");
     await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-    await screen.findByText("Подтверждено источником");
+    await screen.findByText("Подтверждено источниками");
     expect(screen.queryByRole("link", { name: "Граф ответа" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Подошёл" })).toBeNull();
     expect(screen.queryByText(/Внешний источник: запрос к Confluence/)).toBeNull();

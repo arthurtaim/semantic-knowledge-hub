@@ -62,7 +62,7 @@ test("E2E-04 assistant answer with a verified citation (demo mode)", async ({ pa
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
   await page.getByLabel("Вопрос").press("Control+Enter");
-  await expect(page.getByText("Подтверждено источником")).toBeVisible();
+  await expect(page.getByText("Подтверждено источниками")).toBeVisible();
   await expect(page.getByText(/Демо-режим/).first()).toBeVisible();
   const citation = page.locator(".citation").first();
   await expect(citation).toContainText("Каноническая база знаний команды хранится в отдельном репозитории GitLab");

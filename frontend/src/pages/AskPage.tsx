@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api, isCancelled } from "../api/client";
 import type {
@@ -12,11 +12,13 @@ import type {
   ExternalRetrievalSummary,
   SearchScope,
 } from "../api/types";
+import { AnswerText, externalVersion, isExternal, NextActions, SupportBadge } from "../components/AnswerParts";
 import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
-import { AI_ERROR_TITLE, CONFIDENCE_LABEL, SOURCE_LABEL, pluralRu } from "../lib/labels";
+import { AI_ERROR_TITLE, SOURCE_LABEL, pluralRu } from "../lib/labels";
 import { canAsk } from "../lib/aiMode";
+import { restoreConversation, saveConversation } from "../lib/conversation";
 import { rememberQuestion } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { When } from "../components/When";
@@ -77,15 +79,40 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
 }
 
+/** Stages of an answer, as the stream reports them (phase 4 copy). */
+const STAGES: { phase: TurnPhase; label: string }[] = [
+  { phase: "retrieving", label: "Ищу источники" },
+  { phase: "generating", label: "Формирую ответ" },
+  { phase: "validating", label: "Проверяю цитаты" },
+];
+
 function statusText(turn: Turn): string {
   if (turn.phase === "generating") {
-    const action = turn.provider === "claude_cli" ? "Claude формирует ответ…" : "Формируем ответ…";
+    const action = turn.provider === "claude_cli" ? "Формирую ответ с Claude Code CLI…" : "Формирую ответ…";
     if (turn.passages === null) return action;
     const n = turn.passages;
     return `${action} (${pluralRu(n, "найден", "найдено", "найдено")} ${n} ${pluralRu(n, "фрагмент", "фрагмента", "фрагментов")})`;
   }
-  if (turn.phase === "validating") return "Проверяем цитаты…";
-  return "Ищем источники…";
+  if (turn.phase === "validating") return "Проверяю цитаты…";
+  return "Ищу источники…";
+}
+
+/** «Ищу источники → Формулирую ответ → Проверяю цитаты»: done, current, pending — by text and shape. */
+function StageTrack({ phase }: { phase: TurnPhase }) {
+  const current = STAGES.findIndex((stage) => stage.phase === phase);
+  return (
+    <ol className="stages" aria-label="Этапы ответа">
+      {STAGES.map((stage, index) => (
+        <li
+          key={stage.phase}
+          className={`stages__step${index < current ? " stages__step--done" : ""}${index === current ? " stages__step--current" : ""}`}
+          aria-current={index === current ? "step" : undefined}
+        >
+          {stage.label}
+        </li>
+      ))}
+    </ol>
+  );
 }
 
 function scopeSummary(request: AskRequest): string {
@@ -114,11 +141,6 @@ function externalSummary(ext: ExternalRetrievalSummary): string {
   ];
   if (ext.rejected.length > 0) parts.push(`отклонено ${ext.rejected.length}`);
   return parts.join(", ") + (ext.degraded ? " — внешний источник ответил не полностью" : "");
-}
-
-/** Page version of a Confluence citation: the revision, or the last part of `confluence:<space>:<page>:<version>`. */
-function externalVersion(citation: Citation): string {
-  return citation.revision || citation.source_id?.split(":").pop() || "—";
 }
 
 /**
@@ -184,49 +206,6 @@ function ExternalSourceActions({ traceId, sourceId, title }: { traceId: string; 
       <p className={`citation__note${note?.error ? " citation__note--error" : ""}`} role="status">
         {note?.text ?? ""}
       </p>
-    </div>
-  );
-}
-
-/** Turns "[1]" markers in plain answer text into links to the numbered citation list of the same turn. */
-function AnswerText({ text, citations, turnNo }: { text: string; citations: Citation[]; turnNo: number }) {
-  const refs = new Set(citations.map((c) => c.ref));
-  return (
-    <div className="answer__text">
-      {text.split(/\n{2,}/).map((paragraph, pIndex) => (
-        <p key={pIndex}>
-          {paragraph.split("\n").map((line, lIndex) => {
-            const parts: ReactNode[] = [];
-            let last = 0;
-            for (const match of line.matchAll(/\[(\d{1,3})\]/g)) {
-              const ref = Number(match[1]);
-              const index = match.index ?? 0;
-              parts.push(line.slice(last, index));
-              parts.push(
-                refs.has(ref) ? (
-                  <a
-                    key={`${lIndex}-${index}`}
-                    href={`#cite-${turnNo}-${ref}`}
-                    className="cite-ref"
-                    aria-label={`Источник ${ref}`}
-                  >
-                    [{ref}]
-                  </a>
-                ) : (
-                  match[0]
-                ),
-              );
-              last = index + match[0].length;
-            }
-            parts.push(line.slice(last));
-            return (
-              <span key={lIndex} className="answer__line">
-                {parts}
-              </span>
-            );
-          })}
-        </p>
-      ))}
     </div>
   );
 }
@@ -342,7 +321,51 @@ function CorporateGap({ answer, asked }: { answer: AskResponse; asked: SearchSco
   );
 }
 
-function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: SearchScope[]; turnNo: number }) {
+interface EvidenceGroupProps {
+  title: string;
+  note?: string;
+  citations: Citation[];
+  turnNo: number;
+  withActions: Set<number>;
+  traceId: string | null;
+}
+
+/** One scope of evidence. Team documents and corporate pages are never mixed in one list. */
+function EvidenceGroup({ title, note, citations, turnNo, withActions, traceId }: EvidenceGroupProps) {
+  const headingId = `${title === "Документы команды" ? "team" : "corporate"}-evidence-${turnNo}`;
+  return (
+    <section className="evidence__group" aria-labelledby={headingId}>
+      <h4 id={headingId} className="evidence__title">
+        {title}
+      </h4>
+      {note ? <p className="evidence__note">{note}</p> : null}
+      <ol className="citations">
+        {citations.map((citation) => (
+          <CitationItem
+            key={citation.ref}
+            citation={citation}
+            turnNo={turnNo}
+            actionsTrace={withActions.has(citation.ref) ? traceId : null}
+          />
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+interface AnswerViewProps {
+  answer: AskResponse;
+  asked: SearchScope[];
+  turnNo: number;
+  question: string;
+  onRefine: (question: string) => void;
+}
+
+/**
+ * Evidence first: the support level, then the quoted passages (team and corporate apart), then the
+ * explanation with [n] markers, then what to do next. Generated text is labelled «ИИ», demo output «Демо».
+ */
+function AnswerView({ answer, asked, turnNo, question, onRefine }: AnswerViewProps) {
   const insufficient = answer.confidence === "insufficient_evidence";
   const traceId = answer.retrieval_trace_id ?? null;
   // Several citations may quote one Confluence page: its feedback controls appear once, at the first of them.
@@ -354,68 +377,91 @@ function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: Sea
       withActions.add(citation.ref);
     }
   }
+  const team = answer.citations.filter((c) => !isExternal(c));
+  const corporate = answer.citations.filter(isExternal);
+  const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
   return (
     <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby={`answer-title-${turnNo}`}>
-      {/* ≥ 1200 px: the answer on the left (68ch), its sources in a column on the right. */}
-      <div className="answer__body">
-        <div className="answer__head">
-          <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
-          <span className={`confidence confidence--${answer.confidence}`}>{CONFIDENCE_LABEL[answer.confidence]}</span>
-          <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
-          {traceId ? (
-            <Link to={`/graph?trace=${encodeURIComponent(traceId)}`} className="answer__graph">
-              Граф ответа
-            </Link>
-          ) : null}
-        </div>
-        <CorporateGap answer={answer} asked={asked} />
-        {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
-        {insufficient ? (
-          <div className="answer__insufficient">
-            <p>
-              <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
-              доказательств — уточните вопрос, включите черновики или проверьте документы вручную.
-            </p>
-            {answer.unmatched_terms.length > 0 ? (
-              <p>
-                Не найдено в источниках:{" "}
-                {answer.unmatched_terms.map((term, index) => (
-                  <span key={term}>
-                    {index > 0 ? ", " : ""}«{term}»
-                  </span>
-                ))}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <AnswerText text={answer.answer} citations={answer.citations} turnNo={turnNo} />
-
-        {answer.warnings.length > 0 ? (
-          <Notice tone="warning">
-            <ul>
-              {answer.warnings.map((warning) => (
-                <li key={warning}>{warning}</li>
-              ))}
-            </ul>
-          </Notice>
+      <div className="answer__head">
+        <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
+        <SupportBadge confidence={answer.confidence} />
+        {answer.mode === "mock" ? <span className="demo-tag">Демо</span> : null}
+        <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
+        {traceId ? (
+          <Link to={`/graph?trace=${encodeURIComponent(traceId)}`} className="answer__graph">
+            Граф ответа
+          </Link>
         ) : null}
       </div>
+      <CorporateGap answer={answer} asked={asked} />
+      {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
+      {insufficient ? (
+        <div className="answer__insufficient">
+          <p>
+            <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
+            доказательств — уточните вопрос, включите черновики или проверьте документы вручную.
+          </p>
+          {answer.unmatched_terms.length > 0 ? (
+            <p>
+              Не найдено в источниках:{" "}
+              {answer.unmatched_terms.map((term, index) => (
+                <span key={term}>
+                  {index > 0 ? ", " : ""}«{term}»
+                </span>
+              ))}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {answer.citations.length > 0 ? (
-        <section className="answer__sources" aria-labelledby={`sources-title-${turnNo}`}>
-          <h3 id={`sources-title-${turnNo}`}>Источники</h3>
-          <ol className="citations">
-            {answer.citations.map((citation) => (
-              <CitationItem
-                key={citation.ref}
-                citation={citation}
-                turnNo={turnNo}
-                actionsTrace={withActions.has(citation.ref) ? traceId : null}
-              />
-            ))}
-          </ol>
+        <section className="answer__sources evidence" aria-labelledby={`sources-title-${turnNo}`}>
+          <h3 id={`sources-title-${turnNo}`}>Доказательства</h3>
+          {team.length > 0 ? (
+            <EvidenceGroup
+              title="Документы команды"
+              citations={team}
+              turnNo={turnNo}
+              withActions={withActions}
+              traceId={traceId}
+            />
+          ) : null}
+          {corporate.length > 0 ? (
+            <EvidenceGroup
+              title="Корпоративные источники"
+              note="Внешние страницы Confluence: статус и версия — как указаны на странице, это не утверждённые документы команды."
+              citations={corporate}
+              turnNo={turnNo}
+              withActions={withActions}
+              traceId={traceId}
+            />
+          ) : null}
         </section>
       ) : null}
+
+      <section className="answer__explanation" aria-labelledby={`explanation-title-${turnNo}`}>
+        <div className="answer__explanation-head">
+          <h3 id={`explanation-title-${turnNo}`}>Объяснение</h3>
+          {generated ? (
+            <span className="ai-label" title="Текст сформирован языковой моделью; цитаты сверены сервером">
+              ИИ
+            </span>
+          ) : null}
+        </div>
+        <AnswerText text={answer.answer} citations={answer.citations} turnNo={turnNo} />
+      </section>
+
+      {answer.warnings.length > 0 ? (
+        <Notice tone="warning">
+          <ul>
+            {answer.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+
+      <NextActions citations={answer.citations} question={question} onRefine={onRefine} />
 
       {answer.excluded_sources.length > 0 ? (
         <section aria-labelledby={`excluded-title-${turnNo}`} className="excluded">
@@ -448,11 +494,12 @@ function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: Sea
 interface TurnViewProps {
   turn: Turn;
   turnNo: number;
+  onRefine: (question: string) => void;
   /** Only the last failed turn offers a retry (a new question replaces it). */
   onRetry?: () => void;
 }
 
-function TurnView({ turn, turnNo, onRetry }: TurnViewProps) {
+function TurnView({ turn, turnNo, onRetry, onRefine }: TurnViewProps) {
   const running = isRunning(turn);
   return (
     <article className="turn" aria-busy={running}>
@@ -464,9 +511,12 @@ function TurnView({ turn, turnNo, onRetry }: TurnViewProps) {
       </div>
 
       {running ? (
-        <p className="turn__status" role="status">
-          {statusText(turn)}
-        </p>
+        <>
+          <StageTrack phase={turn.phase} />
+          <p className="turn__status" role="status">
+            {statusText(turn)}
+          </p>
+        </>
       ) : null}
       {running && turn.preliminary ? (
         <section className="answer-preliminary" aria-live="polite" aria-labelledby={`preliminary-title-${turnNo}`}>
@@ -490,7 +540,15 @@ function TurnView({ turn, turnNo, onRetry }: TurnViewProps) {
           retryLabel="Повторить запрос"
         />
       ) : null}
-      {turn.response ? <AnswerView answer={turn.response} asked={turn.request.sources} turnNo={turnNo} /> : null}
+      {turn.response ? (
+        <AnswerView
+          answer={turn.response}
+          asked={turn.request.sources}
+          turnNo={turnNo}
+          question={turn.request.question}
+          onRefine={onRefine}
+        />
+      ) : null}
     </article>
   );
 }
@@ -513,13 +571,12 @@ export function AskPage() {
   const aiMode = session?.features.ai_mode;
   const [includeDrafts, setIncludeDrafts] = useState(false);
   const [includeDeprecated, setIncludeDeprecated] = useState(false);
-  const [turns, setTurns] = useState<Turn[]>([]);
-  const turnsRef = useRef<Turn[]>([]);
-  turnsRef.current = turns;
+  // Completed turns survive a visit to a cited document (memory only; see lib/conversation.ts).
+  const [turns, setTurns] = useState<Turn[]>(() => restoreConversation<Turn>());
   const [formError, setFormError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
-  const nextId = useRef(0);
+  const nextId = useRef(turns.reduce((max, turn) => Math.max(max, turn.id), 0));
   const abortRef = useRef<AbortController | null>(null);
   const questionRef = useRef<HTMLTextAreaElement>(null);
   const corporateState = session?.features.corporate_search;
@@ -527,6 +584,8 @@ export function AskPage() {
 
   // Leaving the page cancels a running generation on the server.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => saveConversation(turns.filter((turn) => turn.phase === "done")), [turns]);
 
   useEffect(() => {
     if (!runRequested || !canAsk(aiMode)) return undefined;
@@ -542,6 +601,8 @@ export function AskPage() {
         { replace: true },
       );
       if (text.length < 3) return;
+      // A question from «Спросить или найти» starts a new conversation (no earlier answers as context).
+      setTurns([]);
       setQuestion(text);
       setScope(chosen);
       void run({
@@ -549,7 +610,7 @@ export function AskPage() {
         sources: SCOPES.find((s) => s.value === chosen)?.scopes ?? ["team"],
         include_drafts: false,
         include_deprecated: false,
-        history: historyFrom(turnsRef.current),
+        history: [],
       });
     }, 0);
     return () => window.clearTimeout(timer);
@@ -668,6 +729,10 @@ export function AskPage() {
               turn={turn}
               turnNo={index + 1}
               onRetry={turn === lastTurn && turn.phase === "error" ? () => void run(turn.request) : undefined}
+              onRefine={(text) => {
+                setQuestion(text);
+                questionRef.current?.focus();
+              }}
             />
           ))}
         </section>

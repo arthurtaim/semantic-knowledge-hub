@@ -2195,6 +2195,10 @@ h1 a:hover {
   max-width: 52rem;
 }
 
+.answer > * + * {
+  margin-top: var(--space-4);
+}
+
 .answer__head {
   display: flex;
   align-items: baseline;
@@ -2231,26 +2235,31 @@ h1 a:hover {
   color: var(--ink-soft);
 }
 
+/* Support level: a category with text and shape (solid / dashed / dotted), never a percentage. */
 .confidence {
   font-weight: 600;
   font-size: var(--step--1);
-  padding: 0.1rem 0.6rem;
-  border-radius: 2px;
+  padding: 0.05rem 0.6rem;
+  border-radius: var(--radius);
+  border: 1.5px solid currentColor;
 }
 
 .confidence--supported {
-  background: var(--approved-wash);
-  color: var(--approved);
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--approved);
 }
 
 .confidence--partial {
   background: var(--draft-wash);
   color: var(--draft);
+  border-style: dashed;
 }
 
 .confidence--insufficient_evidence {
   background: var(--deprecated-wash);
   color: var(--ink-soft);
+  border-style: dotted;
 }
 
 .answer__text {
@@ -2337,45 +2346,201 @@ h1 a:hover {
   margin-left: 2.25rem;
 }
 
-/* Wide screens: each answer gets its sources in a column on the right, next to the text they support. */
+/* Wide screens: the conversation keeps one evidence-first column (quotes, then the explanation). */
 @media (min-width: 1200px) {
-  .conversation {
-    max-width: none;
-  }
-
   .turn__question,
   .answer-preliminary,
   .ask__form {
-    max-width: 46rem;
+    max-width: 52rem;
   }
+}
 
-  .answer {
-    max-width: none;
-    display: grid;
-    grid-template-columns: minmax(0, 46rem) minmax(0, 1fr);
-    column-gap: var(--space-7);
-    align-items: start;
-  }
+/* ---------- evidence-first answer (phase 4) ---------- */
 
-  .answer > * {
-    grid-column: 1;
-  }
+/* «Ищу источники → Формирую ответ → Проверяю цитаты»: done (tick), current (ring + weight), pending (muted). */
+.stages {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--step--1);
+  color: var(--ink-faint);
+}
 
-  .answer > .answer__sources {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-  }
+.stages__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
 
-  .answer__sources > h3 {
-    font-size: var(--step-0);
-    padding-bottom: var(--space-2);
-    border-bottom: 2px solid var(--ink);
-    margin-bottom: 0;
-  }
+.stages__step::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
 
-  .answer__sources .citation:first-child {
-    border-top: 0;
-  }
+.stages__step--done {
+  color: var(--ink-soft);
+}
+
+.stages__step--done::before {
+  background: currentColor;
+}
+
+.stages__step--current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.stages__step--current::before {
+  border-color: var(--accent);
+  border-width: 3px;
+}
+
+/* «Демо» on mock output: the same striped edge as the header tag. Not interactive. */
+.demo-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) 0 0;
+  border: 1px solid var(--draft);
+  border-radius: var(--radius);
+  background: var(--draft-wash);
+  color: var(--draft);
+  font-size: var(--step--1);
+  font-weight: 600;
+  line-height: 1.6;
+  overflow: hidden;
+}
+
+.demo-tag::before {
+  content: "";
+  align-self: stretch;
+  width: 0.5rem;
+  border-right: 1px solid var(--draft);
+  background: repeating-linear-gradient(-45deg, var(--draft) 0 2px, transparent 2px 5px);
+}
+
+/* «ИИ»: neutral ink on a faint tint — no sparkle, no gradient, no glow. */
+.ai-label {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--info-wash);
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.answer__sources > h3,
+.answer__explanation-head h3 {
+  font-size: var(--step-0);
+  margin: 0;
+}
+
+.answer__sources > h3 {
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--ink);
+}
+
+.evidence__group + .evidence__group {
+  margin-top: var(--space-4);
+}
+
+.evidence__title {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.evidence__note {
+  margin: 0 0 var(--space-2);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+
+.answer__explanation-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+/* Inline [n] marker and its passage card (hover / focus). */
+.cite-marker {
+  position: relative;
+}
+
+.cite-card {
+  position: absolute;
+  left: 0;
+  top: calc(100% + var(--space-1));
+  z-index: 20;
+  display: grid;
+  gap: var(--space-2);
+  width: min(26rem, 80vw);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  line-height: 1.45;
+  color: var(--ink);
+  text-align: left;
+  white-space: normal;
+}
+
+.cite-card[hidden] {
+  display: none;
+}
+
+.cite-card__title {
+  font-weight: 600;
+}
+
+.cite-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  color: var(--ink-soft);
+}
+
+.cite-card__quote {
+  display: block;
+  padding-left: var(--space-3);
+  border-left: 3px solid var(--accent);
+  font-family: var(--font-read);
+  color: var(--ink-soft);
+}
+
+.source-badge {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+/* What to do next with an answer. */
+.answer__next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-4) 0;
+}
+
+.answer__next-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--ink-faint);
 }
 
 .excluded ul {
