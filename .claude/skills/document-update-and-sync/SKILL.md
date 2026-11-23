@@ -23,7 +23,7 @@ renaming a file, deprecating or deleting a document.
    copy. The result lists `added/updated/renamed/deleted/rejected`, `generation`, `checksum`.
 4. **Negative test.** Search the OLD value/term: it must not return the document (and the assistant
    must not cite it). Search the NEW value: found, with the new revision.
-5. **Graph.** `GET /api/graph/nodes/<id>/neighbors` reflects the new relations; removed targets show up
+5. **Graph.** `GET /api/graph/nodes/doc:<id>/neighbors` reflects the new relations; removed targets show up
    in `/api/graph/diagnostics` as dangling, never as silent edges.
 6. **Rollback check.** An invalid file is `rejected` and the previous generation keeps serving
    (`tests/test_sync_and_graph.py::test_failed_sync_rolls_back_to_the_previous_generation`).

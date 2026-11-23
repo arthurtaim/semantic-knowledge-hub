@@ -13,7 +13,7 @@ stacks the API needs no login; on a corporate stack use your session.
    missing required field, …).
 3. Find it: `curl -s "$SKH/api/search?q=<a word from its title>" | jq '.items[].id'` and open
    `/documents/<id>` in the UI.
-4. Graph: `curl -s "$SKH/api/graph/nodes/<id>/neighbors" | jq '.edges[] | {type, source, target, origin}'`.
+4. Graph: `curl -s "$SKH/api/graph/nodes/doc:<id>/neighbors" | jq '.edges[] | {type, source, target, origin}'`.
 
 ## 2. Update a document with a version and links
 

@@ -14,14 +14,14 @@ reviewing what the assistant's answer graph shows.
 **Inputs.** Document id(s), relation types of interest, an answer `retrieval_trace_id` (query mode).
 
 ## Procedure
-1. **Canonical edges.** `GET /api/graph/nodes/<id>/neighbors?depth=1` → each edge has `type` (the relation),
+1. **Canonical edges.** `GET /api/graph/nodes/doc:<id>/neighbors?depth=1` → each edge has `type` (the relation),
    `origin` (`canonical_metadata`, `verified_registry`, `external_discovery`, `query_trace`,
    `ai_suggestion`), `verified`, and provenance (`declared_in`, `field`, `path`, `revision`). Only
    `canonical_metadata` / `verified_registry` edges are facts.
 2. **Verify provenance.** Open the `declared_in` file and find the relation in its frontmatter; a
    mismatch is a bug.
 3. **Views.** Global: `GET /api/graph/overview?limit=200` (capped at 200 nodes). Local:
-   neighbours, depth ≤ 2. Path: `GET /api/graph/path?source=A&target=B` (≤ 6 hops).
+   neighbours, depth ≤ 2. Path: `GET /api/graph/path?source=doc:A&target=doc:B` (≤ 6 hops).
    Query: `GET /api/graph/query/<trace_id>`. UI: `/graph` (Global / Local / Query tabs).
 4. **Suggested / temporary.** `query_trace`, `external_discovery` and `ai_suggestion` edges are drawn
    as temporary/unverified, never written into documents and never shown as declared.

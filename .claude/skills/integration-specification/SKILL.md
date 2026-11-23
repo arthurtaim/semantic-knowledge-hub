@@ -32,7 +32,7 @@ make mock-kb-validate && make knowledge-eval
 ```
 
 ## Expected outputs
-No missing required sections for v2; `GET /api/graph/nodes/<id>/neighbors` shows consumes/produces.
+No missing required sections for v2; `GET /api/graph/nodes/doc:<id>/neighbors` shows consumes/produces.
 
 ## Constraints
 Synthetic systems, hosts and queues only; no real endpoints, credentials or internal URLs.

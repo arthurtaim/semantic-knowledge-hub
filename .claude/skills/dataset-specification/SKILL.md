@@ -22,7 +22,7 @@ from, how it is checked and refreshed, who may use it.
    (`constrains` edge from `DEMO-GOV-…`).
 5. **Refresh.** Schedule, trigger, latency; producing integration (`produces` on the integration side).
 6. **Lineage.** Source → integration → dataset → consumers, consistent with the graph path
-   (`GET /api/graph/path?source=<src>&target=<dataset>`).
+   (`GET /api/graph/path?source=doc:<src>&target=doc:<dataset>`).
 7. **Restrictions.** Access class, PII flags (synthetic), retention.
 8. **Validate** (below), then add a gold case for one attribute fact.
 

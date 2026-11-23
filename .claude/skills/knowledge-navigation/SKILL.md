@@ -21,8 +21,8 @@ really contains the claim; preparing context before changing a document.
    Read `match_reasons` / `matched_fields` (`id`, `title`, `alias`, `tags`, `content`, `related`) — a
    `related` hit (`related_via`) is a graph neighbour, not a direct match. Synonyms/abbreviations come from
    `backend/app/search_dictionary/dictionary.yaml`; ambiguous ones (ADR, MDM) come with a note.
-3. **Graph.** `GET /api/graph/nodes/<id>/neighbors?depth=1` — typed edges with provenance
-   (`declared_in`, `field`, `revision`). Use `GET /api/graph/path?source=A&target=B` for chains.
+3. **Graph.** `GET /api/graph/nodes/doc:<id>/neighbors?depth=1` — typed edges with provenance
+   (`declared_in`, `field`, `revision`). Use `GET /api/graph/path?source=doc:A&target=doc:B` for chains.
 4. **Authority.** `approved` answers by default; `draft`/`in_review` only when explicitly asked;
    `deprecated` → follow its `supersedes` edge to the successor.
 5. **Citation trail.** Record: id, title, status, `version`, revision, section heading, quoted line.

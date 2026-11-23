@@ -31,6 +31,8 @@ dangling (with the declaring document), together with orphans.
 
 ## Views and limits
 
+Node ids are namespaced: `doc:<document id>`, `template:<template id>`, external pages in query graphs.
+
 | View | API | Limits |
 |---|---|---|
 | Global | `GET /api/graph/overview?limit=&kind=&relation=&status=&type=&q=` | ≤ 200 nodes (default 150), most connected first |
