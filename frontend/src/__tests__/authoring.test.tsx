@@ -58,11 +58,17 @@ describe("Creating a document: type and mode", () => {
     expect(screen.getByRole("button", { name: "Открыть редактор" })).toBeDisabled();
 
     await openManualEditor();
-    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue("SEM-ARCH-002");
+    // M5.6.3: the server allocates the ID at the first save; ID, status and origin are read-only.
+    const id = screen.getByRole("textbox", { name: /^ID документа/ });
+    expect(id).toHaveValue("");
+    expect(id).toHaveAttribute("readonly");
+    expect(screen.getByText(/ID выделит сервер при первом сохранении/)).toBeInTheDocument();
     expect(screen.getByText("Раздел каталога").parentElement).toHaveTextContent("Архитектура");
+    expect(screen.getByText("Происхождение").parentElement).toHaveTextContent("создан вручную в редакторе");
     expect(screen.getByRole("textbox", { name: /^Владелец/ })).toHaveValue("local-demo-user");
+    expect(screen.getByRole("textbox", { name: /^Владелец/ })).not.toBeRequired();
     expect(screen.getByRole("textbox", { name: /^Теги/ })).toHaveValue("architecture");
-    expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("docs/SEM-ARCH-002.md");
+    expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("");
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value.startsWith("# Название документа\n\n## Назначение")).toBe(true);
     expect(screen.getByText("Черновик ещё не сохранён")).toBeInTheDocument();
@@ -83,7 +89,10 @@ describe("Creating a document: type and mode", () => {
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value.startsWith("# Витрина метрик\n")).toBe(true);
 
+    // An explicit opt-in sets the ID by hand (migrating a document with a known ID).
+    await userEvent.click(screen.getByRole("checkbox", { name: /Задать ID вручную/ }));
     const id = screen.getByRole("textbox", { name: /^ID документа/ });
+    expect(id).toHaveValue("SEM-ARCH-002");
     await userEvent.clear(id);
     await userEvent.type(id, "SEM-ARCH-777");
     expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("docs/SEM-ARCH-777.md");
@@ -122,7 +131,7 @@ describe("Creating a document: manual flow", () => {
     expect(post[0]?.body).toMatchObject({
       template_id: "architecture",
       metadata: {
-        id: "SEM-ARCH-002",
+        id: "",
         title: "Витрина метрик",
         status: "draft",
         owner: "local-demo-user",
@@ -130,10 +139,13 @@ describe("Creating a document: manual flow", () => {
         related_ids: [],
         summary: null,
       },
-      path: "docs/SEM-ARCH-002.md",
+      path: null,
       reason: "Описать витрину",
       origin: "manual",
+      client_request_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/),
     });
+    // The allocated ID is shown read-only from now on.
+    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue(created.document_id);
     expect((post[0]?.body as { body: string }).body).toContain("# Витрина метрик");
     // The editor stays mounted on the new URL: the typed text is still there.
     expect(screen.getByRole("textbox", { name: /^Название/ })).toHaveValue("Витрина метрик");
@@ -285,7 +297,8 @@ describe("Creating a document with the AI helper", () => {
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value).toBe(aiDraft.body);
     expect(screen.getByRole("textbox", { name: /^Связанные документы/ })).toHaveValue("SEM-INT-ARIS-001, SEM-ARCH-001");
-    expect(screen.getByRole("option", { name: "Утверждён" })).toBeDisabled();
+    expect(screen.queryByRole("option", { name: "Утверждён" })).toBeNull();
+    expect(screen.getByText("Происхождение").parentElement).toHaveTextContent("предложение ИИ");
     expect(screen.getByText(/Текст подготовлен ИИ-помощником/)).toBeInTheDocument();
     expect(screen.getByText("Черновик ещё не сохранён")).toHaveClass("save-state--dirty");
 
@@ -590,8 +603,8 @@ describe("Proposal of a new document", () => {
     );
     renderRoutes(`/documents/new?from=${NEW_DOC_ID}`, CREATE);
     expect(await screen.findByRole("textbox", { name: /Markdown/ })).toHaveValue(NEW_DOC_BODY);
-    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue("SEM-ARCH-002");
-    expect(screen.getByText(/уже занят, поэтому предложен свободный ID/)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue("");
+    expect(screen.getByText(/уже занят, поэтому сервер выделит новый свободный ID/)).toBeInTheDocument();
   });
 });
 

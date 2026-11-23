@@ -463,6 +463,7 @@ export function GraphPage() {
                       edges={visible.edges}
                       labels={labels}
                       isFocus={mode.kind === "local" && selectedNode.id === mode.focus}
+                      focusNode={focusNode}
                       canLoadMore={canLoadMore}
                       loadingMore={loadingMore}
                       onLoadMore={() => void loadMore()}

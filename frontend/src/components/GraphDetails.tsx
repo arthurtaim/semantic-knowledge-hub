@@ -15,7 +15,9 @@ import {
   SOURCE_KIND_LABEL,
   type GraphLabels,
 } from "../lib/graph";
-import { formatDateTime, STATUS_LABEL, STATUS_ORDER } from "../lib/labels";
+import { formatDateTime, provenanceText, STATUS_LABEL, STATUS_ORDER } from "../lib/labels";
+import { AiProposalCard, useAiProposal } from "./AiProposal";
+import { ErrorState } from "./Feedback";
 import { StatusStamp } from "./StatusStamp";
 
 const isDocStatus = (value: string | null): value is DocStatus => value !== null && value in STATUS_LABEL;
@@ -63,6 +65,9 @@ export function EdgeProvenance({ edge }: { edge: GraphEdge }) {
         <Fact term={trace ? "Фрагменты" : "Поле"}>
           <code>{edge.field}</code>
         </Fact>
+      ) : null}
+      {!trace && edge.provenance && edge.provenance.length > 0 ? (
+        <Fact term="Где объявлено">{edge.provenance.map(provenanceText).join("; ")}</Fact>
       ) : null}
       {edge.path ? (
         <Fact term="Файл">
@@ -119,6 +124,64 @@ function EdgeItem({ edge, self, byId, labels, onSelect }: EdgeItemProps) {
 
 // --- details panel ----------------------------------------------------------------------------------------
 
+// --- AI on the graph: why two documents are related, what a change would affect ----------------------------
+
+/** «Объяснить связь с …» (focus ↔ selected) and «Анализ влияния»: answers and plans, nothing to apply. */
+function GraphAiActions({ node, focusNode }: { node: GraphNode; focusNode: GraphNode | null }) {
+  const state = useAiProposal();
+  const documentId = node.document_id ?? "";
+  const other = focusNode && focusNode.document_id && focusNode.id !== node.id && focusNode.id.startsWith("doc:") ? focusNode : null;
+  const busy = state.preparing !== null;
+  return (
+    <section className="graph-ai" aria-label="ИИ о связях узла">
+      <div className="graph-details__actions">
+        {other ? (
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={busy}
+            onClick={() =>
+              void state.run({ kind: "explain_relation", document_id: other.document_id ?? "", target_id: documentId })
+            }
+          >
+            Объяснить связь с {nodeDisplayId(other)}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="button button--secondary"
+          disabled={busy}
+          onClick={() => void state.run({ kind: "impact_analysis", document_id: documentId })}
+        >
+          Анализ влияния
+        </button>
+      </div>
+      <div aria-live="polite">
+        {busy ? (
+          <p className="muted">
+            Готовим ответ ИИ…{" "}
+            <button type="button" className="button button--ghost" onClick={state.cancel}>
+              Отменить
+            </button>
+          </p>
+        ) : null}
+      </div>
+      {state.error ? <ErrorState error={state.error} title="Не удалось получить ответ ИИ" /> : null}
+      {state.proposal ? (
+        <AiProposalCard
+          key={state.proposal.id}
+          proposal={state.proposal}
+          pending={state.decision}
+          error={state.decisionError}
+          onAccept={(ids) => void state.accept(ids)}
+          onReject={() => void state.reject()}
+          onRegenerate={state.regenerate}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 export interface NodeDetailsProps {
   node: GraphNode;
   byId: Map<string, GraphNode>;
@@ -126,6 +189,8 @@ export interface NodeDetailsProps {
   labels: GraphLabels;
   /** The node whose neighbourhood is shown (local mode). */
   isFocus: boolean;
+  /** The centre of a local graph: «Объяснить связь с …» explains the path between it and the selected node. */
+  focusNode?: GraphNode | null;
   canLoadMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
@@ -133,7 +198,19 @@ export interface NodeDetailsProps {
   headingRef: RefObject<HTMLHeadingElement | null>;
 }
 
-export function NodeDetails({ node, byId, edges, labels, isFocus, canLoadMore, loadingMore, onLoadMore, onSelect, headingRef }: NodeDetailsProps) {
+export function NodeDetails({
+  node,
+  byId,
+  edges,
+  labels,
+  isFocus,
+  focusNode = null,
+  canLoadMore,
+  loadingMore,
+  onLoadMore,
+  onSelect,
+  headingRef,
+}: NodeDetailsProps) {
   const outgoing = edges.filter((e) => e.source === node.id);
   const incoming = edges.filter((e) => e.target === node.id && e.source !== node.id);
   const status = nodeStatusText(node);
@@ -216,6 +293,7 @@ export function NodeDetails({ node, byId, edges, labels, isFocus, canLoadMore, l
           </Link>
         ) : null}
       </div>
+      {isDocument ? <GraphAiActions key={node.id} node={node} focusNode={focusNode} /> : null}
       {outgoing.length + incoming.length === 0 ? (
         <p className="muted">На схеме у этого узла нет связей.</p>
       ) : (

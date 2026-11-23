@@ -6,6 +6,7 @@ const NAV = [
   { to: "/", label: "Главная", end: true },
   { to: "/documents", label: "База знаний", end: false },
   { to: "/graph", label: "Граф", end: false },
+  { to: "/templates", label: "Шаблоны", end: false },
   { to: "/ask", label: "Спросить", end: false },
   { to: "/proposals", label: "Предложения", end: false },
   { to: "/integrations", label: "Интеграции", end: false },

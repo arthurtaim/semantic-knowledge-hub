@@ -73,6 +73,13 @@ function counts(facets: FacetCount[] | undefined): Map<string, number> {
   return new Map(facets?.map((f) => [f.value, f.count]) ?? []);
 }
 
+/** «Спросить ИИ об этих документах»: the assistant page with a question about the query and the top results. */
+function askAboutResults(query: string, ids: string[]): string {
+  const top = ids.slice(0, 5);
+  const question = `Что говорят документы по запросу «${query.slice(0, 200)}»${top.length ? ` (${top.join(", ")})` : ""}? Ответь со ссылками на источники.`;
+  return `/ask?q=${encodeURIComponent(question)}`;
+}
+
 export function ExplorerPage() {
   const [params, setParams] = useSearchParams();
   const query = params.get("query") ?? "";
@@ -255,6 +262,11 @@ export function ExplorerPage() {
               </h2>
               {singleSource && !list.loading ? (
                 <p className="results__source">Источник: {SOURCE_LABEL[singleSource]}</p>
+              ) : null}
+              {query && list.data && list.data.items.length > 0 && !list.loading ? (
+                <Link to={askAboutResults(query, list.data.items.map((d) => d.id))} className="button button--ask results__ask">
+                  Спросить ИИ об этих документах
+                </Link>
               ) : null}
             </div>
             <div className="sort-control">

@@ -83,7 +83,9 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
   const [fromId] = useState(() => params.get("from"));
   const templates = useAsync(() => api.templates(), "authoring-templates");
   const [mode, setMode] = useState<Mode>("manual");
-  const [templateId, setTemplateId] = useState<string | null>(null);
+  // `?template=<id>` from the Template Hub («Использовать шаблон») preselects the template.
+  const [requestedTemplate] = useState(() => params.get("template"));
+  const [templateId, setTemplateId] = useState<string | null>(requestedTemplate);
   const [stage, setStage] = useState<"choose" | "ai" | "edit">("choose");
   const [start, setStart] = useState<EditorStart | null>(null);
   const aiAvailable = session?.features.ai_authoring ?? false;
@@ -101,6 +103,7 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
     );
   }
   const template = list.find((t) => t.id === templateId) ?? null;
+  const unavailableRequested = requestedTemplate && !list.some((t) => t.id === requestedTemplate) ? requestedTemplate : null;
 
   if (stage === "edit" && start) {
     return (
@@ -157,6 +160,16 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
     <form className="authoring__start" onSubmit={proceed} aria-labelledby="start-title">
       <AuthoringRoute states={{ type: "current" }} />
       <h2 id="start-title">Способ и тип документа</h2>
+      <p className="authoring__alt">
+        Есть готовый текст в Markdown? <Link to="/documents/import">Импортировать Markdown</Link> — метаданные (YAML)
+        писать не нужно. Все шаблоны с описанием и примерами — в разделе <Link to="/templates">Шаблоны</Link>.
+      </p>
+      {unavailableRequested ? (
+        <Notice tone="warning">
+          Шаблон «{unavailableRequested}» не используется для новых документов (устарел или не активен). Выберите
+          актуальный шаблон.
+        </Notice>
+      ) : null}
       <fieldset className="segmented authoring__mode" aria-describedby="mode-hint">
         <legend>Как создать</legend>
         <label className="segmented__option">
@@ -458,8 +471,9 @@ function CopyFromProposal({ id, owner, onCreated }: { id: string; owner: string;
   const initial: EditorFields = {
     ...base,
     owner: base.owner || owner,
-    id: template.suggested_id,
-    path: template.suggested_path,
+    id: "",
+    manualId: false,
+    path: "",
     pathEdited: false,
   };
   return (
@@ -472,8 +486,7 @@ function CopyFromProposal({ id, owner, onCreated }: { id: string; owner: string;
         <Notice tone="info">
           <p>
             Текст и метаданные взяты из предложения «{p.reason}». ID <code className="doc-id">{p.document_id}</code> уже
-            занят, поэтому предложен свободный ID <code className="doc-id">{template.suggested_id}</code>. Будет создан
-            новый черновик.
+            занят, поэтому сервер выделит новый свободный ID при первом сохранении. Будет создан новый черновик.
           </p>
           <Link to={`/proposals/${encodeURIComponent(p.id)}`} className="text-link">
             Вернуться к исходному предложению

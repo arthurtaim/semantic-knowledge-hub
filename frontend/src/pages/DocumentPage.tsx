@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocumentDetail, DocumentPublicationStatus, ProposalList } from "../api/types";
+import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList } from "../api/types";
+import { AiAssistPanel, useAiProposal, type AiAction } from "../components/AiProposal";
+import { DocumentLinksPanel } from "../components/DocumentLinks";
 import { PublicationPassportRow, PublicationSection } from "../components/DocumentPublication";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
+import { MetadataPanel } from "../components/MetadataPanel";
 import { ProposalStateLabel } from "../components/ProposalState";
 import { SafeHtml } from "../components/SafeHtml";
 import { StaleMark } from "../components/StaleMark";
 import { StatusStamp } from "../components/StatusStamp";
+import { WikiLinkPreviewArea } from "../components/WikiLinkPreview";
 import { formatDate, formatDateTime, REVIEW_LABEL, SOURCE_LABEL, TYPE_LABEL } from "../lib/labels";
+import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 
 const isHttpUrl = (value: string | null): value is string => Boolean(value && /^https?:\/\//i.test(value));
@@ -39,7 +44,23 @@ interface PublicationInfo {
   failed: boolean;
 }
 
-function Passport({ doc, publication }: { doc: DocumentDetail; publication: PublicationInfo }) {
+/** One line in the passport: how many links the document has; the full lists are in «Связи документа». */
+function LinksPassportRow({ links }: { links: DocumentLinks | null }) {
+  if (!links) return null;
+  return (
+    <div>
+      <dt>Ссылки</dt>
+      <dd>
+        <a href="#doc-links">
+          исходящих {links.outgoing.length} · обратных {links.backlinks.length}
+        </a>
+        {links.unresolved.length > 0 ? <span className="flag flag--block">нерешённых: {links.unresolved.length}</span> : null}
+      </dd>
+    </div>
+  );
+}
+
+function Passport({ doc, publication, links }: { doc: DocumentDetail; publication: PublicationInfo; links: DocumentLinks | null }) {
   return (
     <aside className="passport" aria-labelledby="passport-title">
       <h2 id="passport-title" className="passport__title">
@@ -111,6 +132,16 @@ function Passport({ doc, publication }: { doc: DocumentDetail; publication: Publ
             <code className="passport__uri">{doc.path}</code>
           </dd>
         </div>
+        {doc.template_id ? (
+          <div>
+            <dt>Шаблон</dt>
+            <dd>
+              <Link to={`/templates/${encodeURIComponent(doc.template_id)}`}>{doc.template_id}</Link>{" "}
+              <span className="version-badge">v{doc.template_version ?? 1}</span>
+            </dd>
+          </div>
+        ) : null}
+        <LinksPassportRow links={links} />
         <PublicationPassportRow status={publication.status} failed={publication.failed} />
         {doc.tags.length > 0 ? (
           <div>
@@ -172,13 +203,55 @@ function Passport({ doc, publication }: { doc: DocumentDetail; publication: Publ
   );
 }
 
+/** AI actions on an approved document: proposals only; an accepted change becomes an update DRAFT. */
+function DocumentAiPanel({ doc }: { doc: DocumentDetail }) {
+  const session = useSession();
+  const state = useAiProposal();
+  const disabled = session?.features.ai_mode === "disabled";
+  const actions: AiAction[] = [
+    { key: "meta", label: "Предложить метаданные", build: () => ({ kind: "suggest_metadata", document_id: doc.id }) },
+    { key: "related", label: "Найти связанные", build: () => ({ kind: "find_related", document_id: doc.id }) },
+    { key: "complete", label: "Проверить полноту", build: () => ({ kind: "check_completeness", document_id: doc.id }) },
+    { key: "impact", label: "Анализ влияния", build: () => ({ kind: "impact_analysis", document_id: doc.id }) },
+  ];
+  return (
+    <AiAssistPanel
+      id="doc-ai"
+      title="ИИ-помощник по документу"
+      state={state}
+      actions={actions}
+      blocked={disabled ? "ИИ отключён в этой установке: предложения недоступны." : undefined}
+      intro={
+        <p className="muted">
+          Предложения опираются на утверждённые документы и показывают основания. Утверждённый документ не меняется:
+          принятые пункты попадают в новый черновик изменения, который проходит обычное ревью.
+        </p>
+      }
+      appliedNote={(p) =>
+        p.result_draft_id ? (
+          <Notice tone="success">
+            <p>
+              <strong>Создан черновик изменения.</strong> Принятые пункты применены к черновику, а не к утверждённому
+              документу: он изменится только после ревью и merge.
+            </p>
+            <Link to={`/proposals/${encodeURIComponent(p.result_draft_id)}`} className="text-link">
+              Открыть черновик изменения
+            </Link>
+          </Notice>
+        ) : null
+      }
+    />
+  );
+}
+
 export function DocumentPage() {
   const { id = "" } = useParams();
   const location = useLocation();
-  const [view, setView] = useState<"rendered" | "raw">("rendered");
+  const [view, setView] = useState<"rendered" | "metadata" | "raw">("rendered");
   const { data, error, loading, reload } = useAsync(() => loadDocument(id), id);
   // Loaded separately: a publication problem never hides the document itself.
   const publication = useAsync(() => api.documentPublication(id), `publication-${id}`);
+  const links = useAsync(() => api.documentLinks(id), `links-${id}`);
 
   useEffect(() => {
     if (!data || !location.hash) return;
@@ -236,6 +309,9 @@ export function DocumentPage() {
           <Link to={`/graph?focus=${encodeURIComponent(doc.id)}`} className="button button--quiet">
             Связи на графе
           </Link>
+          <a href="#doc-ai" className="button button--quiet">
+            ИИ-помощник
+          </a>
         </div>
       </header>
 
@@ -294,6 +370,16 @@ export function DocumentPage() {
             <button
               type="button"
               role="tab"
+              id="tab-metadata"
+              aria-selected={view === "metadata"}
+              aria-controls="panel-document"
+              onClick={() => setView("metadata")}
+            >
+              Метаданные
+            </button>
+            <button
+              type="button"
+              role="tab"
               id="tab-raw"
               aria-selected={view === "raw"}
               aria-controls="panel-document"
@@ -302,22 +388,28 @@ export function DocumentPage() {
               Исходный Markdown
             </button>
           </div>
-          <div
-            id="panel-document"
-            role="tabpanel"
-            aria-labelledby={view === "rendered" ? "tab-rendered" : "tab-raw"}
-          >
+          <div id="panel-document" role="tabpanel" aria-labelledby={`tab-${view}`}>
             {view === "rendered" ? (
-              <SafeHtml html={doc.content_html} className="prose" />
+              <WikiLinkPreviewArea>
+                <SafeHtml html={doc.content_html} className="prose" />
+              </WikiLinkPreviewArea>
+            ) : view === "metadata" ? (
+              <MetadataPanel doc={doc} />
             ) : (
               <pre className="raw-source">
                 <code>{doc.raw}</code>
               </pre>
             )}
           </div>
+          <DocumentLinksPanel links={links.data} error={links.error} loading={links.loading} onRetry={links.reload} />
+          <DocumentAiPanel key={doc.id} doc={doc} />
           {publication.data ? <PublicationSection status={publication.data} /> : null}
         </div>
-        <Passport doc={doc} publication={{ status: publication.data, failed: publication.error !== null }} />
+        <Passport
+          doc={doc}
+          publication={{ status: publication.data, failed: publication.error !== null }}
+          links={links.data}
+        />
       </div>
     </article>
   );

@@ -22,7 +22,12 @@ async function openEditor(page: Page, template: RegExp, mode: "Вручную" |
 
 async function fillRequired(page: Page, title: string, id?: string): Promise<void> {
   await page.getByLabel(/^Название/).fill(title);
-  if (id) await page.getByLabel(/^ID документа/).fill(id);
+  if (id) {
+    // M5.6.3: the server allocates the ID; a known ID is an explicit opt-in under «Дополнительно».
+    await page.getByText("Дополнительно", { exact: true }).click();
+    await page.getByLabel(/Задать ID вручную/).check();
+    await page.getByLabel(/^ID документа/).fill(id);
+  }
   await page.getByLabel(/^Владелец/).fill("semantic-team");
   await page.getByLabel(/^Причина \/ цель документа/).fill(`E2E: ${title}`);
 }
@@ -87,7 +92,9 @@ test("E2E-21 demo AI quotes approved sources and admits missing data", async ({ 
   await expect(panel).toContainText(/Демо-режим/);
   await expect(panel).toContainText("Подтверждённые выдержки");
   await expect(page.getByLabel(/^Текст в формате Markdown/)).toHaveValue(/Требует уточнения/);
-  await expect(page.getByLabel(/^Статус/).locator("option[value=approved]")).toBeDisabled();
+  // status is read-only (a new document is a draft); the origin is recorded by the server
+  await expect(page.locator(".field", { hasText: "Происхождение" })).toContainText("предложение ИИ");
+  await expect(page.locator(".field", { hasText: /^Статус/ })).toContainText("Черновик");
 
   await openEditor(page, /Интеграция/, "С помощью AI");
   await page.getByLabel(/^Название/).fill("Квазизвёздный шлюз");

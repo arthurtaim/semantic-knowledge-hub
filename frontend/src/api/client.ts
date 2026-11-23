@@ -2,6 +2,8 @@ import type {
   AiDraftRequest,
   AiDraftResponse,
   AiMode,
+  AiProposal,
+  AiProposalRequest,
   AskRequest,
   AskResponse,
   AskStreamEvent,
@@ -15,6 +17,8 @@ import type {
   DocumentPublicationStatus,
   DocumentSort,
   DocumentTemplateInfo,
+  DocumentLinks,
+  DocumentTypeInfo,
   DiscoveryFeedbackResponse,
   DiscoveryPurgeResponse,
   DiscoveryStats,
@@ -23,7 +27,12 @@ import type {
   GraphDiagnostics,
   GraphLegend,
   GraphPath,
+  ImportCreateRequest,
+  ImportPreview,
+  ImportPreviewRequest,
   IntegrationsResponse,
+  LinkDiagnostic,
+  LinkSuggestion,
   LoadIssue,
   NewDocumentDraftCreate,
   NewDocumentDraftUpdate,
@@ -33,9 +42,13 @@ import type {
   PublicationJobDetail,
   PublicationJobList,
   SessionResponse,
+  StagingItem,
   Subgraph,
   SuggestResponse,
   SyncStatus,
+  TemplateComparison,
+  TemplateDetail,
+  TemplateSummary,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
@@ -326,6 +339,14 @@ export interface DocumentListParams {
   size?: number;
 }
 
+export interface TemplateCatalogueParams {
+  q?: string;
+  status?: string;
+  type?: string;
+  category?: string;
+  label?: string;
+}
+
 export interface GraphOverviewParams {
   limit?: number;
   /** Comma-separated values (the backend accepts CSV); empty means "all". */
@@ -454,4 +475,53 @@ export const api = {
     request<ProposalDetail>("/discovery/propose", { method: "POST", body: json(payload) }),
   discoveryPurge: () => request<DiscoveryPurgeResponse>("/discovery", { method: "DELETE" }),
   discoveryStats: () => request<DiscoveryStats>("/discovery/stats"),
+
+  // --- M5.6.3: Template Hub (the same versioned registry the AI reads) ---
+  templateCatalogue: (params: TemplateCatalogueParams = {}) =>
+    request<TemplateSummary[]>(`/templates${query({ ...params })}`),
+  /** The current version; 404 `template_not_found`. */
+  templateDetail: (id: string) => request<TemplateDetail>(`/templates/${encodeURIComponent(id)}`),
+  /** An exact version (also older ones that drafts are pinned to); 404 `template_version_not_found`. */
+  templateVersion: (id: string, version: number) =>
+    request<TemplateDetail>(`/templates/${encodeURIComponent(id)}/versions/${version}`),
+  templateCompare: (id: string, from: number, to: number) =>
+    request<TemplateComparison>(`/templates/${encodeURIComponent(id)}/compare${query({ from, to })}`),
+
+  // --- M5.6.3: links (WikiLinks, backlinks, `[[` autocomplete) ---
+  documentLinks: (id: string) => request<DocumentLinks>(`/documents/${encodeURIComponent(id)}/links`),
+  /** `[[` autocomplete over visible IDs, titles and aliases; never picks a target by itself. */
+  linkSuggest: (q: string, limit = 8, options: { signal?: AbortSignal } = {}) =>
+    request<LinkSuggestion[]>(`/links/suggest${query({ q, limit })}`, { signal: options.signal }),
+  linkDiagnostics: () => request<LinkDiagnostic[]>("/links/diagnostics"),
+
+  // --- M5.6.3: metadata without YAML and import ---
+  documentTypes: () => request<DocumentTypeInfo[]>("/document-types"),
+  /** Files of the knowledge root without valid YAML: not indexed, not cited. */
+  importStaging: () => request<StagingItem[]>("/documents/import/staging"),
+  /** What an import would create; writes nothing. */
+  importPreview: (payload: ImportPreviewRequest) =>
+    request<ImportPreview>("/documents/import/preview", { method: "POST", body: json(payload) }),
+  /** Creates a DRAFT (origin `import`); approved only through the usual review and merge. */
+  importDocument: (payload: ImportCreateRequest) =>
+    request<ProposalDetail>("/documents/import", { method: "POST", body: json(payload) }),
+
+  // --- M5.6.3: AI proposals (evidence + explicit Accept/Reject; nothing is applied without Accept) ---
+  /** Long timeout: a Claude Code CLI provider may take minutes; `signal` cancels. */
+  aiPropose: (payload: AiProposalRequest, options: { signal?: AbortSignal } = {}) =>
+    request<AiProposal>("/ai/proposals", {
+      method: "POST",
+      body: json(payload),
+      timeoutMs: AI_DRAFT_TIMEOUT_MS,
+      signal: options.signal,
+    }),
+  aiProposal: (id: string) => request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}`),
+  aiProposals: (params: { draft_id?: string; document_id?: string } = {}) =>
+    request<AiProposal[]>(`/ai/proposals${query({ ...params })}`),
+  /** Applies the chosen items to a draft; 409 `ai_proposal_stale` (base changed → invalidated) or `ai_proposal_closed`. */
+  aiAccept: (id: string, itemIds: string[], reason?: string) =>
+    request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}/accept`, {
+      method: "POST",
+      body: json({ item_ids: itemIds, ...(reason ? { reason } : {}) }),
+    }),
+  aiReject: (id: string) => request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}/reject`, { method: "POST" }),
 };

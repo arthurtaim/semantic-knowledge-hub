@@ -1,15 +1,21 @@
 import type {
+  AiProposalKind,
+  AiProposalStatus,
   Confidence,
   DocStatus,
   DocType,
   DocumentPublicationState,
   DocumentSort,
+  FieldOrigin,
+  ImportState,
   IntegrationAccess,
   IntegrationState,
   IntegrationTarget,
+  LinkVia,
   MergeRequestState,
   NewDocumentStatus,
   ProposalOperation,
+  ProposalOrigin,
   ProposalStatus,
   PublicationAction,
   PublicationJobState,
@@ -17,6 +23,7 @@ import type {
   ReviewState,
   SourceType,
   SyncState,
+  UnresolvedReason,
 } from "../api/types";
 
 /** Navigation order of knowledge sections (docs/UX.md: Product, Architecture, Domain, …). */
@@ -137,6 +144,14 @@ export const OPERATION_LABEL: Record<ProposalOperation, string> = {
 /** Statuses selectable for a new document, in lifecycle order (`deprecated` is invalid for new documents). */
 export const NEW_DOCUMENT_STATUSES: NewDocumentStatus[] = ["draft", "in_review", "approved"];
 
+/** Where a draft came from (shown read-only: the server records it). */
+export const ORIGIN_LABEL: Record<ProposalOrigin, string> = {
+  manual: "создан вручную в редакторе",
+  ai_suggestion: "предложение ИИ, проверено автором",
+  external_page: "по странице Confluence",
+  import: "импорт Markdown",
+};
+
 /** Titles for errors of the authoring endpoints and of draft save/delete. */
 export const AUTHORING_ERROR_TITLE: Record<string, string> = {
   document_id_taken: "ID уже занят",
@@ -149,7 +164,12 @@ export const AUTHORING_ERROR_TITLE: Record<string, string> = {
   validation_failed: "Документ не прошёл проверку",
   invalid_request: "Некорректные данные формы",
   template_not_found: "Шаблон документа не найден",
+  template_not_active: "Шаблон не используется для новых документов",
+  document_id_immutable: "ID документа не меняется",
   invalid_transition: "Действие недоступно в текущем статусе",
+  import_invalid: "YAML документа некорректен",
+  staged_file_not_found: "Файл не найден среди файлов без метаданных",
+  staged_file_unreadable: "Файл нельзя прочитать с сервера",
 };
 
 /** Titles for AI provider errors (assistant answers and AI drafts); the server message is shown below the title. */
@@ -398,4 +418,116 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
   if (mod10 === 1 && mod100 !== 11) return one;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
+}
+
+// --- M5.6.3: Template Hub, links, import, AI proposals ---
+
+export const TEMPLATE_STATUS_LABEL: Record<string, string> = {
+  active: "Активен",
+  deprecated: "Устарел",
+  draft: "Черновик шаблона",
+  archived: "В архиве",
+};
+
+/** Origin of an import metadata field: who set the value. */
+export const FIELD_ORIGIN_LABEL: Record<FieldOrigin, string> = {
+  system: "системное",
+  parsed: "из текста",
+  existing: "из YAML",
+  suggested: "предложено",
+  missing: "не указано",
+};
+
+export const IMPORT_STATE_LABEL: Record<ImportState, string> = {
+  ready: "Метаданные в порядке",
+  needs_metadata_review: "Нужна проверка метаданных",
+  invalid_metadata: "YAML некорректен",
+  conflict: "Документ уже есть в базе",
+};
+
+/** How a link is declared (links panel badges). */
+export const LINK_VIA_LABEL: Record<LinkVia, string> = {
+  inline: "в тексте",
+  related_ids: "related_ids",
+  typed: "типизированная",
+};
+
+export const UNRESOLVED_REASON_LABEL: Record<UnresolvedReason, string> = {
+  missing: "Документ с таким ID не найден (или недоступен)",
+  title_link: "Ссылка по названию: выберите документ, чтобы закрепить ID",
+  ambiguous_title: "Название подходит нескольким документам: выберите нужный",
+  self: "Ссылка на этот же документ",
+};
+
+/** Relation names in the links panel (graph legend has the same words). */
+export const RELATION_LABEL: Record<string, string> = {
+  references: "ссылается на",
+  depends_on: "зависит от",
+  consumes: "потребляет",
+  produces: "производит",
+  maps_to: "отображается в",
+  derived_from: "получен из",
+  describes: "описывает",
+  constrains: "ограничивает",
+  supersedes: "заменяет",
+  uses_template: "по шаблону",
+};
+
+export const AI_PROPOSAL_STATUS_LABEL: Record<AiProposalStatus, string> = {
+  suggested: "Предложение",
+  applied: "Применено",
+  partially_applied: "Частично применено",
+  rejected: "Отклонено",
+  invalidated: "Устарело",
+  answered: "Ответ",
+};
+
+export const AI_PROPOSAL_KIND_LABEL: Record<AiProposalKind, string> = {
+  draft_from_prompt: "Черновик по запросу",
+  suggest_metadata: "Метаданные",
+  improve_section: "Улучшение раздела",
+  summarize: "Пересказ",
+  explain: "Объяснение",
+  check_completeness: "Проверка полноты",
+  find_related: "Связанные документы",
+  explain_relation: "Объяснение связи",
+  impact_analysis: "Анализ влияния",
+};
+
+/** Metadata field names in AI proposals and the metadata panel. */
+export const METADATA_FIELD_LABEL: Record<string, string> = {
+  id: "ID",
+  title: "Название",
+  type: "Раздел каталога",
+  status: "Статус",
+  owner: "Владелец",
+  tags: "Теги",
+  related_ids: "Связанные документы",
+  source_refs: "Источники",
+  summary: "Описание",
+  template: "Шаблон",
+  template_version: "Версия шаблона",
+  aliases: "Синонимы",
+  created_at: "Создан",
+  updated_at: "Обновлён",
+  origin: "Происхождение",
+};
+
+/** Titles of AI proposal errors (the server message is shown below). */
+export const AI_PROPOSAL_ERROR_TITLE: Record<string, string> = {
+  ai_proposal_stale: "Предложение устарело",
+  ai_proposal_closed: "Решение по предложению уже принято",
+  ai_proposal_not_found: "Предложение не найдено",
+  template_not_active: "Шаблон не используется для новых документов",
+  no_active_template: "Нет активного шаблона",
+};
+
+/** Edge provenance in words: "body:12" → «в тексте, строка 12». */
+export function provenanceText(value: string): string {
+  const line = /^body:(\d+)$/.exec(value);
+  if (line) return `в тексте, строка ${line[1]}`;
+  if (value === "body") return "в тексте";
+  if (value === "related_ids") return "related_ids";
+  if (value.startsWith("relations.")) return `типизированная (${value})`;
+  return value;
 }
