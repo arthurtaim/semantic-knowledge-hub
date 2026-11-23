@@ -69,21 +69,22 @@ class SearchService:
         limit: int,
         filters: SearchFilters,
     ) -> SearchResponse:
-        terms = analyze_query(query)
+        analysis = self._knowledge.retrieval.analyze(query)
         items: list[SearchResult] = []
         statuses: list[ScopeStatus] = []
-        warnings: list[str] = []
-        if not terms:
+        warnings: list[str] = [*analysis.notes]
+        if not analysis.terms and not analysis.id_candidates:
             warnings.append("Запрос не содержит значимых слов.")
 
         if "team" in scopes:
             snapshot = await self._knowledge.snapshot(user)
-            for hit in self._knowledge.search_provider.search_documents(terms, filters, limit):
-                doc = snapshot.get(hit.document_id)
+            for ranked in self._knowledge.retrieval.rank_documents(snapshot, analysis, filters, limit):
+                doc = snapshot.get(ranked.document_id)
                 if doc is None:
                     continue
-                excerpt = hit.excerpt or doc.summary or ""
-                segments = hit.segments or [HighlightSegment(text=truncate(excerpt, 260))]
+                hit = ranked.hit
+                excerpt = (hit.excerpt if hit else "") or doc.summary or ""
+                segments = (hit.segments if hit else None) or [HighlightSegment(text=truncate(excerpt, 260))]
                 items.append(
                     SearchResult(
                         id=doc.id,
@@ -97,10 +98,13 @@ class SearchService:
                         tags=list(doc.tags),
                         excerpt=truncate(excerpt, 320),
                         excerpt_segments=segments,
-                        section=hit.section,
-                        section_anchor=hit.section_anchor,
-                        score=hit.score,
+                        section=hit.section if hit else None,
+                        section_anchor=hit.section_anchor if hit else None,
+                        score=round(ranked.score, 4),
                         is_demo=doc.is_demo,
+                        match_reasons=ranked.reasons,
+                        matched_fields=ranked.matched_fields,
+                        related_via=ranked.via,
                     )
                 )
             statuses.append(

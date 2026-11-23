@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -161,6 +161,9 @@ class DocumentSummary(BaseModel):
     # "stale": the last sync could not refresh this document; it is shown with its last known revision.
     index_state: IndexState = "current"
     highlights: list[HighlightSegment] | None = None  # present when listed via a text query
+    match_reasons: list[str] | None = None  # "why matched" (text query only)
+    related_via: str | None = None  # found through a declared relation of this document (graph expansion)
+    version: str | None = None
 
 
 class RelatedLink(BaseModel):
@@ -188,6 +191,7 @@ class DocumentPage(BaseModel):
     total: int
     page: int
     size: int
+    notes: list[str] = Field(default_factory=list)  # e.g. an ambiguous abbreviation in the query
 
 
 class FacetCount(BaseModel):
@@ -220,6 +224,9 @@ class SearchResult(BaseModel):
     section_anchor: str | None = None
     score: float
     is_demo: bool
+    match_reasons: list[str] = Field(default_factory=list)
+    matched_fields: list[str] = Field(default_factory=list)
+    related_via: str | None = None
 
 
 class ScopeStatus(BaseModel):
@@ -332,6 +339,11 @@ class SyncStatus(BaseModel):
     indexed_documents: int
     indexed_version: str | None
     indexed_at: datetime | None
+    # M5.6.2: generation of the served index (monotonic), the last structured sync outcome, dictionaries.
+    generation: int = 0
+    last_sync: dict[str, Any] | None = None
+    search_dictionary: str | None = None
+    template_registry: str | None = None
 
 
 class IntegrationsResponse(BaseModel):

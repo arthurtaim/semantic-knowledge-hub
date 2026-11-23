@@ -94,10 +94,13 @@ async def index_status(
 async def index_sync(
     container: Annotated[Container, Depends(get_container)],
     user: Annotated[UserContext, Depends(require(Action.sync_knowledge))],
+    rebuild: bool = False,
 ) -> SyncStatus:
-    """Manual re-synchronisation of the knowledge source and the search index."""
+    """Manual re-synchronisation of the knowledge source and the search index (`rebuild`: repair by a full
+    index rebuild). The response carries the structured result: added / updated / renamed / deleted /
+    rejected, generation, checksum, elapsed time."""
     try:
-        await container.knowledge.refresh(full=True)
+        await container.knowledge.refresh(full=True, rebuild_index=rebuild)
     except RepositoryUnavailableError as exc:
         raise ApiError(exc.status_code, exc.code, exc.message) from exc
     return await container.knowledge.sync_status(user)

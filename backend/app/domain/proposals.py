@@ -145,6 +145,8 @@ class AuthoringCheckRequest(BaseModel):
     path: str | None = Field(default=None, max_length=400)
     origin: ProposalOrigin = "manual"
     exclude_proposal_id: str | None = Field(default=None, max_length=64)
+    # An existing draft is checked against the template version it was created with.
+    template_version: int | None = Field(default=None, ge=1, le=1000)
 
 
 class AuthoringCheckResponse(BaseModel):
@@ -169,6 +171,8 @@ class DocumentTemplateInfo(BaseModel):
     skeleton: str
     suggested_id: str
     suggested_path: str
+    version: int = 1
+    previous_versions: list[int] = Field(default_factory=list)
 
 
 class AiDraftRequest(BaseModel):
@@ -310,6 +314,9 @@ class ProposalDetail(ProposalSummary):
     merge_request: MergeRequestInfo | None
     submission: SubmissionInfo
     template_id: str | None = None
+    # Template version the draft was created with, and the registry's current version (for the UI hint).
+    template_version: int | None = None
+    template_current_version: int | None = None
     edit_version: int = 1
     can_edit: bool = False
     can_delete: bool = False

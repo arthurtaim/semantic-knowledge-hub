@@ -161,9 +161,12 @@ def run_search(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
         r.detail = "" if not ids else f"expected no results, got {ids[:3]}"
         return
     ok = all(e.lower() in lowered[:k] for e in expected)
-    r.status = "pass" if ok else "fail"
+    leaked = [n for n in case.get("not_returned") or [] if n.lower() in lowered]
+    r.status = "pass" if ok and not leaked else "fail"
     if not ok:
         r.detail = f"expected {expected} within top {k}, got {ids[:k]}"
+    if leaked:
+        r.detail = (r.detail + "; " if r.detail else "") + f"must not be returned: {leaked}"
 
 
 def run_catalog(client: TestClient, case: dict[str, Any], r: CaseResult) -> None:
@@ -204,12 +207,22 @@ def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> No
         if answer["confidence"] != "insufficient_evidence":
             problems.append(f"expected no answer, got {answer['confidence']} citing {cited}")
     else:
+        any_of = [str(i) for i in case.get("cited_any") or []]
+        if any_of and not set(any_of) & set(cited):
+            problems.append(f"none of {any_of} cited (cited {cited}, confidence {answer['confidence']})")
         missing = [e for e in _expected(case) if e not in cited]
         if missing:
             problems.append(f"not cited: {missing} (cited {cited}, confidence {answer['confidence']})")
         lost = [f for f in case.get("facts_required") or [] if _norm(str(f)) not in text]
         if lost:
             problems.append(f"facts missing from the grounded answer: {lost}")
+    wrongly_cited = [d for d in case.get("not_cited") or [] if d in cited]
+    if wrongly_cited:
+        problems.append(f"must not be cited: {wrongly_cited}")
+    excluded = {e["document_id"] for e in answer.get("excluded_sources") or []}
+    not_excluded = [d for d in case.get("expected_excluded") or [] if d not in excluded]
+    if not_excluded:
+        problems.append(f"expected among excluded sources: {not_excluded} (excluded {sorted(excluded)})")
     forbidden = [f for f in case.get("facts_forbidden") or [] if _norm(str(f)) in text]
     if forbidden:
         problems.append(f"forbidden facts present: {forbidden}")

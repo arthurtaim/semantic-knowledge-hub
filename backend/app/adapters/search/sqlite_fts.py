@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import sqlite3
 import threading
+import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,18 +18,41 @@ from app.domain.text import QueryTerm, fts_query, fts_term, strip_control
 
 logger = logging.getLogger("skh.search")
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "6"
 _HL_START, _HL_END = "\x02", "\x03"
 _TOKENIZER = "unicode61 remove_diacritics 2"
 _FILTER_COLUMNS = ("status", "type", "owner", "source")
-# Column order matters for bm25() weights and snippet() column index.
-_DOC_WEIGHTS = "0, 0, 0, 0, 0, 0, 10.0, 6.0, 4.0, 1.5, 2.0, 1.0"
+# Column order matters for bm25() weights and snippet() column index:
+# doc_id status type owner source tags_raw | id_text title aliases tags related summary headings body
+_DOC_WEIGHTS = "0, 0, 0, 0, 0, 0, 10.0, 8.0, 6.0, 4.0, 1.0, 2.0, 3.0, 1.0"
 _CHUNK_WEIGHTS = "0, 0, 0, 0, 0, 0, 0, 0, 0, 3.0, 1.0"
 _CHUNK_TEXT_COL = 10
 
 
 class SearchIndexError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class IndexSyncResult:
+    """Structured outcome of one index synchronisation (M5.6.2 §C5)."""
+
+    generation: int
+    applied: bool  # False: the snapshot was already indexed (no-op)
+    added: list[str] = field(default_factory=list)
+    updated: list[str] = field(default_factory=list)
+    renamed: list[str] = field(default_factory=list)
+    deleted: list[str] = field(default_factory=list)
+    unchanged: int = 0
+    rejected: list[dict[str, str]] = field(default_factory=list)  # invalid / duplicate files (not indexed)
+    checksum: str = ""
+    elapsed_ms: float = 0.0
+    full_rebuild: bool = False
+    finished_at: str = ""
+    seq: int = field(default_factory=time.monotonic_ns)  # ordering of results within one process
+
+    def as_dict(self) -> dict[str, object]:
+        return dict(self.__dict__)
 
 
 def fts5_available() -> bool:
@@ -74,6 +100,9 @@ class SqliteFtsSearchProvider:
         self._indexed_version: str | None = None
         self._indexed_at: datetime | None = None
         self._doc_count = 0
+        self._generation = 0
+        self._checksum = ""
+        self.last_result: IndexSyncResult | None = None
         self._ensure_schema()
 
     # --- schema / indexing -----------------------------------------------------------------------
@@ -94,7 +123,7 @@ class SqliteFtsSearchProvider:
             self._conn.execute(
                 "CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5("
                 "doc_id UNINDEXED, status UNINDEXED, type UNINDEXED, owner UNINDEXED, source UNINDEXED, "
-                "tags_raw UNINDEXED, id_text, title, tags, related, summary, body, "
+                "tags_raw UNINDEXED, id_text, title, aliases, tags, related, summary, headings, body, "
                 f"tokenize='{_TOKENIZER}')"
             )
             self._conn.execute(
@@ -103,32 +132,45 @@ class SqliteFtsSearchProvider:
                 "tags_raw UNINDEXED, section UNINDEXED, anchor UNINDEXED, ordinal UNINDEXED, heading, text, "
                 f"tokenize='{_TOKENIZER}')"
             )
-            # One row per indexed document: which source revision the index holds (provenance).
+            # Manifest: one row per indexed document — which source revision and file the index holds.
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS doc_versions (doc_id TEXT PRIMARY KEY, source TEXT NOT NULL, "
-                "revision TEXT NOT NULL, fingerprint TEXT NOT NULL, indexed_at TEXT NOT NULL)"
+                "revision TEXT NOT NULL, path TEXT NOT NULL, fingerprint TEXT NOT NULL, indexed_at TEXT NOT NULL, "
+                "generation INTEGER NOT NULL)"
             )
+            row = self._conn.execute("SELECT value FROM index_meta WHERE key='generation'").fetchone()
+            self._generation = int(row[0]) if row else 0
 
     @staticmethod
     def _fingerprint(doc: DocumentRecord) -> str:
         # Everything that is indexed or filtered on; a new revision always changes it.
         return "|".join(
-            (doc.source, doc.revision, doc.status.value, doc.type.value, doc.owner, ",".join(doc.tags))
+            (
+                doc.source,
+                doc.revision,
+                doc.status.value,
+                doc.type.value,
+                doc.owner,
+                ",".join(doc.tags),
+                doc.path,  # a rename keeps the revision but must refresh the locator
+            )
         )
 
     def _insert(self, doc: DocumentRecord) -> None:
         filters = (doc.id, doc.status.value, doc.type.value, doc.owner, doc.source)
         tags_raw = "|" + "|".join(doc.tags) + "|"
         self._conn.execute(
-            "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO docs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 *filters,
                 tags_raw,
                 doc.id,
                 _clean(doc.title),
+                _clean(" ; ".join(doc.aliases)),
                 " ".join(doc.tags),
-                " ".join(doc.related_ids),
+                " ".join(r.target for r in doc.relations),
                 _clean(doc.summary or ""),
+                _clean("\n".join(s.heading for s in doc.sections if s.heading)),
                 _clean("\n".join(s.text for s in doc.sections)),
             ),
         )
@@ -148,43 +190,122 @@ class SqliteFtsSearchProvider:
                 ),
             )
 
-    def sync(self, snapshot: KnowledgeSnapshot) -> None:
-        """Incremental: re-index documents whose revision changed, drop documents that disappeared
-        from the source, keep exactly one entry per document id."""
-        if snapshot.version == self._indexed_version:
-            return
+    @staticmethod
+    def snapshot_checksum(snapshot: KnowledgeSnapshot) -> str:
+        """Order-independent checksum of what the index must hold: ids, revisions, paths and edges.
+        Equal for an incremental sync and a full rebuild of the same snapshot."""
+        digest = hashlib.sha256()
+        for doc in sorted(snapshot.documents.values(), key=lambda d: d.id.lower()):
+            edges = ",".join(f"{r.type.value}>{r.target}" for r in doc.relations)
+            digest.update(f"{doc.id}|{doc.revision}|{doc.path}|{doc.status.value}|{edges}\n".encode())
+        return digest.hexdigest()[:16]
+
+    def sync(self, snapshot: KnowledgeSnapshot, *, full: bool = False) -> IndexSyncResult:
+        """Apply the snapshot to the index in ONE transaction (readers see the old or the new generation,
+        never a mix). Incremental by fingerprint; `full` drops everything and re-indexes (repair).
+        A failure rolls the transaction back and leaves the previous generation active."""
+        started = time.perf_counter()
+        rejected = [
+            {"path": i.path, "code": i.code, "document_id": i.document_id or ""}
+            for i in snapshot.issues
+            if i.code not in ("symlink_skipped",)
+        ]
+        if snapshot.version == self._indexed_version and not full:
+            return IndexSyncResult(  # no-op: the caller decides whether to report it
+                generation=self._generation,
+                applied=False,
+                unchanged=self._doc_count,
+                rejected=rejected,
+                checksum=self._checksum,
+                finished_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            )
         now = datetime.now(UTC).isoformat()
+        checksum = self.snapshot_checksum(snapshot)
         with self._lock, self._conn:
+            if full:
+                self._conn.execute("DELETE FROM docs")
+                self._conn.execute("DELETE FROM chunks")
+                self._conn.execute("DELETE FROM doc_versions")
             indexed = {
-                row[0]: row[1] for row in self._conn.execute("SELECT doc_id, fingerprint FROM doc_versions")
+                row[0]: (row[1], row[2], row[3])
+                for row in self._conn.execute("SELECT doc_id, fingerprint, revision, path FROM doc_versions")
             }
             wanted = {doc.id: doc for doc in snapshot.documents.values()}
-            removed = [doc_id for doc_id in indexed if doc_id not in wanted]
-            changed = [doc for doc_id, doc in wanted.items() if indexed.get(doc_id) != self._fingerprint(doc)]
+            removed = sorted(doc_id for doc_id in indexed if doc_id not in wanted)
+            added: list[str] = []
+            updated: list[str] = []
+            renamed: list[str] = []
+            changed: list[DocumentRecord] = []
+            for doc_id, doc in sorted(wanted.items()):
+                before = indexed.get(doc_id)
+                if before is None:
+                    added.append(doc_id)
+                    changed.append(doc)
+                elif before[0] != self._fingerprint(doc):
+                    changed.append(doc)
+                    if before[1] == doc.revision and before[2] != doc.path:
+                        renamed.append(doc_id)
+                    else:
+                        updated.append(doc_id)
             for doc_id in [*removed, *(d.id for d in changed)]:
                 self._conn.execute("DELETE FROM docs WHERE doc_id = ?", (doc_id,))
                 self._conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
                 self._conn.execute("DELETE FROM doc_versions WHERE doc_id = ?", (doc_id,))
+            generation = self._generation + (
+                1 if (changed or removed or full or self._generation == 0) else 0
+            )
             for doc in changed:
                 self._insert(doc)
                 self._conn.execute(
-                    "INSERT INTO doc_versions(doc_id, source, revision, fingerprint, indexed_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (doc.id, doc.source, doc.revision, self._fingerprint(doc), now),
+                    "INSERT INTO doc_versions(doc_id, source, revision, path, fingerprint, indexed_at, generation) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (doc.id, doc.source, doc.revision, doc.path, self._fingerprint(doc), now, generation),
                 )
-            for key, value in (("version", snapshot.version), ("indexed_at", now)):
+            for key, value in (
+                ("version", snapshot.version),
+                ("indexed_at", now),
+                ("generation", str(generation)),
+                ("checksum", checksum),
+            ):
                 self._conn.execute(
                     "INSERT OR REPLACE INTO index_meta(key, value) VALUES (?, ?)", (key, value)
                 )
         self._indexed_version = snapshot.version
         self._indexed_at = datetime.fromisoformat(now)
         self._doc_count = len(wanted)
-        logger.info(
-            "search index synced: %d document(s), %d re-indexed, %d removed",
-            self._doc_count,
-            len(changed),
-            len(removed),
+        self._generation = generation
+        self._checksum = checksum
+        result = IndexSyncResult(
+            generation=generation,
+            applied=True,
+            added=added,
+            updated=updated,
+            renamed=renamed,
+            deleted=removed,
+            unchanged=len(wanted) - len(changed),
+            rejected=rejected,
+            checksum=checksum,
+            elapsed_ms=round((time.perf_counter() - started) * 1000, 2),
+            full_rebuild=full,
+            finished_at=datetime.now(UTC).isoformat(timespec="seconds"),
         )
+        self.last_result = result
+        logger.info(
+            "search index generation %d: %d document(s), +%d ~%d >%d -%d, %d rejected, %.1f ms",
+            generation,
+            self._doc_count,
+            len(added),
+            len(updated),
+            len(renamed),
+            len(removed),
+            len(rejected),
+            result.elapsed_ms,
+        )
+        return result
+
+    @property
+    def generation(self) -> int:
+        return self._generation
 
     def indexed_revisions(self) -> dict[str, str]:
         """Document id -> source revision currently held by the index."""

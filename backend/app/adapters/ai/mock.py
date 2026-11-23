@@ -150,6 +150,15 @@ class MockAIProvider:
                 "чего нет в документах."
             )
 
+        # Half of the question is absent from every allowed document: whatever matched is not an answer.
+        missing = options.unmatched_terms
+        if len(terms) >= 2 and len(missing) * 2 >= len(terms):
+            return insufficient(
+                "Недостаточно данных: в доступных источниках не встречаются "
+                f"{_format_terms(missing)} — подтверждённого ответа на вопрос нет. Демо-ассистент не делает "
+                "предположений о том, чего нет в документах."
+            )
+
         sentences = _sentences(passages, terms)
         index = {(s.cid, s.position): s for s in sentences}
         warnings: list[str] = []

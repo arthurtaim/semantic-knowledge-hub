@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from app.adapters.knowledge.base import (
     KnowledgeRepository,
@@ -13,6 +14,7 @@ from app.adapters.knowledge.base import (
     RepositoryUnavailableError,
 )
 from app.adapters.search.base import DocumentHit, SearchFilters, SearchProvider
+from app.domain.dictionary import SearchDictionary, load_dictionary
 from app.domain.markdown import render_html, truncate
 from app.domain.models import (
     DocStatus,
@@ -29,9 +31,11 @@ from app.domain.models import (
     UserContext,
 )
 from app.domain.schema import UNASSIGNED_OWNERS
-from app.domain.text import analyze_query
+from app.services.retrieval import RankedHit, RetrievalService
 
 MAX_LIST_MATCHES = 1000
+
+
 SortOrder = Literal["relevance", "title", "updated", "status"]
 _STATUS_RANK = {DocStatus.approved: 0, DocStatus.in_review: 1, DocStatus.draft: 2, DocStatus.deprecated: 3}
 
@@ -58,11 +62,20 @@ def sort_documents(docs: list[DocumentRecord], order: SortOrder | None) -> list[
 
 class KnowledgeService:
     def __init__(
-        self, repository: KnowledgeRepository, search: SearchProvider, *, review_stale_days: int
+        self,
+        repository: KnowledgeRepository,
+        search: SearchProvider,
+        *,
+        review_stale_days: int,
+        dictionary: SearchDictionary | None = None,
     ) -> None:
         self._repository = repository
         self._search = search
         self._stale_days = review_stale_days
+        self.retrieval = RetrievalService(search, dictionary or load_dictionary())
+        self._listeners: list[Callable[[], object]] = []
+        self._explicit_sync: Any = None  # result of the last explicit sync (reported even when a no-op)
+        self.template_registry_label: Callable[[], str] = lambda: "-"
 
     @property
     def repository(self) -> KnowledgeRepository:
@@ -76,6 +89,14 @@ class KnowledgeService:
         snapshot = await self._repository.snapshot(user)
         self._search.sync(snapshot)
         return snapshot
+
+    def generation_label(self, snapshot: KnowledgeSnapshot) -> str:
+        """Identifier of the knowledge generation the projections (index, graph) were built from."""
+        return f"g{self._search.generation}"
+
+    @property
+    def generation(self) -> int:
+        return self._search.generation
 
     def stale_ids(self, snapshot: KnowledgeSnapshot) -> frozenset[str]:
         """Documents that must not be presented as current: individual failed refreshes, or all of
@@ -99,7 +120,12 @@ class KnowledgeService:
         return "ok"
 
     def summarize(
-        self, doc: DocumentRecord, hit: DocumentHit | None = None, *, stale: bool = False
+        self,
+        doc: DocumentRecord,
+        hit: DocumentHit | None = None,
+        *,
+        stale: bool = False,
+        ranked: RankedHit | None = None,
     ) -> DocumentSummary:
         excerpt = hit.excerpt if hit and hit.excerpt else (doc.summary or "")
         return DocumentSummary(
@@ -121,6 +147,9 @@ class KnowledgeService:
             web_url=doc.web_url,
             index_state="stale" if stale else "current",
             highlights=hit.segments if hit and hit.segments else None,
+            match_reasons=ranked.reasons if ranked else None,
+            related_via=ranked.via if ranked else None,
+            version=doc.version,
         )
 
     @staticmethod
@@ -138,14 +167,16 @@ class KnowledgeService:
     # --- queries ---------------------------------------------------------------------------------
     async def list_documents(self, user: UserContext, q: DocumentQuery) -> DocumentPage:
         snapshot = await self.snapshot(user)
-        hits: dict[str, DocumentHit] = {}
+        ranked: dict[str, RankedHit] = {}
+        notes: list[str] = []
         if q.query.strip():
-            terms = analyze_query(q.query)
+            analysis = self.retrieval.analyze(q.query)
+            notes = analysis.notes
             ordered: list[DocumentRecord] = []
-            for hit in self._search.search_documents(terms, q.filters, MAX_LIST_MATCHES):
+            for hit in self.retrieval.rank_documents(snapshot, analysis, q.filters, MAX_LIST_MATCHES):
                 doc = snapshot.get(hit.document_id)
                 if doc is not None:
-                    hits[doc.id] = hit
+                    ranked[doc.id] = hit
                     ordered.append(doc)
         else:
             ordered = [d for d in snapshot.ordered() if self._matches(d, q.filters)]
@@ -153,10 +184,15 @@ class KnowledgeService:
         start = (q.page - 1) * q.size
         stale = self.stale_ids(snapshot)
         items = [
-            self.summarize(d, hits.get(d.id), stale=d.id.lower() in stale)
+            self.summarize(
+                d,
+                ranked[d.id].hit if d.id in ranked else None,
+                stale=d.id.lower() in stale,
+                ranked=ranked.get(d.id),
+            )
             for d in ordered[start : start + q.size]
         ]
-        return DocumentPage(items=items, total=len(ordered), page=q.page, size=q.size)
+        return DocumentPage(items=items, total=len(ordered), page=q.page, size=q.size, notes=notes)
 
     async def get_detail(self, user: UserContext, document_id: str) -> DocumentDetail:
         doc = await self._repository.get_document(document_id, user)
@@ -210,11 +246,27 @@ class KnowledgeService:
         snapshot = await self.snapshot(user)
         return list(snapshot.issues)
 
-    async def refresh(self, *, full: bool = False) -> KnowledgeSnapshot:
-        """Manual re-synchronisation of the source and the search index."""
+    async def refresh(self, *, full: bool = False, rebuild_index: bool = False) -> KnowledgeSnapshot:
+        """Manual re-synchronisation of the source and the search index. `rebuild_index` drops and rebuilds
+        the derived index (repair); the result must equal an incremental sync of the same snapshot."""
         snapshot = await self._repository.refresh(full=full)
-        self._search.sync(snapshot)
+        self._explicit_sync = self._search.sync(snapshot, full=rebuild_index)
+        for listener in self._listeners:
+            listener()
         return snapshot
+
+    def _last_sync(self) -> dict[str, Any] | None:
+        """The most recent of: the last explicit sync (even a no-op) and the last applied one."""
+        candidates = [r for r in (self._explicit_sync, getattr(self._search, "last_result", None)) if r]
+        if not candidates:
+            return None
+        latest = max(candidates, key=lambda r: r.seq)
+        result: dict[str, Any] = latest.as_dict()
+        return result
+
+    def on_refresh(self, listener: Callable[[], object]) -> None:
+        """Called after every manual sync (e.g. reload the template registry)."""
+        self._listeners.append(listener)
 
     async def sync_status(self, user: UserContext) -> SyncStatus:
         documents = issues = 0
@@ -241,4 +293,8 @@ class KnowledgeService:
             indexed_documents=indexed_documents,
             indexed_version=indexed_version,
             indexed_at=indexed_at,
+            generation=self._search.generation,
+            last_sync=self._last_sync(),
+            search_dictionary=self.retrieval.dictionary.label,
+            template_registry=self.template_registry_label(),
         )

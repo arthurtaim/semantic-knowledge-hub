@@ -224,11 +224,14 @@ _NEW_COLUMNS = {
     "uncertain": "INTEGER NOT NULL DEFAULT 0",
     "operation": "TEXT NOT NULL DEFAULT 'update'",
     "template_id": "TEXT",
+    "template_version": "INTEGER",
     "edit_version": "INTEGER NOT NULL DEFAULT 1",
     "merged_revision": "TEXT",
     "synced_at": "TEXT",
 }
-_UPDATABLE = frozenset(_NEW_COLUMNS) - {"operation", "template_id", "edit_version"} | {"review_comment"}
+_UPDATABLE = frozenset(_NEW_COLUMNS) - {"operation", "template_id", "template_version", "edit_version"} | {
+    "review_comment"
+}
 # Fields a draft save may change (only while the proposal is still a `draft`).
 _DRAFT_FIELDS = frozenset(
     {
@@ -468,6 +471,12 @@ class ProposalService:
         return self._authoring
 
     # --- helpers ---------------------------------------------------------------------------------
+    def _current_template_version(self, template_id: str | None) -> int | None:
+        if not template_id or self._authoring is None:
+            return None
+        current = self._authoring.registry.get(template_id)
+        return current.version if current else None
+
     async def _document(self, document_id: str, user: UserContext) -> DocumentRecord:
         if not is_valid_document_id(document_id):
             raise ApiError(400, "invalid_document_id", "Некорректный идентификатор документа.")
@@ -634,6 +643,8 @@ class ProposalService:
                 uncertain=uncertain,
             ),
             template_id=row["template_id"],
+            template_version=row["template_version"],
+            template_current_version=self._current_template_version(row["template_id"]),
             edit_version=row["edit_version"] or 1,
             can_edit=status == S.draft,
             can_delete=status == S.draft
@@ -763,6 +774,7 @@ class ProposalService:
                 "id": proposal_id,
                 "operation": "create",
                 "template_id": template.id,
+                "template_version": template.version,
                 "document_id": document_id,
                 "document_title": payload.metadata.title.strip(),
                 "document_path": check.path,
@@ -815,6 +827,7 @@ class ProposalService:
                 payload.path,
                 origin,
                 exclude_proposal_id=proposal_id,
+                template_version=row["template_version"],
             )
             self._raise_taken(check)
             document_id = payload.metadata.id.strip()
@@ -878,7 +891,9 @@ class ProposalService:
 
     async def _fresh_new_document_check(self, user: UserContext, row: Any) -> NewDocumentCheck:
         authoring = self.authoring
-        template = authoring.template(row["template_id"]) if row["template_id"] else None
+        template = (
+            authoring.template(row["template_id"], row["template_version"]) if row["template_id"] else None
+        )
         return await authoring.check_content(
             user,
             template,

@@ -32,6 +32,22 @@ TEMPLATE_SECTIONS = {
         "Ограничения",
         "Ошибки",
         "Требования",
+        # v2 (M5.6.2): v1 with these four sections stays readable in document_templates/history/
+        "Правила качества данных (Data Quality Rules)",
+        "Происхождение данных (Data Lineage)",
+        "Частота обновления (Update Frequency)",
+        "Валидационные ограничения (Validation Constraints)",
+    ],
+    "dataset_spec": [
+        "Обзор (Overview)",
+        "Системы-источники (Source Systems)",
+        "Бизнес-сущности (Business Entities)",
+        "Атрибуты (Attributes)",
+        "Правила маппинга (Mapping Rules)",
+        "Качество данных (Data Quality)",
+        "Политика обновления (Refresh Policy)",
+        "Ограничения доступа (Access Restrictions)",
+        "Связанные документы (Related Docs)",
     ],
     "business_entity": [
         "Определение",
@@ -103,7 +119,7 @@ def create_draft(client: TestClient, **kwargs: Any) -> dict[str, Any]:
     return data
 
 
-def test_five_templates_with_required_structure_and_free_ids(client: TestClient) -> None:
+def test_templates_with_required_structure_and_free_ids(client: TestClient) -> None:
     found = templates(client)
     assert set(found) == set(TEMPLATE_SECTIONS)
     for template_id, sections in TEMPLATE_SECTIONS.items():

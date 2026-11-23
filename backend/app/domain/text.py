@@ -6,6 +6,9 @@ import re
 from dataclasses import dataclass
 
 _WORD_RE = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
+# ASCII identifiers with separators (DEMO-INT-002, E-VAL-002, customer_segment_score, SYS-ARIS): one term,
+# matched as an exact token sequence, never stemmed or split into unrelated words.
+_IDENT_RE = re.compile(r"(?<![\w-])[A-Za-z0-9]+(?:[_.-][A-Za-z0-9]+)+(?![\w-])")
 _CYRILLIC_RE = re.compile(r"[а-яё]", re.IGNORECASE)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[\"«(\[]?[A-ZА-ЯЁ0-9])|\n+")
 
@@ -41,6 +44,10 @@ _RU_ENDINGS = sorted(
         "ему",
         "ыми",
         "ими",
+        "ых",
+        "их",
+        "ым",
+        "им",
         "ая",
         "яя",
         "ое",
@@ -124,11 +131,26 @@ class QueryTerm:
     original: str  # as written by the user
     token: str  # lower-cased token
     stem: str  # prefix used for matching
+    # Equivalent spellings from the versioned search dictionary (synonyms, abbreviation expansions):
+    # each alternative is a tuple of stems that must ALL match (a multi-word phrase). Empty = none.
+    alternatives: tuple[tuple[str, ...], ...] = ()
+    expansion: str | None = None  # dictionary entry that produced the alternatives (explainability)
+    identifier: bool = False  # an ASCII identifier: matched as an exact phrase of its parts
+
+    def parts(self) -> tuple[str, ...]:
+        return tuple(p for p in re.split(r"[^\w]|_", self.token) if p)
+
+    def stem_groups(self) -> tuple[tuple[str, ...], ...]:
+        """The term itself plus its alternatives, each as a tuple of stems."""
+        own = tuple(p for p in re.sub(r"[^\w]", " ", self.stem).split() if p) or (self.stem,)
+        return (own, *self.alternatives)
 
     @property
     def is_entity_like(self) -> bool:
         """Acronyms, identifiers and proper names: their absence means the topic is unknown."""
         o = self.original
+        if self.identifier and ("_" in o or any(ch.isdigit() for ch in o) or o.upper() == o):
+            return True
         if any(ch.isdigit() for ch in o) and any(ch.isalpha() for ch in o):
             return True
         letters = [ch for ch in o if ch.isalpha()]
@@ -138,7 +160,21 @@ class QueryTerm:
 def analyze_query(text: str, *, keep_stopwords: bool = False) -> list[QueryTerm]:
     terms: list[QueryTerm] = []
     seen: set[str] = set()
+    identifiers = {m.start(): m for m in _IDENT_RE.finditer(text)}
+    covered_until = -1
     for match in _WORD_RE.finditer(text):
+        if match.start() < covered_until:
+            continue
+        ident = identifiers.get(match.start())
+        if ident is not None:
+            covered_until = ident.end()
+            token = fold(ident.group(0))
+            if token not in seen:
+                seen.add(token)
+                terms.append(QueryTerm(original=ident.group(0), token=token, stem=token, identifier=True))
+            if len(terms) >= MAX_QUERY_TERMS:
+                break
+            continue
         original = match.group(0)
         token = fold(original)
         if len(token) < 2 and not token.isdigit():
@@ -155,22 +191,54 @@ def analyze_query(text: str, *, keep_stopwords: bool = False) -> list[QueryTerm]
     return terms
 
 
-def fts_term(term: QueryTerm) -> str:
-    """Quoted FTS5 prefix query for a single term. User input never reaches FTS syntax unquoted."""
-    parts = [p for p in re.sub(r"[^\w]", " ", term.stem).split() if p]
+SHORT_STEM = 3  # stems this short match whole tokens only: «пол»* would also hit «полнота», «пользователь»
+
+
+def _fts_part(part: str) -> str:
+    return f'"{part}"' if len(part) <= SHORT_STEM else f'"{part}"*'
+
+
+def _fts_group(stems: tuple[str, ...]) -> str:
+    parts = [p for stem in stems for p in re.sub(r"[^\w]", " ", stem).split() if p]
     if not parts:
-        return '""'
-    quoted = " ".join(f'"{p}"*' for p in parts)
+        return ""
+    quoted = " AND ".join(_fts_part(p) for p in parts)  # explicit AND: FTS5 rejects implicit AND next to "("
     return f"({quoted})" if len(parts) > 1 else quoted
 
 
+def fts_term(term: QueryTerm) -> str:
+    """Quoted FTS5 prefix query for a single term (OR over its dictionary alternatives).
+    User input never reaches FTS syntax unquoted."""
+    if term.identifier:
+        parts = term.parts()
+        return f'"{" ".join(parts)}"' if parts else '""'  # exact phrase: DEMO-INT-002 ≠ DEMO-INT-003
+    groups = [g for g in (_fts_group(stems) for stems in term.stem_groups()) if g]
+    groups = list(dict.fromkeys(groups))
+    if not groups:
+        return '""'
+    return groups[0] if len(groups) == 1 else "(" + " OR ".join(groups) + ")"
+
+
 def fts_query(terms: list[QueryTerm], *, mode: str = "and") -> str:
-    joiner = " " if mode == "and" else " OR "
+    joiner = " AND " if mode == "and" else " OR "
     return joiner.join(fts_term(t) for t in terms)
 
 
+def _flat_parts(words: list[str]) -> list[str]:
+    return [p for w in words for p in re.split(r"[^\w]|_", w) if p]
+
+
 def term_matches_text(term: QueryTerm, words: list[str]) -> bool:
-    return any(w.startswith(term.stem) for w in words)
+    if term.identifier:
+        parts = list(term.parts())
+        flat = _flat_parts(words)
+        n = len(parts)
+        return bool(n) and any(flat[i : i + n] == parts for i in range(len(flat) - n + 1))
+    if any(w.startswith(term.stem) for w in words):
+        return True
+    return any(
+        all(any(w.startswith(p) for w in words) for p in group) for group in term.alternatives if group
+    )
 
 
 def split_sentences(text: str) -> list[str]:

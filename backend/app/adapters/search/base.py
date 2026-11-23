@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.domain.models import HighlightSegment, IntegrationStatus
@@ -40,8 +40,13 @@ class ChunkHit:
 
 
 class SearchProvider(Protocol):
-    def sync(self, snapshot: KnowledgeSnapshot) -> None:
-        """Rebuild the index if the snapshot version differs from the indexed one."""
+    def sync(self, snapshot: KnowledgeSnapshot, *, full: bool = False) -> Any:
+        """Apply the snapshot (incremental by fingerprint, or a full rebuild); returns a sync result."""
+        ...
+
+    @property
+    def generation(self) -> int:
+        """Monotonic number of the index generation currently served."""
         ...
 
     def search_documents(

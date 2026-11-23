@@ -33,6 +33,7 @@ from app.domain.proposals import (
     NewDocumentMetadata,
 )
 from app.domain.schema import is_valid_document_id, parse_document, split_frontmatter
+from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import (
     PLACEHOLDER,
     DocumentTemplate,
@@ -111,7 +112,7 @@ class AuthoringService:
     def __init__(
         self,
         *,
-        templates: dict[str, DocumentTemplate],
+        templates: TemplateRegistry,
         repository: KnowledgeRepository,
         knowledge: KnowledgeService,
         store: ProposalStore,
@@ -131,8 +132,14 @@ class AuthoringService:
     def knowledge_prefix(self) -> str:
         return self._prefix
 
-    def template(self, template_id: str) -> DocumentTemplate:
-        template = self._templates.get(template_id)
+    @property
+    def registry(self) -> TemplateRegistry:
+        return self._templates
+
+    def template(self, template_id: str, version: int | None = None) -> DocumentTemplate:
+        """Current version for new documents; an explicit version for existing drafts (also of templates that
+        were changed or removed since — a draft is never validated against a newer template silently)."""
+        template = self._templates.get(template_id, version)
         if template is None:
             raise ApiError(404, "template_not_found", "Шаблон документа не найден.")
         return template
@@ -150,7 +157,7 @@ class AuthoringService:
         ids, _ = await self._snapshot_ids(user)
         taken = ids | self._store.open_create_ids()
         result = []
-        for template in self._templates.values():
+        for template in self._templates.active().values():
             suggested = suggest_document_id(template.id_prefix, taken)
             result.append(
                 DocumentTemplateInfo(
@@ -164,6 +171,12 @@ class AuthoringService:
                     skeleton=template.body,
                     suggested_id=suggested,
                     suggested_path=suggest_path(suggested, self._prefix),
+                    version=template.version,
+                    previous_versions=[
+                        v.version
+                        for v in self._templates.versions(template.id)
+                        if v.version != template.version
+                    ],
                 )
             )
         return result
@@ -172,6 +185,8 @@ class AuthoringService:
     def compose(self, template: DocumentTemplate, metadata: NewDocumentMetadata, body: str) -> str:
         fields = metadata.model_dump()
         fields["type"] = template.doc_type
+        fields["template"] = template.id
+        fields["template_version"] = template.version
         fields["tags"] = [t.lower() for t in metadata.tags]
         return compose_document(fields, body)
 
@@ -186,8 +201,9 @@ class AuthoringService:
         *,
         exclude_proposal_id: str | None = None,
         fresh: bool = False,
+        template_version: int | None = None,
     ) -> NewDocumentCheck:
-        template = self.template(template_id)
+        template = self.template(template_id, template_version)
         target = path.strip() if path and path.strip() else suggest_path(metadata.id.strip(), self._prefix)
         content = self.compose(template, metadata, body)
         return await self.check_content(
@@ -364,9 +380,17 @@ class AuthoringService:
         path: str | None,
         origin: str,
         exclude_proposal_id: str | None,
+        template_version: int | None = None,
     ) -> AuthoringCheckResponse:
         result = await self.check_new_document(
-            user, template_id, metadata, body, path, origin, exclude_proposal_id=exclude_proposal_id
+            user,
+            template_id,
+            metadata,
+            body,
+            path,
+            origin,
+            exclude_proposal_id=exclude_proposal_id,
+            template_version=template_version,
         )
         return AuthoringCheckResponse(
             content=result.content,

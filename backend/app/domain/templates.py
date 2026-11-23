@@ -7,6 +7,7 @@ The application — not the user — writes the document's YAML frontmatter from
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -37,6 +38,8 @@ FRONTMATTER_ORDER = (
     "related_ids",
     "source_refs",
     "summary",
+    "template",
+    "template_version",
 )
 
 
@@ -55,6 +58,8 @@ class DocumentTemplate:
     sections: tuple[str, ...]  # required `##` sections, in order
     body: str  # Markdown skeleton with placeholders
     order: int
+    version: int = 1  # declared in the template header (`version:`), resolved by the TemplateRegistry
+    checksum: str = ""
 
     def skeleton(self, title: str) -> str:
         heading = f"# {title.strip()}\n\n" if title.strip() else ""
@@ -88,6 +93,10 @@ def _parse_template(path: Path) -> DocumentTemplate:
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
         raise TemplateError("default_tags должен быть списком строк")
     order = meta.get("order", 100)
+    version = meta.get("version", 1)
+    if isinstance(version, bool) or not isinstance(version, int) or not 1 <= version <= 1000:
+        raise TemplateError("version должен быть целым числом от 1")
+    raw = path.read_bytes()
     return DocumentTemplate(
         id=template_id,
         title=title,
@@ -98,7 +107,13 @@ def _parse_template(path: Path) -> DocumentTemplate:
         sections=sections,
         body=body.strip() + "\n",
         order=order if isinstance(order, int) else 100,
+        version=version,
+        checksum=hashlib.sha256(raw).hexdigest()[:16],
     )
+
+
+def parse_template_file(path: Path) -> DocumentTemplate:
+    return _parse_template(path)
 
 
 def load_templates(directory: Path) -> dict[str, DocumentTemplate]:
@@ -141,6 +156,9 @@ def compose_document(metadata: dict[str, Any], body: str) -> str:
                 data[key] = " ".join(str(value).split())
         elif isinstance(value, DocStatus | DocType):
             data[key] = value.value
+        elif key == "template_version":
+            if isinstance(value, int) and value >= 1:
+                data[key] = value
         elif value is not None:
             data[key] = str(value).strip()
     data["reviewed_at"] = None

@@ -51,6 +51,7 @@ async def check_new_document(
         payload.path,
         payload.origin,
         payload.exclude_proposal_id,
+        payload.template_version,
     )
 
 

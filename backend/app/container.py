@@ -30,9 +30,11 @@ from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
 from app.authz import AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
 from app.config import Settings, tls_verify
 from app.domain.models import UserContext
-from app.domain.templates import DEFAULT_TEMPLATES_DIR, load_templates
+from app.domain.template_registry import TemplateRegistry
+from app.domain.templates import DEFAULT_TEMPLATES_DIR
 from app.services.assistant import AssistantService
 from app.services.authoring import AuthoringService
+from app.services.graph import GraphService
 from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
 from app.services.proposals import ProposalService, ProposalStore
@@ -66,6 +68,7 @@ class Container:
     policy: AuthorizationPolicy
     publication_store: PublicationStore
     publications: PublicationService
+    graph: GraphService
 
     def demo_user(self) -> UserContext:
         return UserContext(
@@ -159,7 +162,11 @@ def build_corporate(settings: Settings) -> CorporateKnowledgeConnector:
     if settings.confluence_connector == "disabled":
         return DisabledCorporateConnector()
     if settings.confluence_connector == "mock":
-        return MockCorporateConnector(settings.confluence_space_list or None)
+        return MockCorporateConnector(
+            settings.confluence_space_list or None,
+            corpus_path=settings.confluence_mock_pages_file,
+            state_path=settings.confluence_mock_state_file,
+        )
     result_map = parse_result_map(settings.confluence_mcp_result_map)
     return ConfluenceMCPConnector(
         McpClient(
@@ -247,8 +254,11 @@ def build_container(settings: Settings) -> Container:
         publish_statuses=settings.confluence_publish_status_list,
     )
     publications.recover()
+    templates = TemplateRegistry(templates_dir, settings.app_state_file)
+    knowledge.on_refresh(lambda: templates.reload())
+    knowledge.template_registry_label = lambda: templates.label
     authoring = AuthoringService(
-        templates=load_templates(templates_dir),
+        templates=templates,
         repository=repository,
         knowledge=knowledge,
         store=store,
@@ -295,4 +305,5 @@ def build_container(settings: Settings) -> Container:
             tasks=tasks,
         ),
         policy=build_policy(settings),
+        graph=GraphService(knowledge, templates.graph_entries),
     )

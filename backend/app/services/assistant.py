@@ -36,7 +36,7 @@ from app.domain.models import (
     UserContext,
 )
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
-from app.domain.text import QueryTerm, analyze_query, term_matches_text, tokenize
+from app.domain.text import QueryTerm, term_matches_text, tokenize
 from app.services.knowledge import KnowledgeService
 from app.services.search import corporate_scope
 
@@ -178,10 +178,11 @@ class AssistantService:
             )
         # A follow-up ("а какие у неё ограничения?") is retrieved together with the previous question.
         retrieval_text = req.question if not req.history else f"{req.question} {req.history[-1].question}"
-        terms = analyze_query(retrieval_text)
+        analysis = self._knowledge.retrieval.analyze(retrieval_text)
+        terms = analysis.terms
         allowed = _allowed_statuses(req)
         excluded_statuses = set(DocStatus) - allowed
-        warnings: list[str] = []
+        warnings: list[str] = [*analysis.notes]
         scopes: list[ScopeStatus] = []
         passages: list[ContextPassage] = []
         excluded: list[ExcludedSource] = []
@@ -196,21 +197,26 @@ class AssistantService:
             search = self._knowledge.search_provider
             team_filters = SearchFilters(statuses=frozenset(s.value for s in allowed))
             seen: set[tuple[str, str]] = set()
-            for chunk in search.search_chunks(terms, team_filters, MAX_PASSAGES * 2):
-                doc = snapshot.get(chunk.document_id)
-                key = (chunk.document_id, chunk.section_anchor)
-                if doc is None or key in seen or len(passages) >= MAX_PASSAGES or budget <= 0:
+            selected, _ranked = self._knowledge.retrieval.passages(
+                snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
+            )
+            for passage in selected:
+                doc = passage.document
+                key = (doc.id, passage.section_anchor or "")
+                if key in seen or len(passages) >= MAX_PASSAGES or budget <= 0:
                     continue
                 seen.add(key)
-                text, suspicious = prepare_passage_text(truncate(chunk.text, min(MAX_PASSAGE_CHARS, budget)))
+                text, suspicious = prepare_passage_text(
+                    truncate(passage.text, min(MAX_PASSAGE_CHARS, budget))
+                )
                 budget -= len(text)
                 passages.append(
                     ContextPassage(
                         cid=next_cid(),
                         document_id=doc.id,
                         title=doc.title,
-                        section=chunk.section if chunk.section_anchor else None,
-                        section_anchor=chunk.section_anchor or None,
+                        section=passage.section if passage.section_anchor else None,
+                        section_anchor=passage.section_anchor or None,
                         status=doc.status,
                         source_type=doc.source,
                         source_uri=doc.source_uri,
