@@ -1,0 +1,245 @@
+[
+  {
+    "question": "Какой порог полноты действует для Process Overview?",
+    "request": {
+      "sources": [
+        "team"
+      ]
+    },
+    "search_top3": [
+      {
+        "id": "DEMO-GOV-003",
+        "status": "approved",
+        "reasons": [
+          "Слова запроса в названии: полноты",
+          "Теги: completeness, полнота, порог",
+          "Совпадение в тексте документа",
+          "Синоним: «полноты» и равнозначные написания"
+        ]
+      },
+      {
+        "id": "DEMO-SEM-009",
+        "status": "approved",
+        "reasons": [
+          "Слова запроса в названии: Process, Overview",
+          "Теги: completeness, process, process-overview, полнота",
+          "Совпадение в тексте документа",
+          "Синоним: «полноты» и равнозначные написания"
+        ]
+      },
+      {
+        "id": "DEMO-INT-003",
+        "status": "approved",
+        "reasons": [
+          "Теги: completeness, полнота",
+          "Совпадение в тексте документа",
+          "Синоним: «полноты» и равнозначные написания"
+        ]
+      }
+    ],
+    "external": null,
+    "answer": {
+      "confidence": "supported",
+      "answer_start": "Демо-режим: ответ сформирован без языковой модели — ниже приведены дословные выдержки из найденных документов. Делайте выводы только после проверки источников. 1. «Порог полноты по умолчанию — 95 %; датасет Process Overv",
+      "citations": [
+        {
+          "document_id": "DEMO-GOV-003",
+          "source_kind": "local_markdown",
+          "revision": "sha256:a2c3b9e6ca6f34ce",
+          "status": "approved",
+          "excerpt": "Порог полноты по умолчанию — 95 %; датасет Process Overview устанавливает для своей области более строгий порог 98 %, и внутри этой области "
+        },
+        {
+          "document_id": "DEMO-GUIDE-003",
+          "source_kind": "local_markdown",
+          "revision": "sha256:4ccb43e546481e95",
+          "status": "approved",
+          "excerpt": "DEMO-GOV-003 — регламент полноты метаданных с порогом 95 % по умолчанию и правилом 98 % для Process Overview (шаги 4–5). DEMO-SEM-009 — дата"
+        },
+        {
+          "document_id": "DEMO-GOV-003",
+          "source_kind": "local_markdown",
+          "revision": "sha256:a2c3b9e6ca6f34ce",
+          "status": "approved",
+          "excerpt": "Набор учитываемых атрибутов задаёт спецификация датасета; в Process Overview это шесть атрибутов BusinessProcess, и запись без одного proces"
+        },
+        {
+          "document_id": "DEMO-SEM-009",
+          "source_kind": "local_markdown",
+          "revision": "sha256:68c43b0b0d050ecf",
+          "status": "approved",
+          "excerpt": "Process Overview (DS-001) — витрина действующих бизнес-процессов для потребителей семантического слоя: один процесс — одна строка с идентифи"
+        }
+      ],
+      "instructions_version": "instr-425e9f3bfa",
+      "index_generation": "g1",
+      "retrieval_trace_id": "TRACE-7588f10878f0489d"
+    },
+    "query_graph": {
+      "nodes": 15,
+      "edges": 42,
+      "origins": [
+        "canonical_metadata",
+        "query_trace"
+      ]
+    }
+  },
+  {
+    "question": "В какой срок стюард должен зарегистрировать соответствие в MAP_ARIS_PROCESS?",
+    "request": {
+      "sources": [
+        "team",
+        "corporate"
+      ]
+    },
+    "search_top3": [
+      {
+        "id": "DEMO-GOV-002",
+        "status": "approved",
+        "reasons": [
+          "Слова запроса в названии: стюард",
+          "Теги: steward, стюард",
+          "Совпадение в тексте документа",
+          "Синоним: «стюард» и равнозначные написания"
+        ]
+      },
+      {
+        "id": "DEMO-GOV-008",
+        "status": "approved",
+        "reasons": [
+          "Слова запроса в названии: срок",
+          "Совпадение в тексте документа",
+          "Синоним: «стюард» и равнозначные написания"
+        ]
+      },
+      {
+        "id": "DEMO-SEM-007",
+        "status": "approved",
+        "reasons": [
+          "Теги: map_aris_process",
+          "Совпадение в тексте документа",
+          "Синоним: «стюард» и равнозначные написания"
+        ]
+      }
+    ],
+    "external": {
+      "called": true,
+      "trigger": "no_single_local_passage",
+      "candidates": 10,
+      "fetched": 3,
+      "cache_hits": 0,
+      "mcp_calls": 4,
+      "fragments": 4,
+      "rejected": [],
+      "degraded": false,
+      "elapsed_ms": 31.88,
+      "policy_version": "ext-v1"
+    },
+    "answer": {
+      "confidence": "partial",
+      "answer_start": "Демо-режим: ответ сформирован без языковой модели — ниже приведены дословные выдержки из найденных документов. Делайте выводы только после проверки источников. 1. «Таблица соответствия MAP_ARIS_PROCESS: Атрибут Тип Обяза",
+      "citations": [
+        {
+          "document_id": "DEMO-SEM-007",
+          "source_kind": "local_markdown",
+          "revision": "sha256:1945740de9e0518e",
+          "status": "approved",
+          "excerpt": "Таблица соответствия MAP_ARIS_PROCESS: Атрибут Тип Обязательный Описание Источник aris_object_guid string да Идентификатор объекта в ARIS Вы"
+        },
+        {
+          "document_id": "200106",
+          "source_kind": "confluence_mcp",
+          "revision": "3",
+          "status": "approved",
+          "excerpt": "Код | Причина | Код ошибки интеграции | Кто исправляет R-01 | не заполнен обязательный атрибут | E-VAL-002 | Owner модели в ARIS R-02 | глуб"
+        },
+        {
+          "document_id": "200123",
+          "source_kind": "confluence_mcp",
+          "revision": "2",
+          "status": "approved",
+          "excerpt": "Действие | Owner | Reviewer | Steward | Команда интеграций Изменение расписания потока | A | R | C | R Регистрация соответствия в MAP_ARIS_P"
+        }
+      ],
+      "instructions_version": "instr-425e9f3bfa",
+      "index_generation": "g1",
+      "retrieval_trace_id": "TRACE-cc24e12edbb9407a"
+    },
+    "query_graph": {
+      "nodes": 15,
+      "edges": 30,
+      "origins": [
+        "canonical_metadata",
+        "query_trace"
+      ]
+    }
+  },
+  {
+    "question": "Какие правила действуют для черновика DEMO-SEM-012?",
+    "request": {
+      "sources": [
+        "team"
+      ]
+    },
+    "search_top3": [
+      {
+        "id": "DEMO-SEM-012",
+        "status": "in_review",
+        "reasons": [
+          "Точное совпадение идентификатора",
+          "Слова запроса в названии: правила",
+          "Совпадение в тексте документа"
+        ]
+      },
+      {
+        "id": "DEMO-PROC-010",
+        "status": "approved",
+        "reasons": [
+          "Слова запроса в названии: черновика",
+          "Теги: черновик",
+          "Совпадение в тексте документа"
+        ]
+      },
+      {
+        "id": "DEMO-GOV-006",
+        "status": "approved",
+        "reasons": [
+          "Слова запроса в названии: правила",
+          "Совпадение в тексте документа"
+        ]
+      }
+    ],
+    "external": null,
+    "answer": {
+      "confidence": "partial",
+      "answer_start": "Демо-режим: ответ сформирован без языковой модели — ниже приведены дословные выдержки из найденных документов. Делайте выводы только после проверки источников. 1. «DEMO-SEM-012 (ссылка) — правила разрешения неоднозначных",
+      "citations": [
+        {
+          "document_id": "DEMO-GOV-007",
+          "source_kind": "local_markdown",
+          "revision": "sha256:bdd1aab7e36464b3",
+          "status": "approved",
+          "excerpt": "DEMO-SEM-012 (ссылка) — правила разрешения неоднозначных сущностей: смежная задача, которая решается там, а не здесь. Документ находится на "
+        },
+        {
+          "document_id": "DEMO-GOV-007",
+          "source_kind": "local_markdown",
+          "revision": "sha256:bdd1aab7e36464b3",
+          "status": "approved",
+          "excerpt": "Если области различаются, это не противоречие: в своей области действует более специфичное правило, вне её — общее. Затем проверяются ревизи"
+        }
+      ],
+      "instructions_version": "instr-425e9f3bfa",
+      "index_generation": "g1",
+      "retrieval_trace_id": "TRACE-a0f9aae6ee7b452a"
+    },
+    "query_graph": {
+      "nodes": 10,
+      "edges": 17,
+      "origins": [
+        "canonical_metadata",
+        "query_trace"
+      ]
+    }
+  }
+]

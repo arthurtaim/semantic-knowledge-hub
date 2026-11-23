@@ -1,0 +1,120 @@
+{
+  "root": "../fixtures/knowledge",
+  "documents": 83,
+  "by_type": {
+    "architecture": 1,
+    "dataset": 3,
+    "decision": 5,
+    "domain": 9,
+    "glossary": 2,
+    "guide": 5,
+    "integration": 19,
+    "overview": 1,
+    "process": 7,
+    "source": 12,
+    "standard": 19
+  },
+  "by_status": {
+    "approved": 73,
+    "deprecated": 3,
+    "draft": 3,
+    "in_review": 4
+  },
+  "by_owner": {
+    "demo-architecture-board": 4,
+    "demo-enablement-team": 5,
+    "demo-governance-team": 13,
+    "demo-integration-team": 18,
+    "demo-process-office": 10,
+    "demo-semantic-team": 12,
+    "demo-source-owners": 11,
+    "demo-team": 8,
+    "unassigned": 2
+  },
+  "edges": 291,
+  "edges_by_type": {
+    "constrains": 7,
+    "consumes": 8,
+    "depends_on": 34,
+    "derived_from": 7,
+    "describes": 16,
+    "maps_to": 4,
+    "produces": 4,
+    "references": 206,
+    "supersedes": 2,
+    "uses_template": 3
+  },
+  "typed_edges": 85,
+  "unresolved_references": [],
+  "required_chains": [
+    {
+      "chain": [
+        "DEMO-SRC-002",
+        "DEMO-INT-001",
+        "DEMO-INT-002",
+        "DEMO-SEM-002",
+        "DEMO-SEM-009",
+        "DEMO-INT-015"
+      ],
+      "ok": true,
+      "missing_links": []
+    },
+    {
+      "chain": [
+        "DEMO-SRC-003",
+        "DEMO-INT-004",
+        "DEMO-INT-005",
+        "DEMO-SEM-010"
+      ],
+      "ok": true,
+      "missing_links": []
+    },
+    {
+      "chain": [
+        "DEMO-SRC-005",
+        "DEMO-INT-007",
+        "DEMO-SEM-006",
+        "DEMO-SEM-011"
+      ],
+      "ok": true,
+      "missing_links": []
+    },
+    {
+      "chain": [
+        "DEMO-GOV-003",
+        "DEMO-INT-003",
+        "DEMO-SEM-009"
+      ],
+      "ok": true,
+      "missing_links": []
+    },
+    {
+      "chain": [
+        "DEMO-GOV-009",
+        "DEMO-GOV-001",
+        "DEMO-GOV-011"
+      ],
+      "ok": true,
+      "missing_links": []
+    },
+    {
+      "chain": [
+        "DEMO-PROC-002",
+        "DEMO-PROC-007",
+        "DEMO-SEM-004",
+        "DEMO-SEM-009"
+      ],
+      "ok": true,
+      "missing_links": []
+    }
+  ],
+  "orphans": [],
+  "not_synthetic": [],
+  "secrets": [],
+  "personal_data": [],
+  "invalid_files": [],
+  "duplicate_ids": {},
+  "warnings": {},
+  "errors": [],
+  "ok": true
+}

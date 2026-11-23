@@ -149,6 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict-synthetic", action="store_true", help="DEMO-* documents must be synthetic")
     args = parser.parse_args(argv)
     report = validate(args.root.resolve(), strict_synthetic=args.strict_synthetic)
+    report["root"] = args.root.as_posix()  # as given (relative): no machine-specific path in the report
     if args.json:
         args.json.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
