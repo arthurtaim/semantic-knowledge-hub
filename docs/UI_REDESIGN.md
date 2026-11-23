@@ -2,7 +2,7 @@
 
 Task specification for Claude Code (and GigaCode later) to make the interface simpler, more consistent and
 less templated, with a green visual identity. Functionality, Russian copy, accessible names and test
-contracts stay unchanged. Phase 1 is implemented; phases 2–3 are the next steps.
+contracts stay unchanged. Phases 1–3 are implemented; the dark colour scheme is deferred (see §3).
 
 ## 1. Audit of the previous UI (2026-11-23)
 
@@ -83,7 +83,7 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
 - [x] W8 Lifecycle stepper drawn as one ruled track (horizontal on desktop, vertical rule on phones).
 - [x] W9/W10 Unified selected state and radius.
 
-### Phase 2 — page-level simplification (next)
+### Phase 2 — page-level simplification (done)
 
 - [x] Document page: merge the in-page demo notice into the passport as a "Демо-документ" field, so the
   only demo notice above the fold is the bar (keep text matched by `document.test.tsx`). The field is the
@@ -103,7 +103,7 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
   редактирование", the submit hint, and destructive actions behind a rule. Narrower: the rail follows the
   lifecycle and notices, before the diff (DOM order, so tab order matches what is seen).
 
-### Phase 3 — polish
+### Phase 3 — polish (done, dark scheme deferred)
 
 - [x] Ask page: answer column 68ch with citations in a right rail on wide screens. ≥ 1200 px: each answer
   is a grid (answer 46 rem | its sources), answer lines ≤ 68ch inside the answer box; the question form
@@ -114,11 +114,18 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
   when they wrap); both pane labels share one style; the empty preview is a ruled placeholder, not a dashed
   box; view toggle separators are `--line`, selected `--accent-ink`. Save state is text plus shape: ring
   (not saved yet, neutral, no longer green), filled dot (unsaved changes), tick (`save-state--saved`).
-- [ ] Dark-bar print stylesheet check; `prefers-color-scheme: dark` token set.
+- [x] Dark-bar print stylesheet check. Document page in print: top bar, demo line, header actions, tabs and
+  all buttons hidden; prose on the full width without its box; passport (with the "Демо-документ" caveat)
+  after the prose; status stamp and ID stay under the title. Checked with print emulation at the A4 text
+  width (680 px) and at 1440 px.
+- [ ] Deferred: `prefers-color-scheme: dark` token set. Not part of this work order; it needs its own pass
+  over the status hues, the stamp washes and the diff colours to keep text and shape contrast, plus
+  screenshots of every route in both schemes.
 
 ## 4. Acceptance
 
-- `npx tsc --noEmit`, `npx eslint .`, `npx vitest run` pass (102 tests at phase 1).
-- `npx playwright test` desktop, mobile and gitlab-mock projects pass (27 tests at phase 1).
+- `npx tsc --noEmit`, `npx eslint .`, `npx vitest run` pass (102 tests at phase 1, 109 after phases 2–3).
+- `npx playwright test` desktop, mobile and gitlab-mock projects pass (27 tests at phase 1 and after
+  phases 2–3: desktop + mobile 17, gitlab-mock + gitlab-mock-mobile 10).
 - No horizontal scroll at 360 px; keyboard focus visible on the dark bar and on paper.
 - No changes to API calls, routes, accessible names or Russian copy that tests rely on.

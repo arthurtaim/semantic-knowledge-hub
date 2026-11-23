@@ -3560,15 +3560,57 @@ h1 a:hover {
   }
 }
 
+/* Print: the document itself. No app chrome; prose on the full width; the passport (provenance and the demo
+   caveat) after the prose; status and ID stay under the title. Interactive controls are not printed. */
 @media print {
   .topbar,
   .demo-band,
+  .skip-link,
   .document__actions,
-  .tabs {
+  .tabs,
+  .document .button {
     display: none;
   }
 
   .shell {
     display: block;
+  }
+
+  .content {
+    max-width: none;
+    padding: 0;
+  }
+
+  .document__head {
+    margin-bottom: var(--space-4);
+  }
+
+  .document .document__compact-meta {
+    display: flex;
+  }
+
+  .document .document__layout {
+    display: block;
+  }
+
+  .document .prose {
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    background: transparent;
+  }
+
+  .document .prose > * {
+    max-width: none;
+  }
+
+  .document .passport {
+    position: static;
+    margin-top: var(--space-6);
+    break-inside: avoid;
+  }
+
+  .document .publication {
+    break-inside: avoid;
   }
 }
