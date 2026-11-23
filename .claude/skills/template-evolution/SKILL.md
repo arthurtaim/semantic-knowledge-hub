@@ -28,6 +28,12 @@ the picker (`listed: false`).
    policy (`backend/app/assistant_instructions/TEMPLATE_POLICY.md`) uses the version it is given.
 5. **Docs.** Update `docs/DOCUMENT_TEMPLATES.md` (sections, purpose, version history).
 
+6. **Template Hub fields (M5.6.3).** Status (`draft|active|deprecated|archived`), category, owner, labels,
+   `optional_sections`, `required_metadata`/`optional_metadata`, `validation`, `instructions`, `ai_guidance`,
+   `example`, `changes`, `breaking` + `migration` (docs/TEMPLATE_HUB.md). A version is the SCHEMA: catalogue
+   text may change in place; sections/fields/rules/status need `version: N+1` and the old file in `history/`.
+   Check `GET /api/templates/<id>/compare?from=N&to=N+1` and the Hub page `/templates/<id>`.
+
 ## Validation commands
 ```bash
 cd backend && ../.venv/bin/python -m pytest tests/test_template_registry.py tests/test_authoring.py -q

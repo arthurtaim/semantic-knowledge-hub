@@ -29,6 +29,10 @@ reviewing what the assistant's answer graph shows.
    external nodes are re-validated and dropped; expired traces disappear. Dangling targets go to
    `GET /api/graph/diagnostics`.
 
+6. **WikiLinks (M5.6.3).** `[[ID]]` in a body is a `references` edge with provenance `body:<line>`; with the
+   same target in `related_ids` it is one edge with both provenances. `GET /api/documents/<id>/links` shows
+   outgoing / backlinks / unresolved; a WikiLink never proves `maps_to`/`depends_on` (docs/METADATA_AND_LINKS.md).
+
 ## Validation commands
 ```bash
 cd backend && ../.venv/bin/python -m pytest tests/test_sync_and_graph.py -q -k graph

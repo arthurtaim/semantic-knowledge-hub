@@ -64,3 +64,17 @@ The index is derived data — a "bad generation" is fixed by fixing its input, n
 - **A suspected corrupt index**: `POST /api/index/sync?rebuild=true` rebuilds it from the snapshot;
   the checksum must equal the one before.
 - **External evidence gone stale**: `DELETE /api/discovery` purges discovery memory and the page cache.
+
+## 6. Import a Markdown file without metadata (M5.6.3)
+
+1. UI «Импорт» (or `POST /api/documents/import/preview {"content": "…"}`): check the generated ID, the
+   suggested template and its reasons, fill the owner; suggested tags/related are kept only if you keep them.
+2. «Создать черновик» → a draft (origin `import`) → usual review and merge. Files already lying in the
+   knowledge root without YAML are listed by `GET /api/documents/import/staging`; they are not searchable or
+   cited until a reviewed document replaces them.
+
+## 7. Repair broken links
+
+`GET /api/links/diagnostics` lists unresolved WikiLinks: `missing` (target deleted or not visible),
+`title_link` / `ambiguous_title` (written by title, with candidates). Fix through a change proposal: replace
+with `[[ID|название]]` chosen from the candidates; never point a link at a lookalike document.

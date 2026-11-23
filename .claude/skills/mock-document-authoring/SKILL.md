@@ -34,6 +34,9 @@ templates (`template-evolution`).
 6. **Gold case.** Add at least one case to the matching `fixtures/eval/cases_*.yaml` (question that only
    this document answers, `expected_doc_ids`, `facts_required`).
 
+7. **Links in the body.** Mention related documents as `[[ID]]` or `[[ID|label]]` (in tables `[[ID\|label]]`),
+   never by title alone; links are `references`, typed dependencies stay in `relations:`.
+
 ## Validation commands
 ```bash
 make mock-kb-validate                    # schema, links, required chains, synthetic flag, secrets

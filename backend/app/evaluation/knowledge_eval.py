@@ -446,7 +446,9 @@ def main(argv: list[str] | None = None) -> int:
     with contextlib.suppress(ImportError):  # registers lifecycle scenario methods when that module exists
         import app.evaluation.scenarios
     with contextlib.suppress(ImportError):
-        import app.evaluation.scenarios_external  # noqa: F401
+        import app.evaluation.scenarios_external
+    with contextlib.suppress(ImportError):
+        import app.evaluation.scenarios_m563  # noqa: F401
     # Run as `python -m`, this module is `__main__`; the scenarios registered into the importable copy.
     registry = sys.modules.get("app.evaluation.knowledge_eval")
     if registry is not None and registry is not sys.modules[__name__]:

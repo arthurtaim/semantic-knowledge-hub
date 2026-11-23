@@ -1,0 +1,42 @@
+# M5.6.3 cases (40): metadata without YAML, WikiLinks, AI-first workflows, Template Hub.
+# Each runs its own app on a temporary copy of the curated base (app.evaluation.scenarios_m563).
+- {case_id: KM-MD-01, category: metadata, method: md_create_without_yaml, question: "", notes: "M-01: form without YAML → server ID with the template prefix, draft, integration v2 pinned"}
+- {case_id: KM-MD-02, category: metadata, method: md_idempotent_retry, question: "", notes: "repeated create with the same client_request_id → one draft"}
+- {case_id: KM-MD-03, category: metadata, method: md_duplicate_title_warns, question: "", notes: "same title as an approved document → warning, distinct ID"}
+- {case_id: KM-MD-04, category: metadata, method: md_missing_owner_unassigned, question: "", notes: "unknown owner stays unassigned, never invented"}
+- {case_id: KM-MD-05, category: metadata, method: md_bare_markdown_staged, question: "", notes: "M-02: bare Markdown in the KB root → staging only, not in catalog, not cited"}
+- {case_id: KM-MD-06, category: metadata, method: md_import_preview_fields, question: "", notes: "preview: parsed title, missing owner, explained template, WikiLink → related; writes nothing"}
+- {case_id: KM-MD-07, category: metadata, method: md_existing_yaml_kept, question: "", notes: "imported approved YAML kept verbatim, stays a draft proposal until review"}
+- {case_id: KM-MD-08, category: metadata, method: md_invalid_yaml_reported, question: "", notes: "invalid YAML → invalid_metadata + generated replacement"}
+- {case_id: KM-MD-09, category: metadata, method: md_move_keeps_id, question: "", notes: "moving a file keeps the ID, sync reports renamed, backlinks survive"}
+- {case_id: KM-MD-10, category: metadata, method: md_concurrent_save_guard, question: "", notes: "two saves on one version → 409; ID immutable after creation"}
+- {case_id: KM-WL-01, category: wikilink, method: wl_curated_backlink, question: "", notes: "curated corpus: DEMO-GUIDE-001 → DEMO-SRC-001 backlink with excerpt"}
+- {case_id: KM-WL-02, category: wikilink, method: wl_provenance_merged, question: "", notes: "related_ids + inline link to one target = one edge, both provenances; no duplicates"}
+- {case_id: KM-WL-03, category: wikilink, method: wl_insert_then_sync, question: "", notes: "L-01: new [[ID|label]] → references edge, backlink and rendered link after sync"}
+- {case_id: KM-WL-04, category: wikilink, method: wl_rename_target, question: "", notes: "L-02: target moved → link intact, one graph node"}
+- {case_id: KM-WL-05, category: wikilink, method: wl_remove_link_no_stale_edge, question: "", notes: "L-03: link removed → no stale edge or backlink"}
+- {case_id: KM-WL-06, category: wikilink, method: wl_delete_target_reported, question: "", notes: "L-03: target deleted → unresolved missing, dangling diagnostic, never cited"}
+- {case_id: KM-WL-07, category: wikilink, method: wl_code_is_not_a_link, question: "", notes: "L-04: fenced / inline code and escapes produce no edge"}
+- {case_id: KM-WL-08, category: wikilink, method: wl_title_link_not_guessed, question: "", notes: "[[title]] is not resolved automatically; repair candidates offered"}
+- {case_id: KM-WL-09, category: wikilink, method: wl_label_escaped, question: "", notes: "malicious label is HTML-escaped"}
+- {case_id: KM-WL-10, category: wikilink, method: wl_inaccessible_target_no_leak, question: "", notes: "L-05: hidden target/source → no title, backlink or edge for the reader"}
+- {case_id: KM-AI-01, category: ai_workflow, method: ai_prompt_to_document, question: "", notes: "A-01: prompt → template choice, verified evidence, TODO for missing facts, draft only"}
+- {case_id: KM-AI-02, category: ai_workflow, method: ai_metadata_reject_unchanged, question: "", notes: "M-03: rejected metadata proposal leaves the draft unchanged"}
+- {case_id: KM-AI-03, category: ai_workflow, method: ai_metadata_partial_accept, question: "", notes: "M-03: only the accepted field changes"}
+- {case_id: KM-AI-04, category: ai_workflow, method: ai_improve_section_partial, question: "", notes: "A-02: improved section applied, other sections intact"}
+- {case_id: KM-AI-05, category: ai_workflow, method: ai_stale_proposal_invalidated, question: "", notes: "draft changed after the proposal → 409 + invalidated"}
+- {case_id: KM-AI-06, category: ai_workflow, method: ai_related_links_are_proposals, question: "", notes: "A-03: suggested links are proposals; accept → update draft, source/graph unchanged"}
+- {case_id: KM-AI-07, category: ai_workflow, method: ai_explain_relation_kinds, question: "", notes: "graph-aware: typed business edge vs WikiLink mention"}
+- {case_id: KM-AI-08, category: ai_workflow, method: ai_impact_is_a_plan, question: "", notes: "impact analysis is a plan, never applied"}
+- {case_id: KM-AI-09, category: ai_workflow, method: ai_template_change_invalidates, question: "", notes: "T-01: template v2 while pending → stale; new session uses v2"}
+- {case_id: KM-AI-10, category: ai_workflow, method: ai_explain_no_answer, question: "", notes: "unknown topic → insufficient evidence, no fabricated sources"}
+- {case_id: KM-TP-01, category: template_hub, method: tp_catalogue_statuses, question: "", notes: "≥10 active, deprecated shown as such, hidden not listed"}
+- {case_id: KM-TP-02, category: template_hub, method: tp_detail_structure, question: "", notes: "required vs optional sections, guidance, example, history"}
+- {case_id: KM-TP-03, category: template_hub, method: tp_compare_breaking, question: "", notes: "mapping v1→v2 breaking with migration"}
+- {case_id: KM-TP-04, category: template_hub, method: tp_compare_optional_rename, question: "", notes: "knowledge_article v1→v2 optional section renamed, not breaking"}
+- {case_id: KM-TP-05, category: template_hub, method: tp_deprecated_not_recommended, question: "", notes: "deprecated: not in picker, not recommended by AI, warns when used"}
+- {case_id: KM-TP-06, category: template_hub, method: tp_new_template_everywhere, question: "", notes: "T-02: new file → Hub, picker, document types, AI recommendation"}
+- {case_id: KM-TP-07, category: template_hub, method: tp_v2_keeps_old_drafts, question: "", notes: "v2 activation: Hub v2, old draft pinned to v1 and unchanged"}
+- {case_id: KM-TP-08, category: template_hub, method: tp_invalid_revision_keeps_active, question: "", notes: "T-03: invalid revision keeps the active version, creation works"}
+- {case_id: KM-TP-09, category: template_hub, method: tp_schema_defines_version, question: "", notes: "catalogue text edits keep the version; schema edits create one"}
+- {case_id: KM-TP-10, category: template_hub, method: tp_usage_counts_visible_documents, question: "", notes: "usage = visible documents = graph uses_template edges"}
