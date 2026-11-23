@@ -174,4 +174,47 @@ describe("Knowledge explorer", () => {
       expect(screen.getByRole("button", { name: /Черновик/ })).toHaveAttribute("aria-pressed", "true");
     });
   });
+
+  it("explains why each result was found, marks results found through a relation and shows query notes", async () => {
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      {
+        path: "/api/documents?query=MDM&page=1&size=20",
+        body: {
+          ...documentPage,
+          items: [
+            { ...arisSummary, match_reasons: ["Слова запроса в названии: MDM", "Теги: mdm"], related_via: null, version: "1.0" },
+            {
+              ...arisSummary,
+              id: "SEM-ARCH-001",
+              title: "Semantic Layer — demonstration architecture",
+              highlights: null,
+              match_reasons: ["Связь из метаданных документа"],
+              related_via: "SEM-INT-ARIS-001",
+            },
+          ],
+          total: 2,
+          notes: ["Аббревиатура MDM неоднозначна: master data management / модель метаданных. Уточните вопрос."],
+        },
+      },
+    ]);
+    renderAt("/documents?query=MDM", "/documents", <ExplorerPage />);
+    expect(await screen.findByText(/Аббревиатура MDM неоднозначна/)).toBeInTheDocument();
+    const first = screen.getByRole("link", { name: "ARIS integration — questions for discovery" }).closest("li") as HTMLElement;
+    expect(within(first).getByText("Почему найдено: Слова запроса в названии: MDM; Теги: mdm")).toBeInTheDocument();
+    expect(within(first).queryByText(/Связан с/)).toBeNull();
+    const related = screen.getByRole("link", { name: "Semantic Layer — demonstration architecture" }).closest("li") as HTMLElement;
+    expect(within(related).getByText("Связан с SEM-INT-ARIS-001")).toBeInTheDocument();
+    expect(within(related).getByText("Почему найдено: Связь из метаданных документа")).toBeInTheDocument();
+  });
+
+  it("shows no reasons line for a plain listing", async () => {
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: /\/api\/documents\?/, body: documentPage },
+    ]);
+    renderAt("/documents", "/documents", <ExplorerPage />);
+    await screen.findByRole("link", { name: /ARIS integration/ });
+    expect(screen.queryByText(/Почему найдено/)).toBeNull();
+  });
 });

@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type { ProposalDetail, SourceDocumentState } from "../api/types";
 import { DiffView } from "../components/DiffView";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
+import { TemplateVersionNotice } from "../components/TemplateVersionNotice";
 import { ProposalLifecycle } from "../components/ProposalLifecycle";
 import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../components/ProposalState";
 import { PublicationJobStateLabel } from "../components/PublicationState";
@@ -409,7 +410,13 @@ export function ProposalDetailPage() {
           </div>
           <div>
             <dt>Происхождение</dt>
-            <dd>{p.origin === "ai_suggestion" ? "черновик ИИ, проверен человеком" : "ручная правка"}</dd>
+            <dd>
+              {p.origin === "ai_suggestion"
+                ? "черновик ИИ, проверен человеком"
+                : p.origin === "external_page"
+                  ? "из страницы Confluence (ответ ассистента)"
+                  : "ручная правка"}
+            </dd>
           </div>
           {creating ? (
             <div>
@@ -444,6 +451,7 @@ export function ProposalDetailPage() {
         <div className="proposal__flow">
           <ProposalLifecycle proposal={p} />
           <SourceStatement proposal={p} />
+          {creating && p.status !== "merged" ? <TemplateVersionNotice proposal={p} /> : null}
           {p.status === "merged" && session?.features.confluence_publish ? <PublicationLink proposal={p} /> : null}
           {p.status === "merged" && p.merged_revision ? (
             <Notice tone="success" className="sync-notice">

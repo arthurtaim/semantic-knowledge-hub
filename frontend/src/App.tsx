@@ -9,6 +9,7 @@ import { CorporatePage } from "./pages/CorporatePage";
 import { DocumentCreatePage } from "./pages/DocumentCreatePage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { ExplorerPage } from "./pages/ExplorerPage";
+import { GraphPage } from "./pages/GraphPage";
 import { HomePage } from "./pages/HomePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -22,6 +23,7 @@ const TITLES: [RegExp, string][] = [
   [/^\/documents\/new$/, "Новый документ"],
   [/^\/documents\/[^/]+/, "Документ"],
   [/^\/documents/, "База знаний"],
+  [/^\/graph/, "Граф знаний"],
   [/^\/ask/, "Спросить"],
   [/^\/proposals\/new/, "Новое предложение"],
   [/^\/proposals\/.+/, "Предложение"],
@@ -54,6 +56,7 @@ export function App() {
           <Route path="/documents" element={<ExplorerPage />} />
           <Route path="/documents/new" element={<DocumentCreatePage />} />
           <Route path="/documents/:id" element={<DocumentPage />} />
+          <Route path="/graph" element={<GraphPage />} />
           <Route path="/ask" element={<AskPage />} />
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalEditorPage />} />

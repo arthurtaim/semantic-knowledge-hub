@@ -29,7 +29,7 @@ const location = () => screen.getByTestId("location").textContent;
 function authoringRoutes(extra: MockRoute[] = []): MockRoute[] {
   return [
     ...extra,
-    { path: "/api/authoring/templates", body: templates },
+    { path: /^\/api\/authoring\/templates(\?include_hidden=true)?$/, body: templates },
     { method: "POST", path: "/api/authoring/check", body: checkResponse() },
   ];
 }
@@ -215,7 +215,7 @@ describe("Creating a document: manual flow", () => {
 
   it("blocks review while validation reports errors and shows them next to the field", async () => {
     mockApi([
-      { path: "/api/authoring/templates", body: templates },
+      { path: /^\/api\/authoring\/templates(\?include_hidden=true)?$/, body: templates },
       {
         method: "POST",
         path: "/api/authoring/check",
@@ -409,6 +409,8 @@ describe("Resuming a stored draft", () => {
     expect(screen.getByRole("textbox", { name: /Причина \/ цель/ })).toHaveValue("Описать витрину клиентских метрик");
     expect(screen.getByRole("textbox", { name: /Markdown/ })).toHaveValue(NEW_DOC_BODY);
     expect(screen.getByText(/Черновик сохранён в/)).toBeInTheDocument();
+    // A draft's template is resolved among ALL templates (an unlisted one such as external_import too).
+    expect(calls.some((c) => c.method === "GET" && c.url === "/api/authoring/templates?include_hidden=true")).toBe(true);
 
     await userEvent.click(screen.getByRole("button", { name: "Удалить черновик" }));
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
@@ -679,5 +681,58 @@ describe("Authoring helpers", () => {
     const code = applyMarkdown("code", "", 0, 0);
     expect(code.text).toBe("```\nкод\n```\n");
     expect(code.text.slice(code.selectionStart, code.selectionEnd)).toBe("код");
+  });
+});
+
+describe("Template versions", () => {
+  it("marks templates that have a newer version in the picker", async () => {
+    mockApi([
+      { path: /^\/api\/authoring\/templates(\?include_hidden=true)?$/, body: [{ ...templates[0], version: 2, previous_versions: [1] }, templates[1]] },
+      { method: "POST", path: "/api/authoring/check", body: checkResponse() },
+    ]);
+    renderRoutes("/documents/new", CREATE);
+    const card = (await screen.findByRole("radio", { name: "Архитектура" })).closest("label") as HTMLElement;
+    expect(within(card).getByText("v2", { exact: false })).toHaveTextContent("версия шаблона v2");
+    const adr = screen.getByRole("radio", { name: "ADR" }).closest("label") as HTMLElement;
+    expect(within(adr).queryByText(/версия шаблона/)).toBeNull();
+  });
+
+  it("checks an older draft against its own template version and says that a newer one exists", async () => {
+    const calls = mockApi(
+      authoringRoutes([
+        {
+          path: `/api/drafts/${NEW_DOC_ID}`,
+          body: newDocumentProposal({ template_version: 1, template_current_version: 2 }),
+        },
+      ]),
+    );
+    renderRoutes(`/documents/new?draft=${NEW_DOC_ID}`, CREATE);
+    await screen.findByRole("textbox", { name: /^Название/ });
+    expect(
+      screen.getByText(
+        "Черновик создан по шаблону v1; актуальная версия — v2. Черновик проверяется по v1; переход на новую версию — отдельное действие автора.",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(posts(calls, "/api/authoring/check").length).toBeGreaterThan(0));
+    for (const check of posts(calls, "/api/authoring/check")) {
+      expect((check.body as { template_version?: number }).template_version).toBe(1);
+    }
+  });
+
+  it("shows no notice for a draft on the current template version", async () => {
+    mockApi(
+      authoringRoutes([
+        { path: `/api/drafts/${NEW_DOC_ID}`, body: newDocumentProposal({ template_version: 2, template_current_version: 2 }) },
+      ]),
+    );
+    renderRoutes(`/documents/new?draft=${NEW_DOC_ID}`, CREATE);
+    await screen.findByRole("textbox", { name: /^Название/ });
+    expect(screen.queryByText(/Черновик создан по шаблону/)).toBeNull();
+  });
+
+  it("repeats the notice on the proposal page of the new document", async () => {
+    mockApi([{ path: `/api/drafts/${NEW_DOC_ID}`, body: newDocumentProposal({ template_version: 1, template_current_version: 3 }) }]);
+    renderRoutes(`/proposals/${NEW_DOC_ID}`, { "/proposals/:id": <ProposalDetailPage /> });
+    expect(await screen.findByText(/Черновик создан по шаблону v1; актуальная версия — v3\./)).toBeInTheDocument();
   });
 });

@@ -15,7 +15,14 @@ import type {
   DocumentPublicationStatus,
   DocumentSort,
   DocumentTemplateInfo,
+  DiscoveryFeedbackResponse,
+  DiscoveryPurgeResponse,
+  DiscoveryStats,
+  DiscoveryVerdict,
   DraftCreate,
+  GraphDiagnostics,
+  GraphLegend,
+  GraphPath,
   IntegrationsResponse,
   LoadIssue,
   NewDocumentDraftCreate,
@@ -26,6 +33,7 @@ import type {
   PublicationJobDetail,
   PublicationJobList,
   SessionResponse,
+  Subgraph,
   SuggestResponse,
   SyncStatus,
 } from "./types";
@@ -318,6 +326,25 @@ export interface DocumentListParams {
   size?: number;
 }
 
+export interface GraphOverviewParams {
+  limit?: number;
+  /** Comma-separated values (the backend accepts CSV); empty means "all". */
+  kind?: string;
+  relation?: string;
+  status?: string;
+  type?: string;
+  q?: string;
+  deprecated?: boolean;
+}
+
+export interface GraphNeighbourParams {
+  depth?: 1 | 2;
+  direction?: "both" | "out" | "in";
+  relation?: string;
+  limit?: number;
+  cursor?: number;
+}
+
 export const api = {
   session: () => request<SessionResponse>("/session"),
   integrations: () => request<IntegrationsResponse>("/integrations/status"),
@@ -354,7 +381,9 @@ export const api = {
   deleteDraft: (id: string) => request<null>(`/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   // --- authoring of new documents ---
-  templates: () => request<DocumentTemplateInfo[]>("/authoring/templates"),
+  /** Templates for new documents; `includeHidden` also returns unlisted ones (to reopen their drafts). */
+  templates: (includeHidden = false) =>
+    request<DocumentTemplateInfo[]>(`/authoring/templates${includeHidden ? "?include_hidden=true" : ""}`),
   /** Stateless validation + safe preview of a new document; stores nothing. */
   checkNewDocument: (payload: AuthoringCheckRequest) =>
     request<AuthoringCheckResponse>("/authoring/check", { method: "POST", body: json(payload) }),
@@ -401,4 +430,28 @@ export const api = {
     request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/release-missing-page`, {
       method: "POST",
     }),
+
+  // --- knowledge graph (M5.6, read-only and bounded by the server) ---
+  graphLegend: () => request<GraphLegend>("/graph/legend"),
+  graphOverview: (params: GraphOverviewParams = {}) =>
+    request<Subgraph>(
+      `/graph/overview${query({ ...params, deprecated: params.deprecated === undefined ? undefined : String(params.deprecated) })}`,
+    ),
+  /** 404 `graph_node_not_found` for an unknown or not visible node. */
+  graphNeighbours: (nodeId: string, params: GraphNeighbourParams = {}) =>
+    request<Subgraph>(`/graph/nodes/${encodeURIComponent(nodeId)}/neighbors${query({ ...params })}`),
+  graphPath: (source: string, target: string, maxDepth?: number) =>
+    request<GraphPath>(`/graph/path${query({ source, target, max_depth: maxDepth })}`),
+  /** Evidence graph of one answer; 404 `trace_not_found` once the trace expired or was erased. */
+  graphQuery: (traceId: string) => request<Subgraph>(`/graph/query/${encodeURIComponent(traceId)}`),
+  graphDiagnostics: () => request<GraphDiagnostics>("/graph/diagnostics"),
+
+  // --- discovery memory: optional relevance feedback, erase, operator stats ---
+  discoveryFeedback: (payload: { trace_id: string; source_id: string; verdict: DiscoveryVerdict }) =>
+    request<DiscoveryFeedbackResponse>("/discovery/feedback", { method: "POST", body: json(payload) }),
+  /** A DRAFT of a new curated document quoting the external page (never an import, never approved). */
+  discoveryPropose: (payload: { trace_id: string; source_id: string }) =>
+    request<ProposalDetail>("/discovery/propose", { method: "POST", body: json(payload) }),
+  discoveryPurge: () => request<DiscoveryPurgeResponse>("/discovery", { method: "DELETE" }),
+  discoveryStats: () => request<DiscoveryStats>("/discovery/stats"),
 };

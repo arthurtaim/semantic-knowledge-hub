@@ -20,8 +20,10 @@ test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ p
   await page.getByRole("button", { name: "Найти" }).click();
   const result = page.getByRole("link", { name: "ARIS integration — questions for discovery" });
   await expect(result).toBeVisible();
-  await expect(page.locator(".result").first()).toContainText("Черновик");
-  await expect(page.locator(".result").first()).toContainText("Локальный workspace");
+  // 83-document demo base: other ARIS documents may rank first, so check the row of this document.
+  const row = page.locator(".result", { has: result });
+  await expect(row).toContainText("Черновик");
+  await expect(row).toContainText("Локальный workspace");
 
   await result.click();
   const passport = page.getByRole("complementary", { name: "Паспорт документа" });

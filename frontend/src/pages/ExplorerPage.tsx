@@ -270,6 +270,15 @@ export function ExplorerPage() {
             </div>
           </div>
           {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
+          {list.data?.notes && list.data.notes.length > 0 && !list.loading ? (
+            <Notice tone="info" className="results__notes">
+              <ul>
+                {list.data.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
           {list.loading && !list.data ? <Loading /> : null}
           {list.data && list.data.items.length === 0 && !list.loading ? (
             <EmptyState title={query ? `По запросу «${query}» ничего не найдено` : "Документов с такими фильтрами нет"}>
@@ -290,6 +299,11 @@ export function ExplorerPage() {
                       {doc.title}
                     </Link>
                     <span className="result__badges">
+                      {doc.related_via ? (
+                        <span className="related-via" title="Найден через объявленную связь, а не по своему тексту">
+                          Связан с {doc.related_via}
+                        </span>
+                      ) : null}
                       {doc.index_state === "stale" ? <StaleMark /> : null}
                       {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
                         <span className="review-flag" title="Проверка документа">
@@ -331,6 +345,9 @@ export function ExplorerPage() {
                       </dd>
                     </div>
                   </dl>
+                  {doc.match_reasons && doc.match_reasons.length > 0 ? (
+                    <p className="result__why">Почему найдено: {doc.match_reasons.join("; ")}</p>
+                  ) : null}
                 </li>
               ))}
             </ol>

@@ -31,6 +31,7 @@ import { AiSourcesPanel } from "./AiSourcesPanel";
 import { ErrorState, Notice } from "./Feedback";
 import { MarkdownToolbar } from "./MarkdownToolbar";
 import { SafeHtml } from "./SafeHtml";
+import { TemplateVersionNotice } from "./TemplateVersionNotice";
 
 const CHECK_DELAY_MS = 500;
 
@@ -247,6 +248,8 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
   };
   const missingAny = missing.id || missing.title || missing.owner || missing.body;
   const reasonInvalid = fields.reason.trim().length < 3;
+  // An existing draft is checked against the template version it was created with (not the current one).
+  const draftTemplateVersion = draft?.template_version ?? null;
 
   const checkRequest: AuthoringCheckRequest | null = missingAny
     ? null
@@ -257,6 +260,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         path: fields.path.trim() || null,
         origin: fields.origin,
         exclude_proposal_id: saved?.id ?? null,
+        ...(draftTemplateVersion ? { template_version: draftTemplateVersion } : {}),
       };
   const checkKey = checkRequest ? JSON.stringify(checkRequest) : "";
   const requestRef = useRef(checkRequest);
@@ -576,6 +580,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
       <AuthoringRoute states={routeStates} />
 
       {notice}
+      <TemplateVersionNotice proposal={draft} />
       {locked ? (
         <Notice tone="warning">
           <p>

@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api, isCancelled } from "../api/client";
-import type { AiMode, AskRequest, AskResponse, AskStreamEvent, Citation, ConversationTurn, SearchScope } from "../api/types";
+import type {
+  AiMode,
+  AskRequest,
+  AskResponse,
+  AskStreamEvent,
+  Citation,
+  ConversationTurn,
+  DiscoveryVerdict,
+  ExternalRetrievalSummary,
+  SearchScope,
+} from "../api/types";
 import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
@@ -83,6 +93,98 @@ function scopeSummary(request: AskRequest): string {
   return parts.join(" · ");
 }
 
+/** Why the server consulted Confluence (AskResponse.external.trigger). */
+const TRIGGER_LABEL: Record<string, string> = {
+  no_local_passages: "в документах команды ничего не найдено",
+  unmatched_entities: "в документах команды не найдены упомянутые термины",
+  low_term_coverage: "недостаточно данных в документах команды",
+  external_scope_selected: "выбран поиск по корпоративным источникам",
+  explicit_request: "запрошено явно",
+};
+
+function externalSummary(ext: ExternalRetrievalSummary): string {
+  const reason = ext.trigger ? (TRIGGER_LABEL[ext.trigger] ?? ext.trigger) : null;
+  const parts = [
+    `Внешний источник: запрос к Confluence${reason ? ` (причина: ${reason})` : ""}`,
+    `загружено ${ext.fetched} стр.`,
+    `из кэша ${ext.cache_hits}`,
+  ];
+  if (ext.rejected.length > 0) parts.push(`отклонено ${ext.rejected.length}`);
+  return parts.join(", ") + (ext.degraded ? " — внешний источник ответил не полностью" : "");
+}
+
+/** Page version of a Confluence citation: the revision, or the last part of `confluence:<space>:<page>:<version>`. */
+function externalVersion(citation: Citation): string {
+  return citation.revision || citation.source_id?.split(":").pop() || "—";
+}
+
+/**
+ * Optional relevance feedback and «Предложить в базу» for ONE Confluence source of ONE answer. Never blocks the
+ * answer; it changes neither the status nor the access of anything.
+ */
+function ExternalSourceActions({ traceId, sourceId, title }: { traceId: string; sourceId: string; title: string }) {
+  const navigate = useNavigate();
+  const [verdict, setVerdict] = useState<DiscoveryVerdict | null>(null);
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [pending, setPending] = useState<"feedback" | "propose" | null>(null);
+
+  async function rate(next: DiscoveryVerdict) {
+    if (pending || verdict === next) return;
+    setPending("feedback");
+    try {
+      const result = await api.discoveryFeedback({ trace_id: traceId, source_id: sourceId, verdict: next });
+      setVerdict(next);
+      setNote({ text: result.note, error: false });
+    } catch (err) {
+      setNote({ text: `Отзыв не сохранён: ${toApiError(err).message}`, error: true });
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function propose() {
+    if (pending) return;
+    setPending("propose");
+    try {
+      const draft = await api.discoveryPropose({ trace_id: traceId, source_id: sourceId });
+      navigate(`/proposals/${encodeURIComponent(draft.id)}`);
+    } catch (err) {
+      setNote({ text: `Предложение не создано: ${toApiError(err).message}`, error: true });
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="citation__feedback" role="group" aria-label={`Оценка источника «${title}»`}>
+      <span className="citation__feedback-label">Источник подошёл?</span>
+      <button
+        type="button"
+        className="toggle-button"
+        aria-pressed={verdict === "relevant"}
+        disabled={pending !== null}
+        onClick={() => void rate("relevant")}
+      >
+        Подошёл
+      </button>
+      <button
+        type="button"
+        className="toggle-button"
+        aria-pressed={verdict === "irrelevant"}
+        disabled={pending !== null}
+        onClick={() => void rate("irrelevant")}
+      >
+        Не подошёл
+      </button>
+      <button type="button" className="button button--quiet" disabled={pending !== null} onClick={() => void propose()}>
+        {pending === "propose" ? "Создаём черновик…" : "Предложить в базу"}
+      </button>
+      <p className={`citation__note${note?.error ? " citation__note--error" : ""}`} role="status">
+        {note?.text ?? ""}
+      </p>
+    </div>
+  );
+}
+
 /** Turns "[1]" markers in plain answer text into links to the numbered citation list of the same turn. */
 function AnswerText({ text, citations, turnNo }: { text: string; citations: Citation[]; turnNo: number }) {
   const refs = new Set(citations.map((c) => c.ref));
@@ -126,7 +228,15 @@ function AnswerText({ text, citations, turnNo }: { text: string; citations: Cita
   );
 }
 
-function CitationItem({ citation, turnNo }: { citation: Citation; turnNo: number }) {
+interface CitationItemProps {
+  citation: Citation;
+  turnNo: number;
+  /** Trace of the answer: feedback and «Предложить в базу» for the first citation of each Confluence page. */
+  actionsTrace: string | null;
+}
+
+function CitationItem({ citation, turnNo, actionsTrace }: CitationItemProps) {
+  const external = citation.source_kind === "confluence_mcp";
   return (
     <li id={`cite-${turnNo}-${citation.ref}`} className="citation">
       <div className="citation__head">
@@ -147,6 +257,14 @@ function CitationItem({ citation, turnNo }: { citation: Citation; turnNo: number
             <span className="citation__title">{citation.title}</span>
           )}
           {citation.section ? <span className="citation__section">раздел «{citation.section}»</span> : null}
+          {external ? (
+            <span className="citation__origin">
+              <span>Confluence · версия {externalVersion(citation)}</span>
+              {citation.external_status !== "approved" ? (
+                <span className="graph-unconfirmed">статус не подтверждён</span>
+              ) : null}
+            </span>
+          ) : null}
         </div>
         <StatusStamp status={citation.status} />
       </div>
@@ -176,6 +294,9 @@ function CitationItem({ citation, turnNo }: { citation: Citation; turnNo: number
           <dd>{formatDateTime(citation.retrieved_at)}</dd>
         </div>
       </dl>
+      {external && actionsTrace && citation.source_id ? (
+        <ExternalSourceActions traceId={actionsTrace} sourceId={citation.source_id} title={citation.title} />
+      ) : null}
     </li>
   );
 }
@@ -218,6 +339,16 @@ function CorporateGap({ answer, asked }: { answer: AskResponse; asked: SearchSco
 
 function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: SearchScope[]; turnNo: number }) {
   const insufficient = answer.confidence === "insufficient_evidence";
+  const traceId = answer.retrieval_trace_id ?? null;
+  // Several citations may quote one Confluence page: its feedback controls appear once, at the first of them.
+  const withActions = new Set<number>();
+  const seenSources = new Set<string>();
+  for (const citation of answer.citations) {
+    if (citation.source_kind === "confluence_mcp" && citation.source_id && !seenSources.has(citation.source_id)) {
+      seenSources.add(citation.source_id);
+      withActions.add(citation.ref);
+    }
+  }
   return (
     <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby={`answer-title-${turnNo}`}>
       {/* ≥ 1200 px: the answer on the left (68ch), its sources in a column on the right. */}
@@ -226,8 +357,14 @@ function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: Sea
           <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
           <span className={`confidence confidence--${answer.confidence}`}>{CONFIDENCE_LABEL[answer.confidence]}</span>
           <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
+          {traceId ? (
+            <Link to={`/graph?trace=${encodeURIComponent(traceId)}`} className="answer__graph">
+              Граф ответа
+            </Link>
+          ) : null}
         </div>
         <CorporateGap answer={answer} asked={asked} />
+        {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
         {insufficient ? (
           <div className="answer__insufficient">
             <p>
@@ -264,7 +401,12 @@ function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: Sea
           <h3 id={`sources-title-${turnNo}`}>Источники</h3>
           <ol className="citations">
             {answer.citations.map((citation) => (
-              <CitationItem key={citation.ref} citation={citation} turnNo={turnNo} />
+              <CitationItem
+                key={citation.ref}
+                citation={citation}
+                turnNo={turnNo}
+                actionsTrace={withActions.has(citation.ref) ? traceId : null}
+              />
             ))}
           </ol>
         </section>

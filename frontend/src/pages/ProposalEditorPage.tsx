@@ -83,7 +83,8 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
   const [content, setContent] = useState(basis?.proposed_content ?? doc.raw);
   const [reason, setReason] = useState(basis?.reason ?? "");
   const [instruction, setInstruction] = useState("");
-  const [origin, setOrigin] = useState<"manual" | "ai_suggestion">(basis?.origin ?? "manual");
+  // A change of an existing document is manual or AI-assisted; `external_page` applies to new documents only.
+  const [origin, setOrigin] = useState<"manual" | "ai_suggestion">(basis?.origin === "ai_suggestion" ? "ai_suggestion" : "manual");
   const [submitError, setSubmitError] = useState<ApiError | null>(null);
   const [suggestNote, setSuggestNote] = useState<string[]>([]);
   const [pending, setPending] = useState(false);

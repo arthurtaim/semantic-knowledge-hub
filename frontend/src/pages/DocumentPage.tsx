@@ -233,6 +233,9 @@ export function DocumentPage() {
           <Link to={`/ask?about=${encodeURIComponent(doc.title)}`} className="button button--secondary">
             Спросить ассистента
           </Link>
+          <Link to={`/graph?focus=${encodeURIComponent(doc.id)}`} className="button button--quiet">
+            Связи на графе
+          </Link>
         </div>
       </header>
 

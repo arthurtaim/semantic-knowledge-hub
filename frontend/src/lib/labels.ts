@@ -23,22 +23,28 @@ import type {
 export const TYPE_ORDER: DocType[] = [
   "overview",
   "architecture",
+  "source",
   "domain",
+  "dataset",
   "integration",
   "process",
   "decision",
   "standard",
+  "guide",
   "glossary",
 ];
 
 export const TYPE_LABEL: Record<DocType, string> = {
   overview: "Продукт",
   architecture: "Архитектура",
+  source: "Системы-источники",
   domain: "Домен",
+  dataset: "Датасеты",
   integration: "Интеграции",
   process: "Процессы",
   decision: "Решения",
   standard: "Стандарты",
+  guide: "Руководства",
   glossary: "Глоссарий",
 };
 

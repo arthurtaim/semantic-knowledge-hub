@@ -194,8 +194,13 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
                 aria-describedby={`tpl-${t.id}-type tpl-${t.id}-desc tpl-${t.id}-sections`}
               />
               <span className="template-card__body">
-                <span className="template-card__title" id={`tpl-${t.id}-title`}>
-                  {t.title}
+                <span className="template-card__title">
+                  <span id={`tpl-${t.id}-title`}>{t.title}</span>
+                  {t.version && t.version > 1 ? (
+                    <span className="template-card__version">
+                      <span className="visually-hidden">версия шаблона </span>v{t.version}
+                    </span>
+                  ) : null}
                 </span>
                 <span className="template-card__type" id={`tpl-${t.id}-type`}>
                   Раздел каталога: {TYPE_LABEL[t.doc_type] ?? t.doc_type}
@@ -366,7 +371,7 @@ function AiRequestStep({ template, aiMode, onBack, onManual, onResult }: AiReque
 
 function ResumeDraft({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync(async () => {
-    const [proposal, templates] = await Promise.all([api.draft(id), api.templates()]);
+    const [proposal, templates] = await Promise.all([api.draft(id), api.templates(true)]);
     return { proposal, templates };
   }, `resume-${id}`);
 
@@ -429,6 +434,7 @@ function ResumeDraft({ id }: { id: string }) {
 /** `?from=<id>`: a NEW draft with the text of an earlier `create` proposal and a fresh suggested ID. */
 function CopyFromProposal({ id, owner, onCreated }: { id: string; owner: string; onCreated: (id: string) => void }) {
   const { data, error, loading, reload } = useAsync(async () => {
+    // Listed templates only: an external_import draft is never copied into an ordinary new document.
     const [proposal, templates] = await Promise.all([api.draft(id), api.templates()]);
     return { proposal, templates };
   }, `copy-${id}`);

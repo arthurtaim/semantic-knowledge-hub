@@ -3,11 +3,14 @@
 export type DocType =
   | "overview"
   | "architecture"
+  | "source"
   | "domain"
+  | "dataset"
   | "integration"
   | "process"
   | "decision"
   | "standard"
+  | "guide"
   | "glossary";
 export type DocStatus = "draft" | "in_review" | "approved" | "deprecated";
 export type SourceType = "local" | "gitlab" | "confluence";
@@ -54,7 +57,8 @@ export type SourceDocumentState =
   | "merged_pending_sync";
 /** `create`: a new file in the knowledge base; `update`: a change of an existing document. */
 export type ProposalOperation = "create" | "update";
-export type ProposalOrigin = "manual" | "ai_suggestion";
+/** `external_page`: a draft proposed from a Confluence page cited in an answer («Предложить в базу»). */
+export type ProposalOrigin = "manual" | "ai_suggestion" | "external_page";
 /** Statuses a NEW document may have; `deprecated` is invalid for a new document. */
 export type NewDocumentStatus = Exclude<DocStatus, "deprecated">;
 
@@ -83,6 +87,11 @@ export interface DocumentSummary {
   web_url: string | null;
   index_state: IndexState;
   highlights?: HighlightSegment[] | null;
+  /** Why the document matched the query (with a query only), e.g. «Точное совпадение идентификатора». */
+  match_reasons?: string[] | null;
+  /** Found through a declared relation of this document ID (graph expansion), not by its own text. */
+  related_via?: string | null;
+  version?: string | null;
 }
 
 export interface Section {
@@ -124,6 +133,8 @@ export interface DocumentPage {
   total: number;
   page: number;
   size: number;
+  /** Notes about the query itself, e.g. an ambiguous abbreviation. */
+  notes?: string[];
 }
 
 export interface FacetCount {
@@ -153,6 +164,10 @@ export interface ScopeStatus {
   message: string;
 }
 
+export type CitationSourceKind = "local_markdown" | "gitlab_approved" | "confluence_mcp";
+/** Status of a Confluence page as the page itself declares it; never the same as an approved team document. */
+export type ExternalStatus = "approved" | "draft" | "unknown";
+
 export interface Citation {
   ref: number;
   source_type: SourceType;
@@ -167,6 +182,12 @@ export interface Citation {
   retrieved_at: string;
   is_demo: boolean;
   app_path: string | null;
+  source_kind?: CitationSourceKind;
+  /** Stable source key, e.g. "confluence:demo-wiki:200101:3" (page 200101, version 3) or "local:DEMO-INT-013". */
+  source_id?: string;
+  external_status?: ExternalStatus | null;
+  fragment_id?: string | null;
+  content_hash?: string | null;
 }
 
 export interface ExcludedSource {
@@ -191,6 +212,31 @@ export interface AskRequest {
   include_deprecated: boolean;
   /** Earlier completed turns, oldest first, at most 6. */
   history?: ConversationTurn[];
+  /** Ask the server to consult Confluence even when the team documents look sufficient. */
+  search_external?: boolean;
+}
+
+/** Why the server consulted the external source (AskResponse.external.trigger). */
+export type ExternalTrigger =
+  | "no_local_passages"
+  | "unmatched_entities"
+  | "low_term_coverage"
+  | "external_scope_selected"
+  | "explicit_request";
+
+/** How the external source (Confluence through MCP) took part in one answer. */
+export interface ExternalRetrievalSummary {
+  called: boolean;
+  trigger: ExternalTrigger | string | null;
+  candidates: number;
+  fetched: number;
+  cache_hits: number;
+  mcp_calls: number;
+  fragments: number;
+  rejected: { page_id: string; version: string | number | null; reason: string }[];
+  degraded: boolean;
+  elapsed_ms: number;
+  policy_version: string;
 }
 
 export interface AskResponse {
@@ -202,6 +248,11 @@ export interface AskResponse {
   excluded_sources: ExcludedSource[];
   scopes: ScopeStatus[];
   unmatched_terms: string[];
+  /** Key of the evidence graph of this answer (GET /api/graph/query/{id}); expires after the retention period. */
+  retrieval_trace_id?: string | null;
+  index_generation?: string | null;
+  instructions_version?: string | null;
+  external?: ExternalRetrievalSummary | null;
 }
 
 // --- POST /api/assistant/ask/stream: NDJSON events, one JSON object per line ---
@@ -279,6 +330,27 @@ export interface SyncStatus {
   indexed_documents: number;
   indexed_version: string | null;
   indexed_at: string | null;
+  /** Monotonic number of the applied index generation. */
+  generation?: number | string | null;
+  last_sync?: LastSync | null;
+  search_dictionary?: string | null;
+  template_registry?: string | null;
+}
+
+/** What the last incremental sync (or full rebuild) changed; lists hold document IDs. */
+export interface LastSync {
+  generation: number | string;
+  applied: boolean;
+  added: string[] | number;
+  updated: string[] | number;
+  renamed: unknown[] | number;
+  deleted: string[] | number;
+  unchanged: number | unknown[];
+  rejected: { path: string; code: string; document_id: string | null }[];
+  checksum: string;
+  elapsed_ms: number;
+  full_rebuild: boolean;
+  finished_at: string | null;
 }
 
 export interface SessionResponse {
@@ -386,6 +458,10 @@ export interface ProposalDetail extends ProposalSummary {
   merge_request: MergeRequestInfo | null;
   submission: SubmissionInfo;
   template_id: string | null;
+  /** Template version the draft was created with (it is validated against this version). */
+  template_version?: number | null;
+  /** Current version of the same template in the registry. */
+  template_current_version?: number | null;
   /** Optimistic-locking version for PUT /api/drafts/{id} (`expected_version`). */
   edit_version: number;
   can_edit: boolean;
@@ -448,6 +524,11 @@ export interface DocumentTemplateInfo {
   skeleton: string;
   suggested_id: string;
   suggested_path: string;
+  /** Current version of the template (1 for a template that never changed). */
+  version?: number;
+  /** false: not offered for new documents (e.g. external_import); returned only with includeHidden. */
+  listed?: boolean;
+  previous_versions?: number[];
 }
 
 export interface NewDocumentMetadata {
@@ -469,6 +550,8 @@ export interface AuthoringCheckRequest {
   origin: ProposalOrigin;
   /** The draft being edited, so that it does not collide with itself. */
   exclude_proposal_id?: string | null;
+  /** Template version of the draft being edited (an older draft is checked against its own version). */
+  template_version?: number | null;
 }
 
 export interface AuthoringCheckResponse {
@@ -682,4 +765,166 @@ export interface DocumentPublicationStatus {
   mapping: PublicationMapping | null;
   latest_job: PublicationJobSummary | null;
   can_prepare: boolean;
+}
+
+// --- M5.6: knowledge graph (backend/app/api/graph.py) ---
+
+export type GraphNodeKind =
+  | "document"
+  | "source_system"
+  | "integration"
+  | "semantic_entity"
+  | "dataset"
+  | "template"
+  | "external_page"
+  | "query_context";
+export type GraphSourceKind = "local_markdown" | "gitlab_approved" | "template_registry" | "confluence_mcp" | "query_trace";
+export type GraphRelation =
+  | "references"
+  | "depends_on"
+  | "consumes"
+  | "produces"
+  | "maps_to"
+  | "derived_from"
+  | "describes"
+  | "constrains"
+  | "supersedes"
+  | "uses_template"
+  | "retrieved_for"
+  | "cited_in";
+/** Where an edge comes from; only `canonical_metadata` and `verified_registry` are confirmed knowledge. */
+export type GraphOrigin = "canonical_metadata" | "verified_registry" | "external_discovery" | "query_trace" | "ai_suggestion";
+export type GraphFeedback = "relevant" | "irrelevant" | "unsure" | "unrated";
+
+export interface GraphNode {
+  /** "doc:DEMO-INT-002" | "template:integration" | "ext:confluence:demo-wiki:200101:3" | "query:TRACE-…" */
+  id: string;
+  kind: GraphNodeKind;
+  label: string;
+  document_id: string | null;
+  doc_type: string | null;
+  /** A document status; for an external page the status the page declares ("unknown" when it declares none). */
+  status: string | null;
+  owner: string | null;
+  source_kind: GraphSourceKind;
+  revision: string | null;
+  version: string | null;
+  /** In-app path (/documents/…, /corporate/…), never an external URL. */
+  url: string | null;
+  synthetic: boolean;
+  /** Temporary nodes (external pages, query context) disappear after this moment. */
+  expires_at: string | null;
+  degree: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: GraphRelation;
+  origin: GraphOrigin;
+  verified: boolean;
+  /** "Why linked": the document that declares the edge, its field, file path and revision. */
+  declared_in: string | null;
+  field: string | null;
+  path: string | null;
+  revision: string | null;
+  status: "active" | "dangling";
+  expires_at: string | null;
+  feedback: GraphFeedback | null;
+}
+
+export interface GraphLimits {
+  overview_default: number;
+  overview_max: number;
+  neighbours_max: number;
+  depth_max: number;
+  path_depth_max: number;
+}
+
+export interface Subgraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  total_nodes: number;
+  total_edges: number;
+  /** Not every matching node is included (a limit or a page of neighbours). */
+  partial: boolean;
+  generation: string;
+  /** Next page of neighbours (GET …/neighbors?cursor=); null when everything is loaded. */
+  next_cursor: number | null;
+  focus: string | null;
+  limits: GraphLimits;
+}
+
+export interface GraphLegend {
+  kinds: Record<string, string>;
+  relations: Record<string, string>;
+  origins: Record<string, string>;
+  limits: GraphLimits;
+}
+
+export interface GraphPath {
+  found: boolean;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  generation: string;
+}
+
+export interface GraphDiagnostics {
+  generation: string;
+  nodes: number;
+  edges: number;
+  edges_by_type: Record<string, number>;
+  dangling: GraphEdge[];
+  orphans: string[];
+}
+
+// --- M5.6: discovery memory (backend/app/api/discovery.py) ---
+
+export type DiscoveryVerdict = "relevant" | "irrelevant" | "unsure";
+
+export interface DiscoveryFeedbackResponse {
+  recorded: boolean;
+  note: string;
+}
+
+export interface DiscoveryPurgeResponse {
+  removed_records: number;
+  removed_cache_pages: number;
+}
+
+export interface DiscoveryMemoryStats {
+  traces: number;
+  links_by_feedback: Record<string, number>;
+  invalidated_sources: number;
+  retention_hours: number;
+  stores_query_text: boolean;
+  policy_version: string;
+}
+
+export interface ExternalSourceStats {
+  requests: number;
+  mcp_calls: number;
+  cache_hits: number;
+  cache_misses: number;
+  timeouts: number;
+  errors: number;
+  rejected: number;
+  revoked_or_deleted: number;
+  evicted: number;
+  cache_pages: number;
+  cache_limit: number;
+  cache_ttl_seconds: number;
+  /** Circuit breaker of the external source: "closed" (normal), "open" (calls paused), "half_open". */
+  breaker: string;
+  max_concurrent_seen: number;
+  concurrency_limit: number;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  limits: Record<string, number>;
+}
+
+export interface DiscoveryStats {
+  discovery: DiscoveryMemoryStats | { enabled: false };
+  external: ExternalSourceStats | { enabled: false };
 }

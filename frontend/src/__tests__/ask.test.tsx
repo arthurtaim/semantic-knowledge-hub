@@ -2,10 +2,10 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ApiError, api } from "../api/client";
-import type { AskResponse, AskStreamEvent } from "../api/types";
+import type { AskResponse, AskStreamEvent, Citation } from "../api/types";
 import { AskPage } from "../pages/AskPage";
 import { insufficientAnswer, supportedAnswer } from "./fixtures";
-import { mockApi, ndjsonStream, renderAt, type MockRoute, type RecordedCall } from "./helpers";
+import { mockApi, ndjsonStream, renderAt, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 const STREAM = "/api/assistant/ask/stream";
 
@@ -364,5 +364,164 @@ describe("api.askStream", () => {
       code: "cancelled",
       message: "Запрос отменён.",
     });
+  });
+});
+
+// --- M5.6: Confluence evidence, relevance feedback, the evidence graph link ---
+
+const TRACE = "TRACE-0123456789abcdef";
+
+function confluenceCitation(ref: number, page: string, version: string, status: "approved" | "draft" | "unknown"): Citation {
+  return {
+    ref,
+    source_type: "confluence",
+    document_id: page,
+    title: page === "200101" ? "Регламент заморозки изменений метаданных (демо)" : "Чек-лист ввода новой интеграции (демо)",
+    source_uri: `mock-confluence://OPS/${page}`,
+    revision: version,
+    status: null,
+    section: ref === 2 ? "Назначение" : "Когда действует заморозка",
+    section_anchor: null,
+    excerpt: `Выдержка ${ref}`,
+    retrieved_at: "2026-11-23T12:00:00Z",
+    is_demo: true,
+    app_path: `/corporate/${page}`,
+    source_kind: "confluence_mcp",
+    source_id: `confluence:demo-wiki:${page}:${version}`,
+    external_status: status,
+    fragment_id: `s${ref}`,
+    content_hash: "d11b9400f5fd",
+  };
+}
+
+const externalAnswer: AskResponse = {
+  ...supportedAnswer,
+  answer: "Демо-режим.\n\n1. «Выдержка 1» [1]\n2. «Выдержка 2» [2]\n3. «Выдержка 3» [3]",
+  citations: [
+    confluenceCitation(1, "200101", "3", "unknown"),
+    confluenceCitation(2, "200101", "3", "unknown"),
+    confluenceCitation(3, "200105", "2", "approved"),
+  ],
+  scopes: [
+    { scope: "team", state: "connected", message: "Локальный workspace с демо-документами." },
+    { scope: "corporate", state: "mock", message: "Mock-коннектор." },
+  ],
+  retrieval_trace_id: TRACE,
+  index_generation: "g1",
+  instructions_version: "-",
+  external: {
+    called: true,
+    trigger: "low_term_coverage",
+    candidates: 10,
+    fetched: 2,
+    cache_hits: 1,
+    mcp_calls: 3,
+    fragments: 4,
+    rejected: [],
+    degraded: false,
+    elapsed_ms: 12.5,
+    policy_version: "ext-v1",
+  },
+};
+
+async function askExternal() {
+  await userEvent.type(screen.getByLabelText("Вопрос"), "Когда действует окно заморозки?");
+  await userEvent.click(screen.getByLabelText("Оба"));
+  await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+  return screen.findByText("Подтверждено источником");
+}
+
+describe("Ask: Confluence evidence and the answer graph", () => {
+  it("labels Confluence citations with the page version and an unconfirmed status, and links the answer graph", async () => {
+    mockApi([streamRoute(...mockEvents(externalAnswer))]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await askExternal();
+
+    expect(screen.getByRole("link", { name: "Граф ответа" })).toHaveAttribute("href", `/graph?trace=${TRACE}`);
+    expect(
+      screen.getByText(
+        "Внешний источник: запрос к Confluence (причина: недостаточно данных в документах команды), загружено 2 стр., из кэша 1",
+      ),
+    ).toBeInTheDocument();
+    const first = document.getElementById("cite-1-1") as HTMLElement;
+    expect(within(first).getByText("Confluence · версия 3")).toBeInTheDocument();
+    expect(within(first).getByText("статус не подтверждён")).toBeInTheDocument();
+    const approved = document.getElementById("cite-1-3") as HTMLElement;
+    expect(within(approved).getByText("Confluence · версия 2")).toBeInTheDocument();
+    expect(within(approved).queryByText("статус не подтверждён")).toBeNull();
+    // one set of controls per Confluence page, not per quoted fragment
+    expect(screen.getAllByRole("button", { name: "Подошёл" })).toHaveLength(2);
+    expect(within(document.getElementById("cite-1-2") as HTMLElement).queryByRole("button", { name: "Подошёл" })).toBeNull();
+  });
+
+  it("sends optional relevance feedback for one source and shows the server note", async () => {
+    const calls = mockApi([
+      streamRoute(...mockEvents(externalAnswer)),
+      {
+        method: "POST",
+        path: "/api/discovery/feedback",
+        body: { recorded: true, note: "Отзыв учтён для похожих вопросов. Статус и права доступа документа не меняются." },
+      },
+    ]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await askExternal();
+    const group = screen.getByRole("group", { name: "Оценка источника «Регламент заморозки изменений метаданных (демо)»" });
+    const relevant = within(group).getByRole("button", { name: "Подошёл" });
+    expect(relevant).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(relevant);
+    expect(await within(group).findByText(/Отзыв учтён для похожих вопросов/)).toBeInTheDocument();
+    expect(relevant).toHaveAttribute("aria-pressed", "true");
+    expect(within(group).getByRole("button", { name: "Не подошёл" })).toHaveAttribute("aria-pressed", "false");
+    const feedback = calls.filter((c) => c.method === "POST" && c.url === "/api/discovery/feedback");
+    expect(feedback.map((c) => c.body)).toEqual([
+      { trace_id: TRACE, source_id: "confluence:demo-wiki:200101:3", verdict: "relevant" },
+    ]);
+    expect(feedback[0]?.headers["X-SKH-Client"]).toBe("web");
+  });
+
+  it("keeps the answer when feedback fails", async () => {
+    mockApi([
+      streamRoute(...mockEvents(externalAnswer)),
+      {
+        method: "POST",
+        path: "/api/discovery/feedback",
+        status: 404,
+        body: { code: "discovery_link_not_found", message: "Источник этого ответа не найден или срок хранения истёк.", request_id: "f" },
+      },
+    ]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await askExternal();
+    const group = screen.getByRole("group", { name: "Оценка источника «Чек-лист ввода новой интеграции (демо)»" });
+    await userEvent.click(within(group).getByRole("button", { name: "Не подошёл" }));
+    expect(await within(group).findByText(/Отзыв не сохранён: Источник этого ответа не найден/)).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: "Не подошёл" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Подтверждено источником")).toBeInTheDocument();
+  });
+
+  it("proposes a Confluence page as a draft and opens the proposal", async () => {
+    const calls = mockApi([
+      streamRoute(...mockEvents(externalAnswer)),
+      { method: "POST", path: "/api/discovery/propose", status: 201, body: { id: "c".repeat(32) } },
+    ]);
+    renderRoutes("/ask", { "/ask": <AskPage />, "/proposals/:id": <p>Страница предложения</p> });
+    await askExternal();
+    const group = screen.getByRole("group", { name: "Оценка источника «Регламент заморозки изменений метаданных (демо)»" });
+    await userEvent.click(within(group).getByRole("button", { name: "Предложить в базу" }));
+    expect(await screen.findByText("Страница предложения")).toBeInTheDocument();
+    expect(screen.getByTestId("location").textContent).toBe(`/proposals/${"c".repeat(32)}`);
+    expect(calls.filter((c) => c.url === "/api/discovery/propose").map((c) => c.body)).toEqual([
+      { trace_id: TRACE, source_id: "confluence:demo-wiki:200101:3" },
+    ]);
+  });
+
+  it("shows no graph link or feedback controls for an answer without a trace", async () => {
+    mockApi([streamRoute(...mockEvents(supportedAnswer))]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await userEvent.type(screen.getByLabelText("Вопрос"), "What layers?");
+    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await screen.findByText("Подтверждено источником");
+    expect(screen.queryByRole("link", { name: "Граф ответа" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Подошёл" })).toBeNull();
+    expect(screen.queryByText(/Внешний источник: запрос к Confluence/)).toBeNull();
   });
 });
