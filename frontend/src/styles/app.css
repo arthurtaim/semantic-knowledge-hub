@@ -1401,6 +1401,121 @@ label {
   align-self: flex-start;
 }
 
+.ask__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ask__new {
+  margin-left: auto;
+}
+
+/* A conversation: earlier turns above, the question form below. */
+.conversation {
+  max-width: 52rem;
+  margin-bottom: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.turn + .turn {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-6);
+}
+
+.turn__question {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-wash);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: var(--space-3) var(--space-4);
+}
+
+.turn__meta {
+  margin: 0 0 var(--space-1);
+  font-size: var(--step--1);
+}
+
+.turn__who {
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.turn__question-text {
+  margin: 0;
+  font-size: var(--step-1);
+  font-weight: 500;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.turn__status {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-soft);
+}
+
+.turn__status::before {
+  content: "";
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: turn-pulse 1.2s ease-in-out infinite;
+}
+
+.turn__status--stopped {
+  color: var(--ink-faint);
+}
+
+.turn__status--stopped::before {
+  border-radius: 1px;
+  background: var(--ink-faint);
+  animation: none;
+}
+
+@keyframes turn-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* PRELIMINARY model text: deliberately muted and dashed — it is not the validated answer. */
+.answer-preliminary {
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-5);
+  color: var(--ink-faint);
+}
+
+.answer-preliminary__label {
+  margin: 0 0 var(--space-2);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--draft);
+}
+
+.answer-preliminary__text {
+  font-family: var(--font-read);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .answer {
   max-width: 52rem;
 }
@@ -2287,6 +2402,12 @@ label {
   border-style: solid;
   color: var(--review);
   background: var(--review-wash);
+}
+
+.ai-mode--claude_cli {
+  border-style: solid;
+  color: var(--accent-ink);
+  background: var(--accent-wash);
 }
 
 .ai-mode-line {

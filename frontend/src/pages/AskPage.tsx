@@ -1,11 +1,11 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, api } from "../api/client";
-import type { AskResponse, Citation, SearchScope } from "../api/types";
+import { ApiError, api, isCancelled } from "../api/client";
+import type { AiMode, AskRequest, AskResponse, AskStreamEvent, Citation, ConversationTurn, SearchScope } from "../api/types";
 import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
-import { CONFIDENCE_LABEL, SOURCE_LABEL, formatDateTime } from "../lib/labels";
+import { AI_ERROR_TITLE, CONFIDENCE_LABEL, SOURCE_LABEL, formatDateTime, pluralRu } from "../lib/labels";
 import { useSession } from "../lib/session";
 
 const SCOPES: { value: string; label: string; scopes: SearchScope[] }[] = [
@@ -21,8 +21,70 @@ const EXAMPLES = [
   "Какой SLA у интеграции с ЦФТ?",
 ];
 
-/** Turns "[1]" markers in plain answer text into links to the numbered citation list. */
-function AnswerText({ text, citations }: { text: string; citations: Citation[] }) {
+/** Limits of POST /api/assistant/ask(/stream) `history` (backend AskRequest). */
+const MAX_HISTORY_TURNS = 6;
+const MAX_HISTORY_ANSWER_CHARS = 4000;
+
+type TurnPhase = "retrieving" | "generating" | "validating" | "done" | "error" | "cancelled";
+
+/** One question of the conversation and what became of it. Lives in React state only (never stored). */
+interface Turn {
+  id: number;
+  request: AskRequest;
+  phase: TurnPhase;
+  passages: number | null;
+  provider: AiMode | null;
+  /** PRELIMINARY model text (not validated); shown only while the turn runs. */
+  preliminary: string;
+  response: AskResponse | null;
+  error: ApiError | null;
+}
+
+const isRunning = (turn: Turn) =>
+  turn.phase === "retrieving" || turn.phase === "generating" || turn.phase === "validating";
+
+/** Cuts by code points (as the backend counts), never splitting a surrogate pair. */
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return Array.from(text).slice(0, max).join("");
+}
+
+/** Context for a follow-up: the last completed turns (with a validated answer), oldest first. */
+function historyFrom(turns: Turn[]): ConversationTurn[] {
+  return turns
+    .filter((turn) => turn.response !== null)
+    .slice(-MAX_HISTORY_TURNS)
+    .map((turn) => ({
+      question: turn.request.question,
+      answer: truncate(turn.response?.answer ?? "", MAX_HISTORY_ANSWER_CHARS),
+    }));
+}
+
+function toApiError(err: unknown): ApiError {
+  return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
+}
+
+function statusText(turn: Turn): string {
+  if (turn.phase === "generating") {
+    const action = turn.provider === "claude_cli" ? "Claude формирует ответ…" : "Формируем ответ…";
+    if (turn.passages === null) return action;
+    const n = turn.passages;
+    return `${action} (${pluralRu(n, "найден", "найдено", "найдено")} ${n} ${pluralRu(n, "фрагмент", "фрагмента", "фрагментов")})`;
+  }
+  if (turn.phase === "validating") return "Проверяем цитаты…";
+  return "Ищем источники…";
+}
+
+function scopeSummary(request: AskRequest): string {
+  const scope = SCOPES.find((s) => s.scopes.join() === request.sources.join())?.label ?? request.sources.join(", ");
+  const parts = [`Где искать: ${scope}`];
+  if (request.include_drafts) parts.push("с черновиками");
+  if (request.include_deprecated) parts.push("с устаревшими");
+  return parts.join(" · ");
+}
+
+/** Turns "[1]" markers in plain answer text into links to the numbered citation list of the same turn. */
+function AnswerText({ text, citations, turnNo }: { text: string; citations: Citation[]; turnNo: number }) {
   const refs = new Set(citations.map((c) => c.ref));
   return (
     <div className="answer__text">
@@ -37,7 +99,12 @@ function AnswerText({ text, citations }: { text: string; citations: Citation[] }
               parts.push(line.slice(last, index));
               parts.push(
                 refs.has(ref) ? (
-                  <a key={`${lIndex}-${index}`} href={`#cite-${ref}`} className="cite-ref" aria-label={`Источник ${ref}`}>
+                  <a
+                    key={`${lIndex}-${index}`}
+                    href={`#cite-${turnNo}-${ref}`}
+                    className="cite-ref"
+                    aria-label={`Источник ${ref}`}
+                  >
                     [{ref}]
                   </a>
                 ) : (
@@ -59,9 +126,9 @@ function AnswerText({ text, citations }: { text: string; citations: Citation[] }
   );
 }
 
-function CitationItem({ citation }: { citation: Citation }) {
+function CitationItem({ citation, turnNo }: { citation: Citation; turnNo: number }) {
   return (
-    <li id={`cite-${citation.ref}`} className="citation">
+    <li id={`cite-${turnNo}-${citation.ref}`} className="citation">
       <div className="citation__head">
         <span className="citation__ref" aria-hidden="true">
           {citation.ref}
@@ -117,6 +184,7 @@ const MODE_LABEL: Record<AskResponse["mode"], string> = {
   mock: "Демо-режим, без языковой модели",
   disabled: "Языковая модель отключена — только выдержки из источников",
   internal_api: "Внутренняя модель, цитаты сверены с источниками",
+  claude_cli: "Claude Code CLI (личный тест), цитаты сверены с источниками",
 };
 
 /** Corporate scope the user asked for but which did not answer as a connected source. */
@@ -148,14 +216,14 @@ function CorporateGap({ answer, asked }: { answer: AskResponse; asked: SearchSco
   );
 }
 
-function AnswerView({ answer, asked }: { answer: AskResponse; asked: SearchScope[] }) {
+function AnswerView({ answer, asked, turnNo }: { answer: AskResponse; asked: SearchScope[]; turnNo: number }) {
   const insufficient = answer.confidence === "insufficient_evidence";
   return (
-    <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby="answer-title">
+    <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby={`answer-title-${turnNo}`}>
       <div className="answer__head">
-        <h2 id="answer-title">Ответ</h2>
+        <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
         <span className={`confidence confidence--${answer.confidence}`}>{CONFIDENCE_LABEL[answer.confidence]}</span>
-        <span className="answer__mode">{MODE_LABEL[answer.mode]}</span>
+        <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
       </div>
       <CorporateGap answer={answer} asked={asked} />
       {insufficient ? (
@@ -176,7 +244,7 @@ function AnswerView({ answer, asked }: { answer: AskResponse; asked: SearchScope
           ) : null}
         </div>
       ) : null}
-      <AnswerText text={answer.answer} citations={answer.citations} />
+      <AnswerText text={answer.answer} citations={answer.citations} turnNo={turnNo} />
 
       {answer.warnings.length > 0 ? (
         <Notice tone="warning">
@@ -189,19 +257,19 @@ function AnswerView({ answer, asked }: { answer: AskResponse; asked: SearchScope
       ) : null}
 
       {answer.citations.length > 0 ? (
-        <section aria-labelledby="sources-title">
-          <h3 id="sources-title">Источники</h3>
+        <section aria-labelledby={`sources-title-${turnNo}`}>
+          <h3 id={`sources-title-${turnNo}`}>Источники</h3>
           <ol className="citations">
             {answer.citations.map((citation) => (
-              <CitationItem key={citation.ref} citation={citation} />
+              <CitationItem key={citation.ref} citation={citation} turnNo={turnNo} />
             ))}
           </ol>
         </section>
       ) : null}
 
       {answer.excluded_sources.length > 0 ? (
-        <section aria-labelledby="excluded-title" className="excluded">
-          <h3 id="excluded-title">Не использованы как доказательство</h3>
+        <section aria-labelledby={`excluded-title-${turnNo}`} className="excluded">
+          <h3 id={`excluded-title-${turnNo}`}>Не использованы как доказательство</h3>
           <ul>
             {answer.excluded_sources.map((source) => (
               <li key={source.document_id}>
@@ -227,6 +295,56 @@ function AnswerView({ answer, asked }: { answer: AskResponse; asked: SearchScope
   );
 }
 
+interface TurnViewProps {
+  turn: Turn;
+  turnNo: number;
+  /** Only the last failed turn offers a retry (a new question replaces it). */
+  onRetry?: () => void;
+}
+
+function TurnView({ turn, turnNo, onRetry }: TurnViewProps) {
+  const running = isRunning(turn);
+  return (
+    <article className="turn" aria-busy={running}>
+      <div className="turn__question">
+        <p className="turn__meta">
+          <span className="turn__who">Вы спросили</span> <span className="muted">{scopeSummary(turn.request)}</span>
+        </p>
+        <p className="turn__question-text">{turn.request.question}</p>
+      </div>
+
+      {running ? (
+        <p className="turn__status" role="status">
+          {statusText(turn)}
+        </p>
+      ) : null}
+      {running && turn.preliminary ? (
+        <section className="answer-preliminary" aria-live="polite" aria-labelledby={`preliminary-title-${turnNo}`}>
+          <p className="answer-preliminary__label" id={`preliminary-title-${turnNo}`}>
+            Предварительный текст модели — цитаты ещё не проверены
+          </p>
+          <div className="answer-preliminary__text">{turn.preliminary}</div>
+        </section>
+      ) : null}
+
+      {turn.phase === "cancelled" ? (
+        <p className="turn__status turn__status--stopped" role="status">
+          Запрос отменён. Вопрос возвращён в поле ввода.
+        </p>
+      ) : null}
+      {turn.phase === "error" && turn.error ? (
+        <ErrorState
+          error={turn.error}
+          title={AI_ERROR_TITLE[turn.error.code]}
+          onRetry={onRetry}
+          retryLabel="Повторить запрос"
+        />
+      ) : null}
+      {turn.response ? <AnswerView answer={turn.response} asked={turn.request.sources} turnNo={turnNo} /> : null}
+    </article>
+  );
+}
+
 export function AskPage() {
   const [params] = useSearchParams();
   const session = useSession();
@@ -236,51 +354,110 @@ export function AskPage() {
   const [scope, setScope] = useState("team");
   const [includeDrafts, setIncludeDrafts] = useState(false);
   const [includeDeprecated, setIncludeDeprecated] = useState(false);
-  const [result, setResult] = useState<{ answer: AskResponse; asked: SearchScope[] } | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [formError, setFormError] = useState<ApiError | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
+  const nextId = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const questionRef = useRef<HTMLTextAreaElement>(null);
   const corporateState = session?.features.corporate_search;
+  const context = historyFrom(turns);
 
-  async function ask() {
-    if (inFlight.current) return;
-    const text = question.trim();
-    if (text.length < 3) {
-      setError(new ApiError(400, "question_too_short", "Введите вопрос длиной не менее 3 символов.", null));
-      return;
+  // Leaving the page cancels a running generation on the server.
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  function patchTurn(id: number, patch: Partial<Turn> | ((turn: Turn) => Partial<Turn>)) {
+    setTurns((list) =>
+      list.map((turn) => (turn.id === id ? { ...turn, ...(typeof patch === "function" ? patch(turn) : patch) } : turn)),
+    );
+  }
+
+  function onStreamEvent(id: number, event: AskStreamEvent) {
+    if (event.type === "status") {
+      patchTurn(
+        id,
+        event.stage === "generating"
+          ? { phase: "generating", passages: event.passages ?? null, provider: event.provider ?? null }
+          : { phase: event.stage },
+      );
+    } else if (event.type === "delta") {
+      patchTurn(id, (turn) => ({ preliminary: turn.preliminary + event.text }));
     }
+  }
+
+  /** Runs one request as a new turn; a failed or cancelled last turn is replaced by it. */
+  async function run(request: AskRequest) {
+    if (inFlight.current) return;
     inFlight.current = true;
+    const id = ++nextId.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setPending(true);
-    setError(null);
-    const scopes = SCOPES.find((s) => s.value === scope)?.scopes ?? ["team"];
+    setFormError(null);
+    setTurns((list) => [
+      ...list.filter((turn) => turn.phase === "done"),
+      { id, request, phase: "retrieving", passages: null, provider: null, preliminary: "", response: null, error: null },
+    ]);
     try {
-      const answer = await api.ask({
-        question: text,
-        sources: scopes,
-        include_drafts: includeDrafts,
-        include_deprecated: includeDeprecated,
+      const response = await api.askStream(request, {
+        signal: controller.signal,
+        onEvent: (event) => onStreamEvent(id, event),
       });
-      setResult({ answer, asked: scopes });
+      // The validated answer replaces the preliminary text.
+      patchTurn(id, { phase: "done", response, preliminary: "" });
+      // Clear the field only if it still holds this question (the next one may already be typed there).
+      setQuestion((current) => (current.trim() === request.question ? "" : current));
     } catch (err) {
-      setResult(null);
-      setError(err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null));
+      const error = toApiError(err);
+      const cancelled = isCancelled(error);
+      patchTurn(id, cancelled ? { phase: "cancelled", preliminary: "" } : { phase: "error", error, preliminary: "" });
+      // The question is never lost: put it back unless something else has been typed meanwhile.
+      setQuestion((current) => (current.trim() === "" || current.trim() === request.question ? request.question : current));
+      if (cancelled) questionRef.current?.focus();
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       inFlight.current = false;
       setPending(false);
     }
   }
 
+  function ask() {
+    if (inFlight.current) return;
+    const text = question.trim();
+    if (text.length < 3) {
+      setFormError(new ApiError(400, "question_too_short", "Введите вопрос длиной не менее 3 символов.", null));
+      return;
+    }
+    void run({
+      question: text,
+      sources: SCOPES.find((s) => s.value === scope)?.scopes ?? ["team"],
+      include_drafts: includeDrafts,
+      include_deprecated: includeDeprecated,
+      history: context,
+    });
+  }
+
   function submit(event: FormEvent) {
     event.preventDefault();
-    void ask();
+    ask();
   }
 
   function onQuestionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      void ask();
+      ask();
     }
   }
+
+  function newConversation() {
+    if (inFlight.current) return;
+    setTurns([]);
+    setFormError(null);
+    questionRef.current?.focus();
+  }
+
+  const lastTurn = turns[turns.length - 1];
 
   return (
     <div className="ask">
@@ -292,21 +469,47 @@ export function AskPage() {
         </p>
       </div>
 
+      {turns.length > 0 ? (
+        <section className="conversation" aria-label="Диалог">
+          {turns.map((turn, index) => (
+            <TurnView
+              key={turn.id}
+              turn={turn}
+              turnNo={index + 1}
+              onRetry={turn === lastTurn && turn.phase === "error" ? () => void run(turn.request) : undefined}
+            />
+          ))}
+        </section>
+      ) : null}
+
       <form className="ask__form" onSubmit={submit}>
         <label htmlFor="question">Вопрос</label>
         <textarea
           id="question"
+          ref={questionRef}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           rows={3}
           maxLength={2000}
-          placeholder="Например: где хранится каноническая база знаний команды?"
-          aria-describedby="question-hint"
+          placeholder={
+            context.length > 0
+              ? "Уточняющий вопрос — например: а какие у неё ограничения?"
+              : "Например: где хранится каноническая база знаний команды?"
+          }
+          aria-describedby={context.length > 0 ? "question-hint question-context" : "question-hint"}
           onKeyDown={onQuestionKeyDown}
         />
         <p id="question-hint" className="field-hint">
           Ctrl+Enter (⌘+Enter на Mac) — отправить вопрос.
         </p>
+        {context.length > 0 ? (
+          <p id="question-context" className="field-hint">
+            Следующий вопрос будет задан с учётом {context.length}{" "}
+            {pluralRu(context.length, "предыдущего ответа", "предыдущих ответов", "предыдущих ответов")} этого диалога (не
+            более {MAX_HISTORY_TURNS}) — только как контекст, доказательствами остаются найденные источники. Диалог не
+            сохраняется: после перезагрузки страницы он исчезнет.
+          </p>
+        ) : null}
         <div className="ask__examples">
           <span className="muted">Примеры:</span>
           {EXAMPLES.map((example) => (
@@ -353,21 +556,28 @@ export function AskPage() {
             Учитывать устаревшие документы
           </label>
         </div>
-        <button type="submit" className="button button--primary" disabled={pending}>
-          {pending ? "Ищем подтверждения…" : "Спросить"}
-        </button>
+        {formError ? <ErrorState error={formError} /> : null}
+        <div className="ask__actions">
+          <button type="submit" className="button button--primary" disabled={pending}>
+            {pending ? "Ищем подтверждения…" : "Спросить"}
+          </button>
+          {pending ? (
+            <button type="button" className="button button--secondary" onClick={() => abortRef.current?.abort()}>
+              Отменить
+            </button>
+          ) : null}
+          {turns.length > 0 ? (
+            <button
+              type="button"
+              className="button button--ghost ask__new"
+              onClick={newConversation}
+              disabled={pending}
+            >
+              Новый диалог
+            </button>
+          ) : null}
+        </div>
       </form>
-
-      <div aria-live="polite" aria-busy={pending}>
-        {error ? (
-          <ErrorState
-            error={error}
-            onRetry={error.code === "question_too_short" ? undefined : () => void ask()}
-            retryLabel="Повторить запрос"
-          />
-        ) : null}
-        {result ? <AnswerView answer={result.answer} asked={result.asked} /> : null}
-      </div>
     </div>
   );
 }

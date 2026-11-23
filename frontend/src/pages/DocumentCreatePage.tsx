@@ -1,6 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, api } from "../api/client";
+import { ApiError, api, isCancelled } from "../api/client";
 import type { AiDraftResponse, DocumentTemplateInfo } from "../api/types";
 import { AI_MODE_LABEL } from "../components/AiSourcesPanel";
 import { AuthoringRoute, DocumentEditor } from "../components/DocumentEditor";
@@ -14,7 +14,7 @@ import {
   type AiInput,
   type EditorFields,
 } from "../lib/authoring";
-import { AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL, TYPE_LABEL } from "../lib/labels";
+import { AI_ERROR_TITLE, AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL, TYPE_LABEL } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 
@@ -149,7 +149,9 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
     ? "AI-помощник для создания документов отключён в этой установке — создайте документ вручную по шаблону."
     : session?.features.ai_mode === "mock"
       ? "Демо-режим без языковой модели: помощник соберёт структуру по шаблону и вставит только дословные выдержки из утверждённых документов команды."
-      : "Помощник предложит текст по шаблону со ссылками на источники. Текст нужно проверить и отредактировать.";
+      : session?.features.ai_mode === "claude_cli"
+        ? "Помощник (Claude Code CLI, личный тест) предложит текст по шаблону со ссылками на источники; подготовка может занять несколько минут. Текст нужно проверить и отредактировать."
+        : "Помощник предложит текст по шаблону со ссылками на источники. Текст нужно проверить и отредактировать.";
 
   return (
     <form className="authoring__start" onSubmit={proceed} aria-labelledby="start-title">
@@ -239,25 +241,36 @@ function AiRequestStep({ template, aiMode, onBack, onManual, onResult }: AiReque
   const [related, setRelated] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [cancelled, setCancelled] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const valid = title.trim().length > 0 && request.trim().length >= 3;
+
+  // Leaving the step abandons a running request.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!valid || pending) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setPending(true);
     setError(null);
+    setCancelled(false);
     const input: AiInput = { title: title.trim(), request: request.trim(), relatedIds: splitList(related).slice(0, 10) };
     try {
-      const result = await api.aiDraft({
-        template_id: template.id,
-        title: input.title,
-        request: input.request,
-        related_ids: input.relatedIds,
-      });
-      onResult(result, input);
+      const result = await api.aiDraft(
+        { template_id: template.id, title: input.title, request: input.request, related_ids: input.relatedIds },
+        { signal: controller.signal },
+      );
+      // A response that raced with «Отменить» is dropped: the user chose to stay in the form.
+      if (!controller.signal.aborted) onResult(result, input);
+      else setCancelled(true);
     } catch (err) {
-      setError(toApiError(err)); // the request text stays in the form
+      // The request text stays in the form either way.
+      if (isCancelled(err)) setCancelled(true);
+      else setError(toApiError(err));
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setPending(false);
     }
   }
@@ -313,10 +326,19 @@ function AiRequestStep({ template, aiMode, onBack, onManual, onResult }: AiReque
           ID через запятую, до 10. Как источники используются только утверждённые документы.
         </p>
       </div>
-      <div aria-live="polite">{pending ? <p className="muted">Готовим черновик…</p> : null}</div>
+      <div aria-live="polite">
+        {pending ? (
+          <p className="muted">
+            {aiMode === "claude_cli" ? "Готовим черновик… с Claude Code это может занять несколько минут" : "Готовим черновик…"}
+          </p>
+        ) : null}
+        {cancelled && !pending ? (
+          <p className="muted">Подготовка черновика отменена. Ваш запрос сохранён в форме — можно повторить.</p>
+        ) : null}
+      </div>
       {error ? (
         <div className="stack">
-          <ErrorState error={error} title={AUTHORING_ERROR_TITLE[error.code]} />
+          <ErrorState error={error} title={AUTHORING_ERROR_TITLE[error.code] ?? AI_ERROR_TITLE[error.code]} />
           <p>Ваш запрос сохранён в форме. Можно повторить или продолжить без помощника.</p>
         </div>
       ) : null}
@@ -324,6 +346,11 @@ function AiRequestStep({ template, aiMode, onBack, onManual, onResult }: AiReque
         <button type="submit" className="button button--primary" disabled={!valid || pending}>
           Подготовить черновик
         </button>
+        {pending ? (
+          <button type="button" className="button button--secondary" onClick={() => abortRef.current?.abort()}>
+            Отменить
+          </button>
+        ) : null}
         <button type="button" className="button button--secondary" disabled={pending} onClick={() => onManual(title)}>
           Заполнить вручную
         </button>

@@ -14,6 +14,11 @@ export type SourceType = "local" | "gitlab" | "confluence";
 export type IntegrationState = "connected" | "disabled" | "mock" | "error";
 export type Confidence = "supported" | "partial" | "insufficient_evidence";
 export type SearchScope = "team" | "corporate";
+/**
+ * The AI provider behind assistant answers and AI drafts. `claude_cli` is EXPERIMENTAL (Claude Code CLI through an
+ * isolated worker, personal test only); its answers pass the same citation validation as every other provider.
+ */
+export type AiMode = "mock" | "internal_api" | "claude_cli" | "disabled";
 export type ReviewState = "ok" | "stale" | "never_reviewed" | "not_required";
 export type SyncState = "fresh" | "stale" | "error" | "never_synced";
 /** "stale": the last sync could not refresh this document; it is shown with its last known revision. */
@@ -171,16 +176,26 @@ export interface ExcludedSource {
   reason: string;
 }
 
+/** An earlier turn of the same conversation (context for the model only — never evidence, never stored). */
+export interface ConversationTurn {
+  /** 1..2000 characters. */
+  question: string;
+  /** The validated answer of that turn, at most 4000 characters. */
+  answer: string;
+}
+
 export interface AskRequest {
   question: string;
   sources: SearchScope[];
   include_drafts: boolean;
   include_deprecated: boolean;
+  /** Earlier completed turns, oldest first, at most 6. */
+  history?: ConversationTurn[];
 }
 
 export interface AskResponse {
   answer: string;
-  mode: "mock" | "internal_api" | "disabled";
+  mode: AiMode;
   confidence: Confidence;
   citations: Citation[];
   warnings: string[];
@@ -188,6 +203,40 @@ export interface AskResponse {
   scopes: ScopeStatus[];
   unmatched_terms: string[];
 }
+
+// --- POST /api/assistant/ask/stream: NDJSON events, one JSON object per line ---
+
+export type AskStreamStage = "retrieving" | "generating" | "validating";
+
+/** `generating` carries the number of retrieved passages and the provider; absent when nothing was found. */
+export interface AskStreamStatusEvent {
+  type: "status";
+  stage: AskStreamStage;
+  passages?: number;
+  provider?: AiMode;
+}
+
+/** PRELIMINARY model text: NOT validated, may contain raw markers like [C1]. Only streaming providers send it. */
+export interface AskStreamDeltaEvent {
+  type: "delta";
+  text: string;
+}
+
+/** Terminal event: the validated answer, the same shape as the POST /api/assistant/ask response. */
+export interface AskStreamFinalEvent {
+  type: "final";
+  response: AskResponse;
+}
+
+/** Terminal event: the generation failed; `message` is a safe Russian text, `status` the HTTP-equivalent code. */
+export interface AskStreamErrorEvent {
+  type: "error";
+  code: string;
+  message: string;
+  status: number;
+}
+
+export type AskStreamEvent = AskStreamStatusEvent | AskStreamDeltaEvent | AskStreamFinalEvent | AskStreamErrorEvent;
 
 /**
  * Where an integration points: `none` not configured · `local` built into this app (fixtures, demo) ·
@@ -238,7 +287,7 @@ export interface SessionResponse {
   demo_content: boolean;
   knowledge_backend: string; // "local" | "gitlab"
   features: {
-    ai_mode: "mock" | "internal_api" | "disabled";
+    ai_mode: AiMode;
     ai_edit_suggestions: boolean;
     /** AI-assisted authoring of new documents (POST /api/authoring/ai-draft) is available. */
     ai_authoring: boolean;
@@ -462,7 +511,7 @@ export interface AuthoringCitation {
 
 /** A text suggestion only: not stored, never a proposal by itself. */
 export interface AiDraftResponse {
-  mode: "mock" | "internal_api" | "disabled";
+  mode: AiMode;
   /** Markdown body including the `# title` heading. */
   body: string;
   references: AuthoringReference[];

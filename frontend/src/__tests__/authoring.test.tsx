@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "../api/client";
 import { autoPath, fieldsFromProposal, retitleBody, splitList, toMetadata } from "../lib/authoring";
 import { applyMarkdown } from "../lib/markdownEdit";
 import { DocumentCreatePage } from "../pages/DocumentCreatePage";
@@ -20,7 +21,7 @@ import {
   submittedProposal,
   templates,
 } from "./fixtures";
-import { mockApi, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
+import { mockApi, pendingUntilAborted, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 const CREATE = { "/documents/new": <DocumentCreatePage /> };
 const location = () => screen.getByTestId("location").textContent;
@@ -322,6 +323,75 @@ describe("Creating a document with the AI helper", () => {
     expect(await screen.findByRole("textbox", { name: /^Название/ })).toHaveValue("Витрина метрик");
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value.startsWith("# Витрина метрик\n")).toBe(true);
+  });
+});
+
+describe("AI draft with a long-running provider", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const claudeSession = { ...session, features: { ...session.features, ai_mode: "claude_cli" as const } };
+
+  it("explains that Claude Code may take minutes and cancels the request on demand", async () => {
+    const state = { aborted: false };
+    const calls = mockApi(
+      authoringRoutes([{ method: "POST", path: "/api/authoring/ai-draft", respond: pendingUntilAborted(state) }]),
+    );
+    renderRoutes("/documents/new", CREATE, claudeSession);
+    await userEvent.click(await screen.findByRole("radio", { name: "С помощью AI" }));
+    expect(screen.getByText(/подготовка может занять несколько минут/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: /Архитектура/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Далее: запрос помощнику" }));
+
+    expect(screen.getByText("Claude Code CLI (личный тест)")).toHaveClass("ai-mode--claude_cli");
+    await userEvent.type(screen.getByRole("textbox", { name: /^Название/ }), "Витрина метрик");
+    const request = screen.getByRole("textbox", { name: /Что должно быть в документе/ });
+    await userEvent.type(request, "Описать витрину метрик");
+    expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Подготовить черновик" }));
+
+    expect(await screen.findByText("Готовим черновик… с Claude Code это может занять несколько минут")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Подготовить черновик" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Заполнить вручную" })).toBeDisabled();
+    expect(posts(calls, "/api/authoring/ai-draft")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Отменить" }));
+    expect(await screen.findByText(/Подготовка черновика отменена/)).toBeInTheDocument();
+    expect(state.aborted).toBe(true);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/Готовим черновик/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
+    expect(request).toHaveValue("Описать витрину метрик");
+    expect(screen.getByRole("button", { name: "Подготовить черновик" })).toBeEnabled();
+    expect(screen.queryByRole("heading", { name: "Источники и выдержки" })).toBeNull(); // still the request step
+  });
+
+  it("keeps a provider-neutral waiting text for other providers", async () => {
+    mockApi(authoringRoutes([{ method: "POST", path: "/api/authoring/ai-draft", respond: pendingUntilAborted() }]));
+    renderRoutes("/documents/new", CREATE);
+    await userEvent.click(await screen.findByRole("radio", { name: "С помощью AI" }));
+    await userEvent.click(screen.getByRole("radio", { name: /Архитектура/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Далее: запрос помощнику" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /^Название/ }), "Витрина метрик");
+    await userEvent.type(screen.getByRole("textbox", { name: /Что должно быть в документе/ }), "Описать витрину");
+    await userEvent.click(screen.getByRole("button", { name: "Подготовить черновик" }));
+    expect(await screen.findByText("Готовим черновик…")).toBeInTheDocument();
+    expect(screen.queryByText(/Claude Code/)).toBeNull();
+  });
+
+  it("waits up to five minutes for an AI draft instead of the default 30 seconds", async () => {
+    vi.useFakeTimers();
+    const state = { aborted: false };
+    mockApi([{ method: "POST", path: "/api/authoring/ai-draft", respond: pendingUntilAborted(state) }]);
+    const settled = api
+      .aiDraft({ template_id: "architecture", title: "Витрина", request: "Описать витрину", related_ids: [] })
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(state.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(state.aborted).toBe(true);
+    expect(await settled).toMatchObject({ status: 0, code: "timeout" });
   });
 });
 

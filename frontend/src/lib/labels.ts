@@ -146,6 +146,23 @@ export const AUTHORING_ERROR_TITLE: Record<string, string> = {
   invalid_transition: "Действие недоступно в текущем статусе",
 };
 
+/** Titles for AI provider errors (assistant answers and AI drafts); the server message is shown below the title. */
+export const AI_ERROR_TITLE: Record<string, string> = {
+  ai_busy: "Ассистент занят другим запросом",
+  ai_auth_failed: "Нет доступа к языковой модели",
+  ai_cli_unavailable: "Claude Code CLI недоступен",
+  ai_unreachable: "Языковая модель недоступна",
+  ai_timeout: "Модель не ответила вовремя",
+  ai_rate_limited: "Превышен лимит запросов к модели",
+  ai_misconfigured: "AI-провайдер настроен неверно",
+  ai_invalid_response: "Модель вернула некорректный ответ",
+  ai_upstream_error: "Ошибка на стороне языковой модели",
+  ai_tool_use_blocked: "Ответ модели отклонён",
+  invalid_stream: "Ответ сервера повреждён",
+  stream_incomplete: "Ответ прервался",
+  timeout: "Сервер не ответил вовремя",
+};
+
 export const MR_STATE_LABEL: Record<MergeRequestState, string> = {
   opened: "Открыт, ожидает ревью",
   merged: "Принят (merged)",
