@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { IntegrationStatus, SessionResponse } from "../api/types";
+import type { AiMode, IntegrationStatus, SessionResponse } from "../api/types";
 import { AI_CHIP_LABEL, AI_LIMITS, AI_PROVIDER_TITLE, AI_SCOPE_NOTE } from "../lib/aiMode";
 import { useSession } from "../lib/session";
 import { useDisclosure } from "../lib/useDisclosure";
@@ -76,7 +76,6 @@ export function AiModeChip() {
   }, [open, status, failed]);
 
   if (!mode) return null;
-  const model = status?.details.model;
   return (
     <div className="header-status__item" ref={root}>
       <button
@@ -89,45 +88,55 @@ export function AiModeChip() {
       >
         {AI_CHIP_LABEL[mode]}
       </button>
+      {/* Rendered only while open: its text must not stand in for the page's own wording. */}
       <div id="ai-mode-details" className="popover" hidden={!open}>
-        <p className="popover__title">Режим ИИ</p>
-        <dl className="popover__facts">
-          <div>
-            <dt>Провайдер</dt>
-            <dd>{AI_PROVIDER_TITLE[mode]}</dd>
-          </div>
-          {model ? (
-            <div>
-              <dt>Модель</dt>
-              <dd>
-                <code>{model}</code>
-              </dd>
-            </div>
-          ) : null}
-          {status ? (
-            <div>
-              <dt>Состояние</dt>
-              <dd>
-                <StateBadge state={status.state} /> <span className="muted">{status.human_readable_message}</span>
-              </dd>
-            </div>
-          ) : null}
-          {mode !== "disabled" ? (
-            <div>
-              <dt>Где ищет</dt>
-              <dd>{AI_SCOPE_NOTE}</dd>
-            </div>
-          ) : null}
-          <div>
-            <dt>Ограничения</dt>
-            <dd>{AI_LIMITS[mode]}</dd>
-          </div>
-        </dl>
-        {failed ? <p className="muted">Состояние провайдера сейчас недоступно.</p> : null}
-        <Link to="/integrations" className="text-link">
-          Подробнее о подключениях
-        </Link>
+        {open ? <AiModeDetails mode={mode} status={status} failed={failed} /> : null}
       </div>
     </div>
+  );
+}
+
+function AiModeDetails({ mode, status, failed }: { mode: AiMode; status: IntegrationStatus | null; failed: boolean }) {
+  const model = status?.details.model;
+  return (
+    <>
+      <p className="popover__title">Режим ИИ</p>
+      <dl className="popover__facts">
+        <div>
+          <dt>Провайдер</dt>
+          <dd>{AI_PROVIDER_TITLE[mode]}</dd>
+        </div>
+        {model ? (
+          <div>
+            <dt>Модель</dt>
+            <dd>
+              <code>{model}</code>
+            </dd>
+          </div>
+        ) : null}
+        {status ? (
+          <div>
+            <dt>Состояние</dt>
+            <dd>
+              <StateBadge state={status.state} /> <span className="muted">{status.human_readable_message}</span>
+            </dd>
+          </div>
+        ) : null}
+        {mode !== "disabled" ? (
+          <div>
+            <dt>Где ищет</dt>
+            <dd>{AI_SCOPE_NOTE}</dd>
+          </div>
+        ) : null}
+        <div>
+          <dt>Ограничения</dt>
+          <dd>{AI_LIMITS[mode]}</dd>
+        </div>
+      </dl>
+      {failed ? <p className="muted">Состояние провайдера сейчас недоступно.</p> : null}
+      <Link to="/integrations" className="text-link">
+        Подробнее о подключениях
+      </Link>
+    </>
   );
 }
