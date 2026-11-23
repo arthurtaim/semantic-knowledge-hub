@@ -1,41 +1,86 @@
 # Claude Code — project operating instructions
 
-You are building **Semantic Knowledge Hub**, an AI-native knowledge-base application for a bank's semantic-layer engineering team. This repository lives in **GitHub and contains application code only**. The team's working documentation belongs in a **separate GitLab repository**. **Confluence Data Center** provides corporate knowledge via an approved read-only MCP connector and later serves as a published view of selected approved GitLab documents.
+@AGENTS.md
 
-## Required first actions
-1. Read `START_HERE.md`, `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/API_CONTRACTS.md`, `docs/TEST_PLAN.md`, and `docs/IMPLEMENTATION_PLAN.md` before coding.
-2. Inspect the repository before making changes. Do not assume code exists. Work in iterative, verifiable milestones, implementing the requested MVP in this session when practical.
-3. Use synthetic fixtures only. Never upload bank documents, tokens, credentials, database dumps, schema exports or internal URLs to GitHub.
-4. Treat GitHub and GitLab as **different systems with different purposes**. Never store or sync real team knowledge to the application-code GitHub repository.
-5. Prioritize a working local application over additional planning documents. Do not ask for corporate credentials to build the local MVP.
+## 1. Mission and constraints
+You are building **Semantic Knowledge Hub (SKH)**, an AI-native knowledge-base application for a bank's
+semantic-layer engineering team. This repository lives in **GitHub and contains application code only**.
+The team's working documentation belongs in a **separate GitLab repository**. **Confluence Data Center**
+provides corporate knowledge via an approved read-only MCP connector and later serves as a published view of
+selected approved GitLab documents. Demo and tests use **synthetic fixtures only** (`synthetic: true`); never
+upload bank documents, tokens, credentials, database dumps, schema exports or internal URLs to GitHub.
+Prioritize a working application over more planning documents; do not ask for corporate credentials.
+UI language is Russian by default; code, API and identifiers are English. Read `START_HERE.md`,
+`docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` and `docs/API_CONTRACTS.md` before coding.
 
-## Key decisions
-- Application code: GitHub (this repo).
-- Knowledge source of truth: GitLab repository, with `LocalKnowledgeRepository` used for development.
-- Confluence Data Center: read-only corporate search via approved MCP; subsequent optional controlled publication of approved GitLab docs.
-- Current coding assistant: Claude Code. Future agent platform: GigaCode. **Do not couple application logic to Claude Code or assume a GigaCode REST agent API exists.**
-- AI: runtime provider abstraction. Default `mock`/disabled; optional internal **OpenAI-compatible endpoint** via explicit configuration. No default outbound AI service.
-- UI language: Russian by default, code and API identifiers in English.
-- Technology direction: FastAPI + Python 3.12+, React + TypeScript + Vite, SQLite FTS5 for local search, Docker Compose for local deployment. No vector DB or orchestration framework in MVP.
+## 2. Repository layout
+- `backend/app` — FastAPI: `api/` routes, `services/` (knowledge, retrieval, assistant, graph, external,
+  discovery, authoring, proposals, publications), `adapters/` (knowledge local/GitLab, search SQLite FTS5,
+  AI mock/internal API/Claude CLI, Confluence MCP/mock/REST), `domain/` (schema, models, templates,
+  template registry, dictionary, instructions), `document_templates/` (+ `history/`), `search_dictionary/`,
+  `assistant_instructions/` (runtime policy of the in-app assistant), `evaluation/`, `tools/`.
+- `backend/claude_worker` — isolated Claude Code CLI worker (personal test stack only).
+- `frontend/src` — React + TypeScript + Vite (one stylesheet `styles/app.css`).
+- `fixtures/knowledge` (83 synthetic docs: 9 core SEM-* at the top, DEMO-* in sub-folders),
+  `fixtures/eval` (gold cases), `fixtures/knowledge_updates` (mutable sync snapshots),
+  `fixtures/confluence_mock` (synthetic Confluence corpus), `deploy/`, `docs/`, `reports/knowledge-eval/`.
 
-## Engineering expectations
-- Implement small vertical slices with tests and run them. Never claim success without actual command output.
-- Use strict typed interfaces, explicit configuration, logging without sensitive bodies, input validation, bounded requests/timeouts and clear errors.
-- Every search/answer result must carry citations/provenance and indicate its source (`gitlab`, `local`, `confluence`).
-- Never make AI-generated drafts authoritative automatically. Changes require review; publication is opt-in and off by default.
-- No direct filesystem access outside configured knowledge root. Validate path traversal and symlinks.
-- Do not create fake functional integrations. Mark unconfigured integrations as unavailable in the UI and API. For testing use clearly labeled mocks.
-- No user-provided arbitrary URL fetching (SSRF). Network integrations use configured allowlisted hosts.
-- Do not bypass organizational authentication, RBAC, approval, or repository branch protection.
+## 3. Architecture map (read the docs before changing a part)
+Markdown + YAML (`docs/DOCUMENT_SCHEMA.md`, `docs/MOCK_KNOWLEDGE_BASE.md`) → KnowledgeRepository →
+one snapshot → index generation (FTS5 + manifest) → retrieval pipeline and typed graph
+(`docs/SEARCH_SYNC_TEMPLATES.md`, `docs/KNOWLEDGE_GRAPH.md`) → AssistantService with server-verified
+citations, optional external Confluence evidence and discovery memory (`docs/EXTERNAL_RAG.md`) →
+AIProvider (mock default; internal OpenAI-compatible endpoint; Claude CLI personal test only,
+`docs/CLAUDE_CODE_CLI_INTEGRATION.md`; GigaCode later, `docs/GIGACODE_MIGRATION.md`). Templates: versioned
+registry. GitLab MR workflow and Confluence publication: `docs/GITLAB_KNOWLEDGE_WORKFLOW.md`,
+`docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`. Overall: `docs/ARCHITECTURE.md`.
+Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
+AI service; no embeddings, vector DB, LLM re-ranker or orchestration framework by default. Claude Code is the
+current developer agent, GigaCode the future one — never couple app logic to either, never assume a
+GigaCode REST agent API exists. In-app assistant policy: `docs/ASSISTANT_INSTRUCTIONS.md`; operator
+procedures: `docs/OPERATOR_RUNBOOKS.md`.
 
-## Definition of done for first local MVP
-- `docker compose up --build` works using synthetic fixtures and no external services (or documented equivalent if Docker unavailable).
-- Web UI has navigation, searchable list, Markdown viewer with metadata, AI panel in demo mode, source/citation display and a reviewable draft/diff flow.
-- Backend exposes `/api/health`, `/api/documents`, `/api/search`, `/api/assistant/ask`, `/api/integrations/status` and draft endpoints; no hallucinated answers from mock provider.
-- Unit/integration tests pass; basic UI smoke test passes; README has exact local startup steps; `.env.example` has safe placeholders.
-- Real GitLab and Confluence integrations have well-defined adapters/contracts and mocked tests; external live connectivity is **not** required for the offline MVP.
+## 4. Source of truth and lifecycle
+draft → proposal / MR → human review → merge in GitLab → approved → indexed (new generation) → optionally
+published to Confluence. GitLab and Confluence integrations may be test doubles; mark unconfigured ones as
+unavailable, never fake them. AI output is never authoritative: changes need review, publication is opt-in.
+Every search/answer result carries provenance (`local`, `gitlab`, `confluence`; namespaced source id,
+revision, fragment).
 
-## Required reporting after each milestone
-Report files changed, implemented behavior, commands executed, test results, remaining blockers and next small step. Continue implementing rather than only describing what to do.
+## 5. Commands (all exist; run them, paste real output)
+`make setup` · `make check` (ruff, mypy strict, tsc, eslint, pytest, vitest) · `make e2e` ·
+`make preflight` · `make mock-kb-validate` · `make mock-kb-sync` · `make knowledge-eval` (deterministic,
+160 cases) · `make knowledge-eval-live` (opt-in, `SKH_LIVE_EVAL=1`) · `make claude-test-*` (personal stack).
+Hetzner test stack: `deploy/claude-test/deploy.sh` (see `docs/CLAUDE_CODE_CLI_INTEGRATION.md`).
 
-See `AGENTS.md` for shared cross-agent rules and `docs/IMPLEMENTATION_PLAN.md` for implementation order.
+## 6. Changing schemas, documents and templates
+- Stable document ids never change; renames keep the id; `version` (MAJOR.MINOR) is the human version,
+  `revision` is computed (content hash / commit). Superseded = `deprecated` + a `supersedes` edge.
+- Relations are declared in frontmatter (`relations:` typed, `related_ids` plain) — never inferred by a model.
+- After any document change: `make mock-kb-validate`, then a sync, then `make knowledge-eval`; a stale term,
+  edge or citation is a bug. A new template or version is a file (`document_templates/`, old versions in
+  `history/`); existing drafts keep their version.
+- Changing `search_dictionary/dictionary.yaml` or retrieval weights requires a before/after eval; never tune
+  on holdout cases.
+
+## 7. Security guardrails
+No secrets in Git; no corporate data to Claude or any test service; synthetic data only on personal
+servers. The in-app AI has no shell, file, GitLab, Confluence or MCP access — the backend selects context.
+Strict typed interfaces, explicit configuration, logging without sensitive bodies, input validation,
+bounded requests and timeouts, no user-provided URL fetching (SSRF; network integrations use configured
+allowlisted hosts), filesystem access only inside the
+configured knowledge root (validate traversal and symlinks). Do not bypass authentication, RBAC, approvals
+or branch protection.
+
+## 8. Git workflow
+Feature branch per milestone; atomic commits with a clear message; never force-push, never merge into
+`main` and never push without an explicit request.
+
+## 9. Acceptance and reporting
+Definition of done per milestone: implemented, tested (unit + integration + E2E where UI changed),
+measured (`make knowledge-eval`, before/after on the same cases), documented; `make up` still works offline
+with synthetic fixtures and no external services. After each milestone report: files changed, implemented
+behaviour, commands executed, test results, remaining blockers, next small step. Keep implementing rather
+than only describing what to do.
+Developer skills for recurring tasks live in `.claude/skills/` (knowledge authoring, sync, templates,
+retrieval evaluation, external knowledge, graph exploration).
