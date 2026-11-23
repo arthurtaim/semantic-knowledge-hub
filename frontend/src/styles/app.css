@@ -35,6 +35,9 @@
   --deprecated-wash: #eceeeb;
   --danger: #a3332b;
   --danger-wash: #fbe9e7;
+  /* Plain information is neutral: blue belongs to «На ревью» only. */
+  --info: var(--ink-soft);
+  --info-wash: var(--surface-sunk);
 
   --font-ui: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-read: "PT Serif", Georgia, "Times New Roman", serif;
@@ -727,9 +730,28 @@ label {
   background: currentColor;
 }
 
+/* «Утверждён» is the normal state of a curated base: a quiet seal glyph + ink text in a neutral frame, never a
+   green fill (green is the interactive accent). The louder treatments belong to the exceptions. */
 .stamp--approved {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+
+.stamp--approved::before {
+  content: "✓";
+  content: "✓" / "";
+  display: inline-grid;
+  place-items: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1.5px solid var(--approved);
+  border-radius: 50%;
+  background: transparent;
   color: var(--approved);
-  background: var(--approved-wash);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .stamp--draft {
@@ -765,6 +787,12 @@ label {
 .stamp--large::before {
   width: 0.6rem;
   height: 0.6rem;
+}
+
+.stamp--large.stamp--approved::before {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.75rem;
 }
 
 .doc-id {
@@ -891,8 +919,8 @@ label {
 }
 
 .notice--info {
-  border-color: var(--review);
-  background: var(--review-wash);
+  border-color: var(--info);
+  background: var(--info-wash);
 }
 
 .notice--warning {
@@ -1158,9 +1186,13 @@ label {
   background: var(--surface-sunk);
 }
 
+/* Selected = accent wash + accent-ink text (and border where the control has one) + weight; never the primary
+   button's solid fill. */
 .filter-option[aria-pressed="true"] {
-  background: var(--accent-ink);
-  color: #fff;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent-ink);
 }
 
 .filter-option__count {
@@ -1691,9 +1723,10 @@ h1 a:hover {
 }
 
 .segmented__option input:checked + span {
-  background: var(--accent-ink);
+  background: var(--accent-wash);
   border-color: var(--accent-ink);
-  color: #fff;
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .segmented__option input:focus-visible + span {
@@ -2094,7 +2127,7 @@ h1 a:hover {
 }
 
 .proposal-state--draft {
-  color: var(--review);
+  color: var(--ink-soft);
   border-style: dashed;
 }
 
@@ -2171,9 +2204,10 @@ h1 a:hover {
 }
 
 .filter-chip[aria-pressed="true"] {
-  background: var(--accent-ink);
+  background: var(--accent-wash);
   border-color: var(--accent-ink);
-  color: #fff;
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 /* lifecycle stepper: ordered stages; state is shown by text and shape, not only by colour */
@@ -2528,8 +2562,8 @@ h1 a:hover {
 }
 
 .diff__hunk td {
-  background: var(--review-wash);
-  color: var(--review);
+  background: var(--info-wash);
+  color: var(--info);
   padding: var(--space-1) var(--space-3);
 }
 
@@ -2831,8 +2865,8 @@ h1 a:hover {
 
 .ai-mode--internal_api {
   border-style: solid;
-  color: var(--review);
-  background: var(--review-wash);
+  color: var(--ink);
+  background: var(--surface);
 }
 
 .ai-mode--claude_cli {
@@ -2941,8 +2975,9 @@ h1 a:hover {
 }
 
 .view-toggle button[aria-pressed="true"] {
-  background: var(--accent-ink);
-  color: #fff;
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .authoring__panes {
@@ -3957,13 +3992,10 @@ h1 a:hover {
 }
 
 .graph-list__node[aria-pressed="true"] {
-  background: var(--accent-ink);
-  color: var(--surface);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
   padding-left: var(--space-2);
-}
-
-.graph-list__node[aria-pressed="true"] .graph-icon .graph-node__shape {
-  stroke: var(--surface);
+  box-shadow: inset 3px 0 0 var(--accent-ink);
 }
 
 .graph-list__meta {
@@ -4126,9 +4158,10 @@ h1 a:hover {
 }
 
 .toggle-button[aria-pressed="true"] {
-  background: var(--accent-ink);
+  background: var(--accent-wash);
   border-color: var(--accent-ink);
-  color: var(--surface);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .toggle-button:disabled {
@@ -5411,8 +5444,8 @@ h1 a:hover {
 }
 
 .ai-status--answered {
-  color: var(--review);
-  background: var(--review-wash);
+  color: var(--info);
+  background: var(--info-wash);
 }
 
 .ai-proposal__summary {
