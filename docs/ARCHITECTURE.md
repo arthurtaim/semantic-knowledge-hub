@@ -13,7 +13,9 @@ FastAPI backend — every route: require(Action) → AuthorizationPolicy (LocalD
    ├─ SearchService ─────── SQLite FTS5 index (doc_versions: source + revision)
    │                        CorporateKnowledgeConnector: Disabled | Mock | ConfluenceMCPConnector (READ-ONLY,
    │                          Streamable HTTP, service-account token — single-user only)
-   ├─ AssistantService ──── AIProvider.answer (mock | internal_api | disabled) + citation validation
+   ├─ AssistantService ──── AIProvider.answer (mock | internal_api | claude_cli | disabled) + citation validation
+  │                        optional StreamingAIProvider.stream_answer → POST /api/assistant/ask/stream (NDJSON)
+  │                        claude_cli (EXPERIMENTAL, personal test) → claude-worker container → Claude Code CLI
    ├─ AuthoringService ──── templates (files) · generated frontmatter · ID/path checks · safe preview
    │                        AIProvider.draft_document + verbatim citation check (scope "team")
    ├─ ProposalService ───── ProposalStore (SQLite: proposals, content-free audit)
@@ -142,3 +144,17 @@ Local: `docker compose` or documented `uvicorn` and Vite commands, localhost bin
   `checked_at` on every item of `GET /api/integrations/status`; `real` never implies live validation.
 - **Readiness probe:** `python -m app.readiness` (read-only requests through the app's own adapters) next to
   the offline `python -m app.preflight`.
+
+## 11. Experimental Claude Code CLI provider (personal test)
+- `AI_PROVIDER=claude_cli` — `ClaudeCodeCLIProvider` (`app/adapters/ai/claude_cli.py`) implements the unchanged
+  `AIProvider` contract plus the optional `StreamingAIProvider.stream_answer`. It calls the isolated worker
+  `backend/claude_worker` over HTTP NDJSON; the worker runs `claude -p --output-format stream-json` as a
+  subprocess without a shell, with every tool, MCP server, settings file and session persistence disabled, in an
+  empty per-request directory with an allow-listed environment.
+- Docker (`docker-compose.claude-test.yml`, project `semantic-kb-claude-test`): backend on `internal` + `ai`
+  (both internal, still no egress, no Claude credentials); `claude-worker` on `ai` + `egress`, read-only FS,
+  only the token directory mounted read-only; frontend published on `127.0.0.1:5180`, reached through SSH.
+- Same server-side citation validation; conversation history comes from the client as data (max 6 turns, never
+  stored, never evidence); cancellation closes the stream down to the worker, which kills the process group.
+- Fail closed: explicit `CLAUDE_CLI_PERSONAL_USE_ACK`, `local_demo` only, never in `offline`, worker URL loopback
+  or a single-label Docker service name. Details and the GigaCode path: `docs/CLAUDE_CODE_CLI_INTEGRATION.md`.
