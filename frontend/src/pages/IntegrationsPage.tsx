@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
-import type { IntegrationStatus, PublisherMode, SyncStatus } from "../api/types";
+import type { IntegrationState, IntegrationStatus, PublisherMode, SyncStatus } from "../api/types";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import {
@@ -15,6 +15,8 @@ import {
 import { useAsync } from "../lib/useAsync";
 
 const PUBLISHER_MODES = new Set<string>(["disabled", "dry_run_only", "write"]);
+/** Failed checks first (they need attention), then connected, demo doubles; unconfigured ones last. */
+const STATE_ORDER: Record<IntegrationState, number> = { error: 0, connected: 1, mock: 2, disabled: 3 };
 
 /** Target, access and last check of one integration; a configured address alone is never shown as "green". */
 function IntegrationFacts({ item }: { item: IntegrationStatus }) {
@@ -44,7 +46,33 @@ function IntegrationFacts({ item }: { item: IntegrationStatus }) {
         <dt>Последняя проверка</dt>
         <dd>{item.checked_at ? formatDateTime(item.checked_at) : "не проверялось"}</dd>
       </div>
+      {item.capabilities.length > 0 ? (
+        <div>
+          <dt>Возможности</dt>
+          <dd className="integration__caps">
+            {item.capabilities.map((cap) => (
+              <code key={cap}>{cap}</code>
+            ))}
+          </dd>
+        </div>
+      ) : null}
     </dl>
+  );
+}
+
+/** One row: name, state and what it means on the left; target, access, last check and capabilities on the right. */
+function IntegrationRow({ item }: { item: IntegrationStatus }) {
+  return (
+    <li className={`integration integration--${item.state}`}>
+      <div className="integration__main">
+        <div className="integration__head">
+          <h2>{item.title}</h2>
+          <StateBadge state={item.state} />
+        </div>
+        <p>{item.human_readable_message}</p>
+      </div>
+      <IntegrationFacts item={item} />
+    </li>
   );
 }
 
@@ -183,6 +211,10 @@ function SyncSection() {
 export function IntegrationsPage() {
   const { data, error, loading, reload } = useAsync(() => api.integrations(), "integrations");
   const issues = useAsync(() => api.issues(), "issues");
+  // Stable sort: within one state the server's order is kept.
+  const sorted = [...(data?.items ?? [])].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+  const active = sorted.filter((item) => item.state !== "disabled");
+  const off = sorted.filter((item) => item.state === "disabled");
 
   return (
     <div className="integrations">
@@ -198,26 +230,23 @@ export function IntegrationsPage() {
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
       {data ? (
         <>
-          <ul className="integration-list">
-            {data.items.map((item) => (
-              <li key={item.name} className={`integration integration--${item.state}`}>
-                <div className="integration__head">
-                  <h2>{item.title}</h2>
-                  <StateBadge state={item.state} />
-                </div>
-                <p>{item.human_readable_message}</p>
-                <IntegrationFacts item={item} />
-                {item.capabilities.length > 0 ? (
-                  <p className="integration__caps">
-                    Возможности:{" "}
-                    {item.capabilities.map((cap) => (
-                      <code key={cap}>{cap}</code>
-                    ))}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          {active.length > 0 ? (
+            <ul className="integration-list">
+              {active.map((item) => (
+                <IntegrationRow key={item.name} item={item} />
+              ))}
+            </ul>
+          ) : null}
+          {off.length > 0 ? (
+            <>
+              <h2 className="integration-group__title">Не подключено</h2>
+              <ul className="integration-list integration-list--off">
+                {off.map((item) => (
+                  <IntegrationRow key={item.name} item={item} />
+                ))}
+              </ul>
+            </>
+          ) : null}
           <p className="muted">Проверено: {formatDateTime(data.checked_at)}</p>
         </>
       ) : null}

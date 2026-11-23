@@ -94,8 +94,10 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
   provenance for screen readers. The review flag is text plus a hollow ring. Pressed filter = `--accent-ink`.
 - [x] Explorer on phones: filters into a `<details>` "Фильтры (n)" disclosure above results (below 860 px,
   `useMediaQuery`); closed by default, opened when a filter is active.
-- [ ] Integrations: two-column list (name + state | facts) instead of a three-column card grid; group
-  "Не подключено" items under one heading.
+- [x] Integrations: two-column list (name + state | facts) instead of a three-column card grid; group
+  "Не подключено" items under one heading. Order: error (needs attention) → connected → mock, then
+  `h2` "Не подключено" and the disabled ones; server order kept within a state. Capabilities are a row of
+  the facts `dl`. Rows are ruled, not boxed; one column below 860 px.
 - [ ] Proposal detail: put actions (mark ready / reject / submit) in a sticky right rail on ≥ 1100 px.
 
 ### Phase 3 — polish
