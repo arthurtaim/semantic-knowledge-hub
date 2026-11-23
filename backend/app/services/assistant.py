@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 
-from app.adapters.ai.base import AIProvider, AIProviderError, AnswerOptions, ContextPassage, ProviderAnswer
+from app.adapters.ai.base import (
+    AIProvider,
+    AIProviderError,
+    AnswerComplete,
+    AnswerDelta,
+    AnswerOptions,
+    ContextPassage,
+    ConversationTurn,
+    ProviderAnswer,
+    StreamingAIProvider,
+    ai_error_status,
+)
 from app.adapters.corporate.base import CorporateKnowledgeConnector
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.adapters.search.base import SearchFilters
@@ -56,6 +71,17 @@ def prepare_passage_text(text: str) -> tuple[str, bool]:
     return redact_prompt_injection(neutralize_citation_markers(text))
 
 
+@dataclass
+class _Prepared:
+    terms: list[QueryTerm]
+    unmatched: list[QueryTerm]
+    passages: list[ContextPassage]
+    warnings: list[str]
+    excluded: list[ExcludedSource]
+    scopes: list[ScopeStatus]
+    options: AnswerOptions
+
+
 def _allowed_statuses(req: AskRequest) -> set[DocStatus]:
     allowed = {DocStatus.approved}
     if req.include_drafts:
@@ -84,11 +110,75 @@ class AssistantService:
         return self._provider
 
     async def ask(self, user: UserContext, req: AskRequest) -> AskResponse:
+        prepared = await self._prepare(user, req)
+        if prepared.passages:
+            result = await self._provider.answer(req.question, prepared.passages, prepared.options)
+        else:
+            result = self._no_passages_result(prepared)
+        return self._finish(req, prepared, result)
+
+    async def ask_stream(self, user: UserContext, req: AskRequest) -> AsyncGenerator[dict[str, Any], None]:
+        """Same pipeline as `ask`, as events: status stages, PRELIMINARY text deltas (only from providers
+        that stream; never validated, the UI labels them as such) and one `final` validated AskResponse.
+        Provider errors become an `error` event. Closing the iterator cancels the generation."""
+        yield {"type": "status", "stage": "retrieving"}
+        try:
+            prepared = await self._prepare(user, req)
+            if not prepared.passages:
+                result = self._no_passages_result(prepared)
+            else:
+                yield {
+                    "type": "status",
+                    "stage": "generating",
+                    "passages": len(prepared.passages),
+                    "provider": self._provider.mode,
+                }
+                stream = getattr(self._provider, "stream_answer", None)
+                if stream is None:
+                    result = await self._provider.answer(req.question, prepared.passages, prepared.options)
+                else:
+                    final: ProviderAnswer | None = None
+                    async with contextlib.aclosing(
+                        cast(StreamingAIProvider, self._provider).stream_answer(
+                            req.question, prepared.passages, prepared.options
+                        )
+                    ) as events:
+                        async for event in events:
+                            if isinstance(event, AnswerDelta):
+                                yield {"type": "delta", "text": event.text}
+                            elif isinstance(event, AnswerComplete):
+                                final = event.answer
+                    if final is None:
+                        raise AIProviderError("ai_invalid_response", "Провайдер не вернул ответ.")
+                    result = final
+                yield {"type": "status", "stage": "validating"}
+            response = self._finish(req, prepared, result)
+        except AIProviderError as exc:
+            logger.info("ask_stream failed mode=%s code=%s", self._provider.mode, exc.code)
+            yield {
+                "type": "error",
+                "code": exc.code,
+                "message": exc.message,
+                "status": ai_error_status(exc.code),
+            }
+            return
+        yield {"type": "final", "response": response.model_dump(mode="json")}
+
+    def _no_passages_result(self, prepared: _Prepared) -> ProviderAnswer:
+        return ProviderAnswer(
+            answer=self._no_passages_message(prepared.terms, prepared.unmatched),
+            confidence="insufficient_evidence",
+            evidence=[],
+        )
+
+    async def _prepare(self, user: UserContext, req: AskRequest) -> _Prepared:
         if self._provider.mode == "disabled":
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
             )
-        terms = analyze_query(req.question)
+        # A follow-up ("а какие у неё ограничения?") is retrieved together with the previous question.
+        retrieval_text = req.question if not req.history else f"{req.question} {req.history[-1].question}"
+        terms = analyze_query(retrieval_text)
         allowed = _allowed_statuses(req)
         excluded_statuses = set(DocStatus) - allowed
         warnings: list[str] = []
@@ -170,29 +260,33 @@ class AssistantService:
                 )
 
         unmatched = [t for t in terms if t.stem not in matched_terms]
-        if passages:
-            result = await self._provider.answer(
-                req.question, passages, AnswerOptions(terms=terms, unmatched_terms=unmatched)
-            )
-        else:
-            result = ProviderAnswer(
-                answer=self._no_passages_message(terms, unmatched),
-                confidence="insufficient_evidence",
-                evidence=[],
-            )
-        warnings.extend(result.warnings)
+        history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
+        return _Prepared(
+            terms=terms,
+            unmatched=unmatched,
+            passages=passages,
+            warnings=warnings,
+            excluded=excluded,
+            scopes=scopes,
+            options=AnswerOptions(terms=terms, unmatched_terms=unmatched, history=history),
+        )
+
+    def _finish(self, req: AskRequest, prepared: _Prepared, result: ProviderAnswer) -> AskResponse:
+        passages = prepared.passages
+        warnings = [*prepared.warnings, *result.warnings]
         # Server-composed text (no passages, or the extractive mock) may be shown even when insufficient.
         trusted_text = not passages or self._provider.mode == "mock"
         response = self._validated_response(
-            result, passages, warnings, excluded, scopes, unmatched, trusted_text
+            result, passages, warnings, prepared.excluded, prepared.scopes, prepared.unmatched, trusted_text
         )
         logger.info(
-            "ask mode=%s scopes=%s passages=%d citations=%d confidence=%s",
+            "ask mode=%s scopes=%s passages=%d citations=%d confidence=%s history=%d",
             self._provider.mode,
             ",".join(req.sources),
             len(passages),
             len(response.citations),
             response.confidence,
+            len(req.history),
         )
         return response
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.adapters.ai.base import AIProvider
+from app.adapters.ai.claude_cli import ClaudeCodeCLIProvider
 from app.adapters.ai.mock import DisabledAIProvider, MockAIProvider
 from app.adapters.ai.openai_compatible import OpenAICompatibleAIProvider
 from app.adapters.confluence_rest.client import ConfluenceDCClient
@@ -127,6 +128,13 @@ def build_ai(settings: Settings) -> AIProvider:
         return MockAIProvider()
     if settings.ai_provider == "disabled":
         return DisabledAIProvider()
+    if settings.ai_provider == "claude_cli":
+        return ClaudeCodeCLIProvider(
+            worker_url=settings.claude_cli_worker_url,
+            timeout_seconds=settings.claude_cli_timeout_seconds,
+            draft_timeout_seconds=settings.claude_cli_draft_timeout_seconds,
+            max_context_chars=settings.ai_max_context_chars,
+        )
     return OpenAICompatibleAIProvider(
         base_url=settings.ai_base_url,
         model=settings.ai_model,

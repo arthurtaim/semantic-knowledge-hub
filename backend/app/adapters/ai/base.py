@@ -4,13 +4,25 @@ the AssistantService validates against those passages."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from app.domain.models import Confidence, DocStatus, DocType, IntegrationStatus, SourceType
 from app.domain.text import QueryTerm
 
-AIMode = Literal["mock", "internal_api", "disabled"]
+# claude_cli: EXPERIMENTAL personal-test provider (Claude Code CLI through an isolated worker,
+# docs/CLAUDE_CODE_CLI_INTEGRATION.md). It is not the corporate target runtime (GigaCode).
+AIMode = Literal["mock", "internal_api", "claude_cli", "disabled"]
+
+
+@dataclass(frozen=True)
+class ConversationTurn:
+    """A previous question and the server-validated answer shown to the user. Sent back by the
+    client with a follow-up question; treated as untrusted DATA, never as instructions."""
+
+    question: str
+    answer: str
 
 
 @dataclass(frozen=True)
@@ -36,6 +48,9 @@ class AnswerOptions:
     terms: list[QueryTerm]
     unmatched_terms: list[QueryTerm] = field(default_factory=list)
     language: str = "ru"
+    # Earlier turns of the same conversation (oldest first). Providers that do not support
+    # conversations ignore it; the server never stores it.
+    history: tuple[ConversationTurn, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +118,27 @@ class AIProviderError(RuntimeError):
         self.message = message
 
 
+# The provider cannot serve right now (configuration, reachability, authorization, limits): 503.
+AI_UNAVAILABLE_CODES = frozenset(
+    {
+        "assistant_disabled",
+        "ai_misconfigured",
+        "ai_unreachable",
+        "ai_timeout",
+        "ai_rate_limited",
+        "ai_auth_failed",
+        "ai_cli_unavailable",
+    }
+)
+
+
+def ai_error_status(code: str) -> int:
+    """HTTP status for an AIProviderError code: 429 busy, 503 unavailable, 502 bad answer/upstream error."""
+    if code == "ai_busy":
+        return 429
+    return 503 if code in AI_UNAVAILABLE_CODES else 502
+
+
 class AIProvider(Protocol):
     mode: AIMode
     supports_edit_suggestions: bool
@@ -122,3 +158,30 @@ class AIProvider(Protocol):
         ...
 
     async def status(self) -> IntegrationStatus: ...
+
+
+@dataclass(frozen=True)
+class AnswerDelta:
+    """A fragment of the model's PRELIMINARY answer text (not validated yet)."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class AnswerComplete:
+    """The complete provider answer; AssistantService validates it before anyone relies on it."""
+
+    answer: ProviderAnswer
+
+
+AnswerStreamEvent = AnswerDelta | AnswerComplete
+
+
+class StreamingAIProvider(Protocol):
+    """Optional capability on top of AIProvider: stream preliminary text while the answer is generated.
+    The last event is always AnswerComplete; errors are raised as AIProviderError. Cancelling the
+    iteration must stop the underlying generation."""
+
+    def stream_answer(
+        self, question: str, passages: list[ContextPassage], options: AnswerOptions
+    ) -> AsyncGenerator[AnswerStreamEvent, None]: ...

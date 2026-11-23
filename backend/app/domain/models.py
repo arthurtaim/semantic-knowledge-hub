@@ -227,6 +227,15 @@ def _default_scopes() -> list[SearchScope]:
     return ["team"]
 
 
+class ConversationTurnIn(BaseModel):
+    """A previous turn of the same conversation, sent back by the client (the server keeps no chat state)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=2000)
+    answer: str = Field(max_length=4000)
+
+
 class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -234,11 +243,13 @@ class AskRequest(BaseModel):
     sources: list[SearchScope] = Field(default_factory=_default_scopes, min_length=1, max_length=2)
     include_drafts: bool = False
     include_deprecated: bool = False
+    # Earlier turns (oldest first). Context for the model only — never evidence, never stored.
+    history: list[ConversationTurnIn] = Field(default_factory=list, max_length=6)
 
 
 class AskResponse(BaseModel):
     answer: str
-    mode: Literal["mock", "internal_api", "disabled"]
+    mode: Literal["mock", "internal_api", "claude_cli", "disabled"]
     confidence: Confidence
     citations: list[Citation]
     warnings: list[str]

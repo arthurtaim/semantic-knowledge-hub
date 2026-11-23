@@ -30,7 +30,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from app.adapters.ai.base import AIProvider, AIProviderError
+from app.adapters.ai.base import AIProvider, AIProviderError, ai_error_status
 from app.adapters.knowledge.base import (
     DocumentNotFoundError,
     DuplicateDocumentIdError,
@@ -1231,9 +1231,7 @@ class ProposalService:
         try:
             proposed = await self._ai.suggest_edit(payload.instruction, doc.raw)
         except AIProviderError as exc:
-            status = (
-                503 if exc.code in ("ai_edit_unsupported", "assistant_disabled", "ai_misconfigured") else 502
-            )
+            status = 503 if exc.code == "ai_edit_unsupported" else ai_error_status(exc.code)
             raise ApiError(status, exc.code, exc.message) from exc
         warnings = ["Черновик сгенерирован ИИ: проверьте каждое изменение перед созданием предложения."]
         return SuggestResponse(

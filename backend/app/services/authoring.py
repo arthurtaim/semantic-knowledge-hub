@@ -12,7 +12,13 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from app.adapters.ai.base import AIProvider, AIProviderError, AuthoringReference, AuthoringRequest
+from app.adapters.ai.base import (
+    AIProvider,
+    AIProviderError,
+    AuthoringReference,
+    AuthoringRequest,
+    ai_error_status,
+)
 from app.adapters.knowledge.base import KnowledgeRepository, RepositoryUnavailableError
 from app.adapters.search.base import SearchFilters
 from app.domain.markdown import render_html
@@ -433,7 +439,7 @@ class AuthoringService:
         try:
             draft = await self._ai.draft_document(request)
         except AIProviderError as exc:
-            status = 503 if exc.code in ("assistant_disabled", "ai_misconfigured") else 502
+            status = ai_error_status(exc.code)
             raise ApiError(status, exc.code, exc.message) from exc
         by_id = {r.document_id: r for r in references}
         citations: list[AuthoringCitationInfo] = []

@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
+from app.adapters.ai.claude_cli import validate_worker_url
 from app.adapters.ai.openai_compatible import validate_endpoint
 from app.adapters.corporate.confluence_mcp import parse_result_map, parse_tool_map
 from app.adapters.gitlab.client import validate_gitlab_config
@@ -202,6 +203,26 @@ def run_checks(settings: Settings) -> tuple[list[Check], list[str]]:
         ca("AI", "AI_CA_BUNDLE", settings.ai_ca_bundle)
         if settings.ai_base_url:
             hosts.append(f"{_host(settings.ai_base_url)} (OpenAI-совместимый API)")
+    elif settings.ai_provider == "claude_cli":
+        problem = validate_worker_url(settings.claude_cli_worker_url)
+        add(
+            "AI",
+            "Claude Code CLI (личный тест)",
+            "error" if problem else "warning",
+            problem
+            or "экспериментальный провайдер: запросы уходят в Anthropic через CLI с подпиской владельца; "
+            "только один оператор и синтетические данные",
+        )
+        add(
+            "AI",
+            "CLAUDE_CLI_PERSONAL_USE_ACK",
+            "ok" if settings.claude_cli_personal_use_ack else "error",
+            "подтверждено"
+            if settings.claude_cli_personal_use_ack
+            else "не подтверждено — запуск будет отклонён",
+        )
+        add("AI", "токен Claude", "info", "хранится только в воркере (файл), backend его не получает")
+        hosts.append(f"{_host(settings.claude_cli_worker_url)} (воркер Claude Code CLI → Anthropic по HTTPS)")
     else:
         add("AI", "провайдер", "info", settings.ai_provider)
     return checks, hosts
