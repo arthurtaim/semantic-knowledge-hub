@@ -30,6 +30,7 @@ from app.adapters.ai.base import (
     ProviderAnswer,
 )
 from app.config import is_loopback_host
+from app.domain.instructions import RuntimeInstructions, compose
 from app.domain.models import Confidence, IntegrationStatus
 
 logger = logging.getLogger("skh.ai.internal_api")
@@ -277,7 +278,9 @@ class OpenAICompatibleAIProvider:
         max_response_bytes: int = 256 * 1024,
         transport: httpx.AsyncBaseTransport | None = None,
         verify: ssl.SSLContext | bool = True,
+        instructions: RuntimeInstructions | None = None,
     ) -> None:
+        self._instructions = instructions or RuntimeInstructions(fallback=True)
         self._base_url = base_url.rstrip("/")
         self._verify = verify
         self._model = model
@@ -359,7 +362,7 @@ class OpenAICompatibleAIProvider:
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
     ) -> ProviderAnswer:
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": compose(self._instructions.for_task("answer"), SYSTEM_PROMPT)},
             {
                 "role": "user",
                 "content": build_user_message(question, passages, self._max_context_chars, options.history),
@@ -370,7 +373,7 @@ class OpenAICompatibleAIProvider:
 
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         messages = [
-            {"role": "system", "content": EDIT_PROMPT},
+            {"role": "system", "content": compose(self._instructions.for_task("edit"), EDIT_PROMPT)},
             {"role": "user", "content": build_edit_message(instruction, document_markdown)},
         ]
         content = await self._post_chat(messages)
@@ -379,7 +382,10 @@ class OpenAICompatibleAIProvider:
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
         content = await self._post_chat(
             [
-                {"role": "system", "content": AUTHORING_PROMPT},
+                {
+                    "role": "system",
+                    "content": compose(self._instructions.for_task("authoring"), AUTHORING_PROMPT),
+                },
                 {"role": "user", "content": build_authoring_message(request, self._max_context_chars)},
             ]
         )

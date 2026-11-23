@@ -29,6 +29,7 @@ from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
 from app.authz import AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
 from app.config import Settings, tls_verify
+from app.domain.instructions import DEFAULT_INSTRUCTIONS_DIR, RuntimeInstructions, load_instructions
 from app.domain.models import UserContext
 from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import DEFAULT_TEMPLATES_DIR
@@ -73,6 +74,7 @@ class Container:
     graph: GraphService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
+    instructions: RuntimeInstructions | None = None
 
     def demo_user(self) -> UserContext:
         return UserContext(
@@ -130,7 +132,7 @@ def build_repository(settings: Settings) -> KnowledgeRepository:
     )
 
 
-def build_ai(settings: Settings) -> AIProvider:
+def build_ai(settings: Settings, instructions: RuntimeInstructions | None = None) -> AIProvider:
     if settings.ai_provider == "mock":
         return MockAIProvider()
     if settings.ai_provider == "disabled":
@@ -141,6 +143,7 @@ def build_ai(settings: Settings) -> AIProvider:
             timeout_seconds=settings.claude_cli_timeout_seconds,
             draft_timeout_seconds=settings.claude_cli_draft_timeout_seconds,
             max_context_chars=settings.ai_max_context_chars,
+            instructions=instructions,
         )
     return OpenAICompatibleAIProvider(
         base_url=settings.ai_base_url,
@@ -152,6 +155,7 @@ def build_ai(settings: Settings) -> AIProvider:
         max_context_chars=settings.ai_max_context_chars,
         max_response_bytes=settings.ai_max_response_bytes,
         verify=_verify(settings, settings.ai_ca_bundle),
+        instructions=instructions,
     )
 
 
@@ -232,7 +236,12 @@ def build_policy(settings: Settings) -> AuthorizationPolicy:
 def build_container(settings: Settings) -> Container:
     repository = build_repository(settings)
     search_provider = SqliteFtsSearchProvider(settings.search_index_file)
-    ai = build_ai(settings)
+    instructions = load_instructions(
+        settings.resolve_path(Path(settings.assistant_instructions_dir))
+        if settings.assistant_instructions_dir
+        else DEFAULT_INSTRUCTIONS_DIR
+    )
+    ai = build_ai(settings, instructions)
     corporate = build_corporate(settings)
     proposal_publisher = build_proposal_publisher(settings, repository)
     confluence_publisher = build_confluence_publisher(settings)
@@ -324,6 +333,7 @@ def build_container(settings: Settings) -> Container:
             max_context_chars=settings.ai_max_context_chars,
             external=external,
             discovery=discovery,
+            instructions_version=lambda: instructions.version,
         ),
         proposals=ProposalService(
             store,
@@ -354,4 +364,5 @@ def build_container(settings: Settings) -> Container:
         graph=GraphService(knowledge, templates.graph_entries),
         discovery=discovery,
         external=external,
+        instructions=instructions,
     )

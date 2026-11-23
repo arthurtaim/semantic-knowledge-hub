@@ -198,6 +198,9 @@ class Settings(BaseSettings):
     def _upper_level(cls, value: str) -> str:
         return value.upper()
 
+    # Directory with the in-app assistant's runtime policy (empty: app/assistant_instructions).
+    assistant_instructions_dir: str = ""
+
     # --- external (Confluence MCP) evidence, discovery memory (M5.6.2 §G, docs/EXTERNAL_RAG.md) ----
     # Synthetic corpus of the MOCK connector and its scenario state (revoke / delete / new version).
     confluence_mock_pages_path: Path = Path("./fixtures/confluence_mock/pages.yaml")

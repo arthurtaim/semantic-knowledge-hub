@@ -63,3 +63,13 @@ async def ask_stream(
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/instructions")
+async def instructions(
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+) -> dict[str, object]:
+    """Which runtime policy the assistant uses now (version, files, fallback) — never the prompt text."""
+    loaded = container.instructions
+    return loaded.describe() if loaded is not None else {"version": "-", "fallback": True, "files": []}

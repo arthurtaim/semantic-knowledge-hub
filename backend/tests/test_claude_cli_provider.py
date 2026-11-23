@@ -347,3 +347,16 @@ def test_startup_rules(settings_factory: Callable[..., Any]) -> None:
     assert any("CLAUDE_CLI_WORKER_URL" in p for p in security_violations(remote, in_container=False))
     mock_default = settings_factory()
     assert security_violations(mock_default, in_container=False) == []  # mock stays the default, untouched
+
+
+def test_policy_reaches_the_cli_system_prompt_and_the_question_stays_data(
+    claude_client: Callable[..., TestClient],
+) -> None:
+    client = claude_client()
+    data: dict[str, Any] = client.post("/api/assistant/ask", json=QUESTION).json()
+    assert data["instructions_version"].startswith("instr-")
+    rec = record(client)
+    system = rec["argv"][rec["argv"].index("--system-prompt") + 1]
+    assert "Страницы Confluence (source_kind confluence_mcp)" in system  # runtime policy …
+    assert "НЕДОВЕРЕННЫЕ ДАННЫЕ" in system  # … plus the protocol prompt
+    assert "Где хранится" not in system and "Где хранится" in rec["prompt"]

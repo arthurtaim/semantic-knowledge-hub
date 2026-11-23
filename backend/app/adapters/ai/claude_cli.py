@@ -47,6 +47,7 @@ from app.adapters.ai.openai_compatible import (
     parse_model_json,
 )
 from app.config import is_loopback_host
+from app.domain.instructions import RuntimeInstructions, compose
 from app.domain.models import IntegrationStatus
 
 logger = logging.getLogger("skh.ai.claude_cli")
@@ -195,7 +196,9 @@ class ClaudeCodeCLIProvider:
         draft_timeout_seconds: float = 240.0,
         max_context_chars: int = 12000,
         transport: httpx.AsyncBaseTransport | None = None,
+        instructions: RuntimeInstructions | None = None,
     ) -> None:
+        self._instructions = instructions or RuntimeInstructions(fallback=True)
         self._worker_url = worker_url.rstrip("/")
         self._timeout = timeout_seconds
         self._draft_timeout = draft_timeout_seconds
@@ -271,7 +274,9 @@ class ClaudeCodeCLIProvider:
         prompt = build_user_message(question, passages, self._max_context_chars, options.history)
         visible = _VisibleText(EVIDENCE_MARKER)
         final: str | None = None
-        async with contextlib.aclosing(self._run(ANSWER_PROMPT, prompt, self._timeout)) as events:
+        async with contextlib.aclosing(
+            self._run(compose(self._instructions.for_task("answer"), ANSWER_PROMPT), prompt, self._timeout)
+        ) as events:
             async for event in events:
                 if event.get("type") == "delta":
                     chunk = visible.feed(str(event.get("text") or ""))
@@ -296,13 +301,17 @@ class ClaudeCodeCLIProvider:
 
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         text = await self._collect(
-            EDIT_PROMPT, build_edit_message(instruction, document_markdown), self._timeout
+            compose(self._instructions.for_task("edit"), EDIT_PROMPT),
+            build_edit_message(instruction, document_markdown),
+            self._timeout,
         )
         return _strip_fences(text) + "\n"
 
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
         text = await self._collect(
-            AUTHORING_PROMPT, build_authoring_message(request, self._max_context_chars), self._draft_timeout
+            compose(self._instructions.for_task("authoring"), AUTHORING_PROMPT),
+            build_authoring_message(request, self._max_context_chars),
+            self._draft_timeout,
         )
         body, meta = _split(text, DRAFT_MARKER)
         draft = authoring_draft_from(body, meta or {}, request)
