@@ -27,11 +27,12 @@ chown -R "$WORKER_UID:$WORKER_UID" "$SECRETS"
 chmod 700 "$SECRETS"
 chmod 600 "$SECRETS/claude_code_oauth_token"
 
-export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+export GIT_SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o UserKnownHostsFile=$ROOT/known_hosts -o StrictHostKeyChecking=accept-new"
 if [ ! -d "$APP/.git" ]; then
   git clone --branch "$BRANCH" "$REPO_URL" "$APP"
   git -C "$APP" config core.sshCommand "$GIT_SSH_COMMAND"
 fi
+git -C "$APP" config core.sshCommand "$GIT_SSH_COMMAND"
 git -C "$APP" fetch --prune origin
 CURRENT=$(git -C "$APP" rev-parse HEAD)
 git -C "$APP" checkout --quiet --detach "$TARGET"
