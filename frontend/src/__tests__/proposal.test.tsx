@@ -119,6 +119,47 @@ describe("Proposal editor", () => {
   });
 });
 
+describe("Proposal editor without YAML in the way", () => {
+  const raw = "---\nid: SEM-INT-ARIS-001\ntitle: ARIS\nstatus: draft\nowner: demo-team\nrelated_ids:\n  - SEM-ARCH-001\n---\n# ARIS\n\nТекст.\n";
+
+  it("edits the body only and keeps the front matter byte for byte; metadata is a read-only summary", async () => {
+    const calls = mockApi([
+      { path: "/api/documents/SEM-INT-ARIS-001", body: { ...arisDetail, raw } },
+      { method: "POST", path: "/api/drafts", status: 201, body: proposal() },
+    ]);
+    renderAt("/proposals/new?document=SEM-INT-ARIS-001", "/proposals/new", <ProposalEditorPage />);
+    const editor = await screen.findByRole("textbox", { name: "Текст документа" });
+    expect(editor).toHaveValue("# ARIS\n\nТекст.\n");
+    expect(screen.queryByText(/YAML-заголовком\)/)).toBeNull();
+    const meta = screen.getByText("Метаданные документа").closest("details") as HTMLElement;
+    expect(within(meta).getByText("demo-team")).toBeInTheDocument();
+    expect(within(meta).getByText(/Ещё 1 поле \(связи, списки\)/)).toBeInTheDocument();
+
+    await userEvent.type(editor, "Новая строка.");
+    await userEvent.type(screen.getByLabelText("Причина изменения"), "Дополнить текст");
+    await userEvent.click(screen.getByRole("button", { name: "Создать предложение" }));
+    await screen.findByText("Другая страница");
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
+      proposed_content: raw + "Новая строка.",
+    });
+  });
+
+  it("offers the whole source with YAML behind a toggle for advanced edits", async () => {
+    mockApi([{ path: "/api/documents/SEM-INT-ARIS-001", body: { ...arisDetail, raw } }]);
+    renderAt("/proposals/new?document=SEM-INT-ARIS-001", "/proposals/new", <ProposalEditorPage />);
+    const toggle = await screen.findByRole("button", { name: "Показать исходный текст с YAML" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(toggle);
+    const source = screen.getByLabelText("Исходный текст с метаданными (YAML)");
+    expect(source).toHaveValue(raw);
+    await userEvent.clear(source);
+    await userEvent.type(source, "---\nid: SEM-INT-ARIS-001\nowner: other-team\n---\nТело");
+    await userEvent.click(screen.getByRole("button", { name: "Вернуться к тексту без YAML" }));
+    expect(screen.getByRole("textbox", { name: "Текст документа" })).toHaveValue("Тело");
+    expect(within(screen.getByText("Метаданные документа").closest("details") as HTMLElement).getByText("other-team")).toBeInTheDocument();
+  });
+});
+
 describe("Proposal lifecycle and GitLab submission", () => {
   const current = (container: HTMLElement) => container.querySelector('.lifecycle [aria-current="step"]');
 
@@ -334,8 +375,9 @@ describe("Proposal editor based on an earlier proposal", () => {
       { method: "POST", path: "/api/drafts", status: 201, body: proposal() },
     ]);
     renderAt(`/proposals/new?document=SEM-INT-ARIS-001&from=${ID}`, "/proposals/new", <ProposalEditorPage />);
+    // The editor shows the Markdown body; the YAML header is kept as is and sent with it.
     const editor = await screen.findByLabelText(/Текст документа/);
-    expect(editor).toHaveValue("---\nid: SEM-INT-ARIS-001\n---\n# ARIS v2\n");
+    expect(editor).toHaveValue("# ARIS v2\n");
     expect(screen.getByText(/может отменить правки других авторов/)).toBeInTheDocument();
     expect(screen.getByLabelText("Причина изменения")).toHaveValue("Уточнение формулировки");
 

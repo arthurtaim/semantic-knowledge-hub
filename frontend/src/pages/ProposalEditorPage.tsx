@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { DocumentDetail, ProposalDetail } from "../api/types";
+import { ChangeContentEditor } from "../components/ChangeContentEditor";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { StatusStamp } from "../components/StatusStamp";
 import { AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL } from "../lib/labels";
@@ -229,15 +230,7 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
         </Notice>
       ) : null}
       <form className="editor__form" onSubmit={submit}>
-        <label htmlFor="content">Текст документа (Markdown с YAML-заголовком)</label>
-        <textarea
-          id="content"
-          className="editor__source"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={22}
-          spellCheck={false}
-        />
+        <ChangeContentEditor value={content} onChange={setContent} />
         <label htmlFor="reason">Причина изменения</label>
         <input
           id="reason"
@@ -400,15 +393,7 @@ function ChangeDraftForm({ proposal: p, previousText, onReload }: ChangeDraftFor
         </Notice>
       ) : null}
       <form className="editor__form" onSubmit={save}>
-        <label htmlFor="content">Текст документа (Markdown с YAML-заголовком)</label>
-        <textarea
-          id="content"
-          className="editor__source"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={22}
-          spellCheck={false}
-        />
+        <ChangeContentEditor value={content} onChange={setContent} />
         <label htmlFor="reason">Причина изменения</label>
         <input
           id="reason"

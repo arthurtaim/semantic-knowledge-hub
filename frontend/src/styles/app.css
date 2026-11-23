@@ -150,6 +150,40 @@ textarea {
   color: inherit;
 }
 
+/* Change proposal editor: Markdown body first, metadata as a read-only summary, YAML behind a toggle. */
+.change-editor {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.change-editor__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.change-editor__head label {
+  margin: 0;
+}
+
+/* The Markdown toolbar is the top strip of the text field, as in the new-document editor. */
+.change-editor .md-toolbar {
+  margin-bottom: calc(-1 * var(--space-2));
+}
+
+.change-editor__meta {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-2);
+}
+
+.change-editor__meta summary {
+  cursor: pointer;
+  font-weight: 500;
+  min-height: 1.5rem;
+}
+
 /* One date format in lists and tables (components/When.tsx): never wrapped. */
 .when {
   white-space: nowrap;
