@@ -2173,6 +2173,86 @@ h1 a:hover {
   font-size: var(--step--1);
 }
 
+/* Action rail: the next step, editing, then destructive actions behind a rule. Ruled, not boxed. */
+.proposal__rail > section:first-child {
+  margin-top: var(--space-6);
+}
+
+.proposal__danger:not(:empty) {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+@media (min-width: 1100px) {
+  .proposal__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    column-gap: var(--space-7);
+    align-items: start;
+  }
+
+  .proposal__layout > * {
+    grid-column: 1;
+  }
+
+  .proposal__layout > .proposal__rail {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    position: sticky;
+    top: calc(3.5rem + var(--space-4));
+    max-height: calc(100vh - 3.5rem - 2 * var(--space-4));
+    overflow-y: auto;
+    /* room for focus outlines inside the scroll box */
+    padding: 0 4px 4px;
+    margin: 0 -4px;
+  }
+
+  .proposal__rail > section:first-child {
+    margin-top: var(--space-5);
+  }
+
+  .proposal__rail .proposal__actions > h2 {
+    font-size: var(--step-1);
+    padding-bottom: var(--space-2);
+    border-bottom: 2px solid var(--ink);
+  }
+
+  .proposal__rail .button-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .proposal__rail .button {
+    white-space: normal;
+    text-align: center;
+  }
+
+  .proposal__rail .mr-panel {
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--line-strong);
+    border-radius: 0;
+    padding: var(--space-4) 0 0;
+  }
+
+  .proposal__rail .mr-panel h2 {
+    font-size: var(--step-0);
+  }
+
+  .proposal__rail .mr-panel__fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .proposal__rail .mr-panel__fields dd {
+    margin-bottom: var(--space-2);
+  }
+
+  .proposal__rail .mr-panel p {
+    font-size: var(--step--1);
+  }
+}
+
 .diff {
   background: var(--surface);
   border: 1px solid var(--line);

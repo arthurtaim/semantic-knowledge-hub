@@ -98,7 +98,10 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
   "Не подключено" items under one heading. Order: error (needs attention) → connected → mock, then
   `h2` "Не подключено" and the disabled ones; server order kept within a state. Capabilities are a row of
   the facts `dl`. Rows are ruled, not boxed; one column below 860 px.
-- [ ] Proposal detail: put actions (mark ready / reject / submit) in a sticky right rail on ≥ 1100 px.
+- [x] Proposal detail: put actions (mark ready / reject / submit) in a sticky right rail on ≥ 1100 px.
+  Rail = "Действия" + MR panel (ruled, not boxed); buttons stacked: next step first, then "Продолжить
+  редактирование", the submit hint, and destructive actions behind a rule. Narrower: the rail follows the
+  lifecycle and notices, before the diff (DOM order, so tab order matches what is seen).
 
 ### Phase 3 — polish
 

@@ -438,221 +438,231 @@ export function ProposalDetailPage() {
         </dl>
       </div>
 
-      <ProposalLifecycle proposal={p} />
-      <SourceStatement proposal={p} />
-      {p.status === "merged" && session?.features.confluence_publish ? <PublicationLink proposal={p} /> : null}
-      {p.status === "merged" && p.merged_revision ? (
-        <Notice tone="success" className="sync-notice">
-          <p>
-            <strong>Синхронизировано с базой знаний:</strong> ревизия{" "}
-            <code className="doc-id">{shortRevision(p.merged_revision)}</code>
-            {p.synced_at ? `, ${formatDateTime(p.synced_at)}` : ""}.
-          </p>
-          <Link to={`/documents/${encodeURIComponent(p.document_id)}`} className="text-link">
-            Открыть документ в базе знаний
-          </Link>
-        </Notice>
-      ) : null}
+      {/* ≥ 1100 px: main column (lifecycle, notices, diff, history) and a sticky action rail on the right.
+          Narrower: the rail follows the lifecycle and notices, before the diff (DOM order). */}
+      <div className="proposal__layout">
+        <div className="proposal__flow">
+          <ProposalLifecycle proposal={p} />
+          <SourceStatement proposal={p} />
+          {p.status === "merged" && session?.features.confluence_publish ? <PublicationLink proposal={p} /> : null}
+          {p.status === "merged" && p.merged_revision ? (
+            <Notice tone="success" className="sync-notice">
+              <p>
+                <strong>Синхронизировано с базой знаний:</strong> ревизия{" "}
+                <code className="doc-id">{shortRevision(p.merged_revision)}</code>
+                {p.synced_at ? `, ${formatDateTime(p.synced_at)}` : ""}.
+              </p>
+              <Link to={`/documents/${encodeURIComponent(p.document_id)}`} className="text-link">
+                Открыть документ в базе знаний
+              </Link>
+            </Notice>
+          ) : null}
 
-      {!gitlabEnabled && !settled ? (
-        <Notice tone="info">
-          Отправка в GitLab не настроена — предложение остаётся локальным в этом приложении. Ревью и merge нужно выполнить
-          вне приложения; документ в базе знаний от этого не изменится.
-        </Notice>
-      ) : null}
+          {!gitlabEnabled && !settled ? (
+            <Notice tone="info">
+              Отправка в GitLab не настроена — предложение остаётся локальным в этом приложении. Ревью и merge нужно выполнить
+              вне приложения; документ в базе знаний от этого не изменится.
+            </Notice>
+          ) : null}
 
-      {showConflict ? <ConflictPanel proposal={p} /> : null}
-      {p.status === "submission_failed" ? <SubmissionFailurePanel proposal={p} /> : null}
-      <MergeRequestPanel proposal={p} />
+          {showConflict ? <ConflictPanel proposal={p} /> : null}
+          {p.status === "submission_failed" ? <SubmissionFailurePanel proposal={p} /> : null}
 
-      {errors.length > 0 ? (
-        <Notice tone="danger">
-          <p>
-            {p.can_edit
-              ? "Ошибки проверки — исправьте их, продолжив редактирование черновика:"
-              : "Ошибки проверки — исправьте их в новом предложении:"}
-          </p>
-          <ul>
-            {errors.map((issue) => (
-              <li key={`${issue.code}-${issue.field ?? ""}`}>{issue.message}</li>
-            ))}
-          </ul>
-        </Notice>
-      ) : null}
-      {warnings.length > 0 ? (
-        <Notice tone="warning">
-          <p>Предупреждения:</p>
-          <ul>
-            {warnings.map((issue) => (
-              <li key={`${issue.code}-${issue.field ?? ""}`}>{issue.message}</li>
-            ))}
-          </ul>
-        </Notice>
-      ) : null}
-      {errors.length === 0 && warnings.length === 0 ? (
-        <p className="validation-ok">Проверка метаданных и содержимого пройдена.</p>
-      ) : null}
-
-      <section aria-labelledby="diff-title">
-        <h2 id="diff-title">{creating ? "Содержимое нового файла" : "Изменения"}</h2>
-        {creating ? (
-          <p className="muted">
-            Файл <code className="doc-id">{p.document_path}</code> создаётся целиком: все строки добавлены.
-          </p>
-        ) : null}
-        <DiffView diff={p.diff} newFile={creating} />
-      </section>
-
-      <section className="proposal__actions" aria-labelledby="actions-title">
-        <h2 id="actions-title">Действия</h2>
-        <div aria-live="polite" role="status" className="proposal__live">
-          {pending ? <p className="muted">{PENDING_TEXT[pending]}</p> : null}
-          {message && !pending ? <p className="success">{message}</p> : null}
+          {errors.length > 0 ? (
+            <Notice tone="danger">
+              <p>
+                {p.can_edit
+                  ? "Ошибки проверки — исправьте их, продолжив редактирование черновика:"
+                  : "Ошибки проверки — исправьте их в новом предложении:"}
+              </p>
+              <ul>
+                {errors.map((issue) => (
+                  <li key={`${issue.code}-${issue.field ?? ""}`}>{issue.message}</li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
+          {warnings.length > 0 ? (
+            <Notice tone="warning">
+              <p>Предупреждения:</p>
+              <ul>
+                {warnings.map((issue) => (
+                  <li key={`${issue.code}-${issue.field ?? ""}`}>{issue.message}</li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
+          {errors.length === 0 && warnings.length === 0 ? (
+            <p className="validation-ok">Проверка метаданных и содержимого пройдена.</p>
+          ) : null}
         </div>
-        {actionError ? (
-          <div className="stack">
-            <ErrorState
-              error={actionError}
-              title={PROPOSAL_ERROR_TITLE[actionError.code] ?? AUTHORING_ERROR_TITLE[actionError.code]}
-            />
-            {PROPOSAL_ERROR_HINT[actionError.code] ? <p>{PROPOSAL_ERROR_HINT[actionError.code]}</p> : null}
+
+        <div className="proposal__rail">
+          <section className="proposal__actions" aria-labelledby="actions-title">
+            <h2 id="actions-title">Действия</h2>
+            <div aria-live="polite" role="status" className="proposal__live">
+              {pending ? <p className="muted">{PENDING_TEXT[pending]}</p> : null}
+              {message && !pending ? <p className="success">{message}</p> : null}
+            </div>
+            {actionError ? (
+              <div className="stack">
+                <ErrorState
+                  error={actionError}
+                  title={PROPOSAL_ERROR_TITLE[actionError.code] ?? AUTHORING_ERROR_TITLE[actionError.code]}
+                />
+                {PROPOSAL_ERROR_HINT[actionError.code] ? <p>{PROPOSAL_ERROR_HINT[actionError.code]}</p> : null}
+                <p className="muted">
+                  Состояние предложения обновлено: «{PROPOSAL_STATUS_LABEL[p.status]}». Локальное предложение сохранено.
+                </p>
+              </div>
+            ) : null}
+            <div className="button-row">
+              {showMarkReady ? (
+                <button
+                  type="button"
+                  className="button button--primary"
+                  disabled={!p.can_mark_ready || busy}
+                  onClick={() => run("mark_ready", () => api.markReady(p.id))}
+                >
+                  Отметить «Готово к ревью»
+                </button>
+              ) : null}
+              {showSubmit ? (
+                <button
+                  type="button"
+                  className={`button ${p.status === "ready_for_review" ? "button--primary" : "button--secondary"}`}
+                  disabled={!p.can_submit || !gitlabEnabled || busy}
+                  aria-describedby={submitHint ? "submit-hint" : undefined}
+                  onClick={() => run("submit", () => api.submitDraft(p.id))}
+                >
+                  Отправить в GitLab
+                </button>
+              ) : null}
+              {showRetry ? (
+                <button
+                  type="button"
+                  className="button button--primary"
+                  disabled={!p.can_submit || !gitlabEnabled || busy}
+                  aria-describedby={submitHint ? "submit-hint" : undefined}
+                  onClick={() => run("submit", () => api.submitDraft(p.id))}
+                >
+                  Повторить отправку
+                </button>
+              ) : null}
+              {showRefresh ? (
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled={!p.can_refresh_status || busy}
+                  onClick={() => run("refresh", () => api.refreshDraftStatus(p.id))}
+                >
+                  Проверить статус в GitLab
+                </button>
+              ) : null}
+              {p.can_edit ? (
+                <Link to={editHref} className="button button--secondary">
+                  Продолжить редактирование
+                </Link>
+              ) : null}
+            </div>
+            {submitHint ? (
+              <p id="submit-hint" className="muted">
+                {submitHint}
+              </p>
+            ) : null}
+            <div className="button-row proposal__danger">
+              {p.can_reject && !confirmReject ? (
+                <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmReject(true)}>
+                  Отклонить
+                </button>
+              ) : null}
+              {p.can_delete && !confirmDelete ? (
+                <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
+                  Удалить черновик
+                </button>
+              ) : null}
+            </div>
+            {settled && !showRefresh ? (
+              <p className="muted">
+                {p.status === "merged" ? "Предложение завершено: merge подтверждён GitLab." : "Предложение закрыто без изменений документа."}
+              </p>
+            ) : null}
+            {confirmReject ? (
+              <div className="reject-box">
+                <label htmlFor="reject-comment">Комментарий к отклонению (необязательно)</label>
+                <input id="reject-comment" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} />
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="button button--danger"
+                    disabled={busy}
+                    onClick={() => run("reject", () => api.rejectDraft(p.id, comment))}
+                  >
+                    Подтвердить отклонение
+                  </button>
+                  <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmReject(false)}>
+                    Отмена
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {confirmDelete ? (
+              <div className="reject-box" role="group" aria-labelledby="confirm-delete-proposal">
+                <p id="confirm-delete-proposal">
+                  <strong>Удалить черновик безвозвратно?</strong>{" "}
+                  {creating
+                    ? "Текст нового документа будет удалён; в базе знаний он не создавался."
+                    : "Предложенная правка будет удалена; документ не изменится."}
+                </p>
+                <div className="button-row">
+                  <button type="button" className="button button--danger" disabled={busy} onClick={deleteDraft}>
+                    Удалить безвозвратно
+                  </button>
+                  <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>
+                    Не удалять
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {p.review_comment ? (
+              <p>
+                Комментарий ревьюера: <q>{p.review_comment}</q>
+              </p>
+            ) : null}
+          </section>
+          <MergeRequestPanel proposal={p} />
+        </div>
+
+        <section className="proposal__diff" aria-labelledby="diff-title">
+          <h2 id="diff-title">{creating ? "Содержимое нового файла" : "Изменения"}</h2>
+          {creating ? (
             <p className="muted">
-              Состояние предложения обновлено: «{PROPOSAL_STATUS_LABEL[p.status]}». Локальное предложение сохранено.
+              Файл <code className="doc-id">{p.document_path}</code> создаётся целиком: все строки добавлены.
             </p>
-          </div>
-        ) : null}
-        <div className="button-row">
-          {p.can_edit ? (
-            <Link to={editHref} className="button button--secondary">
-              Продолжить редактирование
-            </Link>
           ) : null}
-          {showMarkReady ? (
-            <button
-              type="button"
-              className="button button--primary"
-              disabled={!p.can_mark_ready || busy}
-              onClick={() => run("mark_ready", () => api.markReady(p.id))}
-            >
-              Отметить «Готово к ревью»
-            </button>
-          ) : null}
-          {showSubmit ? (
-            <button
-              type="button"
-              className={`button ${p.status === "ready_for_review" ? "button--primary" : "button--secondary"}`}
-              disabled={!p.can_submit || !gitlabEnabled || busy}
-              aria-describedby={submitHint ? "submit-hint" : undefined}
-              onClick={() => run("submit", () => api.submitDraft(p.id))}
-            >
-              Отправить в GitLab
-            </button>
-          ) : null}
-          {showRetry ? (
-            <button
-              type="button"
-              className="button button--primary"
-              disabled={!p.can_submit || !gitlabEnabled || busy}
-              aria-describedby={submitHint ? "submit-hint" : undefined}
-              onClick={() => run("submit", () => api.submitDraft(p.id))}
-            >
-              Повторить отправку
-            </button>
-          ) : null}
-          {showRefresh ? (
-            <button
-              type="button"
-              className="button button--secondary"
-              disabled={!p.can_refresh_status || busy}
-              onClick={() => run("refresh", () => api.refreshDraftStatus(p.id))}
-            >
-              Проверить статус в GitLab
-            </button>
-          ) : null}
-          {p.can_reject && !confirmReject ? (
-            <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmReject(true)}>
-              Отклонить
-            </button>
-          ) : null}
-          {p.can_delete && !confirmDelete ? (
-            <button type="button" className="button button--danger" disabled={busy} onClick={() => setConfirmDelete(true)}>
-              Удалить черновик
-            </button>
-          ) : null}
-        </div>
-        {submitHint ? (
-          <p id="submit-hint" className="muted">
-            {submitHint}
-          </p>
-        ) : null}
-        {settled && !showRefresh ? (
-          <p className="muted">
-            {p.status === "merged" ? "Предложение завершено: merge подтверждён GitLab." : "Предложение закрыто без изменений документа."}
-          </p>
-        ) : null}
-        {confirmReject ? (
-          <div className="reject-box">
-            <label htmlFor="reject-comment">Комментарий к отклонению (необязательно)</label>
-            <input id="reject-comment" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} />
-            <div className="button-row">
-              <button
-                type="button"
-                className="button button--danger"
-                disabled={busy}
-                onClick={() => run("reject", () => api.rejectDraft(p.id, comment))}
-              >
-                Подтвердить отклонение
-              </button>
-              <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmReject(false)}>
-                Отмена
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {confirmDelete ? (
-          <div className="reject-box" role="group" aria-labelledby="confirm-delete-proposal">
-            <p id="confirm-delete-proposal">
-              <strong>Удалить черновик безвозвратно?</strong>{" "}
-              {creating
-                ? "Текст нового документа будет удалён; в базе знаний он не создавался."
-                : "Предложенная правка будет удалена; документ не изменится."}
-            </p>
-            <div className="button-row">
-              <button type="button" className="button button--danger" disabled={busy} onClick={deleteDraft}>
-                Удалить безвозвратно
-              </button>
-              <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>
-                Не удалять
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {p.review_comment ? (
-          <p>
-            Комментарий ревьюера: <q>{p.review_comment}</q>
-          </p>
-        ) : null}
-      </section>
+          <DiffView diff={p.diff} newFile={creating} />
+        </section>
 
-      <section aria-labelledby="history-title">
-        <h2 id="history-title">История</h2>
-        <ol className="history">
-          {p.history.map((event, index) => (
-            <li key={index}>
-              <time dateTime={event.at}>{formatDateTime(event.at)}</time> —{" "}
-              {PROPOSAL_ACTION_LABEL[event.action] ?? event.action}
-              {event.status ? <span className="muted"> → {PROPOSAL_STATUS_LABEL[event.status] ?? event.status}</span> : null}
-              <span className="muted"> ({event.actor})</span>
-            </li>
-          ))}
-        </ol>
-        {p.submission.attempts > 0 && p.status !== "submission_failed" ? (
-          <p className="muted">
-            {p.submission.attempts} {pluralRu(p.submission.attempts, "попытка", "попытки", "попыток")} отправки в GitLab,
-            последняя — {formatDateTime(p.submission.last_attempt_at)}.
-          </p>
-        ) : null}
-      </section>
+        <section className="proposal__history" aria-labelledby="history-title">
+          <h2 id="history-title">История</h2>
+          <ol className="history">
+            {p.history.map((event, index) => (
+              <li key={index}>
+                <time dateTime={event.at}>{formatDateTime(event.at)}</time> —{" "}
+                {PROPOSAL_ACTION_LABEL[event.action] ?? event.action}
+                {event.status ? <span className="muted"> → {PROPOSAL_STATUS_LABEL[event.status] ?? event.status}</span> : null}
+                <span className="muted"> ({event.actor})</span>
+              </li>
+            ))}
+          </ol>
+          {p.submission.attempts > 0 && p.status !== "submission_failed" ? (
+            <p className="muted">
+              {p.submission.attempts} {pluralRu(p.submission.attempts, "попытка", "попытки", "попыток")} отправки в GitLab,
+              последняя — {formatDateTime(p.submission.last_attempt_at)}.
+            </p>
+          ) : null}
+        </section>
+      </div>
     </div>
   );
 }
