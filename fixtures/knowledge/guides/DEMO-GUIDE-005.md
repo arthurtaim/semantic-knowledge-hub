@@ -33,7 +33,7 @@ ProcessMetadataTable. Например, атрибут `owner_role` логиче
 ## Step by step
 
 1. **Check the document title and type.** In the demo catalog, logical models are titled «Логическая модель: …»
-   (for example, DEMO-SEM-002 *BusinessProcess*) and physical models «Физическая модель: …» (DEMO-SEM-005
+   (for example, [[DEMO-SEM-002]] *BusinessProcess*) and physical models «Физическая модель: …» (DEMO-SEM-005
    *ProcessMetadataTable*). Both use type `domain`, so the type alone is not enough.
 2. **Look at the vocabulary.**
    - A **logical model** talks about *entities* and *attributes* with business meaning: `process_id`,
@@ -41,8 +41,8 @@ ProcessMetadataTable. Например, атрибут `owner_role` логиче
      storage, indexes or partitions.
    - A **physical model** talks about *tables* and *columns*: column names, data types, keys, indexes and
      technical columns. Names may be adapted for storage, e.g. `owner_role_code` instead of `owner_role`.
-3. **Follow the relations.** The physical model is `derived_from` the logical one: DEMO-SEM-005 is derived from
-   DEMO-SEM-002. The mapping document DEMO-SEM-006 `maps_to` the physical model and `depends_on` the logical
+3. **Follow the relations.** The physical model is `derived_from` the logical one: [[DEMO-SEM-005]] is derived from
+   DEMO-SEM-002. The mapping document [[DEMO-SEM-006]] `maps_to` the physical model and `depends_on` the logical
    one. If a document has a `derived_from` edge to a logical entity and describes columns, it is physical.
 4. **Find the mapping row.** For any attribute, open DEMO-SEM-006 and find the row that connects the logical
    attribute to the physical column. Never guess a column name from the attribute name.

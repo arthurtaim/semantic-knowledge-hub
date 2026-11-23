@@ -29,11 +29,11 @@ relations:
 
 ## Источник и получатель
 
-Источник — строки `SYS-CATIA`, принятые потоком DEMO-INT-004. Получателей два:
+Источник — строки `SYS-CATIA`, принятые потоком [[DEMO-INT-004]]. Получателей два:
 
-- BusinessObject — состав атрибутов задан логической моделью DEMO-SEM-003; идентификатор объекта — код системы
+- BusinessObject — состав атрибутов задан логической моделью [[DEMO-SEM-003]]; идентификатор объекта — код системы
   и ключ в источнике через двоеточие;
-- датасет Dependency Graph (`DS-002`, DEMO-SEM-010) — рёбра с полями `node_id`, `depends_on_node_id`,
+- датасет Dependency Graph (`DS-002`, [[DEMO-SEM-010]]) — рёбра с полями `node_id`, `depends_on_node_id`,
   `dependency_type`, `source_system`.
 
 ## Входные данные (Inputs)
