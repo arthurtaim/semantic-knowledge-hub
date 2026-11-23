@@ -88,9 +88,12 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
 - [x] Document page: merge the in-page demo notice into the passport as a "Демо-документ" field, so the
   only demo notice above the fold is the bar (keep text matched by `document.test.tsx`). The field is the
   first passport row (label above the text) and keeps the original copy, including "Демо-данные.".
-- [ ] Explorer: collapse the meta row to `ID · Раздел · Владелец · Обновлён`; show "Источник" only when
-  sources are mixed; move "Проверка" next to the stamp.
-- [ ] Explorer on phones: filters into a `<details>` "Фильтры (n)" disclosure above results.
+- [x] Explorer: collapse the meta row to `ID · Раздел · Владелец · Обновлён`; show "Источник" only when
+  sources are mixed; move "Проверка" next to the stamp. With one source it is named once above the list
+  ("Источник: …") and stays in each row as visually hidden text, so every result still carries its
+  provenance for screen readers. The review flag is text plus a hollow ring. Pressed filter = `--accent-ink`.
+- [x] Explorer on phones: filters into a `<details>` "Фильтры (n)" disclosure above results (below 860 px,
+  `useMediaQuery`); closed by default, opened when a filter is active.
 - [ ] Integrations: two-column list (name + state | facts) instead of a three-column card grid; group
   "Не подключено" items under one heading.
 - [ ] Proposal detail: put actions (mark ready / reject / submit) in a sticky right rail on ≥ 1100 px.

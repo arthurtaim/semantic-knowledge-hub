@@ -19,6 +19,7 @@ import {
   TYPE_ORDER,
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { useMediaQuery } from "../lib/useMediaQuery";
 
 const PAGE_SIZE = 20;
 /** Explicit orders; relevance (with a query) and section/title order (without) are the server default. */
@@ -29,6 +30,8 @@ function parseSort(value: string | null): DocumentSort | null {
 }
 const FILTER_KEYS = ["type", "status", "owner", "tag", "source"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
+/** Same breakpoint as the one-column explorer layout in app.css. */
+const NARROW = "(max-width: 860px)";
 
 interface FilterGroupProps {
   title: string;
@@ -77,6 +80,15 @@ export function ExplorerPage() {
   const filters = Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k)])) as Record<FilterKey, string | null>;
   const sort = parseSort(params.get("sort"));
   const [draftQuery, setDraftQuery] = useState(query);
+  const narrow = useMediaQuery(NARROW);
+  const activeFilters = FILTER_KEYS.filter((k) => filters[k]).length;
+  // Phones: filters sit in a disclosure, closed by default and opened whenever a filter becomes active.
+  const [filtersOpen, setFiltersOpen] = useState(activeFilters > 0);
+  const [seenActiveFilters, setSeenActiveFilters] = useState(activeFilters);
+  if (activeFilters !== seenActiveFilters) {
+    setSeenActiveFilters(activeFilters);
+    if (activeFilters > 0) setFiltersOpen(true);
+  }
 
   useEffect(() => setDraftQuery(query), [query]);
 
@@ -124,6 +136,70 @@ export function ExplorerPage() {
   const total = list.data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const activeType = filters.type as DocType | null;
+  const items = list.data?.items ?? [];
+  // The source is shown per row only when the results mix sources; otherwise once, above the list.
+  const sources = [...new Set(items.map((d) => d.source))];
+  const singleSource = sources.length === 1 ? sources[0] : null;
+
+  const filterGroups = (
+    <>
+      <FilterGroup
+        title="Раздел"
+        name="type"
+        active={filters.type}
+        onToggle={toggle}
+        options={TYPE_ORDER.filter((t) => typeCounts.has(t)).map((t) => ({
+          value: t,
+          label: TYPE_LABEL[t],
+          count: typeCounts.get(t),
+        }))}
+      />
+      <FilterGroup
+        title="Статус"
+        name="status"
+        active={filters.status}
+        onToggle={toggle}
+        options={STATUS_ORDER.filter((s) => statusCounts.has(s)).map((s) => ({
+          value: s,
+          label: STATUS_LABEL[s as DocStatus],
+          count: statusCounts.get(s),
+        }))}
+      />
+      <FilterGroup
+        title="Владелец"
+        name="owner"
+        collapsed
+        active={filters.owner}
+        onToggle={toggle}
+        options={(facets.data?.owners ?? []).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
+      />
+      <FilterGroup
+        title="Источник"
+        name="source"
+        collapsed
+        active={filters.source}
+        onToggle={toggle}
+        options={(facets.data?.sources ?? []).map((f) => ({
+          value: f.value,
+          label: SOURCE_LABEL[f.value as keyof typeof SOURCE_LABEL] ?? f.value,
+          count: f.count,
+        }))}
+      />
+      <FilterGroup
+        title="Тег"
+        name="tag"
+        collapsed
+        active={filters.tag}
+        onToggle={toggle}
+        options={(facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
+      />
+      {hasFilters ? (
+        <button type="button" className="button button--ghost" onClick={() => setParams(new URLSearchParams())}>
+          Сбросить фильтры
+        </button>
+      ) : null}
+    </>
+  );
 
   return (
     <div className="explorer">
@@ -155,70 +231,32 @@ export function ExplorerPage() {
 
       <div className="explorer__body">
         <aside className="filters" aria-label="Фильтры">
-          <FilterGroup
-            title="Раздел"
-            name="type"
-            active={filters.type}
-            onToggle={toggle}
-            options={TYPE_ORDER.filter((t) => typeCounts.has(t)).map((t) => ({
-              value: t,
-              label: TYPE_LABEL[t],
-              count: typeCounts.get(t),
-            }))}
-          />
-          <FilterGroup
-            title="Статус"
-            name="status"
-            active={filters.status}
-            onToggle={toggle}
-            options={STATUS_ORDER.filter((s) => statusCounts.has(s)).map((s) => ({
-              value: s,
-              label: STATUS_LABEL[s as DocStatus],
-              count: statusCounts.get(s),
-            }))}
-          />
-          <FilterGroup
-            title="Владелец"
-            name="owner"
-            collapsed
-            active={filters.owner}
-            onToggle={toggle}
-            options={(facets.data?.owners ?? []).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
-          />
-          <FilterGroup
-            title="Источник"
-            name="source"
-            collapsed
-            active={filters.source}
-            onToggle={toggle}
-            options={(facets.data?.sources ?? []).map((f) => ({
-              value: f.value,
-              label: SOURCE_LABEL[f.value as keyof typeof SOURCE_LABEL] ?? f.value,
-              count: f.count,
-            }))}
-          />
-          <FilterGroup
-            title="Тег"
-            name="tag"
-            collapsed
-            active={filters.tag}
-            onToggle={toggle}
-            options={(facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
-          />
-          {hasFilters ? (
-            <button type="button" className="button button--ghost" onClick={() => setParams(new URLSearchParams())}>
-              Сбросить фильтры
-            </button>
-          ) : null}
+          {narrow ? (
+            <details
+              className="filters-disclosure"
+              open={filtersOpen}
+              onToggle={(e) => setFiltersOpen(e.currentTarget.open)}
+            >
+              <summary>Фильтры{activeFilters > 0 ? ` (${activeFilters})` : ""}</summary>
+              <div className="filters-disclosure__body">{filterGroups}</div>
+            </details>
+          ) : (
+            filterGroups
+          )}
         </aside>
 
         <section className="results" aria-labelledby="results-title" aria-busy={list.loading}>
           <div className="results__bar">
-            <h2 id="results-title" className="results__summary" aria-live="polite">
-              {list.loading
-                ? "Поиск…"
-                : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
-            </h2>
+            <div className="results__heading">
+              <h2 id="results-title" className="results__summary" aria-live="polite">
+                {list.loading
+                  ? "Поиск…"
+                  : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
+              </h2>
+              {singleSource && !list.loading ? (
+                <p className="results__source">Источник: {SOURCE_LABEL[singleSource]}</p>
+              ) : null}
+            </div>
             <div className="sort-control">
               <label htmlFor="explorer-sort">Сортировка</label>
               <select id="explorer-sort" value={sort ?? ""} onChange={(e) => update({ sort: e.target.value || null })}>
@@ -253,6 +291,11 @@ export function ExplorerPage() {
                     </Link>
                     <span className="result__badges">
                       {doc.index_state === "stale" ? <StaleMark /> : null}
+                      {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
+                        <span className="review-flag" title="Проверка документа">
+                          {REVIEW_LABEL[doc.review_state]}
+                        </span>
+                      ) : null}
                       <StatusStamp status={doc.status} />
                     </span>
                   </div>
@@ -276,7 +319,8 @@ export function ExplorerPage() {
                         {doc.owner_missing ? "не назначен" : doc.owner}
                       </dd>
                     </div>
-                    <div>
+                    {/* One source for the whole list: shown once above it; the row keeps it for screen readers. */}
+                    <div className={singleSource ? "visually-hidden" : undefined}>
                       <dt>Источник</dt>
                       <dd>{SOURCE_LABEL[doc.source]}</dd>
                     </div>
@@ -286,12 +330,6 @@ export function ExplorerPage() {
                         {doc.updated_at ? <time dateTime={doc.updated_at}>{formatDate(doc.updated_at)}</time> : "не указано"}
                       </dd>
                     </div>
-                    {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-                      <div>
-                        <dt>Проверка</dt>
-                        <dd className="flag">{REVIEW_LABEL[doc.review_state]}</dd>
-                      </div>
-                    ) : null}
                   </dl>
                 </li>
               ))}

@@ -1,6 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatDate } from "../lib/labels";
 import { ExplorerPage } from "../pages/ExplorerPage";
 import { arisSummary, documentPage, emptyPage, facets, staleSync } from "./fixtures";
@@ -100,5 +100,78 @@ describe("Knowledge explorer", () => {
     ]);
     renderAt("/documents", "/documents", <ExplorerPage />);
     expect(await screen.findByText("Данные могут быть устаревшими.")).toBeInTheDocument();
+  });
+
+  it("shows the source once above the list when all results share it", async () => {
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: /\/api\/documents\?/, body: documentPage },
+    ]);
+    renderAt("/documents", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    expect(screen.getByText("Источник: Локальный workspace")).toBeInTheDocument();
+    // the row still names its source for screen readers
+    const source = within(link.closest("li") as HTMLElement).getByText("Локальный workspace");
+    expect(source.closest("div")).toHaveClass("visually-hidden");
+  });
+
+  it("shows the source on every row when the results mix sources", async () => {
+    const gitlabDoc = { ...arisSummary, id: "SEM-GL-001", title: "GitLab document", source: "gitlab" as const };
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: /\/api\/documents\?/, body: { ...documentPage, items: [arisSummary, gitlabDoc], total: 2 } },
+    ]);
+    renderAt("/documents", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: "GitLab document" });
+    expect(screen.queryByText(/^Источник:/)).toBeNull();
+    expect(within(link.closest("li") as HTMLElement).getByText("GitLab").closest("div")).not.toHaveClass("visually-hidden");
+  });
+
+  it("puts an overdue review next to the status stamp", async () => {
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: /\/api\/documents\?/, body: { ...documentPage, items: [{ ...arisSummary, review_state: "stale" }] } },
+    ]);
+    renderAt("/documents", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    const head = link.closest(".result__head") as HTMLElement;
+    expect(within(head).getByText("Проверка устарела")).toBeInTheDocument();
+    expect(within(head).getByText("Черновик")).toBeInTheDocument();
+  });
+
+  describe("on a phone", () => {
+    function phoneScreen() {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((media: string) => ({ matches: true, media, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+      );
+    }
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("keeps the filters in a closed disclosure when none is active", async () => {
+      phoneScreen();
+      mockApi([
+        { path: "/api/knowledge/facets", body: facets },
+        { path: /\/api\/documents\?/, body: documentPage },
+      ]);
+      renderAt("/documents", "/documents", <ExplorerPage />);
+      await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+      const summary = screen.getByText("Фильтры", { selector: "summary" });
+      expect((summary.parentElement as HTMLDetailsElement).open).toBe(false);
+      expect(within(screen.getByRole("complementary", { name: "Фильтры" })).getByRole("group", { name: "Статус" })).toBeInTheDocument();
+    });
+
+    it("opens the disclosure and counts active filters", async () => {
+      phoneScreen();
+      mockApi([
+        { path: "/api/knowledge/facets", body: facets },
+        { path: /\/api\/documents\?/, body: documentPage },
+      ]);
+      renderAt("/documents?status=draft&owner=demo-team", "/documents", <ExplorerPage />);
+      await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+      const summary = screen.getByText("Фильтры (2)", { selector: "summary" });
+      expect((summary.parentElement as HTMLDetailsElement).open).toBe(true);
+      expect(screen.getByRole("button", { name: /Черновик/ })).toHaveAttribute("aria-pressed", "true");
+    });
   });
 });

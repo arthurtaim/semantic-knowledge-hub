@@ -1026,7 +1026,7 @@ label {
 }
 
 .filter-option[aria-pressed="true"] {
-  background: var(--accent);
+  background: var(--accent-ink);
   color: #fff;
 }
 
@@ -1040,6 +1040,19 @@ label {
   font-weight: 500;
   color: var(--ink-soft);
   margin: 0;
+}
+
+.results__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+}
+
+.results__source {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--ink-faint);
 }
 
 .results__bar {
@@ -1066,9 +1079,29 @@ label {
 .result__badges {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-2) var(--space-3);
   align-items: center;
   justify-content: flex-end;
+}
+
+/* Review overdue / never reviewed: text plus a hollow ring (the stamp has a filled dot), never colour alone. */
+.review-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+.review-flag::before {
+  content: "";
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
 }
 
 .result-list {
@@ -3227,23 +3260,37 @@ h1 a:hover {
     padding: var(--space-5) var(--gutter) var(--space-6);
   }
 
-  .filters {
-    top: auto;
-  }
-
   .passport {
     top: auto;
   }
 
   .explorer__body {
     grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
   }
 
   .filters {
     position: static;
+  }
+
+  .filters-disclosure > summary {
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .filters-disclosure[open] > summary {
+    border-bottom-color: transparent;
+  }
+
+  .filters-disclosure__body {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-4);
+    padding: var(--space-2) 0 var(--space-4);
+    border-bottom: 1px solid var(--line);
   }
 
   .filter-group {
