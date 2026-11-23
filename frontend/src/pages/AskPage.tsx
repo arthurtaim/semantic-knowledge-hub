@@ -12,7 +12,15 @@ import type {
   ExternalRetrievalSummary,
   SearchScope,
 } from "../api/types";
-import { AnswerText, externalVersion, isExternal, NextActions, SupportBadge } from "../components/AnswerParts";
+import {
+  AnswerText,
+  externalVersion,
+  InsufficientEvidence,
+  isExternal,
+  NextActions,
+  SupportBadge,
+} from "../components/AnswerParts";
+import { Composer } from "../components/Composer";
 import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
@@ -355,17 +363,21 @@ function EvidenceGroup({ title, note, citations, turnNo, withActions, traceId }:
 
 interface AnswerViewProps {
   answer: AskResponse;
-  asked: SearchScope[];
+  request: AskRequest;
   turnNo: number;
-  question: string;
   onRefine: (question: string) => void;
+  /** A separate, labelled corporate-only request for the same question. */
+  onAskCorporate: (request: AskRequest) => void;
 }
 
 /**
  * Evidence first: the support level, then the quoted passages (team and corporate apart), then the
  * explanation with [n] markers, then what to do next. Generated text is labelled «ИИ», demo output «Демо».
  */
-function AnswerView({ answer, asked, turnNo, question, onRefine }: AnswerViewProps) {
+function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate }: AnswerViewProps) {
+  const session = useSession();
+  const asked = request.sources;
+  const question = request.question;
   const insufficient = answer.confidence === "insufficient_evidence";
   const traceId = answer.retrieval_trace_id ?? null;
   // Several citations may quote one Confluence page: its feedback controls appear once, at the first of them.
@@ -396,22 +408,16 @@ function AnswerView({ answer, asked, turnNo, question, onRefine }: AnswerViewPro
       <CorporateGap answer={answer} asked={asked} />
       {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
       {insufficient ? (
-        <div className="answer__insufficient">
-          <p>
-            <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
-            доказательств — уточните вопрос, включите черновики или проверьте документы вручную.
-          </p>
-          {answer.unmatched_terms.length > 0 ? (
-            <p>
-              Не найдено в источниках:{" "}
-              {answer.unmatched_terms.map((term, index) => (
-                <span key={term}>
-                  {index > 0 ? ", " : ""}«{term}»
-                </span>
-              ))}
-            </p>
-          ) : null}
-        </div>
+        <InsufficientEvidence
+          question={question}
+          request={request}
+          answer={answer}
+          corporateState={session?.features.corporate_search}
+          onRefine={onRefine}
+          onAskCorporate={() =>
+            onAskCorporate({ ...request, sources: ["corporate"], search_external: true, history: [] })
+          }
+        />
       ) : null}
 
       {answer.citations.length > 0 ? (
@@ -461,7 +467,7 @@ function AnswerView({ answer, asked, turnNo, question, onRefine }: AnswerViewPro
         </Notice>
       ) : null}
 
-      <NextActions citations={answer.citations} question={question} onRefine={onRefine} />
+      {insufficient ? null : <NextActions citations={answer.citations} question={question} onRefine={onRefine} />}
 
       {answer.excluded_sources.length > 0 ? (
         <section aria-labelledby={`excluded-title-${turnNo}`} className="excluded">
@@ -495,11 +501,12 @@ interface TurnViewProps {
   turn: Turn;
   turnNo: number;
   onRefine: (question: string) => void;
+  onAskCorporate: (request: AskRequest) => void;
   /** Only the last failed turn offers a retry (a new question replaces it). */
   onRetry?: () => void;
 }
 
-function TurnView({ turn, turnNo, onRetry, onRefine }: TurnViewProps) {
+function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate }: TurnViewProps) {
   const running = isRunning(turn);
   return (
     <article className="turn" aria-busy={running}>
@@ -543,13 +550,31 @@ function TurnView({ turn, turnNo, onRetry, onRefine }: TurnViewProps) {
       {turn.response ? (
         <AnswerView
           answer={turn.response}
-          asked={turn.request.sources}
+          request={turn.request}
           turnNo={turnNo}
-          question={turn.request.question}
           onRefine={onRefine}
+          onAskCorporate={onAskCorporate}
         />
       ) : null}
     </article>
+  );
+}
+
+/** The ask page without an AI provider: what is off, and the search that still works. */
+function AskUnavailable() {
+  return (
+    <div className="ask">
+      <div className="page-head">
+        <h1>Спросить базу знаний</h1>
+        <p className="lead">ИИ в этой установке отключён — ответы ассистента недоступны. Поиск по документам работает полностью.</p>
+      </div>
+      <Composer variant="hero" inputId="ask-search-input" />
+      <p className="ask__unavailable-links">
+        <Link to="/documents" className="text-link">
+          Открыть каталог документов
+        </Link>
+      </p>
+    </div>
   );
 }
 
@@ -711,6 +736,9 @@ export function AskPage() {
 
   const lastTurn = turns[turns.length - 1];
 
+  // AI_PROVIDER=disabled: no question form with a button that can only fail — the page says so and searches.
+  if (aiMode === "disabled") return <AskUnavailable />;
+
   return (
     <div className="ask">
       <div className="page-head">
@@ -733,6 +761,7 @@ export function AskPage() {
                 setQuestion(text);
                 questionRef.current?.focus();
               }}
+              onAskCorporate={(request) => void run(request)}
             />
           ))}
         </section>

@@ -945,15 +945,17 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         </details>
       </section>
 
-      <DraftAiPanel
-        draftId={saved?.id ?? null}
-        dirty={dirty}
-        locked={locked !== null}
-        body={fields.body}
-        bodyRef={bodyRef}
-        aiDisabled={session?.features.ai_mode === "disabled"}
-        onApplied={reloadSaved}
-      />
+      {/* Without an AI provider the panel is not shown: the editor itself is the manual path. */}
+      {session?.features.ai_mode === "disabled" ? null : (
+        <DraftAiPanel
+          draftId={saved?.id ?? null}
+          dirty={dirty}
+          locked={locked !== null}
+          body={fields.body}
+          bodyRef={bodyRef}
+          onApplied={reloadSaved}
+        />
+      )}
 
       <section className="authoring__check" aria-labelledby="check-title">
         <h2 id="check-title">Проверка</h2>
@@ -1110,7 +1112,6 @@ interface DraftAiPanelProps {
   locked: boolean;
   body: string;
   bodyRef: { current: HTMLTextAreaElement | null };
-  aiDisabled: boolean;
   onApplied: () => Promise<void>;
 }
 
@@ -1119,7 +1120,7 @@ interface DraftAiPanelProps {
  * explain the selection. Proposals refer to the saved version; an accepted proposal saves the draft on the
  * server (new version), after which the editor reloads it.
  */
-function DraftAiPanel({ draftId, dirty, locked, body, bodyRef, aiDisabled, onApplied }: DraftAiPanelProps) {
+function DraftAiPanel({ draftId, dirty, locked, body, bodyRef, onApplied }: DraftAiPanelProps) {
   const state = useAiProposal((p) => {
     if (p.result_draft_id && p.result_draft_id === draftId) void onApplied();
   });
@@ -1154,8 +1155,7 @@ function DraftAiPanel({ draftId, dirty, locked, body, bodyRef, aiDisabled, onApp
     },
   ];
   let blocked: ReactNode = null;
-  if (aiDisabled) blocked = "ИИ отключён в этой установке: предложения недоступны.";
-  else if (locked) blocked = "Черновик больше нельзя редактировать — предложения ИИ к нему не применяются.";
+  if (locked) blocked = "Черновик больше нельзя редактировать — предложения ИИ к нему не применяются.";
   else if (!draftId || dirty) {
     blocked = draftId
       ? "Есть несохранённые изменения. ИИ предлагает правки к сохранённой версии черновика — нажмите «Сохранить черновик»."

@@ -92,6 +92,7 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
 
   const changed = content !== doc.raw;
   const aiAvailable = session?.features.ai_edit_suggestions ?? false;
+  const aiMode = session?.features.ai_mode;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -162,34 +163,44 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
         </div>
       </dl>
 
-      <section className="panel ai-draft" aria-labelledby="ai-draft-title">
-        <h2 id="ai-draft-title">Черновик от ИИ</h2>
-        {aiAvailable ? (
-          <>
-            <label htmlFor="instruction">Что изменить</label>
-            <input
-              id="instruction"
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              maxLength={2000}
-              placeholder="Например: сформулируй открытые вопросы яснее"
-            />
-            <button
-              type="button"
-              className="button button--secondary"
-              disabled={pending || instruction.trim().length < 3}
-              onClick={suggest}
-            >
-              Подготовить черновик
-            </button>
-            {suggestNote.length > 0 ? <Notice tone="warning">{suggestNote.join(" ")}</Notice> : null}
-          </>
-        ) : (
-          <p className="muted">
-            В демо-режиме ИИ не генерирует правки. Отредактируйте текст вручную — он пройдёт ту же проверку.
-          </p>
-        )}
-      </section>
+      {/* AI_PROVIDER=disabled: no AI section at all — manual editing below is the whole flow. */}
+      {aiMode === "disabled" ? null : (
+        <section className="panel ai-draft" aria-labelledby="ai-draft-title">
+          <h2 id="ai-draft-title">Черновик от ИИ</h2>
+          {aiAvailable ? (
+            <>
+              <label htmlFor="instruction">Что изменить</label>
+              <input
+                id="instruction"
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                maxLength={2000}
+                placeholder="Например: сформулируй открытые вопросы яснее"
+              />
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={pending || instruction.trim().length < 3}
+                onClick={suggest}
+              >
+                Подготовить черновик
+              </button>
+              {suggestNote.length > 0 ? <Notice tone="warning">{suggestNote.join(" ")}</Notice> : null}
+            </>
+          ) : (
+            <div className="ai-draft__off">
+              <button type="button" className="button button--secondary" disabled aria-describedby="ai-draft-off">
+                Подготовить черновик
+              </button>
+              <p id="ai-draft-off" className="muted">
+                {aiMode === "mock"
+                  ? "В демо-режиме ИИ не генерирует правки. Отредактируйте текст вручную — он пройдёт ту же проверку."
+                  : "ИИ-правки документов выключены в этой установке. Отредактируйте текст вручную — он пройдёт ту же проверку."}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
 
       {basisProblem ? (
         <Notice tone="warning">

@@ -2543,6 +2543,87 @@ h1 a:hover {
   color: var(--ink-faint);
 }
 
+/* «В базе знаний нет ответа на этот вопрос»: a structured result, not an apology. Dotted frame = no support. */
+.insufficient {
+  border: 1.5px dotted var(--ink-faint);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-4) var(--space-5);
+}
+
+.insufficient h3 {
+  font-size: var(--step-1);
+}
+
+.insufficient__searched {
+  color: var(--ink-soft);
+}
+
+.insufficient__title {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: var(--step-0);
+}
+
+.insufficient__note {
+  margin: 0 0 var(--space-2);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+
+.partial-matches {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.partial-matches li {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.partial-matches__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+}
+
+.partial-matches__quote {
+  font-family: var(--font-read);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+
+.insufficient__steps {
+  margin: 0;
+  padding-left: 1.4rem;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.insufficient__steps li > span {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+
+.ai-draft__off {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.ai-draft__off p {
+  margin: 0;
+}
+
+.ask__unavailable-links {
+  margin-top: var(--space-4);
+}
+
 .excluded ul {
   padding-left: 1.2rem;
 }

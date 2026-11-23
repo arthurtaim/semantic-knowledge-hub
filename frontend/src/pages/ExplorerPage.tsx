@@ -17,6 +17,8 @@ import {
   TYPE_LABEL,
   TYPE_ORDER,
 } from "../lib/labels";
+import { canAsk } from "../lib/aiMode";
+import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { When } from "../components/When";
@@ -81,6 +83,7 @@ function askAboutResults(query: string, ids: string[]): string {
 }
 
 export function ExplorerPage() {
+  const session = useSession();
   const [params, setParams] = useSearchParams();
   const query = params.get("query") ?? "";
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
@@ -263,7 +266,7 @@ export function ExplorerPage() {
               {singleSource && !list.loading ? (
                 <p className="results__source">Источник: {SOURCE_LABEL[singleSource]}</p>
               ) : null}
-              {query && list.data && list.data.items.length > 0 && !list.loading ? (
+              {query && list.data && list.data.items.length > 0 && !list.loading && canAsk(session?.features.ai_mode) ? (
                 <Link to={askAboutResults(query, list.data.items.map((d) => d.id))} className="button button--ask results__ask">
                   Спросить ИИ об этих документах
                 </Link>

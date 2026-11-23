@@ -84,7 +84,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </button>
           <nav id="primary-nav" className={`nav${menuOpen ? " nav--open" : ""}`} aria-label="Основная навигация">
             <ul>
-              {NAV.map((item) => (
+              {NAV.filter((item) => item.to !== "/ask" || session?.features.ai_mode !== "disabled").map((item) => (
                 <li key={item.to}>
                   <NavLink to={item.to} end={item.end} className="nav__link">
                     {item.label}

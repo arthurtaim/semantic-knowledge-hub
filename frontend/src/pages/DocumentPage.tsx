@@ -248,6 +248,8 @@ function DocumentAiPanel({ doc }: { doc: DocumentDetail }) {
 export function DocumentPage() {
   const { id = "" } = useParams();
   const location = useLocation();
+  const session = useSession();
+  const aiOff = session?.features.ai_mode === "disabled";
   const [view, setView] = useState<"rendered" | "metadata" | "raw">("rendered");
   const { data, error, loading, reload } = useAsync(() => loadDocument(id), id);
   // Loaded separately: a publication problem never hides the document itself.
@@ -305,15 +307,19 @@ export function DocumentPage() {
           <Link to={`/proposals/new?document=${encodeURIComponent(doc.id)}`} className="button button--primary">
             Предложить изменение
           </Link>
-          <Link to={`/ask?about=${encodeURIComponent(doc.title)}`} className="button button--secondary">
-            Спросить ассистента
-          </Link>
+          {aiOff ? null : (
+            <Link to={`/ask?about=${encodeURIComponent(doc.title)}`} className="button button--secondary">
+              Спросить ассистента
+            </Link>
+          )}
           <Link to={`/graph?focus=${encodeURIComponent(doc.id)}`} className="button button--quiet">
             Связи на графе
           </Link>
-          <a href="#doc-ai" className="button button--quiet">
-            ИИ-помощник
-          </a>
+          {aiOff ? null : (
+            <a href="#doc-ai" className="button button--quiet">
+              ИИ-помощник
+            </a>
+          )}
         </div>
       </header>
 
@@ -407,7 +413,8 @@ export function DocumentPage() {
             )}
           </div>
           <DocumentLinksPanel links={links.data} error={links.error} loading={links.loading} onRetry={links.reload} />
-          <DocumentAiPanel key={doc.id} doc={doc} />
+          {/* Without an AI provider the panel is not shown at all (the manual path is the page itself). */}
+          {aiOff ? null : <DocumentAiPanel key={doc.id} doc={doc} />}
           {publication.data ? <PublicationSection status={publication.data} /> : null}
         </div>
         <Passport

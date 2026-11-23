@@ -1,7 +1,10 @@
 import { useId, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { Citation, Confidence } from "../api/types";
+import { api } from "../api/client";
+import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState } from "../api/types";
 import { CONFIDENCE_LABEL, shortRevision } from "../lib/labels";
+import { useAsync } from "../lib/useAsync";
+import { Highlighted } from "./Highlighted";
 import { StatusStamp } from "./StatusStamp";
 
 /** Support level of an answer: a category with text and shape, never a percentage. */
@@ -145,5 +148,129 @@ export function NextActions({ citations, question, onRefine }: NextActionsProps)
         </p>
       ) : null}
     </div>
+  );
+}
+
+interface InsufficientEvidenceProps {
+  question: string;
+  request: AskRequest;
+  answer: AskResponse;
+  corporateState: IntegrationState | undefined;
+  onRefine: (question: string) => void;
+  onAskCorporate: () => void;
+}
+
+/** Where the question was looked up, in words. */
+function searchedWhere(request: AskRequest, answer: AskResponse): string {
+  const parts: string[] = [];
+  if (request.sources.includes("team")) {
+    const extra = [request.include_drafts ? "черновики и документы на ревью" : null, request.include_deprecated ? "устаревшие" : null]
+      .filter(Boolean)
+      .join(" и ");
+    parts.push(`документы команды — утверждённые${extra ? `, а также ${extra}` : ""}`);
+  }
+  if (request.sources.includes("corporate")) {
+    const state = answer.scopes.find((s) => s.scope === "corporate")?.state;
+    parts.push(
+      state === "connected"
+        ? "корпоративные источники (Confluence)"
+        : state === "mock"
+          ? "корпоративные источники (mock-коннектор с синтетическими страницами)"
+          : "корпоративные источники — не подключены, не проверялись",
+    );
+  }
+  return parts.join("; ");
+}
+
+/**
+ * «Недостаточно данных» as a useful result: what and where was searched, the closest documents by the text
+ * of the question (snippets, explicitly not evidence) and three next steps — refine, a SEPARATE labelled
+ * corporate search, or a draft that documents the gap.
+ */
+export function InsufficientEvidence({ question, request, answer, corporateState, onRefine, onAskCorporate }: InsufficientEvidenceProps) {
+  const headingId = useId();
+  const closest = useAsync(() => api.documents({ query: question.slice(0, 200), size: 3 }), `closest:${question}`);
+  const askedCorporate = request.sources.includes("corporate");
+  const corporateAvailable = corporateState === "connected" || corporateState === "mock";
+  const items = closest.data?.items ?? [];
+  return (
+    <section className="insufficient" aria-labelledby={headingId}>
+      <h3 id={headingId}>В базе знаний нет ответа на этот вопрос</h3>
+      <p>
+        <strong>Подтверждений в доступных источниках не найдено.</strong> Ассистент не делает выводов без
+        доказательств.
+      </p>
+      <p className="insufficient__searched">
+        Искали «{question}» — {searchedWhere(request, answer)}.
+      </p>
+      {answer.unmatched_terms.length > 0 ? (
+        <p>
+          Не найдено в источниках:{" "}
+          {answer.unmatched_terms.map((term, index) => (
+            <span key={term}>
+              {index > 0 ? ", " : ""}«{term}»
+            </span>
+          ))}
+        </p>
+      ) : null}
+
+      <h4 className="insufficient__title">Ближайшие совпадения</h4>
+      <p className="insufficient__note">Документы, похожие по тексту вопроса, — это не подтверждение ответа.</p>
+      {closest.loading && !closest.data ? <p className="muted">Ищу похожие документы…</p> : null}
+      {closest.error ? <p className="muted">Не удалось найти похожие документы.</p> : null}
+      {closest.data && items.length === 0 ? <p className="muted">Похожих документов не найдено.</p> : null}
+      {items.length > 0 ? (
+        <ul className="partial-matches">
+          {items.map((doc) => (
+            <li key={doc.id}>
+              <span className="partial-matches__head">
+                <Link to={`/documents/${encodeURIComponent(doc.id)}`}>{doc.title}</Link>
+                <StatusStamp status={doc.status} />
+              </span>
+              {doc.highlights && doc.highlights.length > 0 ? (
+                <q className="partial-matches__quote">
+                  <Highlighted segments={doc.highlights} />
+                </q>
+              ) : doc.excerpt ? (
+                <q className="partial-matches__quote">{doc.excerpt}</q>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <h4 className="insufficient__title">Что можно сделать</h4>
+      <ol className="insufficient__steps">
+        <li>
+          <button type="button" className="button button--secondary" onClick={() => onRefine(question)}>
+            Уточнить вопрос
+          </button>{" "}
+          <span>Добавьте название системы, ID документа или точный термин.</span>
+        </li>
+        <li>
+          {askedCorporate ? (
+            <span>Корпоративные источники уже были в этом запросе.</span>
+          ) : corporateAvailable ? (
+            <>
+              <button type="button" className="button button--secondary" onClick={onAskCorporate}>
+                Искать в корпоративных источниках
+              </button>{" "}
+              <span>
+                Отдельный запрос к Confluence{corporateState === "mock" ? " (mock-коннектор)" : ""}: ответ будет помечен
+                как внешний и не смешается с документами команды.
+              </span>
+            </>
+          ) : (
+            <span>Поиск по корпоративным источникам недоступен: Confluence Data Center не подключён.</span>
+          )}
+        </li>
+        <li>
+          <Link to="/documents/new" className="button button--secondary">
+            Создать черновик документа
+          </Link>{" "}
+          <span>Опишите недостающее знание — документ пройдёт ревью, прежде чем станет частью базы.</span>
+        </li>
+      </ol>
+    </section>
   );
 }

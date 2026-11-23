@@ -148,13 +148,18 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
     setStage("edit");
   }
 
-  const modeHint = !aiAvailable
-    ? "AI-помощник для создания документов отключён в этой установке — создайте документ вручную по шаблону."
-    : session?.features.ai_mode === "mock"
-      ? "Демо-режим без языковой модели: помощник соберёт структуру по шаблону и вставит только дословные выдержки из утверждённых документов команды."
-      : session?.features.ai_mode === "claude_cli"
-        ? "Помощник (Claude Code CLI, личный тест) предложит текст по шаблону со ссылками на источники; подготовка может занять несколько минут. Текст нужно проверить и отредактировать."
-        : "Помощник предложит текст по шаблону со ссылками на источники. Текст нужно проверить и отредактировать.";
+  const aiOff = session?.features.ai_mode === "disabled";
+  let modeHint: string;
+  if (aiOff) modeHint = "ИИ в этой установке отключён — документ создаётся вручную по шаблону.";
+  else if (!aiAvailable)
+    modeHint = "AI-помощник для создания документов отключён в этой установке — создайте документ вручную по шаблону.";
+  else if (session?.features.ai_mode === "mock")
+    modeHint =
+      "Демо-режим без языковой модели: помощник соберёт структуру по шаблону и вставит только дословные выдержки из утверждённых документов команды.";
+  else if (session?.features.ai_mode === "claude_cli")
+    modeHint =
+      "Помощник (Claude Code CLI, личный тест) предложит текст по шаблону со ссылками на источники; подготовка может занять несколько минут. Текст нужно проверить и отредактировать.";
+  else modeHint = "Помощник предложит текст по шаблону со ссылками на источники. Текст нужно проверить и отредактировать.";
 
   return (
     <form className="authoring__start" onSubmit={proceed} aria-labelledby="start-title">
@@ -176,17 +181,20 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
           <input type="radio" name="mode" value="manual" checked={mode === "manual"} onChange={() => setMode("manual")} />
           <span>Вручную</span>
         </label>
-        <label className="segmented__option">
-          <input
-            type="radio"
-            name="mode"
-            value="ai"
-            checked={mode === "ai"}
-            disabled={!aiAvailable}
-            onChange={() => setMode("ai")}
-          />
-          <span>С помощью AI</span>
-        </label>
+        {/* No AI provider: the option is not offered at all (no dead control); otherwise it is disabled with a reason. */}
+        {aiOff ? null : (
+          <label className="segmented__option">
+            <input
+              type="radio"
+              name="mode"
+              value="ai"
+              checked={mode === "ai"}
+              disabled={!aiAvailable}
+              onChange={() => setMode("ai")}
+            />
+            <span>С помощью AI</span>
+          </label>
+        )}
       </fieldset>
       <p id="mode-hint" className="muted authoring__mode-hint">
         {modeHint}

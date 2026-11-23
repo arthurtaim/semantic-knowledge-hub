@@ -297,6 +297,7 @@ export function TemplateDetailPage() {
   const oldVersion = t.version !== current;
   const usable = t.status === "active" && t.listed && !oldVersion;
   const aiAvailable = session?.features.ai_authoring ?? false;
+  const aiOff = session?.features.ai_mode === "disabled";
   const unusableReason = oldVersion
     ? `Это версия v${t.version}; новые документы создаются по актуальной v${current}.`
     : t.status === "deprecated"
@@ -350,17 +351,19 @@ export function TemplateDetailPage() {
               Использовать шаблон
             </button>
           )}
-          <button
-            type="button"
-            className="button button--secondary"
-            disabled={!usable || !aiAvailable}
-            aria-expanded={aiOpen}
-            aria-controls="template-ai"
-            aria-describedby={!usable ? "template-unusable" : !aiAvailable ? "template-ai-off" : undefined}
-            onClick={() => setAiOpen((open) => !open)}
-          >
-            Создать с ИИ
-          </button>
+          {aiOff ? null : (
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={!usable || !aiAvailable}
+              aria-expanded={aiOpen}
+              aria-controls="template-ai"
+              aria-describedby={!usable ? "template-unusable" : !aiAvailable ? "template-ai-off" : undefined}
+              onClick={() => setAiOpen((open) => !open)}
+            >
+              Создать с ИИ
+            </button>
+          )}
           <a href="#compare" className="button button--quiet">
             Сравнить версии
           </a>
@@ -370,7 +373,7 @@ export function TemplateDetailPage() {
             {unusableReason}
           </p>
         ) : null}
-        {usable && !aiAvailable ? (
+        {usable && !aiAvailable && !aiOff ? (
           <p id="template-ai-off" className="muted">
             ИИ-помощник отключён в этой установке.
           </p>

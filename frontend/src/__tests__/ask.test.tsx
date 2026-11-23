@@ -46,8 +46,9 @@ describe("Asking from «Спросить или найти» (?run=1)", () => {
     expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
     expect(posts(calls)).toHaveLength(1);
     expect(posts(calls)[0]?.body).toMatchObject({ question: "Где база?", sources: ["team", "corporate"] });
+    // react-router applies the URL change in a transition: it may land after the answer renders.
+    await waitFor(() => expect(screen.getByTestId("location")).not.toHaveTextContent("run=1"));
     expect(screen.getByTestId("location")).toHaveTextContent("/ask?q=");
-    expect(screen.getByTestId("location")).not.toHaveTextContent("run=1");
     expect(screen.getByLabelText("Оба")).toBeChecked();
   });
 
