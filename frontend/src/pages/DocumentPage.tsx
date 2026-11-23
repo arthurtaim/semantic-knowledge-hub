@@ -47,6 +47,16 @@ function Passport({ doc, publication }: { doc: DocumentDetail; publication: Publ
       </h2>
       <StatusStamp status={doc.status} large />
       <dl className="passport__fields">
+        {doc.is_demo ? (
+          // The only in-page demo notice: a fact about the document, next to the other trust facts.
+          <div className="passport__demo">
+            <dt>Демо-документ</dt>
+            <dd>
+              <strong>Демо-данные.</strong> Синтетический документ для проверки приложения — не источник фактов о
+              банке.
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt>ID</dt>
           <dd>
@@ -234,12 +244,6 @@ export function DocumentPage() {
               показана последняя известная ревизия <code>{doc.revision}</code>
               {doc.updated_at ? ` от ${formatDateTime(doc.updated_at)}` : ""}. Актуальный текст в источнике может
               отличаться.
-            </Notice>
-          ) : null}
-          {doc.is_demo ? (
-            <Notice tone="warning">
-              <strong>Демо-данные.</strong> Синтетический документ для проверки приложения — не источник фактов о
-              банке.
             </Notice>
           ) : null}
           {doc.status === "draft" || doc.status === "in_review" ? (

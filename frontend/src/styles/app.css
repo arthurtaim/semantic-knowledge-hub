@@ -1361,6 +1361,21 @@ h1 a:hover {
   overflow-wrap: anywhere;
 }
 
+/* Demo caveat as a passport fact: label above, text below (the label is longer than the field column). */
+.passport__fields > .passport__demo {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+}
+
+.passport__demo dd {
+  color: var(--ink-soft);
+  overflow-wrap: normal;
+}
+
+.passport__demo strong {
+  color: var(--draft);
+}
+
 .passport__uri {
   display: block;
   font-size: 0.78rem;

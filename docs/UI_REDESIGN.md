@@ -85,8 +85,9 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
 
 ### Phase 2 — page-level simplification (next)
 
-- [ ] Document page: merge the in-page demo notice into the passport as a "Демо-документ" field, so the
-  only demo notice above the fold is the bar (keep text matched by `document.test.tsx`).
+- [x] Document page: merge the in-page demo notice into the passport as a "Демо-документ" field, so the
+  only demo notice above the fold is the bar (keep text matched by `document.test.tsx`). The field is the
+  first passport row (label above the text) and keeps the original copy, including "Демо-данные.".
 - [ ] Explorer: collapse the meta row to `ID · Раздел · Владелец · Обновлён`; show "Источник" only when
   sources are mixed; move "Проверка" next to the stamp.
 - [ ] Explorer on phones: filters into a `<details>` "Фильтры (n)" disclosure above results.
