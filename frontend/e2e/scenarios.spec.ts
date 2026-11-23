@@ -123,3 +123,33 @@ test("@mobile E2E-12 phone: home, menu, document and proposal pages fit the scre
   await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "База знаний" }).click();
   await expect(page.getByRole("heading", { name: "База знаний", level: 1 })).toBeVisible();
 });
+
+test("E2E-13 AI-first entry: Ctrl+K → question → evidence first → the marker opens the cited section", async ({ page }) => {
+  const problems = watch(page);
+  await page.goto("/documents");
+  await page.keyboard.press("Control+k");
+  const dialog = page.getByRole("dialog", { name: "Спросить или найти" });
+  const field = dialog.getByRole("combobox", { name: "Спросить или найти" });
+  await expect(field).toBeFocused();
+  await field.fill("Где хранится каноническая база знаний команды?");
+  await expect(dialog.getByRole("option").first()).toContainText("Спросить ИИ");
+  await field.press("Enter");
+
+  await expect(page).toHaveURL(/\/ask\?q=/);
+  await expect(page.getByText("Подтверждено источниками")).toBeVisible();
+  await expect(page.locator(".answer .demo-tag")).toHaveText("Демо");
+  // Evidence (quotes) comes before the explanation, team documents in their own list.
+  const evidence = page.getByRole("heading", { name: "Доказательства" });
+  const explanation = page.getByRole("heading", { name: "Объяснение" });
+  expect((await evidence.boundingBox())!.y).toBeLessThan((await explanation.boundingBox())!.y);
+  await expect(page.getByRole("region", { name: "Документы команды" }).locator(".citation").first()).toContainText("Утверждён");
+
+  const marker = page.getByRole("link", { name: "Источник 1" }).first();
+  await marker.hover();
+  await expect(page.getByRole("tooltip").first()).toContainText("Документ команды");
+  await marker.click();
+  await expect(page).toHaveURL(/\/documents\/SEM-OVERVIEW-001#/);
+  await page.goBack();
+  await expect(page.getByText("Подтверждено источниками")).toBeVisible(); // the answer is kept in memory
+  expect(problems).toEqual([]);
+});
