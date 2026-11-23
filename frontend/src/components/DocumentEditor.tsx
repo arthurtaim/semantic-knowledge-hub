@@ -919,7 +919,11 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         <h2 id="authoring-actions-title" className="visually-hidden">
           Действия с черновиком
         </h2>
-        <p className={`save-state${dirty && !locked ? " save-state--dirty" : ""}`} role="status" aria-live="polite">
+        <p
+          className={`save-state${dirty && !locked ? " save-state--dirty" : ""}${saved && !dirty && !locked && pending !== "save" ? " save-state--saved" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
           {saveState}
         </p>
         {actionError ? (

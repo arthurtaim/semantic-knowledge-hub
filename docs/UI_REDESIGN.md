@@ -109,7 +109,11 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
   is a grid (answer 46 rem | its sources), answer lines ≤ 68ch inside the answer box; the question form
   lost its box (2 px ink rule above, fields on the paper); chips already use `--radius`. Also fixed: on
   ≤ 520 px the status stamp no longer widens the citation number column.
-- [ ] Authoring editor: align toolbar, save-state and pane labels to the ruled style.
+- [x] Authoring editor: align toolbar, save-state and pane labels to the ruled style. The Markdown toolbar is
+  the top strip of the text field (1 px `--line` rules between commands, no per-button boxes, rows ruled
+  when they wrap); both pane labels share one style; the empty preview is a ruled placeholder, not a dashed
+  box; view toggle separators are `--line`, selected `--accent-ink`. Save state is text plus shape: ring
+  (not saved yet, neutral, no longer green), filled dot (unsaved changes), tick (`save-state--saved`).
 - [ ] Dark-bar print stylesheet check; `prefers-color-scheme: dark` token set.
 
 ## 4. Acceptance

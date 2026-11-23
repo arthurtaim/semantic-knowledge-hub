@@ -2779,6 +2779,7 @@ h1 a:hover {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   overflow: hidden;
+  background: var(--surface);
 }
 
 .view-toggle button {
@@ -2790,7 +2791,11 @@ h1 a:hover {
 }
 
 .view-toggle button + button {
-  border-left: 1px solid var(--line-strong);
+  border-left: 1px solid var(--line);
+}
+
+.view-toggle button:focus-visible {
+  outline-offset: -3px;
 }
 
 .view-toggle button[aria-pressed="true"] {
@@ -2810,38 +2815,52 @@ h1 a:hover {
   min-width: 0;
 }
 
+/* Both panes are labelled the same way, so the toolbar and the preview start on one line. */
+.authoring__source > label,
 .authoring__pane-label {
-  font-weight: 500;
-  margin-bottom: var(--space-1);
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 0 0 var(--space-2);
+  line-height: 1.55;
 }
 
+/* The toolbar is the top strip of the text field: one outline, 1px rules between commands, no nested boxes. */
 .md-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-1);
-  padding: var(--space-1);
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-bottom: 0;
+  border-bottom: 1px solid var(--line);
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .md-toolbar__button {
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
-  padding: var(--space-1) var(--space-2);
-  min-height: 2rem;
+  border: 0;
+  border-right: 1px solid var(--line);
+  /* overlaps the strip's bottom rule; separates the rows when the commands wrap on a phone */
+  border-bottom: 1px solid var(--line);
+  margin-bottom: -1px;
+  border-radius: 0;
+  padding: var(--space-1) var(--space-3);
+  min-height: 2.25rem;
   font-size: var(--step--1);
+  color: var(--ink-soft);
   cursor: pointer;
 }
 
 .md-toolbar__button:hover:not(:disabled) {
   background: var(--accent-wash);
-  border-color: var(--line);
+  color: var(--accent-ink);
+}
+
+.md-toolbar__button:focus-visible {
+  outline-offset: -3px;
 }
 
 .authoring__textarea {
+  border-top: 0;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   min-height: 32rem;
@@ -2853,10 +2872,12 @@ h1 a:hover {
   padding: var(--space-5);
 }
 
+/* Not a box: a ruled placeholder level with the toolbar. */
 .authoring__preview-empty {
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
-  padding: var(--space-5);
+  margin: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-4) 0;
 }
 
 .authoring__frontmatter {
@@ -2883,10 +2904,23 @@ h1 a:hover {
   margin-bottom: var(--space-4);
 }
 
+/* Save state = text plus shape: ring (not saved yet), filled dot (unsaved changes), tick (saved). */
 .save-state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--step--1);
   font-weight: 500;
-  color: var(--approved);
+  color: var(--ink-soft);
+}
+
+.save-state::before {
+  content: "";
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
 }
 
 .save-state--dirty {
@@ -2894,7 +2928,20 @@ h1 a:hover {
 }
 
 .save-state--dirty::before {
-  content: "● ";
+  background: currentColor;
+}
+
+.save-state--saved {
+  color: var(--approved);
+}
+
+.save-state--saved::before {
+  content: "✓";
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  line-height: 1;
 }
 
 @media (max-width: 1179px) {

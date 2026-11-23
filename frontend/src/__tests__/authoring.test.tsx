@@ -140,10 +140,11 @@ describe("Creating a document: manual flow", () => {
 
     const body = screen.getByRole("textbox", { name: /Markdown/ });
     await userEvent.type(body, "Новый абзац.");
-    expect(screen.getByText("Есть несохранённые изменения")).toBeInTheDocument();
+    expect(screen.getByText("Есть несохранённые изменения")).toHaveClass("save-state--dirty");
     await userEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1));
-    expect(await screen.findByText(/Черновик сохранён в/)).toBeInTheDocument();
+    // saved state: its own class (tick), not the "unsaved" ring or dot
+    expect(await screen.findByText(/Черновик сохранён в/)).toHaveClass("save-state--saved");
 
     await userEvent.type(body, " Ещё.");
     await userEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
