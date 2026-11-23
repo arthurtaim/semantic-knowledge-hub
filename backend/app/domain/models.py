@@ -89,7 +89,21 @@ class DeclaredRelation(BaseModel):
 
     type: RelationType
     target: str
-    field: str  # frontmatter field that declares it: `relations.<type>` or `related_ids`
+    field: str  # `relations.<type>`, `related_ids`, or `body` (an inline WikiLink)
+    line: int | None = None  # body line of a WikiLink
+
+
+class WikiLinkRef(BaseModel):
+    """An inline `[[target#anchor|label]]` of a document body (source location kept for diagnostics)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target: str
+    anchor: str = ""
+    label: str = ""
+    line: int
+    excerpt: str
+    id_like: bool
 
 
 class DocumentRecord(BaseModel):
@@ -105,6 +119,7 @@ class DocumentRecord(BaseModel):
     tags: tuple[str, ...]
     related_ids: tuple[str, ...] = ()
     relations: tuple[DeclaredRelation, ...] = ()
+    wikilinks: tuple[WikiLinkRef, ...] = ()
     aliases: tuple[str, ...] = ()
     version: str | None = None  # human document version (e.g. "1.2"); `revision` is the content revision
     synthetic: bool = False
@@ -184,6 +199,10 @@ class DocumentDetail(DocumentSummary):
     sections: list[Section]
     warnings: list[ValidationIssue]
     extra_metadata: dict[str, str]
+    # M5.6.3 metadata panel: pinned template and the inline links found in the body.
+    template_id: str | None = None
+    template_version: int | None = None
+    wikilink_count: int = 0
 
 
 class DocumentPage(BaseModel):

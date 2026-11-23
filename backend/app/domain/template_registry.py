@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app.domain.models import DocType
-from app.domain.templates import DocumentTemplate, TemplateError, parse_template_file
+from app.domain.templates import DocumentTemplate, TemplateError, parse_template_file, schema_checksum
 
 logger = logging.getLogger("skh.templates.registry")
 
@@ -62,9 +62,19 @@ def _serialize(template: DocumentTemplate) -> str:
 def _deserialize(raw: str) -> DocumentTemplate:
     data = json.loads(raw)
     data["doc_type"] = DocType(data["doc_type"])
-    data["default_tags"] = tuple(data["default_tags"])
-    data["sections"] = tuple(data["sections"])
-    return DocumentTemplate(**data)
+    for key in (
+        "default_tags",
+        "sections",
+        "labels",
+        "optional_sections",
+        "required_metadata",
+        "optional_metadata",
+        "validation",
+    ):
+        if key in data:  # rows written by older builds lack the Template Hub fields: defaults apply
+            data[key] = tuple(data[key])
+    known = DocumentTemplate.__dataclass_fields__
+    return DocumentTemplate(**{k: v for k, v in data.items() if k in known})
 
 
 class TemplateRegistry:
@@ -83,6 +93,7 @@ class TemplateRegistry:
                 "PRIMARY KEY (template_id, version))"
             )
         self._active: dict[str, DocumentTemplate] = {}
+        self._file_ids: dict[str, str] = {}  # active file name -> template id (last successful parse)
         self._fingerprint = ""
         self._checked = 0.0
         self.last_reload: RegistryReload | None = None
@@ -114,12 +125,21 @@ class TemplateRegistry:
     def _resolve(self, template: DocumentTemplate, origin: str, auto_bumped: list[str]) -> DocumentTemplate:
         """Record (id, version, checksum); returns the template with its RESOLVED version."""
         rows = self._conn.execute(
-            "SELECT version, checksum FROM template_versions WHERE template_id = ?", (template.id,)
+            "SELECT version, checksum, template_json FROM template_versions WHERE template_id = ?",
+            (template.id,),
         ).fetchall()
-        for version, checksum in rows:
-            if checksum == template.checksum:
-                return DocumentTemplate(**{**asdict(template), "version": version})
-        taken = {version for version, _ in rows}
+        for version, checksum, stored in rows:
+            # Same schema = same version. Rows of older builds carry a raw-file checksum: compare schemas.
+            if checksum == template.checksum or schema_checksum(_deserialize(stored)) == template.checksum:
+                resolved = DocumentTemplate(**{**asdict(template), "version": version})
+                if checksum != template.checksum or stored != _serialize(resolved):
+                    self._conn.execute(  # keep the catalogue text of this version current
+                        "UPDATE template_versions SET checksum = ?, template_json = ? "
+                        "WHERE template_id = ? AND version = ?",
+                        (template.checksum, _serialize(resolved), template.id, version),
+                    )
+                return resolved
+        taken = {version for version, _, _ in rows}
         version = template.version
         if version in taken:
             version = max(taken) + 1
@@ -158,17 +178,28 @@ class TemplateRegistry:
                         self._resolve(parse_template_file(path), "history", auto_bumped)
                     except (TemplateError, OSError, UnicodeDecodeError) as exc:
                         errors.append(f"history/{path.name}: {exc}")
+                file_ids: dict[str, str] = {}
                 for path in active_files:
                     try:
                         template = self._resolve(parse_template_file(path), "active", auto_bumped)
                     except (TemplateError, OSError, UnicodeDecodeError) as exc:
-                        errors.append(f"{path.name}: {exc}")
-                        logger.error("template %s skipped: %s", path.name, exc)
+                        # An invalid revision never disables the version that was active before it.
+                        previous_id = self._file_ids.get(path.name)
+                        previous = self._active.get(previous_id) if previous_id else None
+                        if previous is not None and previous.id not in active:
+                            active[previous.id] = previous
+                            file_ids[path.name] = previous.id
+                            errors.append(f"{path.name}: {exc} — оставлена действующая v{previous.version}")
+                        else:
+                            errors.append(f"{path.name}: {exc}")
+                        logger.error("template %s not activated: %s", path.name, exc)
                         continue
                     if template.id in active:
                         errors.append(f"{path.name}: duplicate template_id {template.id}")
                         continue
                     active[template.id] = template
+                    file_ids[path.name] = template.id
+            self._file_ids = file_ids
             self._active = dict(sorted(active.items(), key=lambda item: (item[1].order, item[0])))
             self._fingerprint = fingerprint
             self._checked = time.monotonic()

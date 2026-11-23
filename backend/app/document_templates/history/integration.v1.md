@@ -7,6 +7,12 @@ id_prefix: SEM-INT
 default_tags: [integration]
 order: 20
 version: 1
+category: "Интеграции"
+owner: "demo-integration-team"
+updated: "2026-09-01"
+labels: [integration, поток]
+changes: |
+  Первая версия шаблона интеграции.
 ---
 ## Назначение
 > Требует уточнения: зачем нужна интеграция и какой результат она обеспечивает.

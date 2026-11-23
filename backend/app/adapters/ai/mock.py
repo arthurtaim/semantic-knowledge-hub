@@ -9,6 +9,8 @@ from app.adapters.ai.base import (
     AIMode,
     AIProviderError,
     AnswerOptions,
+    AssistRequest,
+    AssistResult,
     AuthoringCitation,
     AuthoringDraft,
     AuthoringReference,
@@ -254,6 +256,43 @@ class MockAIProvider:
             answer += f"\n\nВ процитированных фрагментах не встречаются: {_format_terms(not_covered)}."
         return ProviderAnswer(answer=answer, confidence=confidence, evidence=evidence, warnings=warnings)
 
+    async def assist(self, request: AssistRequest) -> AssistResult:
+        """Deterministic, never inventive: `summarize` quotes the first sentences of the fragment verbatim;
+        `improve` only normalizes the layout (spaces, list markers, sentence ends). An injected instruction
+        in the fragment is data: it is not followed, only reported."""
+        text = request.text.strip()
+        warnings = ["Демо-режим: без языковой модели — предложение построено по правилам, проверьте его."]
+        if looks_like_prompt_injection(text):
+            warnings.append("Во фрагменте есть текст, похожий на инструкцию для ИИ: он не выполнялся.")
+        if not text:
+            return AssistResult(text="", citations=[], warnings=warnings, insufficient_data=True)
+        if request.task == "summarize":
+            plain = " ".join(
+                line.strip().lstrip("#>-*0123456789. ") for line in text.splitlines() if line.strip()
+            )
+            sentences = [s for s in split_sentences(plain) if len(s) > 15][:2]
+            summary = " ".join(sentences) or plain[:300]
+            return AssistResult(
+                text=summary.strip(), citations=[], warnings=warnings, insufficient_data=False
+            )
+        lines = []
+        for raw in text.splitlines():
+            line = " ".join(raw.split())
+            line = line.replace(" ,", ",").replace(" .", ".")
+            if line.startswith(("* ", "+ ")):
+                line = "- " + line[2:]
+            if line and not line.startswith(("#", "-", "|", ">", "`")) and line[-1].isalnum():
+                line += "."
+            if line and line[0].islower() and not line.startswith(("-", "|", "`")):
+                line = line[0].upper() + line[1:]
+            lines.append(line)
+        improved = "\n".join(lines).strip()
+        while "\n\n\n" in improved:
+            improved = improved.replace("\n\n\n", "\n\n")
+        if improved == text:
+            warnings.append("Оформление уже в порядке: изменений нет.")
+        return AssistResult(text=improved, citations=[], warnings=warnings, insufficient_data=False)
+
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         raise AIProviderError(
             "ai_edit_unsupported",
@@ -344,6 +383,11 @@ class DisabledAIProvider:
         )
 
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
+        raise AIProviderError(
+            "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
+        )
+
+    async def assist(self, request: AssistRequest) -> AssistResult:
         raise AIProviderError(
             "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
         )

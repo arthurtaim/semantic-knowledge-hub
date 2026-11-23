@@ -19,7 +19,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
-from app.domain.models import DocStatus, DocType, DocumentRecord, RelationType, UserContext
+from app.domain.models import (
+    DeclaredRelation,
+    DocStatus,
+    DocType,
+    DocumentRecord,
+    RelationType,
+    UserContext,
+)
 
 if TYPE_CHECKING:
     from app.services.knowledge import KnowledgeService
@@ -118,6 +125,8 @@ class GraphEdge:
     status: Literal["active", "dangling"] = "active"
     expires_at: str | None = None
     feedback: str | None = None  # query edges: relevant / irrelevant / unsure / unrated
+    # Every place that declares this edge: `related_ids`, `relations.<type>`, `body:<line>` (WikiLink).
+    provenance: tuple[str, ...] = ()
 
 
 @dataclass
@@ -177,16 +186,21 @@ def build_canonical_graph(
         )
     edges: list[GraphEdge] = []
     dangling: list[GraphEdge] = []
-    seen: set[tuple[str, str, str]] = set()
     for doc in sorted(docs.values(), key=lambda d: d.id):
         source_id = doc_node_id(doc.id)
+        # One edge per (source, type, target); every declaring place is kept as provenance, so a
+        # `related_ids` entry and an inline WikiLink to the same document are shown once.
+        pending: dict[tuple[str, str], tuple[DeclaredRelation, list[str]]] = {}
         for rel in doc.relations:
+            where = f"body:{rel.line}" if rel.field == "body" and rel.line else rel.field
+            key = (rel.type.value, rel.target.lower())
+            if key in pending:
+                pending[key][1].append(where)
+            else:
+                pending[key] = (rel, [where])
+        for rel, provenance in pending.values():
             target_doc = docs.get(rel.target.lower())
             target_id = doc_node_id(target_doc.id if target_doc else rel.target)
-            key = (source_id, rel.type.value, target_id)
-            if key in seen:
-                continue
-            seen.add(key)
             edge = GraphEdge(
                 id=f"edge:{doc.id}:{rel.type.value}:{target_doc.id if target_doc else rel.target}",
                 source=source_id,
@@ -199,6 +213,7 @@ def build_canonical_graph(
                 path=doc.path,
                 revision=doc.revision,
                 status="active" if target_doc else "dangling",
+                provenance=tuple(dict.fromkeys(provenance)),
             )
             (edges if target_doc else dangling).append(edge)
         if doc.template_id and template_node_id(doc.template_id) in nodes:

@@ -9,9 +9,10 @@ from __future__ import annotations
 import html
 import re
 import unicodedata
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
 
 import nh3
 from markdown_it import MarkdownIt
@@ -20,6 +21,7 @@ from markdown_it.token import Token
 from markdown_it.utils import EnvType, OptionsDict
 
 from app.domain.models import Section
+from app.domain.wikilinks import use_wikilinks
 
 _ALLOWED_TAGS = {
     "h1",
@@ -57,7 +59,7 @@ _ALLOWED_ATTRIBUTES = {
     "h4": {"id"},
     "h5": {"id"},
     "h6": {"id"},
-    "a": {"href", "title", "target"},
+    "a": {"href", "title", "target", "class"},
     "code": {"class"},
     "span": {"class"},
     "ol": {"start"},
@@ -95,7 +97,11 @@ class AnchorRegistry:
 def _new_parser() -> MarkdownIt:
     md = MarkdownIt("commonmark", {"html": False, "linkify": False, "typographer": False})
     md.enable(["table", "strikethrough"])
-    return md
+    return use_wikilinks(md)
+
+
+# Resolves a WikiLink target to (canonical ID, title) among documents the READER can see; None otherwise.
+WikiResolver = Callable[[str], tuple[str, str] | None]
 
 
 _PARSER = _new_parser()
@@ -104,7 +110,7 @@ _PARSER = _new_parser()
 def _inline_plain(token: Token) -> str:
     parts: list[str] = []
     for child in token.children or []:
-        if child.type in ("text", "code_inline"):
+        if child.type in ("text", "code_inline", "wikilink"):
             parts.append(child.content)
         elif child.type in ("softbreak", "hardbreak"):
             parts.append(" ")
@@ -181,6 +187,20 @@ class _SafeRenderer(RendererHTML):
         alt = html.escape(_inline_plain(tokens[idx]) or "без подписи")
         return f'<span class="md-image-placeholder">[Изображение: {alt}]</span>'
 
+    def wikilink(self, tokens: Sequence[Token], idx: int, options: OptionsDict, env: EnvType) -> str:
+        meta = tokens[idx].meta
+        label = str(meta.get("label") or "")
+        resolve: WikiResolver | None = env.get("wikilink_resolve")
+        found = resolve(str(meta.get("target", ""))) if resolve else None
+        if found is None:  # missing, inaccessible or a title link: show only what the author wrote
+            text = html.escape(label or str(meta.get("target", "")))
+            return f'<span class="wikilink wikilink--unresolved" title="Ссылка не разрешена">{text}</span>'
+        doc_id, title = found
+        anchor = str(meta.get("anchor") or "")
+        href = f"/documents/{quote(doc_id)}" + (f"#{quote(slugify(anchor))}" if anchor else "")
+        text = html.escape(label or doc_id)
+        return f'<a href="{href}" class="wikilink" title="{html.escape(title)}">{text}</a>'
+
     def link_open(self, tokens: Sequence[Token], idx: int, options: OptionsDict, env: EnvType) -> str:
         token = tokens[idx]
         href = str(token.attrGet("href") or "")
@@ -193,11 +213,12 @@ class _SafeRenderer(RendererHTML):
         return self.renderToken(tokens, idx, options, env)
 
 
-def render_html(body: str) -> str:
-    """Render Markdown to sanitized HTML. Raw HTML in the source is escaped, never executed."""
+def render_html(body: str, resolve: WikiResolver | None = None) -> str:
+    """Render Markdown to sanitized HTML. Raw HTML in the source is escaped, never executed.
+    `resolve` turns WikiLinks into links to documents the reader can see; without it they stay text."""
     md = _new_parser()
     md.renderer = _SafeRenderer(md)
-    env: dict[str, Any] = {}
+    env: dict[str, Any] = {"wikilink_resolve": resolve}
     rendered = md.render(body, env)
     return nh3.clean(
         rendered,

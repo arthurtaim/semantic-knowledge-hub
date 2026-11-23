@@ -33,6 +33,7 @@ from app.domain.instructions import DEFAULT_INSTRUCTIONS_DIR, RuntimeInstruction
 from app.domain.models import UserContext
 from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import DEFAULT_TEMPLATES_DIR
+from app.services.ai_workflows import AiProposalStore, AiWorkflowService
 from app.services.assistant import AssistantService
 from app.services.authoring import AuthoringService
 from app.services.discovery import DiscoveryStore
@@ -40,9 +41,12 @@ from app.services.external import ExternalEvidenceService, ExternalLimits
 from app.services.graph import GraphService
 from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
+from app.services.links import LinkService
+from app.services.metadata import MetadataService
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
 from app.services.search import SearchService
+from app.services.template_hub import TemplateHubService
 
 logger = logging.getLogger("skh.container")
 
@@ -72,6 +76,10 @@ class Container:
     publication_store: PublicationStore
     publications: PublicationService
     graph: GraphService
+    links: LinkService
+    metadata: MetadataService
+    template_hub: TemplateHubService
+    ai_workflows: AiWorkflowService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
@@ -314,6 +322,41 @@ def build_container(settings: Settings) -> Container:
         knowledge_prefix=knowledge_prefix,
         max_document_bytes=settings.max_document_bytes,
     )
+    assistant_service = AssistantService(
+        knowledge,
+        corporate,
+        ai,
+        max_context_chars=settings.ai_max_context_chars,
+        external=external,
+        discovery=discovery,
+        instructions_version=lambda: instructions.version,
+    )
+    proposal_service = ProposalService(
+        store,
+        repository,
+        proposal_publisher,
+        ai,
+        max_document_bytes=settings.max_document_bytes,
+        knowledge_prefix=knowledge_prefix,
+        app_public_url=settings.app_public_url,
+        on_merged=lambda: knowledge.refresh(),
+        authoring=authoring,
+        after_sync=publications.on_document_merged,
+    )
+    graph_service = GraphService(knowledge, templates.graph_entries)
+    link_service = LinkService(knowledge)
+    metadata_service = MetadataService(knowledge, authoring, repository)
+    ai_workflows = AiWorkflowService(
+        store=AiProposalStore(settings.app_state_file),
+        ai=ai,
+        knowledge=knowledge,
+        authoring=authoring,
+        proposals=proposal_service,
+        metadata=metadata_service,
+        links=link_service,
+        graph=graph_service,
+        assistant=assistant_service,
+    )
     return Container(
         settings=settings,
         repository=repository,
@@ -326,27 +369,8 @@ def build_container(settings: Settings) -> Container:
         proposal_store=store,
         knowledge=knowledge,
         search=SearchService(knowledge, corporate),
-        assistant=AssistantService(
-            knowledge,
-            corporate,
-            ai,
-            max_context_chars=settings.ai_max_context_chars,
-            external=external,
-            discovery=discovery,
-            instructions_version=lambda: instructions.version,
-        ),
-        proposals=ProposalService(
-            store,
-            repository,
-            proposal_publisher,
-            ai,
-            max_document_bytes=settings.max_document_bytes,
-            knowledge_prefix=knowledge_prefix,
-            app_public_url=settings.app_public_url,
-            on_merged=lambda: knowledge.refresh(),
-            authoring=authoring,
-            after_sync=publications.on_document_merged,
-        ),
+        assistant=assistant_service,
+        proposals=proposal_service,
         authoring=authoring,
         publication_store=publication_store,
         publications=publications,
@@ -361,7 +385,11 @@ def build_container(settings: Settings) -> Container:
             tasks=tasks,
         ),
         policy=build_policy(settings),
-        graph=GraphService(knowledge, templates.graph_entries),
+        graph=graph_service,
+        links=link_service,
+        metadata=metadata_service,
+        ai_workflows=ai_workflows,
+        template_hub=TemplateHubService(authoring, knowledge),
         discovery=discovery,
         external=external,
         instructions=instructions,

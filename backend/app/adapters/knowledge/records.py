@@ -19,8 +19,10 @@ from app.domain.models import (
     LoadIssue,
     RelationType,
     SourceType,
+    WikiLinkRef,
 )
 from app.domain.schema import parse_document
+from app.domain.wikilinks import extract_wikilinks
 
 
 def build_record(
@@ -63,6 +65,23 @@ def build_record(
         for target in meta.get("related_ids", [])
         if target.lower() not in typed_targets  # a typed edge already states the link more precisely
     ]
+    wikilinks = tuple(
+        WikiLinkRef(
+            target=w.target, anchor=w.anchor, label=w.label, line=w.line, excerpt=w.excerpt, id_like=w.id_like
+        )
+        for w in extract_wikilinks(parsed.body)
+    )
+    # An inline WikiLink to an ID is a `references` edge (never a typed business dependency). Several
+    # links to one target from the same body are one edge; the graph merges it with `related_ids`.
+    seen_inline: set[str] = set()
+    for link in wikilinks:
+        if link.id_like and link.target.lower() != doc_id.lower() and link.target.lower() not in seen_inline:
+            seen_inline.add(link.target.lower())
+            relations.append(
+                DeclaredRelation(
+                    type=RelationType.references, target=link.target, field="body", line=link.line
+                )
+            )
     return DocumentRecord(
         id=doc_id,
         title=meta["title"],
@@ -72,6 +91,7 @@ def build_record(
         tags=tuple(tags),
         related_ids=tuple(meta.get("related_ids", [])),
         relations=tuple(relations),
+        wikilinks=wikilinks,
         aliases=tuple(meta.get("aliases", [])),
         version=meta.get("version"),
         synthetic=bool(meta.get("synthetic", False)),

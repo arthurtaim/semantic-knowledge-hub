@@ -30,7 +30,7 @@ from app.domain.models import (
     SyncStatus,
     UserContext,
 )
-from app.domain.schema import UNASSIGNED_OWNERS
+from app.domain.schema import UNASSIGNED_OWNERS, is_valid_document_id
 from app.services.retrieval import RankedHit, RetrievalService
 
 MAX_LIST_MATCHES = 1000
@@ -198,6 +198,16 @@ class KnowledgeService:
         ]
         return DocumentPage(items=items, total=len(ordered), page=q.page, size=q.size, notes=notes)
 
+    @staticmethod
+    def wikilink_resolver(snapshot: KnowledgeSnapshot) -> Callable[[str], tuple[str, str] | None]:
+        """WikiLink target -> (ID, title) among documents of THIS reader's snapshot; anything else stays text."""
+
+        def resolve(target: str) -> tuple[str, str] | None:
+            doc = snapshot.get(target) if is_valid_document_id(target) else None
+            return (doc.id, doc.title) if doc is not None else None
+
+        return resolve
+
     async def get_detail(self, user: UserContext, document_id: str) -> DocumentDetail:
         doc = await self._repository.get_document(document_id, user)
         snapshot = await self.snapshot(user)
@@ -219,7 +229,10 @@ class KnowledgeService:
             related=related,
             source_refs=list(doc.source_refs),
             content_markdown=doc.body,
-            content_html=render_html(doc.body),
+            content_html=render_html(doc.body, self.wikilink_resolver(snapshot)),
+            template_id=doc.template_id,
+            template_version=doc.template_version,
+            wikilink_count=len(doc.wikilinks),
             raw=doc.raw,
             path=doc.path,
             sections=list(doc.sections),

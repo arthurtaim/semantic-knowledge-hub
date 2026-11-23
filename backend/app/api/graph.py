@@ -56,6 +56,7 @@ class GraphEdgeOut(BaseModel):
     status: str
     expires_at: str | None
     feedback: str | None = None
+    provenance: list[str] = []
 
 
 class SubgraphOut(BaseModel):
@@ -107,7 +108,7 @@ def _node(n: g.GraphNode) -> GraphNodeOut:
 
 
 def _edge(e: g.GraphEdge) -> GraphEdgeOut:
-    return GraphEdgeOut(**e.__dict__)
+    return GraphEdgeOut(**{**e.__dict__, "provenance": list(e.provenance)})
 
 
 def _subgraph(s: g.Subgraph) -> SubgraphOut:

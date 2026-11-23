@@ -31,17 +31,22 @@ from app.adapters.ai.base import (
     AnswerDelta,
     AnswerOptions,
     AnswerStreamEvent,
+    AssistRequest,
+    AssistResult,
     AuthoringDraft,
     AuthoringRequest,
     ContextPassage,
     ProviderAnswer,
 )
 from app.adapters.ai.openai_compatible import (
+    ASSIST_PROMPT,
     _strip_fences,
     authoring_draft_from,
+    build_assist_message,
     build_authoring_message,
     build_edit_message,
     build_user_message,
+    parse_assist_json,
     parse_confidence,
     parse_evidence,
     parse_model_json,
@@ -306,6 +311,14 @@ class ClaudeCodeCLIProvider:
             self._timeout,
         )
         return _strip_fences(text) + "\n"
+
+    async def assist(self, request: AssistRequest) -> AssistResult:
+        text = await self._collect(
+            compose(self._instructions.for_task("authoring"), ASSIST_PROMPT),
+            build_assist_message(request, self._max_context_chars),
+            self._timeout,
+        )
+        return parse_assist_json(text)
 
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
         text = await self._collect(

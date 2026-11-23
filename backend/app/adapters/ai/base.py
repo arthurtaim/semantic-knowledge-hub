@@ -117,6 +117,31 @@ class AuthoringDraft:
     insufficient_data: bool
 
 
+AssistTask = Literal["improve", "summarize"]
+
+
+@dataclass(frozen=True)
+class AssistRequest:
+    """A contextual text task on a document (M5.6.3 AI-first workflows). `text` is the selection or the
+    section the user chose; references are authorized, injection-redacted excerpts; `guidance` comes from the
+    template registry (pinned version). Everything here is DATA for the model, never instructions."""
+
+    task: AssistTask
+    text: str
+    title: str
+    references: tuple[AuthoringReference, ...] = ()
+    guidance: str = ""
+    goal: str = ""  # optional wish of the user ("короче", "для аналитика")
+
+
+@dataclass
+class AssistResult:
+    text: str  # proposed Markdown (a section or a summary), shown as a diff; applied only on Accept
+    citations: list[AuthoringCitation]
+    warnings: list[str]
+    insufficient_data: bool
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -161,6 +186,11 @@ class AIProvider(Protocol):
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
         """Draft the body of a new document from a template and references. Raises AIProviderError
         if unsupported."""
+        ...
+
+    async def assist(self, request: AssistRequest) -> AssistResult:
+        """Improve or summarize a selection. Returns a PROPOSAL; raises AIProviderError (invalid answer,
+        unavailable). Never stores or applies anything."""
         ...
 
     async def status(self) -> IntegrationStatus: ...
