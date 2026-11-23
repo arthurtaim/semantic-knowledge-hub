@@ -47,8 +47,11 @@ API-ключ Anthropic в этом проекте **не используетс�
                           backend/claude_worker: semaphore → subprocess без shell:
                           claude -p --output-format stream-json --tools "" --restricted --strict-mcp-config …
                             │  токен: файл /run/secrets/claude/claude_code_oauth_token (только для дочернего процесса)
+                            │  HTTPS_PROXY (сеть egress-proxy, внутренняя)
                             ▼
-                          HTTPS → Anthropic (сеть egress есть только у воркера)
+                        egress-proxy (тот же образ): пропускает только CONNECT api.anthropic.com:443
+                            ▼
+                          HTTPS → Anthropic (выход в интернет есть только у egress-proxy)
 ```
 
 - **Backend** собирает авторизованные фрагменты (как для любого провайдера), формирует сообщение с вопросом,
@@ -116,7 +119,9 @@ mock CLI `backend/tests/support/fake_claude_cli.py`.
 - **Изоляция контейнера.** Воркер: read-only root FS, tmpfs `/tmp`, `cap_drop: ALL`, `no-new-privileges`,
   лимиты памяти/CPU/процессов, без опубликованного порта, без Docker socket, без домашнего каталога root;
   смонтирован только отдельный каталог с одним файлом токена (read-only). Сеть `ai` связывает только backend и
-  воркер; выход в интернет (`egress`) есть только у воркера. Backend по-прежнему без выхода в интернет.
+  воркер. У самого воркера нет маршрута наружу: CLI выходит только через `egress-proxy` (`HTTPS_PROXY`), который
+  туннелирует исключительно `CONNECT api.anthropic.com:443` (`EGRESS_ALLOWED_HOSTS`) и отклоняет IP-адреса, другие
+  хосты и порты — в том числе сервисы других проектов на сервере. Backend по-прежнему без выхода в интернет.
 - **Данные как данные.** Вопрос, фрагменты и история — в пользовательском сообщении внутри разделителей,
   метаданные фрагментов в JSON; разделители из текста источников нейтрализуются. Системный промпт фиксирован.
 - **Секреты.** Токен читается из файла в момент запуска дочернего процесса, не попадает в API, браузер, журналы
@@ -142,13 +147,16 @@ mock CLI `backend/tests/support/fake_claude_cli.py`.
 | `CLAUDE_CLI_MODEL` | worker | пусто | алиас модели для CLI (пусто — модель подписки по умолчанию) |
 | `CLAUDE_WORKER_MAX_CONCURRENCY` | worker | 1 | одновременные запросы |
 | `CLAUDE_CLI_COMMAND` | worker | `claude` | команда CLI (в образе `/usr/local/bin/claude`) |
+| `CLAUDE_WORKER_EGRESS_PROXY` | worker | пусто | прокси для CLI (`http://egress-proxy:3128` в стенде) |
+| `EGRESS_ALLOWED_HOSTS` | egress-proxy | `api.anthropic.com` | единственные хосты, куда разрешён выход (порт 443) |
 
 Шаблон для стенда — `deploy/claude-test/claude-test.env.example` (секретов не содержит).
 
 ## 8. Личный тестовый контур на сервере
 
 Отдельный compose-проект `semantic-kb-claude-test` в `/opt/semantic-kb-claude-test`: свои контейнеры, тома,
-сети, порт `127.0.0.1:5180`, лимиты (worker 900 MB/1 CPU, backend 448 MB/0,75 CPU, frontend 96 MB/0,25 CPU).
+сети, порт `127.0.0.1:5180`, лимиты (worker 900 MB/1 CPU, backend 448 MB/0,75 CPU, frontend 96 MB/0,25 CPU,
+egress-proxy 64 MB/0,25 CPU).
 Другие проекты на сервере не затрагиваются.
 
 ```bash

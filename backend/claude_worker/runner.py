@@ -89,6 +89,7 @@ class WorkerConfig:
     max_prompt_chars: int = 200_000
     max_system_chars: int = 20_000
     max_output_chars: int = 200_000
+    egress_proxy: str = ""  # http://egress-proxy:3128 — the only way out of the worker network
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> WorkerConfig:
@@ -103,6 +104,7 @@ class WorkerConfig:
             timeout_seconds=float(e.get("CLAUDE_WORKER_TIMEOUT_SECONDS", "120")),
             max_timeout_seconds=float(e.get("CLAUDE_WORKER_MAX_TIMEOUT_SECONDS", "300")),
             max_concurrency=max(1, int(e.get("CLAUDE_WORKER_MAX_CONCURRENCY", "1"))),
+            egress_proxy=e.get("CLAUDE_WORKER_EGRESS_PROXY", ""),
         )
 
 
@@ -144,6 +146,8 @@ def build_env(config: WorkerConfig, token: str | None) -> dict[str, str]:
     }
     if token:
         env["CLAUDE_CODE_OAUTH_TOKEN"] = token
+    if config.egress_proxy:
+        env["HTTPS_PROXY"] = env["HTTP_PROXY"] = config.egress_proxy
     return env
 
 

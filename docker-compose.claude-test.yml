@@ -7,7 +7,8 @@
 # Isolation:
 # - own compose project → own containers, volumes and networks (prefix `semantic-kb-claude-test_`);
 # - backend: networks `internal` + `ai`, both internal → still NO internet egress, no Claude credentials;
-# - claude-worker: networks `ai` (backend only) + `egress` (HTTPS to Anthropic); no published port; read-only
+# - claude-worker: networks `ai` (backend only) + `egress-proxy` (internal); no internet route of its own: the CLI
+#   goes out only through `egress-proxy`, which tunnels CONNECT api.anthropic.com:443 and nothing else; read-only
 #   root filesystem; only the dedicated token directory is mounted read-only — no Docker socket, no home dir;
 # - frontend: the only published port, bound to 127.0.0.1 (reach it with `ssh -L`).
 
@@ -44,13 +45,14 @@ services:
       CLAUDE_WORKER_TIMEOUT_SECONDS: ${CLAUDE_CLI_TIMEOUT_SECONDS:-120}
       CLAUDE_WORKER_MAX_TIMEOUT_SECONDS: "300"
       CLAUDE_WORKER_MAX_CONCURRENCY: ${CLAUDE_WORKER_MAX_CONCURRENCY:-1}
+      CLAUDE_WORKER_EGRESS_PROXY: http://egress-proxy:3128
     volumes:
       # A dedicated directory (owner uid 10002, mode 700) holding ONLY claude_code_oauth_token, created with the
       # official `claude setup-token`. Read-only. Missing/empty token = "not authorized". Nothing else is mounted.
       - ${SKH_CLAUDE_SECRETS_DIR:?set SKH_CLAUDE_SECRETS_DIR}:/run/secrets/claude:ro
     networks:
-      - ai
-      - egress
+      - ai # backend only
+      - egress-proxy # the only way out: allow-listing CONNECT proxy
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -64,7 +66,35 @@ services:
     pids_limit: 128
     restart: unless-stopped
 
+  egress-proxy:
+    build: # same Dockerfile as the worker (layers are shared), different command
+      context: .
+      dockerfile: deploy/claude-worker/Dockerfile
+    command: ["python", "-m", "claude_worker.egress_proxy"]
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-api.anthropic.com}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3128), 3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - egress-proxy
+      - egress
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 32
+    restart: unless-stopped
+
 networks:
   ai:
     internal: true # backend ↔ worker only
-  egress: {} # worker → Anthropic (HTTPS)
+  egress-proxy:
+    internal: true # worker ↔ proxy only
+  egress: {} # proxy → api.anthropic.com:443 only

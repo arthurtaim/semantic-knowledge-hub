@@ -334,3 +334,31 @@ def test_cancellation_inside_an_anyio_cancel_scope_still_cleans_up(tmp_path: Pat
     assert not pid_alive(record(tmp_path)["pid"])
     assert [p.name for p in (tmp_path / "runs").iterdir()] == []
     assert runner.active == 0
+
+
+def test_egress_proxy_allows_only_connect_to_allowed_hosts_on_443() -> None:
+    from claude_worker.egress_proxy import is_allowed, parse_connect
+
+    allowed = frozenset({"api.anthropic.com"})
+    assert parse_connect(b"CONNECT api.anthropic.com:443 HTTP/1.1\r\nHost: x\r\n\r\n") == (
+        "api.anthropic.com",
+        443,
+    )
+    assert is_allowed("api.anthropic.com", 443, allowed)
+    assert not is_allowed("api.anthropic.com", 80, allowed)
+    assert not is_allowed("evil.example.com", 443, allowed)
+    for head in (
+        b"GET http://api.anthropic.com/ HTTP/1.1\r\n\r\n",  # plain HTTP proxying
+        b"CONNECT 172.17.0.1:8080 HTTP/1.1\r\n\r\n",  # IP literal (other apps on the host)
+        b"CONNECT [::1]:443 HTTP/1.1\r\n\r\n",
+        b"CONNECT user@api.anthropic.com:443 HTTP/1.1\r\n\r\n",
+        b"CONNECT api.anthropic.com HTTP/1.1\r\n\r\n",
+        b"CONNECT api.anthropic.com:443\r\n\r\n",
+    ):
+        assert parse_connect(head) is None, head
+
+
+def test_child_gets_the_egress_proxy_when_configured() -> None:
+    env = build_env(WorkerConfig(egress_proxy="http://egress-proxy:3128"), None)
+    assert env["HTTPS_PROXY"] == env["HTTP_PROXY"] == "http://egress-proxy:3128"
+    assert "HTTPS_PROXY" not in build_env(WorkerConfig(), None)

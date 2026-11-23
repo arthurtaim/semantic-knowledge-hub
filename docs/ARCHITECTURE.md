@@ -152,8 +152,9 @@ Local: `docker compose` or documented `uvicorn` and Vite commands, localhost bin
   subprocess without a shell, with every tool, MCP server, settings file and session persistence disabled, in an
   empty per-request directory with an allow-listed environment.
 - Docker (`docker-compose.claude-test.yml`, project `semantic-kb-claude-test`): backend on `internal` + `ai`
-  (both internal, still no egress, no Claude credentials); `claude-worker` on `ai` + `egress`, read-only FS,
-  only the token directory mounted read-only; frontend published on `127.0.0.1:5180`, reached through SSH.
+  (both internal, still no egress, no Claude credentials); `claude-worker` on `ai` + `egress-proxy` (both
+  internal), read-only FS, only the token directory mounted read-only; `egress-proxy` is the only container with
+  internet access and tunnels `CONNECT api.anthropic.com:443` only; frontend on `127.0.0.1:5180`, reached via SSH.
 - Same server-side citation validation; conversation history comes from the client as data (max 6 turns, never
   stored, never evidence); cancellation closes the stream down to the worker, which kills the process group.
 - Fail closed: explicit `CLAUDE_CLI_PERSONAL_USE_ACK`, `local_demo` only, never in `offline`, worker URL loopback
