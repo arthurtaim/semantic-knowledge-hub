@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { DocumentPage } from "../api/types";
-import { formatDate } from "../lib/labels";
+import { formatWhen } from "../lib/labels";
 import { HomePage } from "../pages/HomePage";
 import {
   actionableProposals,
@@ -49,7 +49,7 @@ describe("Home page", () => {
     const recent = (await screen.findByRole("heading", { name: "Недавно обновлённые" })).closest("section") as HTMLElement;
     const doc = await within(recent).findByRole("link", { name: "ARIS integration — questions for discovery" });
     expect(doc).toHaveAttribute("href", "/documents/SEM-INT-ARIS-001");
-    expect(within(recent).getByText(formatDate(arisSummary.updated_at))).toBeInTheDocument();
+    expect(within(recent).getByText(formatWhen(arisSummary.updated_at).text, { exact: false })).toBeInTheDocument();
     expect(within(recent).getByText("Версия может быть устаревшей")).toBeInTheDocument();
     expect(within(recent).queryByText("Glossary without a date")).toBeNull();
     expect(calls.some((c) => c.url === "/api/documents?sort=updated&size=5")).toBe(true);

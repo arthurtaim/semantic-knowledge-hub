@@ -395,6 +395,57 @@ export function formatDateTime(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : dateTimeFormat.format(date);
 }
 
+const shortDateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+const fullDateTimeFormat = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const clockFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" });
+
+export interface When {
+  /** What the row shows: relative for today and yesterday, otherwise a short date. */
+  text: string;
+  /** The full date (and time) for the tooltip and screen readers. */
+  full: string;
+  /** `text` is relative («сегодня», «5 мин. назад»): screen readers also get `full`. */
+  relative: boolean;
+}
+
+/**
+ * The one date format of lists and tables (phase 4): «только что», «N мин. назад», «сегодня, 15:50»,
+ * «вчера, 15:50», otherwise «22 нояб. 2026 г.»; `full` is the complete date and time. A date without a time
+ * (`YYYY-MM-DD`) is shown as «сегодня», «вчера» or the short date. Future moments get the short date.
+ */
+export function formatWhen(value: string | null | undefined, now: Date = new Date()): When {
+  if (!value) return { text: "—", full: "", relative: false };
+  const dateOnly = value.length === 10;
+  const date = new Date(dateOnly ? `${value}T00:00:00` : value);
+  if (Number.isNaN(date.getTime())) return { text: value, full: value, relative: false };
+  const full = dateOnly ? dateFormat.format(date) : fullDateTimeFormat.format(date);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  const time = date.getTime();
+  const elapsed = now.getTime() - time;
+  const absolute = shortDateFormat.format(date);
+  let text = absolute;
+  if (dateOnly) {
+    if (time >= startOfToday && time < startOfToday + day) text = "сегодня";
+    else if (time >= startOfToday - day && time < startOfToday) text = "вчера";
+  } else if (elapsed >= 0 && elapsed < 60_000) {
+    text = "только что";
+  } else if (elapsed >= 0 && elapsed < 60 * 60_000) {
+    text = `${Math.floor(elapsed / 60_000)} мин. назад`;
+  } else if (time >= startOfToday && time <= now.getTime()) {
+    text = `сегодня, ${clockFormat.format(date)}`;
+  } else if (time >= startOfToday - day && time < startOfToday) {
+    text = `вчера, ${clockFormat.format(date)}`;
+  }
+  return { text, full, relative: text !== absolute };
+}
+
 /** Short form of a revision for display: `sha256:` + 8 hex characters, or the first 8 characters of a commit. */
 export function shortRevision(revision: string | null | undefined): string {
   if (!revision) return "—";

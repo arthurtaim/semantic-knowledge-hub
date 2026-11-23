@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatDate } from "../lib/labels";
+import { formatWhen } from "../lib/labels";
 import { ExplorerPage } from "../pages/ExplorerPage";
 import { arisSummary, documentPage, emptyPage, facets, staleSync } from "./fixtures";
 import { mockApi, renderAt } from "./helpers";
@@ -66,7 +66,7 @@ describe("Knowledge explorer", () => {
     const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
     const result = link.closest("li") as HTMLElement;
     expect(within(result).getByText("Обновлён")).toBeInTheDocument();
-    expect(within(result).getByText(formatDate(arisSummary.updated_at))).toBeInTheDocument();
+    expect(within(result).getByText(formatWhen(arisSummary.updated_at).text, { exact: false })).toBeInTheDocument();
 
     const sort = screen.getByLabelText("Сортировка");
     expect(sort).toHaveValue("");

@@ -8,7 +8,6 @@ import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { StaleMark } from "../components/StaleMark";
 import { StatusStamp } from "../components/StatusStamp";
 import {
-  formatDate,
   pluralRu,
   REVIEW_LABEL,
   SORT_LABEL,
@@ -20,6 +19,7 @@ import {
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import { When } from "../components/When";
 
 const PAGE_SIZE = 20;
 /** Explicit orders; relevance (with a query) and section/title order (without) are the server default. */
@@ -353,7 +353,7 @@ export function ExplorerPage() {
                     <div>
                       <dt>Обновлён</dt>
                       <dd>
-                        {doc.updated_at ? <time dateTime={doc.updated_at}>{formatDate(doc.updated_at)}</time> : "не указано"}
+                        <When value={doc.updated_at} fallback="не указано" />
                       </dd>
                     </div>
                   </dl>

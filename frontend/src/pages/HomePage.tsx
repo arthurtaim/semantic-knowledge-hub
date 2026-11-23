@@ -9,8 +9,6 @@ import { StaleMark } from "../components/StaleMark";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
 import {
-  formatDate,
-  formatDateTime,
   PROPOSAL_NEEDS_ACTION,
   REVIEW_LABEL,
   SOURCE_LABEL,
@@ -18,6 +16,7 @@ import {
   TYPE_ORDER,
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 const RECENT_LIMIT = 5;
 const PROPOSALS_LIMIT = 5;
@@ -63,7 +62,7 @@ function RecentlyUpdated() {
                 <span className="doc-row__meta">
                   <code className="doc-id">{doc.id}</code>
                   <span>
-                    обновлён <time dateTime={doc.updated_at ?? undefined}>{formatDate(doc.updated_at)}</time>
+                    обновлён <When value={doc.updated_at} />
                   </span>
                   <span>{SOURCE_LABEL[doc.source]}</span>
                   {doc.index_state === "stale" ? <StaleMark /> : null}
@@ -108,7 +107,9 @@ function ProposalsNeedingAction() {
                   <OperationBadge operation={p.operation} />
                   <ProposalStateLabel status={p.status} />
                   <span>{p.reason}</span>
-                  <span>обновлено {formatDateTime(p.updated_at)}</span>
+                  <span>
+                    обновлено <When value={p.updated_at} />
+                  </span>
                 </span>
               </li>
             ))}

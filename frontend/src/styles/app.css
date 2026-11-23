@@ -150,6 +150,12 @@ textarea {
   color: inherit;
 }
 
+/* One date format in lists and tables (components/When.tsx): never wrapped. */
+.when {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .visually-hidden {
   position: absolute !important;
   width: 1px;

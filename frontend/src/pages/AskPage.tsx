@@ -15,8 +15,9 @@ import type {
 import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
-import { AI_ERROR_TITLE, CONFIDENCE_LABEL, SOURCE_LABEL, formatDateTime, pluralRu } from "../lib/labels";
+import { AI_ERROR_TITLE, CONFIDENCE_LABEL, SOURCE_LABEL, pluralRu } from "../lib/labels";
 import { useSession } from "../lib/session";
+import { When } from "../components/When";
 
 const SCOPES: { value: string; label: string; scopes: SearchScope[] }[] = [
   { value: "team", label: "Команда", scopes: ["team"] },
@@ -291,7 +292,9 @@ function CitationItem({ citation, turnNo, actionsTrace }: CitationItemProps) {
         </div>
         <div>
           <dt>Получено</dt>
-          <dd>{formatDateTime(citation.retrieved_at)}</dd>
+          <dd>
+            <When value={citation.retrieved_at} />
+          </dd>
         </div>
       </dl>
       {external && actionsTrace && citation.source_id ? (

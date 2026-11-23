@@ -3,8 +3,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { TemplateSummary } from "../api/types";
 import { EmptyState, ErrorState, Loading } from "../components/Feedback";
-import { formatDate, pluralRu, TEMPLATE_STATUS_LABEL, TYPE_LABEL, TYPE_ORDER } from "../lib/labels";
+import { pluralRu, TEMPLATE_STATUS_LABEL, TYPE_LABEL, TYPE_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 const FILTER_KEYS = ["q", "status", "type", "category", "label"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
@@ -60,7 +61,9 @@ function TemplateTile({ t }: { t: TemplateSummary }) {
         </div>
         <div>
           <dt>Обновлён</dt>
-          <dd>{formatDate(t.updated)}</dd>
+          <dd>
+            <When value={t.updated} />
+          </dd>
         </div>
         <div>
           <dt>Разделы</dt>

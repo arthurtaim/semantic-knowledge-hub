@@ -11,6 +11,7 @@ import { AI_ERROR_TITLE, AI_PROPOSAL_ERROR_TITLE, formatDate, METADATA_FIELD_LAB
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { TemplateStatusBadge } from "./TemplatesPage";
+import { When } from "../components/When";
 
 function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
@@ -330,7 +331,9 @@ export function TemplateDetailPage() {
           <span aria-hidden="true">·</span>
           <span>владелец {t.owner}</span>
           <span aria-hidden="true">·</span>
-          <span>обновлён {formatDate(t.updated)}</span>
+          <span>
+            обновлён <When value={t.updated} />
+          </span>
         </p>
         <p className="lead">{t.description}</p>
         <p className="muted template-detail__ids">

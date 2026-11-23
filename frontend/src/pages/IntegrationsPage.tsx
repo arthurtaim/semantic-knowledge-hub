@@ -22,6 +22,7 @@ import {
   SYNC_STATE_LABEL,
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 const PUBLISHER_MODES = new Set<string>(["disabled", "dry_run_only", "write"]);
 /** Failed checks first (they need attention), then connected, demo doubles; unconfigured ones last. */
@@ -53,7 +54,9 @@ function IntegrationFacts({ item }: { item: IntegrationStatus }) {
       ) : null}
       <div>
         <dt>Последняя проверка</dt>
-        <dd>{item.checked_at ? formatDateTime(item.checked_at) : "не проверялось"}</dd>
+        <dd>
+          <When value={item.checked_at} fallback="не проверялось" />
+        </dd>
       </div>
       {item.capabilities.length > 0 ? (
         <div>
@@ -116,11 +119,15 @@ function SyncFacts({ status }: { status: SyncStatus }) {
       </div>
       <div>
         <dt>Последняя успешная синхронизация</dt>
-        <dd>{status.last_success_at ? formatDateTime(status.last_success_at) : "не было"}</dd>
+        <dd>
+          <When value={status.last_success_at} fallback="не было" />
+        </dd>
       </div>
       <div>
         <dt>Последняя попытка</dt>
-        <dd>{status.last_attempt_at ? formatDateTime(status.last_attempt_at) : "не было"}</dd>
+        <dd>
+          <When value={status.last_attempt_at} fallback="не было" />
+        </dd>
       </div>
       <div>
         <dt>Документов в источнике</dt>
@@ -467,7 +474,9 @@ export function IntegrationsPage() {
               </ul>
             </>
           ) : null}
-          <p className="muted">Проверено: {formatDateTime(data.checked_at)}</p>
+          <p className="muted">
+            Проверено: <When value={data.checked_at} />
+          </p>
         </>
       ) : null}
       <SyncSection />

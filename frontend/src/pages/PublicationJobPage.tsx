@@ -19,6 +19,7 @@ import {
   shortRevision,
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 type JobAction = "dry_run" | "publish" | "reconcile" | "acknowledge" | "release";
 
@@ -602,7 +603,7 @@ export function PublicationJobPage() {
           <ol className="history">
             {job.history.map((event, index) => (
               <li key={index}>
-                <time dateTime={event.at}>{formatDateTime(event.at)}</time> —{" "}
+                <When value={event.at} /> —{" "}
                 {PUBLICATION_EVENT_LABEL[event.action] ?? event.action}
                 {event.state ? (
                   <span className="muted">

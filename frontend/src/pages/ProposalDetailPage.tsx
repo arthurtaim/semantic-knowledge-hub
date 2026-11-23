@@ -20,6 +20,7 @@ import {
 } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 type ActionKind = "mark_ready" | "submit" | "refresh" | "reject" | "delete";
 
@@ -130,7 +131,9 @@ function MergeRequestPanel({ proposal: p }: { proposal: ProposalDetail }) {
         </div>
         <div>
           <dt>Проверено</dt>
-          <dd>{mr?.checked_at ? formatDateTime(mr.checked_at) : "ещё не проверялось"}</dd>
+          <dd>
+            <When value={mr?.checked_at} fallback="ещё не проверялось" />
+          </dd>
         </div>
       </dl>
       {isHttpUrl(url) ? (
@@ -172,7 +175,9 @@ function SubmissionFailurePanel({ proposal: p }: { proposal: ProposalDetail }) {
         </div>
         <div>
           <dt>Последняя попытка</dt>
-          <dd>{formatDateTime(s.last_attempt_at)}</dd>
+          <dd>
+            <When value={s.last_attempt_at} />
+          </dd>
         </div>
       </dl>
       {s.uncertain ? (
@@ -408,7 +413,9 @@ export function ProposalDetailPage() {
           </div>
           <div>
             <dt>Создано</dt>
-            <dd>{formatDateTime(p.created_at)}</dd>
+            <dd>
+              <When value={p.created_at} />
+            </dd>
           </div>
           <div>
             <dt>Происхождение</dt>
@@ -658,7 +665,7 @@ export function ProposalDetailPage() {
           <ol className="history">
             {p.history.map((event, index) => (
               <li key={index}>
-                <time dateTime={event.at}>{formatDateTime(event.at)}</time> —{" "}
+                <When value={event.at} /> —{" "}
                 {PROPOSAL_ACTION_LABEL[event.action] ?? event.action}
                 {event.status ? <span className="muted"> → {PROPOSAL_STATUS_LABEL[event.status] ?? event.status}</span> : null}
                 <span className="muted"> ({event.actor})</span>
