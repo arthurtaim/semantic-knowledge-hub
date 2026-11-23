@@ -98,6 +98,9 @@ class AuthoringRequest:
     sections: tuple[tuple[str, str], ...]  # template sections: (heading, placeholder hint)
     references: tuple[AuthoringReference, ...]
     access_scope: str  # e.g. "team": the only scope the references were retrieved from
+    # M5.6.3: guidance of the PINNED template version from the registry (data, not a system instruction).
+    guidance: str = ""
+    template_version: int = 1
 
 
 @dataclass(frozen=True)

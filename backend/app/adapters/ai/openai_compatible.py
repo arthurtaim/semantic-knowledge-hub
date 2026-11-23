@@ -272,9 +272,14 @@ def build_authoring_message(request: AuthoringRequest, max_chars: int) -> str:
     parts = [
         f"Запрос автора:\n{_escape_untrusted(request.request)}",
         f"Название: {_escape_untrusted(request.title)}",
+        f"Шаблон: {_escape_untrusted(request.template_id)} v{request.template_version}",
         "Разделы шаблона:\n"
         + "\n".join(f"- {_escape_untrusted(h)}: {_escape_untrusted(hint)}" for h, hint in request.sections),
     ]
+    if request.guidance:
+        parts.append(
+            f"<<<TEMPLATE GUIDANCE>>>\n{_escape_untrusted(request.guidance)}\n<<<END TEMPLATE GUIDANCE>>>"
+        )
     for ref in request.references:
         meta = json.dumps(
             {"document_id": ref.document_id, "title": ref.title, "status": ref.status.value},

@@ -519,6 +519,8 @@ class AuthoringService:
             sections=template_hints(template),
             references=tuple(references),
             access_scope="team",
+            guidance=template.ai_guidance,
+            template_version=template.version,
         )
         try:
             draft = await self._ai.draft_document(request)
