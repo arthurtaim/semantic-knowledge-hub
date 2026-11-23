@@ -307,3 +307,30 @@ def test_request_limits_are_validated(tmp_path: Path) -> None:
             ]
 
     assert asyncio.run(scenario()) == [422, 422]
+
+
+def test_cancellation_inside_an_anyio_cancel_scope_still_cleans_up(tmp_path: Path) -> None:
+    """Starlette cancels a disconnected stream through an anyio cancel scope, where every await in cleanup
+    code is cancelled again. The CLI must still be killed, the run directory removed and the outcome logged."""
+    import anyio
+
+    runner = ClaudeCLIRunner(make_config(tmp_path, "slow", sleep=30))
+
+    async def scenario() -> None:
+        async def consume() -> None:
+            async with contextlib.aclosing(runner.run(SYSTEM, PROMPT)) as events:
+                async for _ in events:
+                    pass
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(consume)
+            for _ in range(100):
+                if (tmp_path / "record.json").exists():
+                    break
+                await anyio.sleep(0.05)
+            tg.cancel_scope.cancel()
+
+    anyio.run(scenario)
+    assert not pid_alive(record(tmp_path)["pid"])
+    assert [p.name for p in (tmp_path / "runs").iterdir()] == []
+    assert runner.active == 0

@@ -34,6 +34,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import anyio
+
 logger = logging.getLogger("skh.claude_worker")
 
 # Flags that make the CLI a pure text model for this worker. Verified against Claude Code 2.1.318 `--help`.
@@ -294,12 +296,15 @@ class ClaudeCLIRunner:
             outcome_code = "ai_cancelled"
             raise
         finally:
-            if proc is not None:
-                await _terminate(proc)
-            if stderr_task is not None:
-                stderr_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await stderr_task
+            # Shielded: a disconnected client cancels through an anyio cancel scope, which would cancel every
+            # await here again and leave the CLI unreaped, the directory behind and the outcome unlogged.
+            with anyio.CancelScope(shield=True):
+                if proc is not None:
+                    await _terminate(proc)
+                if stderr_task is not None:
+                    stderr_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await stderr_task
             shutil.rmtree(workdir, ignore_errors=True)
             duration = int((time.monotonic() - started) * 1000)
             if outcome_code != "ai_cancelled":
@@ -486,7 +491,8 @@ async def _run_quick(argv: Sequence[str], config: WorkerConfig, token: str | Non
     except TimeoutError as exc:
         raise WorkerError("ai_timeout", "Claude Code CLI не ответил.") from exc
     finally:
-        await _terminate(proc)
+        with anyio.CancelScope(shield=True):
+            await _terminate(proc)
         shutil.rmtree(workdir, ignore_errors=True)
     return out.decode("utf-8", "replace")[:65536]
 
