@@ -267,8 +267,10 @@ class MockAIProvider:
         if not text:
             return AssistResult(text="", citations=[], warnings=warnings, insufficient_data=True)
         if request.task == "summarize":
-            plain = " ".join(
-                line.strip().lstrip("#>-*0123456789. ") for line in text.splitlines() if line.strip()
+            plain = " ".join(  # headings are structure, not content: never glued into the summary
+                line.strip().lstrip(">-*0123456789. ")
+                for line in text.splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
             )
             sentences = [s for s in split_sentences(plain) if len(s) > 15][:2]
             summary = " ".join(sentences) or plain[:300]

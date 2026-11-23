@@ -194,3 +194,28 @@ def test_invalid_model_json_is_an_error_not_a_proposal() -> None:
         '{"text": "Готово", "citations": [{"document_id": "X", "quote": "q"}], "insufficient": true}'
     )
     assert parsed.text == "Готово" and parsed.insufficient_data and parsed.citations[0].document_id == "X"
+
+
+def test_concurrent_accepts_apply_once(client: TestClient) -> None:
+    import asyncio
+
+    from app.services.ai_workflows import AcceptRequest
+
+    proposal = propose(
+        client, kind="draft_from_prompt", prompt="Нужен runbook: перезапуск потока при инциденте"
+    )
+    container: Any = client.app.state.container  # type: ignore[attr-defined]
+    user = container.demo_user()
+
+    async def both() -> list[Any]:
+        req = AcceptRequest(item_ids=["draft"])
+        return await asyncio.gather(
+            container.ai_workflows.accept(user, proposal["id"], req),
+            container.ai_workflows.accept(user, proposal["id"], req),
+            return_exceptions=True,
+        )
+
+    results = client.portal.call(both)  # type: ignore[attr-defined]
+    applied = [r for r in results if not isinstance(r, Exception)]
+    refused = [r for r in results if isinstance(r, Exception)]
+    assert len(applied) == 1 and len(refused) == 1 and getattr(refused[0], "code", "") == "ai_proposal_closed"

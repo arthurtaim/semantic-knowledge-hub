@@ -13,6 +13,7 @@ instead of being applied. The model never gets tools: the backend selects every 
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -310,6 +311,7 @@ class AiWorkflowService:
         self._links = links
         self._graph = graph
         self._assistant = assistant
+        self._accept_lock = asyncio.Lock()
 
     # --- loading the subject of a proposal -----------------------------------------------------------
     async def _target(self, user: UserContext, req: ProposalRequest, snapshot: KnowledgeSnapshot) -> _Target:
@@ -978,6 +980,10 @@ class AiWorkflowService:
         return None
 
     async def accept(self, user: UserContext, proposal_id: str, req: AcceptRequest) -> AiProposal:
+        async with self._accept_lock:  # two simultaneous Accepts of one proposal: only the first applies
+            return await self._accept(user, proposal_id, req)
+
+    async def _accept(self, user: UserContext, proposal_id: str, req: AcceptRequest) -> AiProposal:
         proposal = self.get(user, proposal_id)
         if proposal.status != "suggested":
             raise ApiError(409, "ai_proposal_closed", "Решение по предложению уже принято.")
