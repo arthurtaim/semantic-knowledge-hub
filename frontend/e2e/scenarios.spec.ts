@@ -103,12 +103,19 @@ test("E2E-06/07 create a proposal and review the diff; the source stays unchange
 });
 
 test("@mobile E2E-12 phone: home, menu, document and proposal pages fit the screen", async ({ page }) => {
-  for (const path of ["/", "/documents", "/documents/SEM-ARCH-001", "/proposals", "/integrations"]) {
+  for (const path of ["/", "/documents", "/documents/SEM-ARCH-001", "/documents/DEMO-SEM-002", "/proposals", "/integrations"]) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, path).toBeLessThanOrEqual(0);
   }
+  // Mobile emulation widens the layout viewport to the content, so also check the Markdown body itself:
+  // a wide table must scroll inside its own box (DEMO-SEM-002 has a 5-column attribute table).
+  await page.goto("/documents/DEMO-SEM-002");
+  const prose = page.locator(".prose").first();
+  await expect(prose.locator("table").first()).toBeVisible();
+  const proseOverflow = await prose.evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(proseOverflow, "document body wider than its box").toBeLessThanOrEqual(0);
   await page.goto("/");
   await page.getByRole("button", { name: "Меню" }).click();
   await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "База знаний" }).click();

@@ -1331,6 +1331,15 @@ h1 a:hover {
   text-align: left;
 }
 
+/* Narrow screens: a wide table scrolls inside its own box instead of widening the page. */
+@media screen and (max-width: 860px) {
+  .prose table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
 .prose .is-targeted,
 .prose :target {
   background: #fff6d6;
