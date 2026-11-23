@@ -22,7 +22,6 @@ from app.domain.models import (
     WikiLinkRef,
 )
 from app.domain.schema import parse_document
-from app.domain.wikilinks import extract_wikilinks
 
 
 def build_record(
@@ -69,7 +68,7 @@ def build_record(
         WikiLinkRef(
             target=w.target, anchor=w.anchor, label=w.label, line=w.line, excerpt=w.excerpt, id_like=w.id_like
         )
-        for w in extract_wikilinks(parsed.body)
+        for w in parsed.markdown.wikilinks
     )
     # An inline WikiLink to an ID is a `references` edge (never a typed business dependency). Several
     # links to one target from the same body are one edge; the graph merges it with `related_ids`.

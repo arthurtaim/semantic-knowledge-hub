@@ -21,7 +21,7 @@ from markdown_it.token import Token
 from markdown_it.utils import EnvType, OptionsDict
 
 from app.domain.models import Section
-from app.domain.wikilinks import use_wikilinks
+from app.domain.wikilinks import WikiLink, use_wikilinks, wikilinks_from_tokens
 
 _ALLOWED_TAGS = {
     "h1",
@@ -124,6 +124,7 @@ class ParsedMarkdown:
     sections: list[Section]
     plain_text: str
     paragraphs: list[str]
+    wikilinks: list[WikiLink]
 
 
 def parse_markdown(body: str, title_fallback: str = "") -> ParsedMarkdown:
@@ -171,7 +172,12 @@ def parse_markdown(body: str, title_fallback: str = "") -> ParsedMarkdown:
                 current_blocks.append(code)
     flush()
     plain = "\n".join(s.text for s in sections if s.text)
-    return ParsedMarkdown(sections=sections, plain_text=plain, paragraphs=paragraphs)
+    return ParsedMarkdown(
+        sections=sections,
+        plain_text=plain,
+        paragraphs=paragraphs,
+        wikilinks=wikilinks_from_tokens(tokens, body),
+    )
 
 
 class _SafeRenderer(RendererHTML):

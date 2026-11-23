@@ -12,10 +12,12 @@ and repeat): it is reported as a title link with candidates, and the editor conv
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from markdown_it import MarkdownIt
 from markdown_it.rules_inline import StateInline
+from markdown_it.token import Token
 
 MAX_INNER = 300
 # A target that LOOKS like an ID (letters/digits with at least one separator and a digit, no spaces).
@@ -83,9 +85,14 @@ _PARSER = _parser()
 
 def extract_wikilinks(body: str) -> list[WikiLink]:
     """All WikiLinks of a Markdown body in document order, with line numbers and the source line."""
+    return wikilinks_from_tokens(_PARSER.parse(body), body)
+
+
+def wikilinks_from_tokens(tokens: Sequence[Token], body: str) -> list[WikiLink]:
+    """Same as extract_wikilinks, from an already parsed token stream (one parse per document)."""
     lines = body.splitlines()
     links: list[WikiLink] = []
-    for token in _PARSER.parse(body):
+    for token in tokens:
         if token.type != "inline" or not token.children or token.map is None:
             continue
         offset = 0
