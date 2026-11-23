@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.adapters.knowledge.base import RepositoryUnavailableError
-from app.api import assistant, authoring, drafts, graph, knowledge, publications, system
+from app.api import assistant, authoring, discovery, drafts, graph, knowledge, publications, system
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
 from app.container import build_container
 from app.errors import error_body, install_error_handlers, request_id_of
@@ -102,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         authoring.router,
         publications.router,
         graph.router,
+        discovery.router,
     ):
         app.include_router(router)
     return app

@@ -41,6 +41,12 @@ class ContextPassage:
     text: str
     is_demo: bool
     suspicious: bool = False  # contains text that looks like instructions to an AI
+    # External (Confluence MCP) evidence: namespaced source id, authority as the SOURCE states it
+    # ("approved" | "draft" | "unknown"), fragment within the retrieved snapshot.
+    source_key: str | None = None
+    external_status: str | None = None
+    fragment_id: str | None = None
+    content_hash: str | None = None
 
 
 @dataclass(frozen=True)

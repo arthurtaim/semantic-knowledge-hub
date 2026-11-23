@@ -60,6 +60,7 @@ class DocumentTemplate:
     order: int
     version: int = 1  # declared in the template header (`version:`), resolved by the TemplateRegistry
     checksum: str = ""
+    listed: bool = True  # `listed: false`: not offered for manual authoring (e.g. external_import)
 
     def skeleton(self, title: str) -> str:
         heading = f"# {title.strip()}\n\n" if title.strip() else ""
@@ -109,6 +110,7 @@ def _parse_template(path: Path) -> DocumentTemplate:
         order=order if isinstance(order, int) else 100,
         version=version,
         checksum=hashlib.sha256(raw).hexdigest()[:16],
+        listed=meta.get("listed", True) is not False,
     )
 
 

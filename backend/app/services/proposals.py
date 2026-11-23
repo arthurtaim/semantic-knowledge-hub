@@ -179,7 +179,7 @@ def validate_proposal(
     new_status = parsed.metadata.get("status")
     if new_status is not None and new_status != doc.status:
         if new_status == DocStatus.approved:
-            if origin == "ai_suggestion":
+            if origin in ("ai_suggestion", "external_page"):
                 issues.append(
                     ValidationIssue(
                         severity="error",

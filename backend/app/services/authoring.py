@@ -158,6 +158,8 @@ class AuthoringService:
         taken = ids | self._store.open_create_ids()
         result = []
         for template in self._templates.active().values():
+            if not template.listed:
+                continue
             suggested = suggest_document_id(template.id_prefix, taken)
             result.append(
                 DocumentTemplateInfo(
@@ -260,7 +262,7 @@ class AuthoringService:
                 )
             )
         elif status == DocStatus.approved:
-            if origin == "ai_suggestion":
+            if origin in ("ai_suggestion", "external_page"):
                 issues.append(
                     _issue(
                         "error",

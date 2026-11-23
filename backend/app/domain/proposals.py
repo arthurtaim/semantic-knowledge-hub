@@ -56,7 +56,9 @@ OPEN_STATUSES = frozenset(
 )
 
 
-ProposalOrigin = Literal["manual", "ai_suggestion"]
+# external_page: a curation proposal built from an external (Confluence) page — like an AI draft it can never
+# be approved by its author; it is a draft that goes through the normal review.
+ProposalOrigin = Literal["manual", "ai_suggestion", "external_page"]
 
 
 class DiffLine(BaseModel):

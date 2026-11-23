@@ -18,6 +18,7 @@ from app.container import Container
 from app.domain.models import DocStatus, DocType, RelationType, UserContext
 from app.errors import ApiError
 from app.services import graph as g
+from app.services.discovery import acl_scope_key
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
@@ -54,6 +55,7 @@ class GraphEdgeOut(BaseModel):
     revision: str | None
     status: str
     expires_at: str | None
+    feedback: str | None = None
 
 
 class SubgraphOut(BaseModel):
@@ -244,4 +246,124 @@ async def diagnostics(
         edges_by_type=dict(sorted(counts.items())),
         dangling=[_edge(e) for e in graph.dangling[:200]],
         orphans=orphans,
+    )
+
+
+QUERY_EXTERNAL_REVALIDATE = 6
+QUERY_CONTEXT_NEIGHBOURS = 10
+
+
+@router.get("/query/{trace_id}", response_model=SubgraphOut)
+async def query_graph(
+    trace_id: Annotated[str, Path(pattern=r"^TRACE-[0-9a-f]{16}$")],
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+) -> SubgraphOut:
+    """Evidence graph of ONE answer: question → sources found / used / cited → related documents.
+
+    Visible only within the requester's scope. External pages are re-validated now (still readable, same
+    version); a revoked, deleted or changed page is hidden — node, edges and counts — and its discovery
+    links are invalidated. Local documents that left the knowledge base are hidden too."""
+    if container.discovery is None:
+        raise ApiError(503, "discovery_disabled", "Память поиска отключена конфигурацией.")
+    trace = container.discovery.trace(trace_id, acl_scope_key(user))
+    if trace is None:
+        raise ApiError(404, "trace_not_found", "След запроса не найден или срок хранения истёк.")
+    graph = await container.graph.graph(user)
+    query_node = g.GraphNode(
+        id=f"query:{trace.trace_id}",
+        kind="query_context",
+        label="Вопрос"
+        + (f": {trace.query_text[:80]}" if trace.query_text else f" ({', '.join(trace.intent[:5])})"),
+        source_kind="query_trace",
+        expires_at=trace.expires_at,
+    )
+    nodes: dict[str, g.GraphNode] = {query_node.id: query_node}
+    edges: list[g.GraphEdge] = []
+    cited_docs: list[str] = []
+    revalidated = 0
+    for source in trace.sources:
+        if source["source_kind"] == "confluence_mcp":
+            if revalidated >= QUERY_EXTERNAL_REVALIDATE:
+                continue
+            revalidated += 1
+            ok = container.external is not None and await container.external.revalidate(
+                user, source["page_id"], source["version"]
+            )
+            if not ok:
+                base = source["source_id"].rsplit(":", 1)[0]
+                container.discovery.invalidate_source(base, "revoked_deleted_or_changed")
+                continue
+            node = g.GraphNode(
+                id=f"ext:{source['source_id']}",
+                kind="external_page",
+                label=source["title"],
+                source_kind="confluence_mcp",
+                status=source["status"] or "unknown",
+                version=source["version"],
+                url=f"/corporate/{source['page_id']}",
+                synthetic=True,
+                expires_at=source["expires_at"],
+            )
+        else:
+            document_id = source["source_id"].split(":", 1)[1]
+            existing = graph.nodes.get(g.doc_node_id(document_id))
+            if existing is None:
+                continue  # left the knowledge base since the answer
+            node = existing
+            if source["cited"]:
+                cited_docs.append(node.id)
+        nodes[node.id] = node
+        edges.append(
+            g.GraphEdge(
+                id=f"edge:{trace.trace_id}:retrieved_for:{node.id}",
+                source=node.id,
+                target=query_node.id,
+                type="retrieved_for",
+                origin="query_trace",
+                verified=False,
+                declared_in=None,
+                field=", ".join(source["fragment_ids"][:6]) or None,
+                path=None,
+                revision=source["version"],
+                expires_at=source["expires_at"],
+                feedback=source["feedback"],
+            )
+        )
+        if source["cited"]:
+            edges.append(
+                g.GraphEdge(
+                    id=f"edge:{trace.trace_id}:cited_in:{node.id}",
+                    source=node.id,
+                    target=query_node.id,
+                    type="cited_in",
+                    origin="query_trace",
+                    verified=True,
+                    declared_in=None,
+                    field=None,
+                    path=None,
+                    revision=source["version"],
+                    expires_at=source["expires_at"],
+                    feedback=source["feedback"],
+                )
+            )
+    # Related documents of the cited ones (declared edges only), bounded.
+    added = 0
+    for doc_node in cited_docs:
+        for edge in [*graph.out_adj.get(doc_node, []), *graph.in_adj.get(doc_node, [])]:
+            other = edge.target if edge.source == doc_node else edge.source
+            if other not in nodes and added < QUERY_CONTEXT_NEIGHBOURS and other in graph.nodes:
+                nodes[other] = graph.nodes[other]
+                added += 1
+    edges += [e for e in graph.edges if e.source in nodes and e.target in nodes]
+    return _subgraph(
+        g.Subgraph(
+            nodes=list(nodes.values()),
+            edges=edges,
+            total_nodes=len(nodes),
+            total_edges=len(edges),
+            partial=False,
+            generation=graph.generation,
+            focus=query_node.id,
+        )
     )

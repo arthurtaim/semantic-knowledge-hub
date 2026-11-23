@@ -259,6 +259,14 @@ class Citation(BaseModel):
     retrieved_at: datetime
     is_demo: bool
     app_path: str | None  # in-app link; only for documents the app can open itself
+    # M5.6.2 provenance: kind and namespaced id of the source (local:ID / gitlab:ID /
+    # confluence:<instance>:<page>:<version>), authority as an EXTERNAL source states it
+    # (approved | draft | unknown), the fragment of the retrieved snapshot and its hash.
+    source_kind: Literal["local_markdown", "gitlab_approved", "confluence_mcp"] | None = None
+    source_id: str | None = None
+    external_status: str | None = None
+    fragment_id: str | None = None
+    content_hash: str | None = None
 
 
 class ExcludedSource(BaseModel):
@@ -288,6 +296,8 @@ class AskRequest(BaseModel):
     sources: list[SearchScope] = Field(default_factory=_default_scopes, min_length=1, max_length=2)
     include_drafts: bool = False
     include_deprecated: bool = False
+    # Force the external (Confluence) search even when the team documents look sufficient.
+    search_external: bool = False
     # Earlier turns (oldest first). Context for the model only — never evidence, never stored.
     history: list[ConversationTurnIn] = Field(default_factory=list, max_length=6)
 
@@ -301,6 +311,11 @@ class AskResponse(BaseModel):
     excluded_sources: list[ExcludedSource] = Field(default_factory=list)
     scopes: list[ScopeStatus] = Field(default_factory=list)
     unmatched_terms: list[str] = Field(default_factory=list)
+    # M5.6.2: what produced this answer — reproducible from the trace (no answer text is stored).
+    retrieval_trace_id: str | None = None
+    index_generation: str | None = None
+    instructions_version: str | None = None
+    external: dict[str, Any] | None = None  # external retrieval summary (called, trigger, calls, cache…)
 
 
 IntegrationTarget = Literal["none", "local", "mock", "real"]

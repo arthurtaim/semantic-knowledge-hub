@@ -34,7 +34,9 @@ NodeKind = Literal[
     "external_page",
     "query_context",
 ]
-EdgeOrigin = Literal["canonical_metadata", "verified_registry", "external_discovery", "ai_suggestion"]
+EdgeOrigin = Literal[
+    "canonical_metadata", "verified_registry", "external_discovery", "query_trace", "ai_suggestion"
+]
 Direction = Literal["out", "in", "both"]
 
 OVERVIEW_DEFAULT = 150
@@ -78,6 +80,7 @@ ORIGIN_LABELS: dict[str, str] = {
     "canonical_metadata": "Подтверждённая связь из метаданных документа",
     "verified_registry": "Связь из реестра шаблонов",
     "external_discovery": "Временная связь: найдено во внешнем источнике",
+    "query_trace": "След конкретного вопроса: найдено / использовано / процитировано",
     "ai_suggestion": "Предложение ИИ (не подтверждено)",
 }
 
@@ -114,6 +117,7 @@ class GraphEdge:
     revision: str | None  # revision of the declaring document
     status: Literal["active", "dangling"] = "active"
     expires_at: str | None = None
+    feedback: str | None = None  # query edges: relevant / irrelevant / unsure / unrated
 
 
 @dataclass

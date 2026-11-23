@@ -34,6 +34,8 @@ from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import DEFAULT_TEMPLATES_DIR
 from app.services.assistant import AssistantService
 from app.services.authoring import AuthoringService
+from app.services.discovery import DiscoveryStore
+from app.services.external import ExternalEvidenceService, ExternalLimits
 from app.services.graph import GraphService
 from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
@@ -69,6 +71,8 @@ class Container:
     publication_store: PublicationStore
     publications: PublicationService
     graph: GraphService
+    discovery: DiscoveryStore | None = None
+    external: ExternalEvidenceService | None = None
 
     def demo_user(self) -> UserContext:
         return UserContext(
@@ -234,6 +238,41 @@ def build_container(settings: Settings) -> Container:
     confluence_publisher = build_confluence_publisher(settings)
     tasks = DisabledTaskSystem()
     store = ProposalStore(settings.app_state_file)
+    discovery = (
+        DiscoveryStore(
+            settings.app_state_file,
+            retention_hours=settings.discovery_retention_hours,
+            store_query_text=settings.discovery_store_query_text,
+            key_file=(
+                settings.resolve_path(Path(settings.discovery_hmac_key_file))
+                if settings.discovery_hmac_key_file
+                else settings.app_state_file.parent / "discovery.key"
+            ),
+        )
+        if settings.discovery_enabled
+        else None
+    )
+    external = (
+        ExternalEvidenceService(
+            corporate,
+            discovery,
+            ExternalLimits(
+                candidates=settings.external_candidates,
+                fetches=settings.external_fetches,
+                fragments=settings.external_fragments,
+                context_chars=settings.external_context_chars,
+                cache_pages=settings.external_cache_pages,
+                cache_ttl_seconds=settings.external_cache_ttl_seconds,
+                concurrency=settings.external_concurrency,
+                timeout_seconds=settings.external_timeout_seconds,
+                deadline_seconds=settings.external_deadline_seconds,
+                breaker_failures=settings.external_breaker_failures,
+                breaker_reset_seconds=settings.external_breaker_reset_seconds,
+            ),
+        )
+        if corporate.enabled
+        else None
+    )
     knowledge = KnowledgeService(repository, search_provider, review_stale_days=settings.review_stale_days)
     knowledge_prefix = settings.gitlab_knowledge_path if settings.knowledge_backend == "gitlab" else ""
     templates_dir = (
@@ -278,7 +317,14 @@ def build_container(settings: Settings) -> Container:
         proposal_store=store,
         knowledge=knowledge,
         search=SearchService(knowledge, corporate),
-        assistant=AssistantService(knowledge, corporate, ai, max_context_chars=settings.ai_max_context_chars),
+        assistant=AssistantService(
+            knowledge,
+            corporate,
+            ai,
+            max_context_chars=settings.ai_max_context_chars,
+            external=external,
+            discovery=discovery,
+        ),
         proposals=ProposalService(
             store,
             repository,
@@ -306,4 +352,6 @@ def build_container(settings: Settings) -> Container:
         ),
         policy=build_policy(settings),
         graph=GraphService(knowledge, templates.graph_entries),
+        discovery=discovery,
+        external=external,
     )
