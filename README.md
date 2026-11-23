@@ -178,7 +178,7 @@ ssh -N -L 5180:127.0.0.1:5180 root@<host>          # открыть http://127.0
 ```
 
 Публичная ссылка вместо туннеля — `SKH_PUBLIC_ACCESS=true` в `claude-test.env`: шлюз Caddy на 80/443
-(`http://<ip>/`, `https://<ip>.sslip.io/`) с логином и паролем. Возврат к Mock AI — `SKH_AI_PROVIDER=mock` в `claude-test.env`. Подробно (архитектура, безопасность, ошибки,
+(`http://<ip>/`, `https://<ip>.sslip.io/`), открытая ссылка без логина. Возврат к Mock AI — `SKH_AI_PROVIDER=mock` в `claude-test.env`. Подробно (архитектура, безопасность, ошибки,
 обновление и откат) — [docs/CLAUDE_CODE_CLI_INTEGRATION.md](docs/CLAUDE_CODE_CLI_INTEGRATION.md).
 
 ## Тесты и проверки

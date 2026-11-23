@@ -52,8 +52,8 @@ if [ ! -f "$ENV_FILE" ]; then
     "$APP/deploy/claude-test/claude-test.env.example" > "$ENV_FILE"
 fi
 
-# Public link (SKH_PUBLIC_ACCESS=true): generate the login once; the plain-text copy stays on the server only.
-if grep -qE '^SKH_PUBLIC_ACCESS=true' "$ENV_FILE"; then
+# Public link with a login (SKH_PUBLIC_CADDYFILE=Caddyfile.login): generate it once; plain text stays on the server.
+if grep -qE '^SKH_PUBLIC_ACCESS=true' "$ENV_FILE" && grep -qE '^SKH_PUBLIC_CADDYFILE=Caddyfile.login' "$ENV_FILE"; then
   AUTH_DIR=$(grep -E '^SKH_PUBLIC_AUTH_DIR=' "$ENV_FILE" | cut -d= -f2-)
   AUTH_DIR=${AUTH_DIR:-$ROOT/public-auth}
   if [ ! -s "$AUTH_DIR/users" ]; then
