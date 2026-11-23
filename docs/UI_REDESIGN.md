@@ -129,3 +129,94 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
   phases 2–3: desktop + mobile 17, gitlab-mock + gitlab-mock-mobile 10).
 - No horizontal scroll at 360 px; keyboard focus visible on the dark bar and on paper.
 - No changes to API calls, routes, accessible names or Russian copy that tests rely on.
+
+## 5. Phase 4 — AI-first entry (from `docs/research/SKH_UI_UX_direction_2026.md`)
+
+Scope: the research roadmap sections «Quick wins» and «AI-first entry (on the current component set)», on the
+current stack, without new UI libraries or backend changes. The audit in the research was made on the phase‑1
+UI; every finding was re-checked on 2026-11-23 against the code of `feature/m56-adaptive-rag-graph` (M5.6.3)
+and against screenshots of every route of `App.tsx` at 1440×900 and 390×844 in `AI_PROVIDER=mock` and
+`AI_PROVIDER=disabled` (kept outside the repository).
+
+### 5.1 Reconciliation of the research audit
+
+Status: **актуально** (still true), **исправлено** (already fixed), **частично**, **н/п** (not applicable).
+
+| # | Finding (research) | Status | Evidence | Phase 4 |
+|---|---|---|---|---|
+| F1 | No primitives layer, no icons | актуально | `frontend/src/components/` has domain widgets only; no Icon/Dialog/Menu | deferred (headless library + icons) |
+| F2 | Many badge-like markers; a home proposal row has two bordered badges + reason + date | актуально | home screenshot: «Изменение документа» + «Новое» | deferred (two-axis StatusBadge, tokens v2) |
+| F3 | Dashed border means «draft» for documents and «Новое» for proposals | актуально | `app.css` `.stamp--draft`, `.proposal-state--draft` | deferred (tokens v2) |
+| F4 | Blue means both «in review» and plain info notices | актуально | `app.css` `.notice--info { border-color: var(--review) }` | **fix** (Q4) |
+| F5 | Selected segments/filters are a solid dark-green fill next to the primary button | актуально | `/ask` screenshot («Команда» next to «Спросить»); `.segmented__option input:checked + span`, `.filter-option[aria-pressed]`, `.filter-chip[aria-pressed]`, `.view-toggle`, `.toggle-button`, `.graph-list__node` | **fix** (Q4) |
+| F6 | Hex values bypass tokens (research: 14, `#fff` ×15) | актуально, worse | 35 hex values outside `:root` in `app.css` | deferred (tokens v2); no new hex in phase 4 |
+| F7 | Near-black bar + full-width cream demo band on every page; band wraps to 4 lines on phones | частично | phase 1 made the band one line on desktop; mobile home screenshot: 4 lines, H1 pushed down | **fix** (Q3): band → striped «Демо» pill in the bar; bar colour stays until shell v2 |
+| F8 | Demo message repeated 3× on a document page | частично | phase 2 merged it into the passport («Демо-документ»); still band + passport, plus a bottom notice in the explorer (`ExplorerPage.tsx:391`) | **fix** (Q3): pill + passport fact only |
+| F9 | «Approved» uses the brand green, close to the primary button | актуально | `--approved: #23683f` vs `--accent: #1d5c3c`; `.stamp--approved` green fill | **fix** (Q4): quiet seal mark |
+| F10 | 13 px dominates; 13 sizes outside the scale | not re-measured | — | deferred (tokens v2) |
+| F11 | `font-weight: 700` without an imported Golos 700 (faux bold) | актуально | `app.css` `.citation__ref`, `.lifecycle__marker`, `.op-badge--create::before`, `.field__issue::before`; only 400/500/600 imported in `main.tsx` | **fix** (Q1): 600 |
+| F12 | Proposal page: notices above, five-button action row ~1780 px down | исправлено | phase 2 sticky rail «Действия» (`ProposalDetailPage.tsx`) | — |
+| F13 | Propose-change shows raw Markdown **with YAML front matter** | актуально | `ProposalEditorPage.tsx:232` «Текст документа (Markdown с YAML-заголовком)»; M5.6.3 removed YAML only from import and new documents | **fix** (Q6) |
+| F14 | Two date formats on one screen; dates wrap in the proposals table | актуально | proposals table at 1440 px: «23 нояб. 2026 г., / 15:50» on two lines; `formatDate` vs `formatDateTime` side by side | **fix** (Q5) |
+| F15 | 390 px: proposals table scrolls sideways; 9 filter chips wrap to 4 rows | актуально | mobile proposals screenshot | deferred (CollectionView, stacked rows) |
+| F16 | Flat nav cannot hold ~10 destinations; no full-bleed layouts, overlays | актуально | `Layout.tsx` 7 links; `--content-max` on every route | deferred (shell v2) |
+
+Accessibility findings (WCAG 2.2 AA), ratios re-computed with the WCAG 2.x formula:
+
+| # | Finding | Status | Evidence | Phase 4 |
+|---|---|---|---|---|
+| A1 | «Устарел» `#737a74` on `#eceeeb` = 3.78:1 (1.4.3) | актуально | computed 3.78; `#5f665f` → 5.07 on the wash, 5.91 on white | **fix** (Q1) |
+| A2 | Input/select/segmented borders `#adbaaf` = 2.02:1 on white, 1.82 on paper (1.4.11) | актуально | computed; `#7d8a80` → 3.61 white, 3.25 paper, 3.04 `--surface-sunk`, 3.02 `--accent-wash` | **fix** (Q1): new `--line-input` for control boundaries only |
+| A3 | Sticky 56 px bar vs 24 px `scroll-margin-top` (2.4.11) | актуально | `app.css` `.prose h*`, `.citation` use `--space-5` | **fix** (Q2) |
+| A4 | 404 and full-page errors have no H1 (1.3.1, 2.4.6) | актуально | `NotFoundPage.tsx` → `EmptyState` renders `<p class="feedback__title">`; same for document/proposal/publication/corporate/draft not found | **fix** (Q2) |
+| A5 | Tabs lack arrow keys; mobile menu has no Esc / focus return (2.1.1) | актуально | `DocumentPage.tsx:359`, `DiffView.tsx:71` — `role="tab"` without key handling; `Layout.tsx` has no keydown handler | **fix** (Q2) |
+| A6 | SPA navigation with unsaved edits has no in-app guard | частично | change drafts: confirm on «Отмена» + `beforeunload` (`ProposalEditorPage.tsx`); no router blocker (needs a data router = route change) | deferred |
+| A7 | States use shape as well as colour | исправлено/keep | stamps: dashed, struck-through, dot | keep, add the seal glyph |
+| A8 | `prefers-reduced-motion` handled globally | исправлено/keep | `app.css` `@media (prefers-reduced-motion: reduce)` | keep |
+| A9 | `--ink-faint` on `--surface-sunk` = 4.37:1 (new, not in the research) | актуально | computed | deferred (tokens v2); not used for text on sunk in phase 4 additions |
+
+Screens the research did not audit (Template Hub, Import, Graph, AI proposals, M5.6.3), checked on screenshots:
+
+| # | Finding | Status | Evidence | Phase 4 |
+|---|---|---|---|---|
+| N1 | `AI_PROVIDER=disabled`: `/ask` keeps an enabled «Спросить» that always fails with 503 «Интеграция недоступна» | актуально | disabled `/ask` screenshot; backend `assistant_disabled` | **fix** (E4): search-only page, no dead button |
+| N2 | `disabled`: AI panels still render with a blocked notice (document page, draft editor) | актуально | `DocumentPage.tsx` `DocumentAiPanel`, `DocumentEditor.tsx` `DraftAiPanel` | **fix** (E4): hidden |
+| N3 | `disabled`: «С помощью AI» radio is shown disabled on `/documents/new` | актуально | `DocumentCreatePage.tsx` `disabled={!aiAvailable}` | **fix** (E4): hidden, manual path only |
+| N4 | `/proposals/new`: «В демо-режиме ИИ не генерирует правки» is also shown when AI is disabled | актуально | `ProposalEditorPage.tsx:188` (`ai_edit_suggestions` false in both) | **fix** (E4): mock → one-line reason; disabled → hidden |
+
+### 5.2 Work checklist
+
+Quick wins:
+
+- [ ] Q1 Contrast: `--deprecated: #5f665f`; `--line-input: #7d8a80` for inputs, selects, textareas, segmented,
+  filter chips and toggles (decorative rules keep `--line-strong`); faux-bold 700 → 600.
+- [ ] Q2 `scroll-padding-top` = bar height + 16 px; H1 on 404 and page-level errors; APG arrow/Home/End keys on
+  tabs; Esc closes the mobile menu and returns focus to «Меню».
+- [ ] Q3 AI-mode chip and striped «Демо» pill in the top bar (with a popover of facts); remove the full-width
+  band and the explorer's bottom notice; keep the passport fact and the text «Демо-данные.» (role `note`).
+- [ ] Q4 Selected = accent-wash + accent-ink border (never a solid fill); «Утверждён» = seal glyph + ink text,
+  no green fill; `info` gets its own neutral-blue-free tone, «На ревью» keeps the review hue.
+- [ ] Q5 One date formatter: relative for recent dates, full date in the tooltip, `nowrap` in tables.
+- [ ] Q6 Propose-change: body editor without YAML; metadata shown as fields; source with YAML behind a toggle.
+
+AI-first entry:
+
+- [ ] E1 «Спросить или найти» composer in the top bar: ⌘K / Ctrl+K and `/`, visible trigger, accessible
+  combobox with instant matches from `GET /api/documents?query=`; Enter on a question asks the AI and opens the
+  answer; Tab switches «Спросить ИИ» / «Найти»; disabled → search only, placeholder «Найти в базе знаний…».
+- [ ] E2 Home hero = the same composer with the scope switch «Команда / Корпоративные / Оба» (default «Команда»)
+  and the user's recent questions below; «Спросить ассистента» removed (tests updated in the same commit).
+- [ ] E3 Evidence-first answer: quotes and [n] markers before the explanation; marker hover card (passage,
+  document, source badge, revision, status); click opens the document at `section_anchor`; categorical support
+  level «Подтверждено источниками / Частично подтверждено / Недостаточно данных»; next actions «Открыть
+  документ», «Предложить правку по этому ответу», «Уточнить вопрос»; stages «Ищу источники → Формулирую ответ →
+  Проверяю цитаты»; team and corporate sources in separate lists.
+- [ ] E4 «Недостаточно данных» card («В базе знаний нет ответа на этот вопрос»): what and where was searched,
+  closest partial matches with citations, three steps (refine; a separate labelled corporate search; «Создать
+  черновик документа»). Four AI modes per the research table; no dead controls; demo answers labelled «Демо».
+
+Deferred (not in phase 4): tokens v2 / OKLCH, dark and high-contrast themes, headless library and icons,
+sidebar shell v2, CollectionView, Peek, ⌘J context panel on every object, tasks / board / Gantt, AI delegates,
+backend span-level citation verification, server-side saved answers. Open owner decisions: the accent green
+(stays `--accent: #1d5c3c`; the research suggests `#18693f` or `#1f7a4d`), corporate sources only as a
+separate labelled step.
