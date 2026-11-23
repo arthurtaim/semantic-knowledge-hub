@@ -52,6 +52,21 @@ if [ ! -f "$ENV_FILE" ]; then
     "$APP/deploy/claude-test/claude-test.env.example" > "$ENV_FILE"
 fi
 
+# Public link (SKH_PUBLIC_ACCESS=true): generate the login once; the plain-text copy stays on the server only.
+if grep -qE '^SKH_PUBLIC_ACCESS=true' "$ENV_FILE"; then
+  AUTH_DIR=$(grep -E '^SKH_PUBLIC_AUTH_DIR=' "$ENV_FILE" | cut -d= -f2-)
+  AUTH_DIR=${AUTH_DIR:-$ROOT/public-auth}
+  if [ ! -s "$AUTH_DIR/users" ]; then
+    mkdir -p "$AUTH_DIR"
+    PASSWORD=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | cut -c1-16)
+    HASH=$(docker run --rm caddy:2.10.2-alpine caddy hash-password --plaintext "$PASSWORD")
+    printf 'owner %s\n' "$HASH" > "$AUTH_DIR/users"
+    printf 'login: owner\npassword: %s\n' "$PASSWORD" > "$ROOT/public-access.txt"
+    chmod 600 "$ROOT/public-access.txt"
+    echo "public login created: see $ROOT/public-access.txt"
+  fi
+fi
+
 cd "$APP"
 deploy/claude-test/stack.sh up --build -d --remove-orphans
 
@@ -62,3 +77,6 @@ for _ in $(seq 1 60); do
 done
 deploy/claude-test/stack.sh ps
 echo "UI: http://127.0.0.1:$(grep -E '^FRONTEND_PORT=' "$ENV_FILE" | cut -d= -f2) on the server (open it through: ssh -N -L 5180:127.0.0.1:5180 root@<host>)"
+if grep -qE '^SKH_PUBLIC_ACCESS=true' "$ENV_FILE"; then
+  echo "Public link: http://$(grep -E '^SKH_PUBLIC_IP=' "$ENV_FILE" | cut -d= -f2)/  and  https://$(grep -E '^SKH_PUBLIC_HOST=' "$ENV_FILE" | cut -d= -f2)/"
+fi
