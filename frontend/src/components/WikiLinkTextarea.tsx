@@ -230,7 +230,11 @@ export function WikiLinkTextarea({ value, onValueChange, textareaRef, onKeyDown,
                 aria-selected={index === active}
                 className={`wikilink-option${index === active ? " is-active" : ""}`}
                 onMouseDown={(event) => event.preventDefault()}
-                onMouseEnter={() => setActive(index)}
+                // Only a moving pointer picks an option: a list that opens under a resting pointer (the browser
+                // fires mouseenter on layout changes) must not preselect anything — Enter would insert it.
+                onMouseMove={() => {
+                  if (active !== index) setActive(index);
+                }}
                 onClick={() => choose(item)}
               >
                 <span className="wikilink-option__title">{item.title}</span>
