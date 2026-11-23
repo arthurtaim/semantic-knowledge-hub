@@ -22,7 +22,7 @@ fi
 
 read -rsp "Шаг 2. Вставьте токен (ввод скрыт) и нажмите Enter: " TOKEN
 echo
-if [[ ! $TOKEN =~ ^[A-Za-z0-9._~+/=-]{20,4096}$ ]]; then
+if (( ${#TOKEN} < 20 || ${#TOKEN} > 4096 )) || [[ ! $TOKEN =~ ^[A-Za-z0-9._~+/=-]+$ ]]; then
   echo "Строка не похожа на токен Claude Code — ничего не записано." >&2
   exit 1
 fi
