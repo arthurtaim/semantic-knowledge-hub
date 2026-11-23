@@ -16,8 +16,10 @@ test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ p
   await expect(page.getByRole("note")).toContainText("Демо-данные.");
   await expect(page.getByRole("heading", { name: "Разделы" })).toBeVisible();
 
-  await page.getByLabel("Поиск по базе знаний").fill("ARIS");
-  await page.getByRole("button", { name: "Найти" }).click();
+  // The hero is «Спросить или найти»: switch it to search, then search.
+  await page.getByRole("button", { name: "Найти в документах" }).click();
+  await page.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ARIS");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
   const result = page.getByRole("link", { name: "ARIS integration — questions for discovery" });
   await expect(result).toBeVisible();
   // 83-document demo base: other ARIS documents may rank first, so check the row of this document.

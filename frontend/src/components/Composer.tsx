@@ -35,8 +35,8 @@ interface ComposerProps {
   autoFocus?: boolean;
   /** Scope for questions (the hero shows the switch); team by default. */
   scope?: AskScope;
-  /** Extra controls under the field (the hero's scope switch). */
-  children?: ReactNode;
+  /** Extra controls under the field for the current mode (the hero's scope switch for questions). */
+  renderExtra?: (mode: ComposerMode) => ReactNode;
   /** Called after the composer navigated somewhere (closes the palette). */
   onNavigate?: () => void;
   /** Esc on an empty or closed list (closes the palette). */
@@ -49,13 +49,14 @@ interface ComposerProps {
  * a match; Tab switches «Спросить ИИ» / «Найти в документах» while the list is open. Without an AI provider
  * (`disabled`) it is a search field only — no dead controls.
  */
-export function Composer({ variant, inputId, autoFocus, scope = "team", children, onNavigate, onEscape }: ComposerProps) {
+export function Composer({ variant, inputId, autoFocus, scope = "team", renderExtra, onNavigate, onEscape }: ComposerProps) {
   const session = useSession();
   const navigate = useNavigate();
   const listId = useId();
   const hintId = useId();
   const aiAvailable = canAsk(session?.features.ai_mode);
-  const [mode, setMode] = useState<ComposerMode>(aiAvailable ? "ask" : "search");
+  // The user's explicit choice; until then the default follows the session (which may arrive later).
+  const [choice, setChoice] = useState<ComposerMode | null>(null);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,13 +66,8 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", children
   const [announcement, setAnnouncement] = useState("");
   const requestNo = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const effectiveMode: ComposerMode = aiAvailable ? mode : "search";
+  const effectiveMode: ComposerMode = aiAvailable ? (choice ?? "ask") : "search";
   const text = query.trim();
-
-  // A session that arrives later (or changes) decides whether asking exists at all.
-  useEffect(() => {
-    if (!aiAvailable) setMode("search");
-  }, [aiAvailable]);
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
@@ -145,7 +141,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", children
   }
 
   function switchMode(next: ComposerMode) {
-    setMode(next);
+    setChoice(next);
     setActive(-1);
     setAnnouncement(next === "ask" ? "Режим: спросить ИИ" : "Режим: найти в документах");
   }
@@ -298,7 +294,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", children
       <p className="visually-hidden" role="status" aria-live="polite">
         {announcement}
       </p>
-      {children}
+      {renderExtra?.(effectiveMode)}
     </form>
   );
 }

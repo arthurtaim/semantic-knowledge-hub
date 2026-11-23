@@ -17,6 +17,7 @@ import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
 import { AI_ERROR_TITLE, CONFIDENCE_LABEL, SOURCE_LABEL, pluralRu } from "../lib/labels";
 import { canAsk } from "../lib/aiMode";
+import { rememberQuestion } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { When } from "../components/When";
 
@@ -579,6 +580,7 @@ export function AskPage() {
   async function run(request: AskRequest) {
     if (inFlight.current) return;
     inFlight.current = true;
+    rememberQuestion(session?.user.user_id, request.question);
     const id = ++nextId.current;
     const controller = new AbortController();
     abortRef.current = controller;

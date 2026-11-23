@@ -1,8 +1,10 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { askHref, Composer } from "../components/Composer";
+import { SessionContext } from "../lib/session";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiMode, DocumentPage } from "../api/types";
-import { askHref } from "../components/Composer";
 import { Layout } from "../components/Layout";
 import { arisSummary, session } from "./fixtures";
 import { mockApi, renderRoutes } from "./helpers";
@@ -137,6 +139,22 @@ describe("«Спросить или найти» in the header", () => {
     expect(within(dialog).queryByRole("option", { name: /Спросить ИИ/ })).toBeNull();
     await userEvent.keyboard("{Enter}");
     expect(screen.getByTestId("location")).toHaveTextContent("/documents?query=ARIS");
+  });
+
+  it("switches to asking when the session arrives after the first render (and keeps a user's choice)", () => {
+    const tree = (value: typeof session | null) => (
+      <SessionContext.Provider value={value}>
+        <MemoryRouter>
+          <Composer variant="hero" inputId="c" />
+        </MemoryRouter>
+      </SessionContext.Provider>
+    );
+    const { rerender } = render(tree(null));
+    expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toBeInTheDocument();
+    rerender(tree(session));
+    expect(screen.getByRole("combobox", { name: "Спросить или найти" })).toBeInTheDocument();
+    rerender(tree(withMode("disabled")));
+    expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toBeInTheDocument();
   });
 
   it("keeps the dialog's Tab order inside it", async () => {

@@ -1,6 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentPage } from "../api/types";
 import { formatWhen } from "../lib/labels";
 import { HomePage } from "../pages/HomePage";
@@ -12,9 +12,10 @@ import {
   freshSync,
   integrations,
   proposalSummary,
+  session,
   staleSync,
 } from "./fixtures";
-import { mockApi, renderAt, type MockRoute } from "./helpers";
+import { mockApi, renderAt, renderRoutes, type MockRoute } from "./helpers";
 
 const undated = { ...arisSummary, id: "SEM-GLOSS-001", title: "Glossary without a date", updated_at: null };
 const recentPage: DocumentPage = { items: [{ ...arisSummary, index_state: "stale" }, undated], total: 2, page: 1, size: 5 };
@@ -30,16 +31,86 @@ function homeRoutes(overrides: Partial<Record<"recent" | "drafts" | "index" | "f
   ];
 }
 
+/** An in-memory localStorage (jsdom on this Node has none; the app treats a missing one as empty). */
+function memoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    get length() {
+      return data.size;
+    },
+    clear: () => data.clear(),
+    getItem: (key) => data.get(key) ?? null,
+    key: (index) => Array.from(data.keys())[index] ?? null,
+    removeItem: (key) => void data.delete(key),
+    setItem: (key, value) => void data.set(key, String(value)),
+  };
+}
+
 describe("Home page", () => {
-  it("puts the assistant next to search and carries the typed text over", async () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", memoryStorage());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("makes the hero the «Спросить или найти» field: team scope by default, a question opens its answer", async () => {
     mockApi(homeRoutes());
-    renderAt("/", "/", <HomePage />);
-    const ask = screen.getByRole("link", { name: "Спросить ассистента" });
-    expect(ask).toHaveAttribute("href", "/ask");
-    await userEvent.type(screen.getByLabelText("Поиск по базе знаний"), "ревизия");
-    expect(ask).toHaveAttribute("href", "/ask?q=%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F");
+    renderRoutes("/", { "/": <HomePage /> });
+    expect(screen.queryByRole("link", { name: "Спросить ассистента" })).toBeNull(); // retired
+    const field = screen.getByRole("combobox", { name: "Спросить или найти" });
+    expect(field).toHaveAttribute("id", "home-composer-input");
+    expect(screen.getByRole("radio", { name: "Команда" })).toBeChecked();
     expect(screen.getByRole("link", { name: "Создать документ" })).toHaveAttribute("href", "/documents/new");
-    expect(await screen.findByRole("heading", { name: "Разделы" })).toBeInTheDocument();
+    await userEvent.type(field, "Что такое ревизия?{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/ask?q=%D0%A7%D1%82%D0%BE+%D1%82%D0%B0%D0%BA%D0%BE%D0%B5+%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F%3F&run=1",
+    );
+  });
+
+  it("asks in the chosen scope and says when corporate sources are not connected", async () => {
+    mockApi(homeRoutes());
+    renderRoutes("/", { "/": <HomePage /> });
+    await userEvent.click(screen.getByRole("radio", { name: "Оба" }));
+    expect(screen.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeInTheDocument();
+    await userEvent.type(screen.getByRole("combobox", { name: "Спросить или найти" }), "Где SLA?{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent("&run=1&scope=both");
+  });
+
+  it("searches from the hero in «Найти в документах» mode; the scope switch belongs to questions only", async () => {
+    mockApi([...homeRoutes(), { path: /^\/api\/documents\?query=/, body: documentPage }]);
+    renderRoutes("/", { "/": <HomePage /> });
+    await userEvent.click(screen.getByRole("button", { name: "Найти в документах" }));
+    expect(screen.queryByRole("radio", { name: "Команда" })).toBeNull();
+    await userEvent.type(screen.getByRole("combobox", { name: "Поиск по базе знаний" }), "ревизия");
+    await userEvent.click(screen.getByRole("button", { name: "Найти" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/documents?query=%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F");
+  });
+
+  it("is search only without AI: no mode switch, no scope, no recent questions", async () => {
+    window.localStorage.setItem("skh.recent-questions.v1:local-demo-user", JSON.stringify(["Старый вопрос"]));
+    mockApi(homeRoutes());
+    renderRoutes("/", { "/": <HomePage /> }, { ...session, features: { ...session.features, ai_mode: "disabled" } });
+    expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toHaveAttribute("placeholder", "Найти в базе знаний…");
+    expect(screen.queryByRole("group", { name: "Режим поля" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Команда" })).toBeNull();
+    expect(screen.queryByText("Недавние вопросы")).toBeNull();
+    expect(screen.getByText(/ИИ в этой установке отключён/)).toBeInTheDocument();
+  });
+
+  it("lists the user's recent questions from this browser and clears them", async () => {
+    window.localStorage.setItem(
+      "skh.recent-questions.v1:local-demo-user",
+      JSON.stringify(["Где хранится база?", "Что такое ревизия?"]),
+    );
+    mockApi(homeRoutes());
+    renderRoutes("/", { "/": <HomePage /> });
+    const recent = screen.getByRole("heading", { name: "Недавние вопросы" }).closest("section") as HTMLElement;
+    expect(within(recent).getByRole("link", { name: "Где хранится база?" }).getAttribute("href")).toMatch(/^\/ask\?q=.+&run=1$/);
+    expect(within(recent).getByText(/Хранятся только в этом браузере/)).toBeInTheDocument();
+    await userEvent.click(within(recent).getByRole("button", { name: "Очистить" }));
+    expect(screen.queryByRole("heading", { name: "Недавние вопросы" })).toBeNull();
+    expect(window.localStorage.getItem("skh.recent-questions.v1:local-demo-user")).toBeNull();
   });
 
   it("lists recently updated documents by date and proposals that need action", async () => {

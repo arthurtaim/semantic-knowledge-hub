@@ -14,15 +14,16 @@ function watch(page: Page): string[] {
   return problems;
 }
 
-test("E2E-01 home: search, assistant entry, sections, recent documents, proposals, sources", async ({ page }) => {
+test("E2E-01 home: ask-or-search field, sections, recent documents, proposals, sources", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
   await expect(page.getByRole("note")).toContainText("Демо-данные.");
-  await expect(page.getByRole("link", { name: "Спросить ассистента" })).toBeVisible();
+  // AI-first entry: the hero is «Спросить или найти» with the team scope by default.
+  await expect(page.getByRole("combobox", { name: "Спросить или найти" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "Команда" })).toBeChecked();
   for (const heading of ["Разделы", "Недавно обновлённые", "Предложения, требующие действия", "Источники и интеграции"]) {
     await expect(page.getByRole("heading", { name: heading })).toBeVisible();
   }
-  await expect(page.getByLabel("Поиск по базе знаний")).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
   expect(problems).toEqual([]);
@@ -31,8 +32,9 @@ test("E2E-01 home: search, assistant entry, sections, recent documents, proposal
 test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
-  await page.getByLabel("Поиск по базе знаний").fill("ревизия");
-  await page.getByRole("button", { name: "Найти" }).click();
+  await page.getByRole("button", { name: "Найти в документах" }).click();
+  await page.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ревизия");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
   await expect(page).toHaveURL(/\/documents\?query=/);
   await expect(page.locator(".result").first()).toBeVisible();
 
