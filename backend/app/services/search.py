@@ -78,7 +78,9 @@ class SearchService:
 
         if "team" in scopes:
             snapshot = await self._knowledge.snapshot(user)
-            for ranked in self._knowledge.retrieval.rank_documents(snapshot, analysis, filters, limit):
+            ranked_hits = self._knowledge.retrieval.rank_documents(snapshot, analysis, filters, limit)
+            self._knowledge.retrieval.with_snippets(analysis, ranked_hits)
+            for ranked in ranked_hits:
                 doc = snapshot.get(ranked.document_id)
                 if doc is None:
                     continue

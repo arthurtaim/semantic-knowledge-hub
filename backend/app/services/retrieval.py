@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.adapters.search.base import ChunkHit, DocumentHit, SearchFilters, SearchProvider
@@ -34,6 +34,7 @@ TIER_TITLE_PHRASE = 150.0
 TITLE_TERM_BONUS = 30.0  # × share of query terms found in title/aliases
 TAG_BONUS = 4.0
 DEPRECATED_FACTOR = 0.6  # catalog only: below an equally relevant current document
+WORDS_CACHE_MAX = 4096  # tokenized documents kept between requests (keyed by id + revision)
 
 
 def normalize(text: str) -> str:
@@ -80,6 +81,9 @@ class RetrievalService:
     def __init__(self, search: SearchProvider, dictionary: SearchDictionary) -> None:
         self._search = search
         self._dictionary = dictionary
+        # Tokens of title + body per (id, revision): explaining a synonym match must not re-tokenize every
+        # candidate's body for every expanded term. A new revision is a new key; the cache is bounded.
+        self._words: dict[tuple[str, str], list[str]] = {}
 
     @property
     def dictionary(self) -> SearchDictionary:
@@ -149,14 +153,17 @@ class RetrievalService:
         # c) full text (AND of terms, each term an OR of its dictionary spellings), then OR as a fallback
         terms = analysis.terms
         if terms:
-            fts = self._search.search_documents(terms, filters, FTS_CANDIDATES, mode="and")
+            # Scores only: snippets are fetched later for the hits actually shown (`with_snippets`).
+            fts = self._search.search_documents(terms, filters, FTS_CANDIDATES, mode="and", snippets=False)
             or_only: set[str] = set()
             if len(fts) < limit and len(terms) > 1:
                 # Not enough documents contain every term: documents with some of them, at half weight.
                 seen = {h.document_id for h in fts}
                 extra = [
                     h
-                    for h in self._search.search_documents(terms, filters, FTS_CANDIDATES, mode="or")
+                    for h in self._search.search_documents(
+                        terms, filters, FTS_CANDIDATES, mode="or", snippets=False
+                    )
                     if h.document_id not in seen
                 ]
                 fts = [*fts, *extra]
@@ -173,7 +180,7 @@ class RetrievalService:
             label = "Аббревиатура" if (expanded.expansion or "").startswith("abbr") else "Синоним"
             for hit in ranked.values():
                 doc = snapshot.get(hit.document_id)
-                if doc is not None and term_matches_text(expanded, tokenize(f"{doc.title} {doc.body}")):
+                if doc is not None and term_matches_text(expanded, self._doc_words(doc)):
                     hit.add(f"{label}: «{expanded.original}» и равнозначные написания")
         if catalog:
             for hit in ranked.values():
@@ -184,6 +191,24 @@ class RetrievalService:
         if expand_graph and ordered:
             ordered += self._expand(snapshot, ordered, filters, ranked)
         return ordered[:limit] if limit else ordered
+
+    def with_snippets(self, analysis: QueryAnalysis, hits: list[RankedHit]) -> None:
+        """Attach the highlighted snippet (best matching section) to the hits that will be displayed."""
+        wanted = [h.document_id for h in hits if h.hit is not None and not h.hit.excerpt]
+        found = self._search.document_snippets(analysis.terms, wanted) if wanted else {}
+        for h in hits:
+            snip = found.get(h.document_id)
+            if snip is not None and h.hit is not None:
+                h.hit = replace(snip, score=h.hit.score)
+
+    def _doc_words(self, doc: DocumentRecord) -> list[str]:
+        key = (doc.id, doc.revision)
+        words = self._words.get(key)
+        if words is None:
+            if len(self._words) >= WORDS_CACHE_MAX:
+                self._words.clear()
+            words = self._words[key] = tokenize(f"{doc.title} {doc.body}")
+        return words
 
     @staticmethod
     def _explain_terms(doc: DocumentRecord, terms: list[QueryTerm], hit: RankedHit) -> None:

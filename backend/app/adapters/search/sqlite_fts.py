@@ -7,7 +7,7 @@ import logging
 import sqlite3
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -342,43 +342,64 @@ class SqliteFtsSearchProvider:
         return ("".join(f" AND {c}" for c in clauses), params)
 
     def search_documents(
-        self, terms: list[QueryTerm], filters: SearchFilters, limit: int, *, mode: str = "and"
+        self,
+        terms: list[QueryTerm],
+        filters: SearchFilters,
+        limit: int,
+        *,
+        mode: str = "and",
+        snippets: bool = True,
     ) -> list[DocumentHit]:
         if not terms:
             return []
         match = fts_query(terms, mode=mode)
-        snippet_match = fts_query(terms, mode="or")
         where, params = self._filter_sql(filters, "docs")
         sql = (
             f"SELECT doc_id, bm25(docs, {_DOC_WEIGHTS}) AS score FROM docs "
             f"WHERE docs MATCH ?{where} ORDER BY score, doc_id LIMIT ?"
         )
-        hits: list[DocumentHit] = []
         with self._lock:
             rows = self._conn.execute(sql, [match, *params, limit]).fetchall()
-            for doc_id, score in rows:
-                chunk = self._conn.execute(
-                    f"SELECT section, anchor, snippet(chunks, {_CHUNK_TEXT_COL}, ?, ?, '…', 28) "
-                    f"FROM chunks WHERE chunks MATCH ? AND chunks.doc_id = ? "
-                    f"ORDER BY bm25(chunks, {_CHUNK_WEIGHTS}), CAST(ordinal AS INTEGER) LIMIT 1",
-                    (_HL_START, _HL_END, snippet_match, doc_id),
-                ).fetchone()
-                if chunk is None:
-                    hits.append(DocumentHit(document_id=doc_id, score=round(-float(score), 4), excerpt=""))
-                    continue
-                section, anchor, snippet = chunk
-                segments = segments_from_snippet(snippet)
-                hits.append(
-                    DocumentHit(
-                        document_id=doc_id,
-                        score=round(-float(score), 4),
-                        excerpt="".join(s.text for s in segments),
-                        segments=segments,
-                        section=section or None,
-                        section_anchor=anchor or None,
-                    )
-                )
+            found = self._snippets(terms, [r[0] for r in rows]) if snippets else {}
+        hits: list[DocumentHit] = []
+        for doc_id, score in rows:
+            snip = found.get(doc_id)
+            if snip is None:
+                hits.append(DocumentHit(document_id=doc_id, score=round(-float(score), 4), excerpt=""))
+            else:
+                hits.append(replace(snip, score=round(-float(score), 4)))
         return hits
+
+    def document_snippets(self, terms: list[QueryTerm], document_ids: list[str]) -> dict[str, DocumentHit]:
+        if not terms or not document_ids:
+            return {}
+        with self._lock:
+            return self._snippets(terms, document_ids)
+
+    def _snippets(self, terms: list[QueryTerm], document_ids: list[str]) -> dict[str, DocumentHit]:
+        """One query per document (only for the documents actually shown); caller holds the lock."""
+        snippet_match = fts_query(terms, mode="or")
+        found: dict[str, DocumentHit] = {}
+        for doc_id in document_ids:
+            chunk = self._conn.execute(
+                f"SELECT section, anchor, snippet(chunks, {_CHUNK_TEXT_COL}, ?, ?, '…', 28) "
+                f"FROM chunks WHERE chunks MATCH ? AND chunks.doc_id = ? "
+                f"ORDER BY bm25(chunks, {_CHUNK_WEIGHTS}), CAST(ordinal AS INTEGER) LIMIT 1",
+                (_HL_START, _HL_END, snippet_match, doc_id),
+            ).fetchone()
+            if chunk is None:
+                continue
+            section, anchor, snippet = chunk
+            segments = segments_from_snippet(snippet)
+            found[doc_id] = DocumentHit(
+                document_id=doc_id,
+                score=0.0,
+                excerpt="".join(s.text for s in segments),
+                segments=segments,
+                section=section or None,
+                section_anchor=anchor or None,
+            )
+        return found
 
     def search_chunks(self, terms: list[QueryTerm], filters: SearchFilters, limit: int) -> list[ChunkHit]:
         if not terms:

@@ -50,8 +50,20 @@ class SearchProvider(Protocol):
         ...
 
     def search_documents(
-        self, terms: list[QueryTerm], filters: SearchFilters, limit: int, *, mode: str = "and"
-    ) -> list[DocumentHit]: ...
+        self,
+        terms: list[QueryTerm],
+        filters: SearchFilters,
+        limit: int,
+        *,
+        mode: str = "and",
+        snippets: bool = True,
+    ) -> list[DocumentHit]:
+        """Ranked documents; `snippets=False` returns scores only (see `document_snippets`)."""
+        ...
+
+    def document_snippets(self, terms: list[QueryTerm], document_ids: list[str]) -> dict[str, DocumentHit]:
+        """Best matching section + highlighted snippet for each document that has one (score 0)."""
+        ...
 
     def search_chunks(self, terms: list[QueryTerm], filters: SearchFilters, limit: int) -> list[ChunkHit]: ...
 

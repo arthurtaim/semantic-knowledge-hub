@@ -169,6 +169,7 @@ class KnowledgeService:
         snapshot = await self.snapshot(user)
         ranked: dict[str, RankedHit] = {}
         notes: list[str] = []
+        analysis = None
         if q.query.strip():
             analysis = self.retrieval.analyze(q.query)
             notes = analysis.notes
@@ -183,6 +184,9 @@ class KnowledgeService:
         ordered = sort_documents(ordered, q.sort)
         start = (q.page - 1) * q.size
         stale = self.stale_ids(snapshot)
+        page = ordered[start : start + q.size]
+        if analysis is not None:
+            self.retrieval.with_snippets(analysis, [ranked[d.id] for d in page if d.id in ranked])
         items = [
             self.summarize(
                 d,
@@ -190,7 +194,7 @@ class KnowledgeService:
                 stale=d.id.lower() in stale,
                 ranked=ranked.get(d.id),
             )
-            for d in ordered[start : start + q.size]
+            for d in page
         ]
         return DocumentPage(items=items, total=len(ordered), page=q.page, size=q.size, notes=notes)
 
