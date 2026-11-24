@@ -17,15 +17,16 @@ import logging
 import re
 import sqlite3
 from collections import defaultdict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.authz import Action
 from app.domain.models import UserContext
 from app.errors import ApiError
+from app.work import scheduler as sched
 from app.work import store
 from app.work.calendar import (
     CALENDAR_ID,
@@ -33,18 +34,27 @@ from app.work.calendar import (
     add_workdays,
     canonical_interval,
     count_workdays,
+    fs_earliest_start,
     last_workday,
     next_workday,
 )
 from app.work.db import WorkDatabase
 from app.work.directory import AssigneeDirectory
 from app.work.models import (
+    MAX_DEPENDENCIES_PER_PROJECT,
     MAX_DEPTH,
     MAX_TASKS_PER_PROJECT,
     ActivityEvent,
     ActivityPage,
     AssigneeRef,
     CalendarInfo,
+    DependencyAdd,
+    DependencyCreate,
+    DependencyMutation,
+    DependencyOut,
+    DependencyRemoved,
+    DependencyWithTask,
+    GanttOut,
     MilestoneRef,
     ProjectCreate,
     ProjectList,
@@ -55,9 +65,15 @@ from app.work.models import (
     ProjectStats,
     ProjectStatus,
     ProjectUpdate,
+    ScheduleApplyRequest,
+    ScheduleApplyResult,
     ScheduleMode,
+    SchedulePreview,
+    SchedulePreviewRequest,
     TaskArchiveResult,
+    TaskBrief,
     TaskCreate,
+    TaskDependencies,
     TaskOut,
     TaskPage,
     TaskPriority,
@@ -162,6 +178,27 @@ def resolve_interval(
     return canonical
 
 
+def _sched_task(row: RowLike, key: str) -> sched.SchedTask:
+    return sched.SchedTask(
+        id=row["id"],
+        number=int(row["number"]),
+        key=key,
+        title=row["title"],
+        start=_d(row["start_date"]),
+        end=_d(row["end_exclusive"]),
+        milestone=bool(row["is_milestone"]),
+        locked=bool(row["date_locked"]),
+        due=_d(row["due_date"]),
+        version=int(row["version"]),
+    )
+
+
+def _sched_edge(row: RowLike) -> sched.SchedEdge:
+    return sched.SchedEdge(
+        id=row["id"], pred=row["predecessor_id"], succ=row["successor_id"], lag=int(row["lag_workdays"])
+    )
+
+
 @dataclass
 class _Ctx:
     """Derived facts of one project inside one snapshot (hierarchy, dependencies, link counts, today)."""
@@ -240,6 +277,8 @@ class WorkService:
         self.default_timezone = default_timezone
         self.preview_ttl_seconds = preview_ttl_seconds
         self.now: Callable[[], datetime] = now or (lambda: datetime.now(UTC))
+        # Fault-injection seam for tests (M6-18): called inside the apply transaction after each written task.
+        self._after_schedule_write: Callable[[str], None] | None = None
 
     # --- infrastructure ----------------------------------------------------------------------------------------
     @property
@@ -1059,6 +1098,8 @@ class WorkService:
                 )
             if locked and new_start is None:
                 raise _invalid_dates("lock_requires_dates", "Закрепить можно только запланированную задачу.")
+            if (dates_changed or milestone != was_milestone) and new_start is not None:
+                self._check_fs_after_edit(ctx, task, new_start, new_end, milestone)
 
             # keep only real changes
             fields = {k: v for k, v in fields.items() if task[k] != v}
@@ -1122,6 +1163,38 @@ class WorkService:
                     "Укажите end_exclusive или duration_workdays (у вехи длительности нет).",
                 )
         return resolve_interval(start, end, duration, milestone)
+
+    def _check_fs_after_edit(
+        self, ctx: _Ctx, task: RowLike, start: date, end: date | None, milestone: bool
+    ) -> None:
+        """A direct edit may not create an FS violation; the schedule preview is the way to move dependants."""
+        edited = dict(task)
+        edited.update({"start_date": _iso(start), "end_exclusive": _iso(end), "is_milestone": int(milestone)})
+        neighbour_ids = {d["predecessor_id"] for d in ctx.preds.get(task["id"], [])} | {
+            d["successor_id"] for d in ctx.succs.get(task["id"], [])
+        }
+        incident = [*ctx.preds.get(task["id"], []), *ctx.succs.get(task["id"], [])]
+        if not incident:
+            return
+        before = {task["id"]: _sched_task(task, ctx.key(task["id"]))}
+        for nid in neighbour_ids:
+            before[nid] = _sched_task(_full(ctx, nid), ctx.key(nid))
+        after = dict(before)
+        after[task["id"]] = _sched_task(edited, ctx.key(task["id"]))
+        edges = [_sched_edge(d) for d in incident]
+        old = {v.dependency_id for v in sched.violations(before, edges)}
+        new = [v for v in sched.violations(after, edges) if v.dependency_id not in old]
+        if new:
+            raise ApiError(
+                422,
+                "schedule_conflict",
+                "Новые даты нарушают зависимость FS. Используйте предпросмотр расписания «сдвинуть зависимые».",
+                {
+                    "reason": "fs_violation",
+                    "violations": [v.model_dump(mode="json") for v in new],
+                    "hint": "POST /api/projects/{project_id}/schedule/preview",
+                },
+            )
 
     def archive_task(
         self, principal: WorkPrincipal, ref: str, expected_version: int, cascade: bool
@@ -1261,6 +1334,509 @@ class WorkService:
             assert restored is not None
             return self._task_out(restored, self._ctx(conn, project))
 
+    # --- dependencies ------------------------------------------------------------------------------------------
+    def _dependency_out(self, row: RowLike, ctx: _Ctx, tasks: Mapping[str, RowLike]) -> DependencyOut:
+        pred, succ = tasks.get(row["predecessor_id"]), tasks.get(row["successor_id"])
+        satisfied: bool | None = None
+        pred_end = _d(pred["end_exclusive"]) if pred is not None else None
+        succ_start = _d(succ["start_date"]) if succ is not None else None
+        if pred_end is not None and succ_start is not None:
+            satisfied = succ_start >= fs_earliest_start(pred_end, int(row["lag_workdays"]))
+        return DependencyOut(
+            id=row["id"],
+            project_id=row["project_id"],
+            predecessor_id=row["predecessor_id"],
+            successor_id=row["successor_id"],
+            kind="FS",
+            lag_workdays=int(row["lag_workdays"]),
+            created_by=row["created_by"],
+            created_at=_dt(row["created_at"]),
+            satisfied=satisfied,
+        )
+
+    def dependencies(self, principal: WorkPrincipal, ref: str) -> TaskDependencies:
+        with self.db.read() as conn:
+            task, project, _ = self._task_for(conn, principal, ref, Action.view_tasks)
+            ctx = self._ctx(conn, project)
+            rows = {r["id"]: r for r in store.project_tasks(conn, project["id"], include_archived=True)}
+            preds: list[DependencyWithTask] = []
+            succs: list[DependencyWithTask] = []
+            for dep in store.task_dependencies(conn, task["id"]):
+                other_id = dep["predecessor_id"] if dep["successor_id"] == task["id"] else dep["successor_id"]
+                other = rows.get(other_id)
+                if other is None:
+                    continue
+                item = DependencyWithTask(
+                    dependency=self._dependency_out(dep, ctx, rows),
+                    task=TaskBrief(
+                        id=other["id"],
+                        key=ctx.key(other["id"]),
+                        title=other["title"],
+                        status=TaskStatus(other["status"]),
+                        start_date=_d(other["start_date"]),
+                        end_exclusive=_d(other["end_exclusive"]),
+                        is_milestone=bool(other["is_milestone"]),
+                    ),
+                )
+                (preds if dep["successor_id"] == task["id"] else succs).append(item)
+            preds.sort(key=lambda i: ctx.number(i.task.id))
+            succs.sort(key=lambda i: ctx.number(i.task.id))
+            return TaskDependencies(
+                task_id=task["id"],
+                plan_revision=int(project["plan_revision"]),
+                predecessors=preds,
+                successors=succs,
+            )
+
+    def _validate_new_edge(
+        self,
+        conn: sqlite3.Connection,
+        project: RowLike,
+        ctx: _Ctx,
+        pred_id: str,
+        succ_id: str,
+        existing: Iterable[sched.SchedEdge],
+    ) -> tuple[sqlite3.Row, sqlite3.Row]:
+        pred = self._lookup_task(conn, pred_id)
+        succ = self._lookup_task(conn, succ_id)
+        for row in (pred, succ):
+            # Never reveal whether an id exists in another project: one answer for «missing» and «elsewhere».
+            if row is None or row["project_id"] != project["id"]:
+                raise _invalid_dependency(
+                    "not_in_project", "Обе задачи зависимости должны быть в этом проекте."
+                )
+        assert pred is not None and succ is not None
+        if pred["id"] == succ["id"]:
+            raise _invalid_dependency("self", "Задача не может зависеть от самой себя.")
+        if pred["archived_at"] is not None or succ["archived_at"] is not None:
+            raise _invalid_dependency("archived", "Задача зависимости в архиве.")
+        edges = list(existing)
+        if any(e.pred == pred["id"] and e.succ == succ["id"] for e in edges):
+            raise _invalid_dependency("duplicate", "Такая зависимость уже есть.")
+        if pred["id"] in ctx.ancestors(succ["id"]) or succ["id"] in ctx.ancestors(pred["id"]):
+            raise _invalid_dependency(
+                "hierarchy",
+                "Зависимость между задачей и её родителем/подзадачей не допускается (иерархия уже их связывает).",
+            )
+        cycle = sched.cycle_if_added(edges, pred["id"], succ["id"])
+        if cycle:
+            raise ApiError(
+                422,
+                "dependency_cycle",
+                "Зависимость создаёт цикл: " + " → ".join(ctx.key(t) for t in cycle) + ".",
+                {"cycle": cycle, "cycle_keys": [ctx.key(t) for t in cycle]},
+            )
+        return pred, succ
+
+    def add_dependency(
+        self, principal: WorkPrincipal, ref: str, body: DependencyCreate
+    ) -> DependencyMutation:
+        with self.db.write() as conn:
+            task, project, _ = self._task_for(conn, principal, ref, Action.schedule_task)
+            self._require_open(project)
+            if body.expected_plan_revision is not None and body.expected_plan_revision != int(
+                project["plan_revision"]
+            ):
+                raise _stale_schedule(
+                    "plan_revision",
+                    "План проекта уже изменён — обновите данные.",
+                    current=int(project["plan_revision"]),
+                )
+            if store.count_dependencies(conn, project["id"]) >= MAX_DEPENDENCIES_PER_PROJECT:
+                raise ApiError(
+                    409,
+                    "conflict",
+                    "Достигнут предел числа зависимостей в проекте.",
+                    {"reason": "dependency_limit"},
+                )
+            ctx = self._ctx(conn, project)
+            pred_id = body.predecessor_task_id or task["id"]
+            succ_id = body.successor_task_id or task["id"]
+            pred, succ = self._validate_new_edge(
+                conn, project, ctx, pred_id, succ_id, [_sched_edge(d) for d in ctx.deps]
+            )
+            pred_end, succ_start = _d(pred["end_exclusive"]), _d(succ["start_date"])
+            if pred_end is not None and succ_start is not None:
+                earliest = fs_earliest_start(pred_end, body.lag_workdays)
+                if succ_start < earliest:
+                    raise ApiError(
+                        422,
+                        "schedule_conflict",
+                        f"{ctx.key(succ['id'])} начинается раньше окончания {ctx.key(pred['id'])}: добавьте зависимость "
+                        "через предпросмотр расписания («сдвинуть зависимые»).",
+                        {
+                            "reason": "dependency_violated",
+                            "earliest_start": earliest.isoformat(),
+                            "hint": "POST /api/projects/{project_id}/schedule/preview with add_dependencies",
+                        },
+                    )
+            at = self._now_iso()
+            dep_id = store.new_id()
+            store.insert_dependency(
+                conn,
+                {
+                    "id": dep_id,
+                    "project_id": project["id"],
+                    "predecessor_id": pred["id"],
+                    "successor_id": succ["id"],
+                    "kind": "FS",
+                    "lag_workdays": body.lag_workdays,
+                    "created_by": principal.user.user_id,
+                    "created_at": at,
+                },
+            )
+            revision, project = self._bump_and_read(conn, project["id"])
+            self._audit(
+                conn,
+                principal,
+                operation="dependency_added",
+                entity_type="dependency",
+                entity_id=dep_id,
+                project_id=project["id"],
+                task_id=succ["id"],
+                related_task_id=pred["id"],
+                changes={
+                    "predecessor_id": pred["id"],
+                    "successor_id": succ["id"],
+                    "predecessor_key": ctx.key(pred["id"]),
+                    "successor_key": ctx.key(succ["id"]),
+                    "kind": "FS",
+                    "lag_workdays": body.lag_workdays,
+                },
+                at=at,
+            )
+            dep = store.get_dependency(conn, dep_id)
+            assert dep is not None
+            rows = {pred["id"]: pred, succ["id"]: succ}
+            return DependencyMutation(dependency=self._dependency_out(dep, ctx, rows), plan_revision=revision)
+
+    def remove_dependency(
+        self, principal: WorkPrincipal, ref: str, dependency_id: str, expected_plan_revision: int | None
+    ) -> DependencyRemoved:
+        with self.db.write() as conn:
+            task, project, _ = self._task_for(conn, principal, ref, Action.schedule_task)
+            self._require_open(project)
+            dep = store.get_dependency(conn, dependency_id)
+            if dep is None or task["id"] not in (dep["predecessor_id"], dep["successor_id"]):
+                raise _not_found("Зависимость не найдена.")
+            if expected_plan_revision is not None and expected_plan_revision != int(project["plan_revision"]):
+                raise _stale_schedule(
+                    "plan_revision",
+                    "План проекта уже изменён — обновите данные.",
+                    current=int(project["plan_revision"]),
+                )
+            store.delete_dependency(conn, dependency_id)
+            revision, project = self._bump_and_read(conn, project["id"])
+            ctx = self._ctx(conn, project)
+            self._audit(
+                conn,
+                principal,
+                operation="dependency_removed",
+                entity_type="dependency",
+                entity_id=dependency_id,
+                project_id=project["id"],
+                task_id=dep["successor_id"],
+                related_task_id=dep["predecessor_id"],
+                changes={
+                    "predecessor_id": dep["predecessor_id"],
+                    "successor_id": dep["successor_id"],
+                    "predecessor_key": ctx.key(dep["predecessor_id"]),
+                    "successor_key": ctx.key(dep["successor_id"]),
+                },
+            )
+            return DependencyRemoved(dependency_id=dependency_id, plan_revision=revision)
+
+    # --- gantt -------------------------------------------------------------------------------------------------
+    def gantt(self, principal: WorkPrincipal, project_ref: str) -> GanttOut:
+        """One snapshot: project, tasks, dependencies and violations at the same plan_revision."""
+        with self.db.read() as conn:
+            project, _ = self._project_for(conn, principal, project_ref, Action.view_tasks)
+            ctx = self._ctx(conn, project)
+            rows = store.project_tasks(conn, project["id"])
+            snapshot_at = self.now()
+        by_id = {r["id"]: r for r in rows}
+        tasks = [self._task_out(r, ctx) for r in _hierarchy_order(rows)]
+        stasks = {r["id"]: _sched_task(r, ctx.key(r["id"])) for r in rows}
+        edges = [_sched_edge(d) for d in ctx.deps]
+        scheduled = [t for t in tasks if t.start_date is not None and t.end_exclusive is not None]
+        return GanttOut(
+            project_id=project["id"],
+            project_key=project["key"],
+            plan_revision=int(project["plan_revision"]),
+            snapshot_at=snapshot_at,
+            today=ctx.today,
+            calendar=self._calendar(project["timezone"]),
+            tasks=tasks,
+            dependencies=[self._dependency_out(d, ctx, by_id) for d in ctx.deps],
+            unscheduled_task_ids=[t.id for t in tasks if not t.scheduled],
+            violations=sched.violations(stasks, edges),
+            range_start=min((t.start_date for t in scheduled if t.start_date), default=None),
+            range_end_exclusive=max((t.end_exclusive for t in scheduled if t.end_exclusive), default=None),
+            critical_path=None,
+        )
+
+    # --- schedule preview / apply ------------------------------------------------------------------------------
+    def _plan(
+        self, conn: sqlite3.Connection, project: sqlite3.Row, request: SchedulePreviewRequest
+    ) -> tuple[sched.PlanResult, list[DependencyAdd]]:
+        ctx = self._ctx(conn, project)
+        rows = store.project_tasks(conn, project["id"])
+        stasks = {r["id"]: _sched_task(r, ctx.key(r["id"])) for r in rows}
+        edges = [_sched_edge(d) for d in ctx.deps]
+        changes: dict[str, tuple[date, date]] = {}
+        for change in request.changes:
+            row = self._lookup_task(conn, change.task_id)
+            if row is None or row["project_id"] != project["id"] or row["archived_at"] is not None:
+                raise ApiError(
+                    404, "not_found", "Задача из изменения не найдена в проекте.", {"task_id": change.task_id}
+                )
+            changes[row["id"]] = resolve_interval(
+                change.start_date, change.end_exclusive, change.duration_workdays, bool(row["is_milestone"])
+            )
+        added: list[sched.SchedEdge] = []
+        normalized: list[DependencyAdd] = []
+        for index, dep in enumerate(request.add_dependencies):
+            pred, succ = self._validate_new_edge(
+                conn, project, ctx, dep.predecessor_task_id, dep.successor_task_id, [*edges, *added]
+            )
+            added.append(
+                sched.SchedEdge(id=f"new-{index}", pred=pred["id"], succ=succ["id"], lag=dep.lag_workdays)
+            )
+            normalized.append(
+                DependencyAdd(
+                    predecessor_task_id=pred["id"],
+                    successor_task_id=succ["id"],
+                    lag_workdays=dep.lag_workdays,
+                )
+            )
+        try:
+            result = sched.plan(stasks, edges, mode=request.mode, changes=changes, added_edges=added)
+        except sched.CycleError as exc:  # defensive: stored edges always form a DAG
+            raise ApiError(
+                422, "dependency_cycle", "Граф зависимостей содержит цикл.", {"cycle": exc.cycle}
+            ) from exc
+        return result, normalized
+
+    def preview(
+        self, principal: WorkPrincipal, project_ref: str, request: SchedulePreviewRequest
+    ) -> SchedulePreview:
+        """Computes the consequences; writes NO task, project revision or audit event (only the preview record)."""
+        with self.db.read() as conn:
+            project, _ = self._project_for(conn, principal, project_ref, Action.schedule_task)
+            self._require_open(project)
+            base = int(project["plan_revision"])
+            if request.base_plan_revision is not None and request.base_plan_revision != base:
+                raise _stale_schedule(
+                    "plan_revision", "План проекта уже изменён — обновите данные.", current=base
+                )
+            result, normalized = self._plan(conn, project, request)
+        created = self.now()
+        expires = created + timedelta(seconds=self.preview_ttl_seconds)
+        preview = SchedulePreview(
+            preview_id=store.new_id(),
+            project_id=project["id"],
+            mode=request.mode,
+            base_plan_revision=base,
+            calendar=CALENDAR_ID,
+            input_hash=result.input_hash,
+            operations=result.operations,
+            added_dependencies=normalized,
+            conflicts=result.conflicts,
+            warnings=result.warnings,
+            blocked_tasks=result.blocked,
+            unchanged=result.unchanged,
+            can_apply=result.can_apply,
+            critical_path=None,
+            created_at=created,
+            expires_at=expires,
+        )
+        with self.db.write() as conn:
+            store.purge_previews(conn, store.now_iso(created))
+            store.insert_preview(
+                conn,
+                {
+                    "id": preview.preview_id,
+                    "project_id": project["id"],
+                    "actor_id": principal.user.user_id,
+                    "base_plan_revision": base,
+                    "calendar": CALENDAR_ID,
+                    "input_hash": result.input_hash,
+                    "result_hash": result.result_hash,
+                    "request_json": request.model_dump_json(exclude={"base_plan_revision"}),
+                    "result_json": preview.model_dump_json(),
+                    "created_at": store.now_iso(created),
+                    "expires_at": store.now_iso(expires),
+                },
+            )
+        return preview
+
+    def apply(
+        self, principal: WorkPrincipal, project_ref: str, body: ScheduleApplyRequest
+    ) -> ScheduleApplyResult:
+        """Re-validates EVERYTHING against the current state and writes the confirmed preview atomically."""
+        request_hash = _hash(body.model_dump(mode="json", exclude={"client_request_id"}))
+        with self.db.write() as conn:
+            project, _ = self._project_for(conn, principal, project_ref, Action.schedule_task)
+            scope = f"schedule_apply:{project['id']}"
+            replay = self._replay(conn, scope, principal, body.client_request_id, request_hash)
+            if replay is not None:
+                return ScheduleApplyResult.model_validate({**replay, "replayed": True})
+            self._require_open(project)
+            preview_row = store.get_preview(conn, body.preview_id)
+            if preview_row is None or preview_row["project_id"] != project["id"]:
+                raise _not_found("Предпросмотр расписания не найден.")
+            if preview_row["actor_id"] != principal.user.user_id:
+                raise _not_found("Предпросмотр расписания не найден.")  # previews are personal
+            if preview_row["applied_at"] is not None:
+                raise _stale_schedule("already_applied", "Этот предпросмотр уже применён — сделайте новый.")
+            if datetime.fromisoformat(preview_row["expires_at"]) < self.now():
+                raise _stale_schedule("expired", "Предпросмотр устарел по времени — повторите его.")
+            current = int(project["plan_revision"])
+            if body.expected_plan_revision != int(preview_row["base_plan_revision"]) or current != int(
+                preview_row["base_plan_revision"]
+            ):
+                raise _stale_schedule(
+                    "plan_revision",
+                    "План проекта изменился после предпросмотра — повторите предпросмотр.",
+                    current=current,
+                    preview_base=int(preview_row["base_plan_revision"]),
+                )
+            request = SchedulePreviewRequest.model_validate_json(preview_row["request_json"])
+            try:
+                result, normalized = self._plan(conn, project, request)
+            except ApiError as exc:
+                raise _stale_schedule(
+                    "revalidation_failed",
+                    "Предпросмотр больше не проходит проверку — повторите его.",
+                    error=exc.code,
+                ) from exc
+            if (
+                result.input_hash != preview_row["input_hash"]
+                or result.result_hash != preview_row["result_hash"]
+            ):
+                raise _stale_schedule(
+                    "snapshot_changed", "Данные плана изменились после предпросмотра — повторите его."
+                )
+            if result.conflicts:
+                raise ApiError(
+                    422,
+                    "schedule_conflict",
+                    "В предпросмотре есть конфликты — применить нельзя.",
+                    {
+                        "reason": "conflicts",
+                        "conflicts": [c.model_dump(mode="json") for c in result.conflicts],
+                    },
+                )
+            if result.warnings and not body.accept_warnings:
+                raise ApiError(
+                    422,
+                    "schedule_conflict",
+                    "Новые сроки выходят за дедлайны — подтвердите предупреждения (accept_warnings).",
+                    {
+                        "reason": "warnings_not_accepted",
+                        "warnings": [w.model_dump(mode="json") for w in result.warnings],
+                    },
+                )
+            at = self._now_iso()
+            ctx = self._ctx(conn, project)
+            added_out: list[str] = []
+            for dep in normalized:
+                dep_id = store.new_id()
+                store.insert_dependency(
+                    conn,
+                    {
+                        "id": dep_id,
+                        "project_id": project["id"],
+                        "predecessor_id": dep.predecessor_task_id,
+                        "successor_id": dep.successor_task_id,
+                        "kind": "FS",
+                        "lag_workdays": dep.lag_workdays,
+                        "created_by": principal.user.user_id,
+                        "created_at": at,
+                    },
+                )
+                added_out.append(dep_id)
+                self._audit(
+                    conn,
+                    principal,
+                    operation="dependency_added",
+                    entity_type="dependency",
+                    entity_id=dep_id,
+                    project_id=project["id"],
+                    task_id=dep.successor_task_id,
+                    related_task_id=dep.predecessor_task_id,
+                    changes={
+                        "predecessor_id": dep.predecessor_task_id,
+                        "successor_id": dep.successor_task_id,
+                        "predecessor_key": ctx.key(dep.predecessor_task_id),
+                        "successor_key": ctx.key(dep.successor_task_id),
+                        "kind": "FS",
+                        "lag_workdays": dep.lag_workdays,
+                        "via": "schedule_apply",
+                    },
+                    correlation_id=body.preview_id,
+                    at=at,
+                )
+            for op in result.operations:
+                fields = {
+                    "start_date": _iso(op.after.start_date),
+                    "end_exclusive": _iso(op.after.end_exclusive),
+                }
+                if not store.update_task(conn, op.task_id, op.version, fields, principal.user.user_id, at):
+                    raise _stale_schedule(
+                        "task_changed", "Задача изменилась во время применения — повторите предпросмотр."
+                    )
+                self._audit(
+                    conn,
+                    principal,
+                    operation="schedule_applied",
+                    entity_type="task",
+                    entity_id=op.task_id,
+                    project_id=project["id"],
+                    task_id=op.task_id,
+                    changes={
+                        "start_date": {
+                            "before": _iso(op.before.start_date),
+                            "after": _iso(op.after.start_date),
+                        },
+                        "end_exclusive": {
+                            "before": _iso(op.before.end_exclusive),
+                            "after": _iso(op.after.end_exclusive),
+                        },
+                        "change": op.change,
+                        "because_of": op.because_of,
+                        "preview_id": body.preview_id,
+                    },
+                    correlation_id=body.preview_id,
+                    at=at,
+                )
+                if self._after_schedule_write is not None:
+                    self._after_schedule_write(op.task_id)
+            revision, project = self._bump_and_read(conn, project["id"])
+            if not store.mark_preview_applied(conn, body.preview_id, at, revision):
+                raise _stale_schedule("already_applied", "Этот предпросмотр уже применён — сделайте новый.")
+            ctx = self._ctx(conn, project)
+            changed = [
+                self._task_out(_must(store.get_task(conn, op.task_id)), ctx) for op in result.operations
+            ]
+            all_rows = {r["id"]: r for r in store.project_tasks(conn, project["id"])}
+            added_deps = [
+                self._dependency_out(_must(store.get_dependency(conn, d)), ctx, all_rows) for d in added_out
+            ]
+            out = ScheduleApplyResult(
+                preview_id=body.preview_id,
+                project_id=project["id"],
+                applied=True,
+                plan_revision=revision,
+                changed_tasks=changed,
+                added_dependencies=added_deps,
+                correlation_id=body.preview_id,
+            )
+            self._remember(
+                conn, scope, principal, body.client_request_id, request_hash, out.model_dump(mode="json")
+            )
+            return out
+
     # --- activity ----------------------------------------------------------------------------------------------
     def _activity(
         self, conn: sqlite3.Connection, ctx: _Ctx, rows: list[sqlite3.Row], limit: int
@@ -1314,6 +1890,44 @@ def _must(row: sqlite3.Row | None) -> sqlite3.Row:
     if row is None:  # a row written in this very transaction
         raise ApiError(500, "internal_error", "Внутренняя ошибка сервера.")
     return row
+
+
+def _full(ctx: _Ctx, task_id: str) -> RowLike:
+    """Scheduling fields of a neighbour from the skeleton (lock/due/version are not needed for violations)."""
+    row = ctx.skeleton[task_id]
+    return {
+        "id": row["id"],
+        "number": row["number"],
+        "title": row["title"],
+        "start_date": row["start_date"],
+        "end_exclusive": row["end_exclusive"],
+        "is_milestone": row["is_milestone"],
+        "date_locked": 0,
+        "due_date": None,
+        "version": 1,
+    }
+
+
+def _hierarchy_order(rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+    """Depth-first: parents before their children, siblings by (sort_order, number) — the Gantt/tree order."""
+    by_parent: dict[str | None, list[sqlite3.Row]] = defaultdict(list)
+    ids = {r["id"] for r in rows}
+    for row in rows:
+        parent = row["parent_task_id"] if row["parent_task_id"] in ids else None
+        by_parent[parent].append(row)
+    for siblings in by_parent.values():
+        siblings.sort(key=lambda r: (int(r["sort_order"]), int(r["number"])))
+    ordered: list[sqlite3.Row] = []
+    stack = list(reversed(by_parent[None]))
+    seen: set[str] = set()
+    while stack:
+        row = stack.pop()
+        if row["id"] in seen:
+            continue
+        seen.add(row["id"])
+        ordered.append(row)
+        stack.extend(reversed(by_parent.get(row["id"], [])))
+    return ordered
 
 
 def _sort_key(sort: str) -> Callable[[TaskOut], tuple[Any, ...]]:

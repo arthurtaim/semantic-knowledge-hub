@@ -25,14 +25,23 @@ from app.work.models import (
     PAGE_MAX,
     ActivityPage,
     AssigneeRef,
+    DependencyCreate,
+    DependencyMutation,
+    DependencyRemoved,
+    GanttOut,
     ProjectCreate,
     ProjectList,
     ProjectMembers,
     ProjectOut,
     ProjectStatus,
     ProjectUpdate,
+    ScheduleApplyRequest,
+    ScheduleApplyResult,
+    SchedulePreview,
+    SchedulePreviewRequest,
     TaskArchiveResult,
     TaskCreate,
+    TaskDependencies,
     TaskOut,
     TaskPage,
     TaskPriority,
@@ -246,3 +255,72 @@ def task_activity(
     before_seq: Annotated[int | None, Query(ge=1)] = None,
 ) -> ActivityPage:
     return container.work.task_activity(principal, task_id, limit=limit, before_seq=before_seq)
+
+
+# --- dependencies ----------------------------------------------------------------------------------------------
+@router.get("/tasks/{task_id}/dependencies", response_model=TaskDependencies)
+def task_dependencies(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.view_tasks))],
+    task_id: str,
+) -> TaskDependencies:
+    return container.work.dependencies(principal, task_id)
+
+
+@router.post("/tasks/{task_id}/dependencies", response_model=DependencyMutation, status_code=201)
+def add_dependency(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.schedule_task))],
+    task_id: str,
+    body: DependencyCreate,
+) -> DependencyMutation:
+    """FS, lag 0, same project, acyclic. A dependency the current dates already violate is refused with
+    `422 schedule_conflict` — add it through the schedule preview (`add_dependencies`) to shift the dependants."""
+    return container.work.add_dependency(principal, task_id, body)
+
+
+@router.delete("/tasks/{task_id}/dependencies/{dependency_id}", response_model=DependencyRemoved)
+def remove_dependency(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.schedule_task))],
+    task_id: str,
+    dependency_id: str,
+    expected_plan_revision: Annotated[int | None, Query(ge=1)] = None,
+) -> DependencyRemoved:
+    return container.work.remove_dependency(principal, task_id, dependency_id, expected_plan_revision)
+
+
+# --- gantt / schedule ------------------------------------------------------------------------------------------
+@router.get("/projects/{project_id}/gantt", response_model=GanttOut)
+def project_gantt(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.view_tasks))],
+    project_id: str,
+) -> GanttOut:
+    """Tasks (tree order), dependencies and violations from ONE snapshot, with its `plan_revision`."""
+    return container.work.gantt(principal, project_id)
+
+
+@router.post("/projects/{project_id}/schedule/preview", response_model=SchedulePreview)
+def schedule_preview(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.schedule_task))],
+    project_id: str,
+    body: SchedulePreviewRequest,
+) -> SchedulePreview:
+    """The consequences of a drag/resize or new dependencies BEFORE anything changes: operations (diff with
+    reasons), conflicts, warnings, blocked (unscheduled) tasks. Writes no task, revision or audit event."""
+    return container.work.preview(principal, project_id, body)
+
+
+@router.post("/projects/{project_id}/schedule/apply", response_model=ScheduleApplyResult)
+def schedule_apply(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.schedule_task))],
+    project_id: str,
+    body: ScheduleApplyRequest,
+) -> ScheduleApplyResult:
+    """Atomic apply of a confirmed preview: `409 stale_schedule` when anything changed since, `422 schedule_conflict`
+    when it has conflicts or unaccepted warnings; a replay with the same `client_request_id` returns the first
+    result (`replayed: true`) and writes nothing."""
+    return container.work.apply(principal, project_id, body)

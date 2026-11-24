@@ -64,6 +64,12 @@ WORK_ROUTES = {
     ("DELETE", "/api/tasks/{task_id}"): Action.edit_task,
     ("POST", "/api/tasks/{task_id}/restore"): Action.edit_task,
     ("GET", "/api/tasks/{task_id}/activity"): Action.view_work_audit,
+    ("GET", "/api/tasks/{task_id}/dependencies"): Action.view_tasks,
+    ("POST", "/api/tasks/{task_id}/dependencies"): Action.schedule_task,
+    ("DELETE", "/api/tasks/{task_id}/dependencies/{dependency_id}"): Action.schedule_task,
+    ("GET", "/api/projects/{project_id}/gantt"): Action.view_tasks,
+    ("POST", "/api/projects/{project_id}/schedule/preview"): Action.schedule_task,
+    ("POST", "/api/projects/{project_id}/schedule/apply"): Action.schedule_task,
 }
 
 
@@ -106,12 +112,13 @@ def test_m6_01_project_with_three_tasks_is_visible_in_every_view(wc: TestClient)
     )
     assert first["assignee"] == {"id": "demo-analyst", "display_name": "Аналитик (демо)", "kind": "fixture"}
     listed = wc.get("/api/projects/CRUD/tasks").json()
+    gantt = wc.get("/api/projects/CRUD/gantt").json()
     detail = wc.get("/api/tasks/CRUD-2").json()
     assert [t["key"] for t in listed["items"]] == ["CRUD-1", "CRUD-2", "CRUD-3"]
-    unscheduled = wc.get("/api/projects/CRUD/tasks", params={"scheduled": False}).json()["items"]
-    assert [t["id"] for t in unscheduled] == [created[1]["id"]]
+    assert {t["key"] for t in gantt["tasks"]} == {"CRUD-1", "CRUD-2", "CRUD-3"}
+    assert gantt["unscheduled_task_ids"] == [created[1]["id"]]
     assert detail["id"] == created[1]["id"] and detail["priority"] == "high"
-    assert listed["plan_revision"] == 4  # created + three tasks
+    assert listed["plan_revision"] == gantt["plan_revision"] == 4  # created + three tasks
     card = wc.get("/api/projects/CRUD").json()
     assert (
         card["stats"]["total"] == 3 and card["stats"]["milestones"] == 1 and card["stats"]["unscheduled"] == 1
@@ -216,9 +223,7 @@ def test_m6_27_unscheduled_task_lives_in_list_board_and_the_unscheduled_pool(wc:
         False,
     )
     assert wc.get("/api/projects/TST/tasks", params={"status": "todo"}).json()["total"] == 1
-    assert [
-        x["id"] for x in wc.get("/api/projects/TST/tasks", params={"scheduled": False}).json()["items"]
-    ] == [t["id"]]
+    assert wc.get("/api/projects/TST/gantt").json()["unscheduled_task_ids"] == [t["id"]]
     moved = patch(wc, t["id"], expected_version=1, status="in_progress").json()
     assert moved["start_date"] is None  # no invented dates on any edit
     scheduled = patch(wc, t["id"], expected_version=2, start_date="2026-11-30", duration_workdays=3).json()
@@ -278,9 +283,10 @@ def test_m6_36_views_share_one_plan_revision_after_a_mutation(wc: TestClient) ->
     t = task(wc, "TST", start_date="2026-11-30", duration_workdays=1)
     patch(wc, t["id"], expected_version=1, status="review", start_date="2026-12-01")
     listed = wc.get("/api/projects/TST/tasks").json()
+    gantt = wc.get("/api/projects/TST/gantt").json()
     card = wc.get("/api/projects/TST").json()
-    assert listed["plan_revision"] == card["plan_revision"] == 3
-    rows = [listed["items"][0], wc.get(f"/api/tasks/{t['id']}").json()]
+    assert listed["plan_revision"] == gantt["plan_revision"] == card["plan_revision"] == 3
+    rows = [listed["items"][0], gantt["tasks"][0], wc.get(f"/api/tasks/{t['id']}").json()]
     assert {(r["status"], r["start_date"], r["end_exclusive"], r["version"]) for r in rows} == {
         ("review", "2026-12-01", "2026-12-02", 2)
     }
@@ -402,7 +408,7 @@ def test_activity_records_who_what_when_without_bodies(wc: TestClient) -> None:
 def test_demo_seed_has_the_required_shape(client: TestClient) -> None:
     projects = client.get("/api/projects").json()["items"]
     assert [p["key"] for p in projects] == ["ARIS", "DQI", "RAG"] and all(p["is_demo"] for p in projects)
-    tasks = [t for p in projects for t in client.get(f"/api/projects/{p['id']}/tasks").json()["items"]]
+    tasks = [t for p in projects for t in client.get(f"/api/projects/{p['id']}/gantt").json()["tasks"]]
     assert len(tasks) >= 30 and all(t["is_demo"] for t in tasks)
     assert max(t["depth"] for t in tasks) == 4
     assert {t["status"] for t in tasks} == {"todo", "in_progress", "review", "done"}
@@ -411,6 +417,9 @@ def test_demo_seed_has_the_required_shape(client: TestClient) -> None:
     assert any(t["overdue"] for t in tasks) and any(t["late"] for t in tasks)
     fixture_ids = {"demo-analyst", "demo-architect", "demo-engineer", "demo-qa", "demo-owner"}
     assert {t["assignee_id"] for t in tasks if t["assignee_id"]} <= fixture_ids
+    for p in projects:
+        gantt = client.get(f"/api/projects/{p['id']}/gantt").json()
+        assert gantt["violations"] == [] and len(gantt["dependencies"]) >= 3
 
 
 def test_m6_21_data_survives_a_restart(client_factory: Client) -> None:
@@ -429,6 +438,7 @@ def test_m6_25_m6_40_work_module_needs_no_ai_and_no_integrations(client_factory:
     project(c, "NOAI")
     t = task(c, "NOAI", start_date="2026-11-30", duration_workdays=1)
     assert patch(c, t["id"], expected_version=1, status="done").status_code == 200
+    assert c.get("/api/projects/NOAI/gantt").status_code == 200
     items = {i["name"]: i for i in c.get("/api/integrations/status").json()["items"]}
     assert items["ai_provider"]["state"] == "disabled"  # unavailable stays visible, not faked
     assert items["task_system"]["state"] == "connected" and items["task_system"]["target"] == "local"
@@ -450,6 +460,15 @@ WRITE_CALLS: list[tuple[str, str, dict[str, Any] | None, dict[str, Any] | None]]
     ("PATCH", "/api/tasks/ARIS-1", {"expected_version": 1, "title": "x"}, None),
     ("DELETE", "/api/tasks/ARIS-5", None, {"expected_version": 1, "cascade": True}),
     ("POST", "/api/tasks/ARIS-1/restore", None, {"expected_version": 1}),
+    ("POST", "/api/tasks/ARIS-12/dependencies", {"predecessor_task_id": "ARIS-1"}, None),
+    ("DELETE", "/api/tasks/ARIS-12/dependencies/x", None, None),
+    ("POST", "/api/projects/ARIS/schedule/preview", {"mode": "resolve_violations"}, None),
+    (
+        "POST",
+        "/api/projects/ARIS/schedule/apply",
+        {"preview_id": "x", "expected_plan_revision": 1, "client_request_id": "abcdefgh"},
+        None,
+    ),
     ("GET", "/api/tasks/ARIS-1/activity", None, None),  # the private audit is not public either
     ("GET", "/api/projects/ARIS/activity", None, None),
 ]
@@ -466,7 +485,7 @@ def test_m6_20_m6_35_public_exposure_is_read_only(client_factory: Client, via: s
         assert response.json()["details"]["mode"] == "read_only"
     assert audit_count(c) == before  # nothing written, no AI invoked
     assert c.get("/api/projects", headers=headers).status_code == 200  # the synthetic demo stays readable
-    assert c.get("/api/projects/ARIS/tasks", headers=headers).status_code == 200
+    assert c.get("/api/projects/ARIS/gantt", headers=headers).status_code == 200
     caps = c.get("/api/work/capabilities", headers=headers).json()
     assert (caps["mode"], caps["can_write"], caps["team_ready"]) == ("read_only", False, False)
     assert caps["read_only_reason"]
@@ -538,11 +557,16 @@ def test_m6_19_m6_37_project_roles_with_server_side_identities(wc: TestClient) -
     for path in (
         "/api/projects/ALPHA",
         "/api/projects/ALPHA/tasks",
+        "/api/projects/ALPHA/gantt",
         f"/api/tasks/{t['id']}",
         "/api/tasks/ALPHA-1",
     ):
         response = wc.get(path)
         assert response.status_code == 404 and "Секретная" not in response.text, path
+    assert (
+        wc.post(f"/api/tasks/{t['id']}/dependencies", json={"predecessor_task_id": "ALPHA-2"}).status_code
+        == 404
+    )
 
     identity.current = team_user("alice")  # admin
     assert wc.patch("/api/projects/ALPHA", json={"expected_version": 1, "title": "Альфа"}).status_code == 200
