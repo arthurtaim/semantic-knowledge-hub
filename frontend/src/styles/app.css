@@ -506,15 +506,13 @@ input[type="file"]::file-selector-button:hover {
   color: var(--accent-contrast);
 }
 
-.button--secondary,
-.button--ask {
+.button--secondary {
   background: var(--bg-surface);
   border-color: var(--line-strong);
   color: var(--text);
 }
 
-.button--secondary:hover:not(:disabled),
-.button--ask:hover:not(:disabled) {
+.button--secondary:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
 }
@@ -2532,27 +2530,6 @@ label {
   margin-bottom: var(--space-1);
 }
 
-.search-box {
-  display: flex;
-  gap: var(--space-2);
-  max-width: 44rem;
-}
-
-.search-box input {
-  font-size: var(--fs-body);
-  min-height: 2.75rem;
-}
-
-.search-box .button {
-  min-height: 2.75rem;
-}
-
-.search-box--compact input,
-.search-box--compact .button {
-  min-height: var(--control-height);
-  font-size: var(--fs-ui);
-}
-
 .checkbox {
   display: flex;
   gap: var(--space-2);
@@ -2622,11 +2599,6 @@ label {
 .flag {
   color: var(--danger-text);
   font-weight: 500;
-}
-
-.flag--block {
-  display: block;
-  font-size: var(--fs-small);
 }
 
 .state {
@@ -3076,14 +3048,12 @@ a.assistant-home__row:hover {
   font-weight: 500;
 }
 
-a.result__title,
-.result__title a {
+a.result__title {
   color: var(--text);
   text-decoration: none;
 }
 
-a.result__title:hover,
-.result__title a:hover {
+a.result__title:hover {
   color: var(--accent-text);
   text-decoration: underline;
 }
@@ -3095,8 +3065,7 @@ a.result__title:hover,
 }
 
 .result__meta,
-.inline-meta,
-.citation__meta {
+.inline-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
@@ -3105,22 +3074,19 @@ a.result__title:hover,
 }
 
 .result__meta div,
-.inline-meta div,
-.citation__meta div {
+.inline-meta div {
   display: flex;
   gap: var(--space-2);
   align-items: baseline;
 }
 
 .result__meta dt,
-.inline-meta dt,
-.citation__meta dt {
+.inline-meta dt {
   color: var(--text-secondary);
 }
 
 .result__meta dd,
-.inline-meta dd,
-.citation__meta dd {
+.inline-meta dd {
   margin: 0;
 }
 
@@ -6073,14 +6039,6 @@ a.source__title:hover {
   font-weight: 600;
 }
 
-.home__create {
-  min-height: 2rem;
-}
-
-.proposals .page-head .button {
-  margin-top: var(--space-2);
-}
-
 .authoring__start,
 .authoring__ai {
   display: flex;
@@ -7276,8 +7234,7 @@ a.source__title:hover {
 }
 
 /* Templates and Confluence pages are outlined (a white fill), a page with a dashed outline. */
-.graph-node--status-template .graph-node__shape,
-.graph-node--status-neutral .graph-node__shape {
+.graph-node--status-template .graph-node__shape {
   fill: var(--bg-surface);
   stroke: var(--node-color);
 }
@@ -8028,21 +7985,9 @@ a.source__title:hover {
 }
 
 @media (max-width: 520px) {
-  h1 {
-    font-size: var(--fs-title);
-  }
-
-  .search-box {
-    flex-direction: column;
-  }
-
   .button {
     white-space: normal;
     text-align: center;
-  }
-
-  .home__actions .button--secondary {
-    width: 100%;
   }
 
   .mr-panel__fields {
@@ -8054,32 +7999,8 @@ a.source__title:hover {
     margin-bottom: var(--space-2);
   }
 
-  .index-list {
-    columns: 1;
-  }
-
-  .result__head,
-  .citation__head {
+  .result__head {
     flex-wrap: wrap;
-  }
-
-  .citation__head {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  /* the stamp goes under the title; in the number column it would push the title to the right */
-  .citation__head > .stamp {
-    grid-column: 2;
-    justify-self: start;
-  }
-
-  .citation__excerpt,
-  .citation__meta {
-    margin-left: 0;
-  }
-
-  .scope-status dt {
-    min-width: 0;
   }
 }
 
