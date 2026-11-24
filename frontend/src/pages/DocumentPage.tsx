@@ -3,12 +3,20 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, type ApiError } from "../api/client";
 import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList, ProposalSummary } from "../api/types";
 import { AiAssistPanel, useAiProposal, type AiAction } from "../components/AiProposal";
+import { isEditable } from "../components/ComposerPalette";
+import {
+  ASSISTANT_PANEL_ID,
+  DocumentAssistantPanel,
+  manualProposalHref,
+  useDocumentAssistant,
+} from "../components/DocumentAssistant";
 import { DocumentDetails, SourceLocation } from "../components/DocumentDetails";
 import { DocumentLinksPanel } from "../components/DocumentLinks";
 import { PublicationSection } from "../components/DocumentPublication";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { ProposalStateLabel } from "../components/ProposalState";
 import { SafeHtml } from "../components/SafeHtml";
+import { SelectionToolbar, type SelectionAction } from "../components/SelectionToolbar";
 import { StaleMark } from "../components/StaleMark";
 import { When } from "../components/When";
 import { WikiLinkPreviewArea } from "../components/WikiLinkPreview";
@@ -18,6 +26,7 @@ import { buttonClass, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { Menu, type MenuItem } from "../components/ui/Popover";
 import { StatusMark } from "../components/ui/StatusMark";
+import { canAsk } from "../lib/aiMode";
 import {
   formatDate,
   formatDateTime,
@@ -28,7 +37,9 @@ import {
   SOURCE_LABEL,
   TYPE_LABEL,
 } from "../lib/labels";
+import { captureSelection, clearSelectionMark, markSelection, type CapturedSelection } from "../lib/selection";
 import { useSession } from "../lib/session";
+import { readPreference, writePreference } from "../lib/storage";
 import { onTabListKeyDown } from "../lib/tabs";
 import { useAsync } from "../lib/useAsync";
 
@@ -55,10 +66,25 @@ function viewForHash(hash: string): DocumentView {
 }
 
 /**
- * The right panel of the document. «Сведения» today; the document assistant (⌘J, a toolbar toggle) is the next
- * step and takes the same place — one right panel at a time.
+ * The right panel of the document: «Сведения» or the document assistant (⌘J / Ctrl+J, the toolbar toggle) —
+ * one right panel at a time.
  */
-export type DocumentPanel = "details";
+export type DocumentPanel = "details" | "assistant";
+
+/** Whether the reader left the assistant panel open (per browser; only a docked panel reopens by itself). */
+export const ASSISTANT_OPEN_KEY = "skh.document.assistant";
+
+/** ⌘J / Ctrl+J on any keyboard layout (the key code: «о» on a Russian layout is KeyJ). */
+export function isAssistantShortcut(event: KeyboardEvent): boolean {
+  return (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.code === "KeyJ" || event.key.toLowerCase() === "j");
+}
+
+/** The floating bar over a selection (design-04): skills `explain`, `find_related`, `improve_section`. */
+const SELECTION_SKILLS: { id: string; label: string }[] = [
+  { id: "explain", label: "Объяснить" },
+  { id: "find_related", label: "Найти связанные" },
+  { id: "improve_section", label: "Предложить правку" },
+];
 
 async function loadDocument(id: string): Promise<{ doc: DocumentDetail; proposals: ProposalList }> {
   const [doc, proposals] = await Promise.all([api.document(id), api.drafts({ document_id: id })]);
@@ -308,18 +334,103 @@ function DocumentBody({
   const location = useLocation();
   const navigate = useNavigate();
   const session = useSession();
-  const aiOff = session?.features.ai_mode === "disabled";
+  const aiMode = session?.features.ai_mode;
+  const aiOff = aiMode === "disabled";
+  // The assistant panel, its ⌘J and the selection bar exist only when the assistant can be asked.
+  const aiOn = canAsk(aiMode);
+  const panelMode = useSidePanelMode();
   const [view, setView] = useState<DocumentView>(() => viewForHash(location.hash));
+  // Closed by default; a docked panel the reader left open opens again (a sheet never opens by itself).
+  const [panel, setPanel] = useState<DocumentPanel | null>(() =>
+    aiOn && panelMode === "inline" && readPreference(ASSISTANT_OPEN_KEY) === "1" ? "assistant" : null,
+  );
   const [seenHash, setSeenHash] = useState(location.hash);
   if (location.hash !== seenHash) {
-    // A link to an anchor (a citation, «Подробнее о публикации») opens the segment that holds it.
+    // A link to an anchor (a citation, «Подробнее о публикации») opens the segment that holds it; a sheet over
+    // the text steps aside so the cited place is visible.
     setSeenHash(location.hash);
-    if (location.hash) setView(viewForHash(location.hash));
+    if (location.hash) {
+      setView(viewForHash(location.hash));
+      if (panelMode !== "inline") setPanel(null);
+    }
   }
-  const [panel, setPanel] = useState<DocumentPanel | null>(null);
-  const panelMode = useSidePanelMode();
+  const assistant = useDocumentAssistant(doc, aiMode);
   const tabRefs = useRef<Partial<Record<DocumentView, HTMLButtonElement | null>>>({});
-  const closePanel = useCallback(() => setPanel(null), []);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
+  const markRange = useRef<Range | null>(null);
+  const selected = assistant.composer.draft.selection;
+
+  /** One right panel at a time; the assistant's open/closed state is remembered. */
+  const changePanel = useCallback((next: DocumentPanel | null) => {
+    setPanel(next);
+    writePreference(ASSISTANT_OPEN_KEY, next === "assistant" ? "1" : null);
+  }, []);
+  const closePanel = useCallback(() => changePanel(null), [changePanel]);
+
+  function takeSelection(selection: CapturedSelection) {
+    assistant.takeSelection(selection);
+    markRange.current = selection.range;
+  }
+
+  function clearSelection() {
+    assistant.composer.setSelection(null);
+    markRange.current = null;
+  }
+
+  /** Opens the assistant; a fragment the reader has selected in the text becomes its context. */
+  function openAssistant() {
+    const selection = captureSelection(frameRef.current?.querySelector(".prose") ?? null);
+    if (selection) takeSelection(selection);
+    changePanel("assistant");
+  }
+
+  function toggleAssistant() {
+    if (panel === "assistant") changePanel(null);
+    else openAssistant();
+  }
+
+  // ⌘J / Ctrl+J toggles the assistant — not while typing in another field (the panel's own field is fine).
+  const toggleLatest = useRef(toggleAssistant);
+  toggleLatest.current = toggleAssistant;
+  useEffect(() => {
+    if (!aiOn) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isAssistantShortcut(event) || event.repeat) return;
+      const target = event.target;
+      if (isEditable(target) && !(target instanceof Element && target.closest(`#${ASSISTANT_PANEL_ID}`))) return;
+      event.preventDefault();
+      toggleLatest.current();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [aiOn]);
+
+  // The fragment stays marked in the text while it is the context of the open assistant.
+  useEffect(() => {
+    if (panel === "assistant" && selected && markRange.current) markSelection(markRange.current);
+    else clearSelectionMark();
+  }, [panel, selected]);
+  useEffect(() => () => clearSelectionMark(), []);
+
+  const improve = assistant.skill("improve_section");
+  const selectionActions: SelectionAction[] = SELECTION_SKILLS.map(({ id, label }) =>
+    id === "improve_section" && !assistant.canImprove
+      ? {
+          id,
+          label,
+          kind: "link",
+          to: manualProposalHref(doc.id),
+          description: `${improve?.unavailable_reason ?? "ИИ-правка сейчас недоступна."} Откроется ручное предложение изменения.`,
+        }
+      : { id, label, kind: "run" },
+  );
+
+  function onSelectionAction(skillId: string, selection: CapturedSelection) {
+    takeSelection(selection);
+    changePanel("assistant");
+    assistant.runSkill(skillId, SELECTION_SKILLS.find((item) => item.id === skillId)?.label ?? skillId);
+  }
 
   useEffect(() => {
     if (!location.hash) return undefined;
@@ -341,7 +452,7 @@ function DocumentBody({
       id: "details",
       label: panel === "details" ? "Скрыть сведения" : "Сведения о документе",
       icon: "info",
-      onSelect: () => setPanel((current) => (current === "details" ? null : "details")),
+      onSelect: () => changePanel(panel === "details" ? null : "details"),
     },
     {
       id: "graph",
@@ -379,7 +490,21 @@ function DocumentBody({
               <Icon name="edit" />
               <span className="button__label">Предложить изменение</span>
             </Link>
-            {/* The document assistant toggle («Ассистент», ⌘J) goes here, before «Ещё». */}
+            {aiOn ? (
+              <button
+                ref={toggleRef}
+                type="button"
+                className={buttonClass("secondary", "md", "button--collapsible button--with-icon")}
+                aria-pressed={panel === "assistant"}
+                aria-controls={panel === "assistant" ? ASSISTANT_PANEL_ID : undefined}
+                aria-keyshortcuts="Meta+J Control+J"
+                title="Ассистент по документу (⌘J / Ctrl+J)"
+                onClick={toggleAssistant}
+              >
+                <Icon name="assistant" />
+                <span className="button__label">Ассистент</span>
+              </button>
+            ) : null}
             <Menu
               label="Действия с документом"
               align="end"
@@ -407,7 +532,7 @@ function DocumentBody({
               doc={doc}
               links={links}
               onShowLinks={() => showView("links", true)}
-              onShowDetails={() => setPanel("details")}
+              onShowDetails={() => changePanel("details")}
             />
           </header>
 
@@ -472,9 +597,13 @@ function DocumentBody({
           <div id="doc-panel" role="tabpanel" aria-labelledby={`doc-tab-${view}`} className={`doc-panel doc-panel--${view}`}>
             {view === "text" ? (
               <>
-                <WikiLinkPreviewArea>
-                  <SafeHtml html={doc.content_html} className="prose" />
-                </WikiLinkPreviewArea>
+                {/* The text and its selection bar; focus lands here when the bar closes with Esc. */}
+                <div className="doc-text" ref={frameRef} tabIndex={-1}>
+                  <WikiLinkPreviewArea>
+                    <SafeHtml html={doc.content_html} className="prose" />
+                  </WikiLinkPreviewArea>
+                  {aiOn ? <SelectionToolbar frameRef={frameRef} actions={selectionActions} onAction={onSelectionAction} /> : null}
+                </div>
                 {/* Without an AI provider the block is not shown at all (the manual path is the page itself). */}
                 {aiOff ? null : <DocumentAiPanel doc={doc} />}
               </>
@@ -505,6 +634,16 @@ function DocumentBody({
           <SidePanel id="document-details" title="Сведения о документе" mode={panelMode} onClose={closePanel}>
             <DocumentDetails doc={doc} publication={{ status: publication.data, failed: publication.failed }} />
           </SidePanel>
+        ) : panel === "assistant" && aiOn && aiMode ? (
+          <DocumentAssistantPanel
+            doc={doc}
+            assistant={assistant}
+            mode={panelMode}
+            aiMode={aiMode}
+            onClose={closePanel}
+            onClearSelection={clearSelection}
+            toggleRef={toggleRef}
+          />
         ) : null}
       </div>
     </article>
