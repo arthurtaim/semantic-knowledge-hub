@@ -201,6 +201,8 @@ def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> No
         "include_deprecated": bool(case.get("include_deprecated", False)),
         "sources": case.get("sources", ["team"]),
     }
+    if case.get("history"):  # a follow-up: earlier questions of the same dialog (oldest first)
+        body["history"] = [{"question": str(q), "answer": ""} for q in case["history"]]
     response = client.post("/api/assistant/ask", json=body)
     if response.status_code != 200:
         r.status, r.detail = "error", f"HTTP {response.status_code}"
@@ -247,6 +249,21 @@ def run_assistant(client: TestClient, case: dict[str, Any], r: CaseResult) -> No
     for needle in case.get("warning_contains") or []:
         if not any(needle in w for w in answer.get("warnings") or []):
             problems.append(f"no warning containing «{needle}»")
+    # Answer quality: provenance is metadata of the validated evidence; an ordinary answer carries no boilerplate
+    # warning; words of an earlier question are never reported as «not found» for this one.
+    if "expect_provenance" in case:
+        overall = (answer.get("provenance") or {}).get("overall")
+        if overall != case["expect_provenance"]:
+            problems.append(f"provenance {overall}, expected {case['expect_provenance']}")
+    if "max_warnings" in case and len(answer.get("warnings") or []) > int(case["max_warnings"]):
+        problems.append(f"warnings {answer.get('warnings')} (at most {case['max_warnings']})")
+    if case.get("unmatched_only_current"):
+        own = _norm(case["question"])
+        foreign = [t for t in answer.get("unmatched_terms") or [] if _norm(t) not in own]
+        if foreign:
+            problems.append(f"unmatched terms not in this question: {foreign}")
+    if case.get("context_any") and r.context_ok is not True:
+        problems.append(f"none of {case['context_any']} in the context given to the model")
     limits = case.get("max_external") or {}
     for key, bound in limits.items():
         if int(external.get(key, 0)) > int(bound):
@@ -277,10 +294,9 @@ def _context_ok(client: TestClient, case: dict[str, Any], body: dict[str, Any]) 
         return None
     docs = {p.document_id for p in prepared.passages}
     text = _norm(" ".join(p.text for p in prepared.passages))
-    wanted_docs = _expected(case) or [str(i) for i in case.get("cited_any") or []]
-    docs_ok = not wanted_docs or (
-        set(wanted_docs) & docs if case.get("cited_any") else set(wanted_docs) <= docs
-    )
+    wanted_docs = _expected(case) or [str(i) for i in case.get("cited_any") or case.get("context_any") or []]
+    any_of = bool(case.get("cited_any") or case.get("context_any"))
+    docs_ok = not wanted_docs or (set(wanted_docs) & docs if any_of else set(wanted_docs) <= docs)
     facts_ok = all(_norm(str(f)) in text for f in case.get("facts_required") or [])
     return bool(docs_ok) and facts_ok
 

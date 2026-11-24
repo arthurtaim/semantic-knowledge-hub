@@ -1,7 +1,7 @@
 """OPT-IN live evaluation of the assistant on a running deployment (make knowledge-eval-live).
 
 Sends the `assistant` gold cases to an already running stack over HTTP — e.g. the personal test stack with
-the Claude Code CLI provider — one independent request per case (no conversation history), and scores
+the Claude Code CLI provider — one independent request per case (a follow-up case replays only its earlier questions), and scores
 what is checkable automatically: expected sources cited, required facts present, forbidden facts absent,
 no-answer when expected, server-verified citations only (the server drops unverifiable ones). It never
 contacts a model directly and never runs by accident: SKH_LIVE_EVAL=1 is required.
@@ -29,7 +29,16 @@ import httpx
 
 from app.evaluation.knowledge_eval import load_cases
 
-CATEGORIES = ("synthesis", "status", "no_answer", "external_rag", "synonym", "abbreviation")
+CATEGORIES = (
+    "synthesis",
+    "status",
+    "no_answer",
+    "external_rag",
+    "synonym",
+    "abbreviation",
+    "provenance",
+    "followup",
+)
 
 
 def _norm(text: str) -> str:
@@ -54,6 +63,13 @@ def score(case: dict[str, Any], answer: dict[str, Any]) -> dict[str, Any]:
         else all(_norm(str(f)) in text for f in case.get("facts_required") or []),
         "forbidden_ok": not any(_norm(str(f)) in text for f in case.get("facts_forbidden") or []),
         "not_cited_ok": not any(d in cited for d in case.get("not_cited") or []),
+        # answer quality: provenance from the validated evidence, no boilerplate warnings on ordinary answers
+        "provenance_ok": (answer.get("provenance") or {}).get("overall") == case["expect_provenance"]
+        if "expect_provenance" in case
+        else None,
+        "warnings_ok": len(answer.get("warnings") or []) <= int(case["max_warnings"])
+        if "max_warnings" in case
+        else None,
     }
     passed = all(v for v in checks.values() if v is not None)
     return {"passed": passed, **checks, "cited": cited, "confidence": answer.get("confidence")}
@@ -85,7 +101,12 @@ def main(argv: list[str] | None = None) -> int:
                 "question": case["question"],
                 "sources": case.get("sources", ["team"]),
                 "include_drafts": bool(case.get("include_drafts", False)),
+                "include_deprecated": bool(case.get("include_deprecated", False)),
             }
+            if case.get(
+                "history"
+            ):  # a follow-up: earlier questions of the same dialog (answers not replayed)
+                body["history"] = [{"question": str(q), "answer": ""} for q in case["history"]]
             started = time.perf_counter()
             try:
                 response = client.post("/api/assistant/ask", json=body)
