@@ -22,6 +22,8 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «из них» + «утвержд» / «of them» + «approved» | count with the previous referent's filters + status approved |
 | «последние пять» / «last five» | catalog_query list, sort updated, limit 5 (previous filters kept) |
 | «сколько» + «aris» | two counts in one round: tag `aris` and text «ARIS», both labelled |
+| «внимани» / «need(s) attention» | count `needs_attention` (the tree's rule); + «в базе»: all + attention |
+| «внимани» + «какие» / «почему» | catalog_query list `needs_attention` with the reasons (`attention`) |
 | «ассистент» + «цитир» | count eligible_for_answers |
 | «без владельца» | catalog_query list tags aris + owner_missing |
 | «ссылается на <ID>» | graph_inspect links direction in |
@@ -288,6 +290,8 @@ def tool_script(r: Round) -> str:
             f"Ассистент может цитировать {fact['count']} документов [{fact['fact_id']}] (только утверждённые).",
             facts=[fact["fact_id"]],
         )
+    if "внимани" in q or "need attention" in q or "needs attention" in q:
+        return _attention_script(r, q, facts)
     if "сколько" in q and "aris" in q:
         if not r.results:
             return tool_request(
@@ -361,6 +365,44 @@ def tool_script(r: Round) -> str:
         quote = _verbatim(body)
         return final(f"Согласно источнику: «{quote}» [{cid}].", citations=[{"id": cid, "quote": quote}])
     return final("Данных недостаточно.", confidence="insufficient_evidence")
+
+
+def _attention_script(r: Round, q: str, facts: list[dict[str, Any]]) -> str:
+    """«Требуют внимания»: the model uses the `needs_attention` filter and repeats the rule from the result."""
+    attention = {"needs_attention": True}
+    if "какие" in q or "почему" in q or "which" in q:
+        if not r.results:
+            args = {"operation": "list", "filters": attention, "sort": "id", "limit": 50}
+            return tool_request(("catalog_query", args))
+        fact = facts[0]
+        listed = "; ".join(f"{i['id']}: {', '.join(i['attention'])}" for i in fact["items"]) or "таких нет"
+        return final(
+            f"Требуют внимания {fact['total']} документов [{fact['fact_id']}] — {listed}. {fact['definition']}",
+            facts=[fact["fact_id"]],
+        )
+    if "в базе" in q or "всего" in q or "in total" in q:
+        if not r.results:
+            return tool_request(
+                ("catalog_query", {"operation": "count"}),
+                ("catalog_query", {"operation": "count", "filters": attention}),
+            )
+        if len(facts) < 2:  # one of the two counts was refused: answer with what was verified
+            return final(
+                f"Проверено: {facts[0]['count']} [{facts[0]['fact_id']}].", facts=[facts[0]["fact_id"]]
+            )
+        total, flagged = facts[0], facts[1]
+        return final(
+            f"В доступном вам каталоге SKH — {total['count']} документов [{total['fact_id']}]; требуют внимания — "
+            f"{flagged['count']} [{flagged['fact_id']}]. {flagged['definition']}",
+            facts=[total["fact_id"], flagged["fact_id"]],
+        )
+    if not r.results:
+        return tool_request(("catalog_query", {"operation": "count", "filters": attention}))
+    fact = facts[0]
+    return final(
+        f"Требуют внимания {fact['count']} документов [{fact['fact_id']}]. {fact['definition']}",
+        facts=[fact["fact_id"]],
+    )
 
 
 def _searched_ids(r: Round) -> set[str]:

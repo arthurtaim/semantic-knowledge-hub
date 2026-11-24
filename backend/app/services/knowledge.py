@@ -16,7 +16,10 @@ from app.adapters.knowledge.base import (
 from app.adapters.search.base import DocumentHit, SearchFilters, SearchProvider
 from app.domain.dictionary import SearchDictionary, load_dictionary
 from app.domain.doc_tree import (
+    AttentionReason,
     SystemIndex,
+    attention_reasons,
+    attention_rule_text,
     build_layout,
     build_system_index,
     document_systems,
@@ -181,6 +184,17 @@ class KnowledgeService:
         if today - doc.reviewed_at > timedelta(days=self._stale_days):
             return "stale"
         return "ok"
+
+    def attention_reasons(
+        self, doc: DocumentRecord, today: date | None = None
+    ) -> tuple[AttentionReason, ...]:
+        """«Требуют внимания» for one document: the documents tree's rule (app/domain/doc_tree.py) on the same
+        inputs as `document_tree` — the status, today's `review_state` and `owner_missing`. Empty: no attention."""
+        return attention_reasons(doc.status, self.review_state(doc, today), owner_missing(doc))
+
+    def attention_rule(self) -> str:
+        """The rule in words (Russian), with this deployment's review threshold."""
+        return attention_rule_text(self._stale_days)
 
     def summarize(
         self,

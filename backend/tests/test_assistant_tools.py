@@ -11,13 +11,16 @@ from __future__ import annotations
 import asyncio
 import json
 import sqlite3
-from collections.abc import Iterator
+from collections import Counter
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.adapters.knowledge.base import KnowledgeSnapshot, RepositoryUnavailableError
 from app.adapters.knowledge.local import LocalKnowledgeRepository
@@ -26,6 +29,7 @@ from app.domain.assistant_tools import (
     READ_TOOLS,
     TOOL_ARGS,
     TOOL_DESCRIPTIONS,
+    CatalogFilters,
     ToolArgumentError,
     validate_call,
 )
@@ -37,6 +41,7 @@ from app.services.graph import GraphService
 from app.services.knowledge import KnowledgeService
 from app.services.links import LinkService
 from app.services.template_hub import TemplateHubService
+from tests.conftest import TEST_TODAY
 
 OWNER = UserContext(user_id="owner", display_name="Owner", roles=["restricted"])
 GUEST = UserContext(user_id="guest", display_name="Guest", roles=[])
@@ -432,6 +437,147 @@ def test_deleted_document_leaves_counts_search_and_metadata(env: Env) -> None:
     assert gone.payload["not_found"] == ["M57-DEL-001"]
 
 
+# --- catalog_query: «требуют внимания» = the documents tree's rule (needs_attention) ------------------------------
+# A restricted document that needs attention (a draft): the owner counts it, the guest never does.
+HIDDEN_DRAFT = Spec(
+    "M57-SEC-002",
+    "Секретный черновик миграции",
+    "architecture",
+    "draft",
+    "team-s",
+    ("restricted", "demo"),
+    "2026-11-23",
+    "## План\n\nЧерновик закрытого плана.\n",
+)
+
+
+def attention_oracle(user: UserContext, specs: tuple[Spec, ...] = FIXTURE) -> dict[str, set[str]]:
+    """Independent of the services: why each visible fixture document needs attention on TEST_TODAY. Every fixture
+    review (`reviewed_at: 2026-11-01`) is fresh then, so only statuses and owners count."""
+    out: dict[str, set[str]] = {}
+    for spec in specs:
+        if not visible(spec, user):
+            continue
+        why = {spec.status} & {"in_review", "draft", "deprecated"}
+        if spec.owner == "unassigned":
+            why.add("owner_missing")
+        if why:
+            out[spec.id] = why
+    return out
+
+
+@pytest.mark.parametrize("user", [OWNER, GUEST], ids=["owner", "guest"])
+def test_needs_attention_is_the_documents_tree_rule_in_the_readers_scope(env: Env, user: UserContext) -> None:
+    env.knowledge.today = lambda: TEST_TODAY
+    (env.root / f"{HIDDEN_DRAFT.id}.md").write_text(render(HIDDEN_DRAFT), encoding="utf-8")
+    env.refresh()
+    expected = attention_oracle(user, (*FIXTURE, HIDDEN_DRAFT))
+    tree = asyncio.run(env.knowledge.document_tree(user))
+    attention = {"needs_attention": True}
+
+    count = env.call(user, "catalog_query", {"operation": "count", "filters": attention})
+    assert count.outcome == "ok" and count.payload["count"] == len(expected) == tree.attention_total
+    assert len(expected) == (5 if user is OWNER else 4)  # the hidden draft is never counted for the guest
+    assert (HIDDEN_DRAFT.id in expected) is (user is OWNER)
+    fact = count.fact
+    assert fact is not None and fact.value == len(expected) and fact.effective_filters == attention
+    assert fact.definition is not None
+    for words in (
+        "Требуют внимания",
+        "«Документы»",
+        "на ревью",
+        "черновик",
+        "устарел",
+        "180 дней",
+        "владелец",
+    ):
+        assert words in fact.definition
+    assert TEST_TODAY.isoformat() in fact.definition
+    per_reason = Counter(r for why in expected.values() for r in why)
+    assert (
+        fact.breakdown == {"attention": dict(per_reason)}
+        and count.payload["documents_per_reason"] == per_reason
+    )
+
+    listed = env.call(
+        user, "catalog_query", {"operation": "list", "filters": attention, "sort": "id", "limit": 50}
+    )
+    assert ids(listed) == sorted(expected) == sorted(i for i, e in tree.documents.items() if e.attention)
+    assert {row["id"]: set(row["attention"]) for row in listed.payload["items"]} == expected
+    assert listed.fact is not None
+    draft = next(i for i in listed.fact.items if i.id == "M57-GDE-002")
+    assert "требует внимания: черновик, без владельца" in (draft.detail or "")
+
+    facets = env.call(user, "catalog_query", {"operation": "facets", "filters": attention})
+    breakdown = facets.payload["breakdown"]
+    assert facets.payload["total"] == len(expected) and breakdown["attention"] == dict(per_reason)
+    assert sum(breakdown["status"].values()) == len(expected)
+
+    others = env.call(user, "catalog_query", {"operation": "count", "filters": {"needs_attention": False}})
+    assert others.payload["count"] == tree.total - tree.attention_total
+    assert others.fact is not None and "НЕ требуется" in (others.fact.definition or "")
+    meta = env.call(user, "catalog_query", {"operation": "get_metadata", "document_ids": ["M57-GDE-002"]})
+    assert set(meta.payload["documents"][0]["attention"]) == {"draft", "owner_missing"}
+
+
+def test_needs_attention_follows_todays_review_state_like_the_tree(env: Env) -> None:
+    """A review older than `review_stale_days` (180) is «проверка устарела» on the same «today» as the tree."""
+    env.knowledge.today = lambda: date(2027, 6, 1)  # every fixture review (2026-11-01) is now stale
+    tree = asyncio.run(env.knowledge.document_tree(GUEST))
+    count = env.call(GUEST, "catalog_query", {"operation": "count", "filters": {"needs_attention": True}})
+    assert count.payload["count"] == tree.attention_total == len(oracle(GUEST)) == 11
+    # every visible fixture document carries `reviewed_at: 2026-11-01`, so each one is «проверка устарела» now
+    assert count.payload["documents_per_reason"]["review_stale"] == 11
+    assert "2027-06-01" in (count.fact.definition if count.fact else "")
+
+
+@pytest.mark.parametrize("value", ["yes", "true", 1, {"since": "2026-01-01"}])
+def test_needs_attention_is_a_strict_boolean(env: Env, value: Any) -> None:
+    with pytest.raises(ToolArgumentError) as exc:
+        env.call(GUEST, "catalog_query", {"operation": "count", "filters": {"needs_attention": value}})
+    assert exc.value.code == "invalid"
+
+
+def test_needs_attention_on_the_demo_base_equals_the_documents_tree(
+    client_factory: Callable[..., TestClient], full_workspace: Path, tmp_path: Path
+) -> None:
+    """The 83 synthetic documents: the tool's count equals `attention_total` of `GET /api/documents/tree` (12 on
+    the pinned «today», tests/conftest.py TEST_TODAY) — the same documents, the same reasons."""
+    tree = client_factory(local_knowledge_dir=full_workspace).get("/api/documents/tree").json()
+    assert tree["attention_total"] == 12
+    flagged = sorted(i for i, d in tree["documents"].items() if d["attention"])
+
+    repo = LocalKnowledgeRepository(full_workspace, max_document_bytes=200_000, refresh_seconds=0.0)
+    search = SqliteFtsSearchProvider(tmp_path / "demo-search.sqlite3")
+    registry = TemplateRegistry(DEFAULT_TEMPLATES_DIR, ":memory:")
+    try:
+        knowledge = KnowledgeService(repo, search, review_stale_days=180)
+        knowledge.today = lambda: TEST_TODAY
+        authoring = SimpleNamespace(registry=registry, store=SimpleNamespace(list_rows=lambda *a: []))
+        executor = SystemToolExecutor(
+            knowledge=knowledge,
+            links=LinkService(knowledge),
+            graph=GraphService(knowledge, registry.graph_entries),
+            templates=TemplateHubService(cast(Any, authoring), knowledge),
+        )
+        reader = UserContext(user_id="local-demo-user", display_name="Demo", roles=["reader"])
+        ctx = ToolContext(user=reader, allowed_statuses=APPROVED)
+
+        def run(args: dict[str, Any]) -> ToolResult:
+            name, parsed = validate_call("catalog_query", args, executor.available(ctx))
+            return asyncio.run(executor.execute(ctx, name, parsed, fact_ref="F1", cid_start=1))
+
+        attention = {"needs_attention": True}
+        assert run({"operation": "count", "filters": attention}).payload["count"] == 12
+        listed = run({"operation": "list", "filters": attention, "sort": "id", "limit": 50})
+        assert ids(listed) == flagged
+        assert all(row["attention"] for row in listed.payload["items"])
+        assert run({"operation": "count"}).payload["count"] == tree["total"] == 83
+    finally:
+        search.close()
+        registry.close()
+
+
 # --- access: a hidden document leaks nothing (S01–S03) -------------------------------------------------------------
 def test_hidden_and_unknown_ids_are_indistinguishable(env: Env) -> None:
     args = {"operation": "get_metadata", "document_ids": ["M57-SEC-001", "M57-NOPE-404"]}
@@ -602,9 +748,9 @@ def test_descriptions_advertise_only_arguments_the_schemas_accept() -> None:
         signature = description.split("arguments:", 1)[1]
         advertised = set(json.loads(json.dumps(_keys(signature))))
         fields = set(TOOL_ARGS[name].model_fields)
-        nested = {"status", "type", "owner", "owner_missing", "tags", "text", "updated_from", "updated_to"}
-        nested |= {"template_id", "eligible_for_answers"}
+        nested = set(CatalogFilters.model_fields)
         assert advertised <= fields | nested, (name, advertised - fields - nested)
+    assert '"needs_attention": true' in TOOL_DESCRIPTIONS["catalog_query"]
 
 
 def _keys(signature: str) -> list[str]:

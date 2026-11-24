@@ -196,6 +196,26 @@ describe("System facts: «По данным реестра SKH» cards", () => {
     expect(card).toHaveTextContent("Показаны первые 2 из 9.");
   });
 
+  it("«требуют внимания»: the filter in words, the rule from the definition, the documents per reason", async () => {
+    const attention = fact({
+      value: 12,
+      effective_filters: { needs_attention: true },
+      definition:
+        "«Требуют внимания» — то же правило, что в разделе «Документы» (дерево, «Обзор», «Таблица»): статус «на ревью», «черновик» или «устарел»; или проверка устарела (последняя проверка, reviewed_at, старше 180 дней) или не проводилась у утверждённого документа или документа на ревью; или не назначен владелец. Достаточно одного условия. Проверка — на 2026-11-24.",
+      breakdown: { attention: { draft: 3, in_review: 4, deprecated: 3, owner_missing: 2 } },
+    });
+    mockApi([streamRoute(...final(toolAnswer({ answer: "Требуют внимания 12 документов [F1].", system_facts: [attention] })))]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await ask("Сколько документов требуют внимания?");
+    const card = within(facts()).getAllByRole("listitem")[0] as HTMLElement;
+    expect(card).toHaveTextContent("12 документов");
+    expect(card).toHaveTextContent("Фильтр: требуют внимания");
+    expect(card).toHaveTextContent("то же правило, что в разделе «Документы»");
+    expect(card).toHaveTextContent("По причинам");
+    expect(card).toHaveTextContent("черновик 3 · на ревью 4 · устарел 3 · без владельца 2");
+    expect(filtersText(fact({ effective_filters: { needs_attention: false } }))).toBe("Фильтр: не требуют внимания");
+  });
+
   it("says a zero is a zero within the scope — not an error and not «no documents in the base»", async () => {
     const zero = fact({ operation: "list", value: 0, effective_filters: { tags: ["aris"], owner_missing: true } });
     mockApi([streamRoute(...final(toolAnswer({ answer: "ARIS-документов без владельца нет [F1].", system_facts: [zero] })))]);

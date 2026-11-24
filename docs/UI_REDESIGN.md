@@ -715,6 +715,11 @@ Demo numbers (synthetic base, 24 Nov 2026): 83 documents, 73 approved, 12 need a
 Глоссарий 2/2/–/–/–/–/–; total 83/73/4/3/3/6/2. «Что сделать»: 4 / 2 / 2 / 6. «Таблица»: «Только требующие внимания»
 12 of 83; «Интеграции / Черновики» 2 rows; «Владелец: не назначен» 2; «Система: ARIS» 13.
 
+The assistant uses the same definition: M5.7 `catalog_query` with `filters.needs_attention` applies the tree's rule
+(`doc_tree.attention_reasons` via `KnowledgeService.attention_reasons`, the reader's snapshot, today's review state),
+so «Сколько документов требуют внимания?» gives the tree's `attention_total` (12 on the demo base) with the rule in
+the fact's definition and the reasons per document (`docs/AI_NATIVE_TOOLS.md`).
+
 ### 7.2 Keyboard
 
 | Keys | Where | Does |

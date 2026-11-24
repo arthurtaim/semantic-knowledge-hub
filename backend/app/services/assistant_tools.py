@@ -17,7 +17,7 @@ import logging
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any
 
 from app.adapters.ai.base import ContextPassage
@@ -34,6 +34,7 @@ from app.domain.assistant_tools import (
     ToolName,
     _Args,
 )
+from app.domain.doc_tree import ATTENTION_REASON_LABELS, AttentionReason
 from app.domain.markdown import truncate
 from app.domain.models import (
     DocStatus,
@@ -46,9 +47,9 @@ from app.domain.models import (
     UserContext,
 )
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
-from app.domain.schema import UNASSIGNED_OWNERS
 from app.errors import ApiError
 from app.services import graph as g
+from app.services.knowledge import owner_missing as _owner_missing
 from app.services.knowledge import sort_documents
 
 if TYPE_CHECKING:
@@ -124,10 +125,6 @@ def _prepare(text: str) -> tuple[str, bool]:
     return redact_prompt_injection(neutralize_citation_markers(text))
 
 
-def _owner_missing(doc: DocumentRecord) -> bool:
-    return doc.owner.strip().lower() in UNASSIGNED_OWNERS
-
-
 def _doc_path(doc_id: str) -> str:
     return f"/documents/{doc_id}"
 
@@ -155,10 +152,15 @@ def _doc_row(doc: DocumentRecord) -> dict[str, Any]:
     }
 
 
-def _doc_detail(doc: DocumentRecord) -> str:
+def _doc_detail(doc: DocumentRecord, attention: tuple[AttentionReason, ...] = ()) -> str:
     owner = "владелец не назначен" if _owner_missing(doc) else f"владелец: {doc.owner}"
     updated = f" · обновлён {doc.metadata_updated_at.isoformat()}" if doc.metadata_updated_at else ""
-    return f"{doc.type.value} · {owner}{updated}"
+    why = f" · требует внимания: {_attention_words(attention)}" if attention else ""
+    return f"{doc.type.value} · {owner}{updated}{why}"
+
+
+def _attention_words(reasons: tuple[AttentionReason, ...]) -> str:
+    return ", ".join(ATTENTION_REASON_LABELS[r] for r in reasons)
 
 
 class SystemToolExecutor:
@@ -264,7 +266,7 @@ class SystemToolExecutor:
 
     # --- catalog_query ---------------------------------------------------------------------------------------
     def _select(
-        self, snapshot: KnowledgeSnapshot, args: CatalogQueryArgs, ctx: ToolContext
+        self, snapshot: KnowledgeSnapshot, args: CatalogQueryArgs, ctx: ToolContext, today: date
     ) -> tuple[list[DocumentRecord], dict[str, Any], list[str]]:
         f: CatalogFilters = args.filters
         docs = list(snapshot.documents.values())
@@ -299,6 +301,14 @@ class SystemToolExecutor:
             effective["owner_missing"] = f.owner_missing
             definitions.append(
                 "owner_missing: владелец не назначен (owner: unassigned или пусто) — не угадывается."
+            )
+        if f.needs_attention is not None:
+            # The documents tree's rule on the same inputs (KnowledgeService.attention_reasons), for today.
+            docs = [d for d in docs if bool(self._knowledge.attention_reasons(d, today)) == f.needs_attention]
+            effective["needs_attention"] = f.needs_attention
+            definitions.append(
+                f"{self._knowledge.attention_rule()} Проверка — на {today.isoformat()}."
+                + ("" if f.needs_attention else " Здесь — документы, которым внимание НЕ требуется.")
             )
         if f.tags:
             tags = {t.casefold() for t in f.tags}
@@ -354,8 +364,26 @@ class SystemToolExecutor:
         tool, op = "catalog_query", args.operation
         if op == "get_metadata":
             return self._metadata(snapshot, generation, args, ref)
-        docs, effective, definitions = self._select(snapshot, args, ctx)
+        today = self._knowledge.today()
+        docs, effective, definitions = self._select(snapshot, args, ctx, today)
         definition = " ".join(definitions) or None
+        # With the attention filter, each document carries WHY it needs attention: list rows and card details, and
+        # the number of documents per reason for count and facets.
+        with_reasons = args.filters.needs_attention is True
+        reasons: dict[str, tuple[AttentionReason, ...]] = (
+            {d.id: self._knowledge.attention_reasons(d, today) for d in docs} if with_reasons else {}
+        )
+        by_reason: dict[str, dict[str, int]] = (
+            {
+                "attention": dict(
+                    sorted(
+                        Counter(r for rs in reasons.values() for r in rs).items(), key=lambda i: (-i[1], i[0])
+                    )
+                )
+            }
+            if with_reasons
+            else {}
+        )
         if op == "count":
             fact = self._fact(
                 ref=ref,
@@ -368,6 +396,7 @@ class SystemToolExecutor:
                 unit="documents",
                 effective_filters=effective,
                 definition=definition,
+                breakdown=by_reason or None,
             )
             payload: dict[str, Any] = {
                 **self._provenance(fact),
@@ -378,11 +407,15 @@ class SystemToolExecutor:
             }
             if definition:
                 payload["definition"] = definition
+            if by_reason:
+                payload["documents_per_reason"] = by_reason[
+                    "attention"
+                ]  # a document may have several reasons
             if not effective and snapshot.issues:
                 payload["files_not_loaded"] = len({i.path for i in snapshot.issues})
             return ToolResult(tool, op, "ok", payload, fact=fact, result_count=len(docs))
         if op == "facets":
-            breakdown = self._facets(docs)
+            breakdown = {**self._facets(docs), **by_reason}
             fact = self._fact(
                 ref=ref,
                 tool=tool,
@@ -421,7 +454,7 @@ class SystemToolExecutor:
             unit="documents",
             effective_filters={**effective, "sort": args.sort},
             definition=definition,
-            items=[_doc_item(d, _doc_detail(d)) for d in page],
+            items=[_doc_item(d, _doc_detail(d, reasons.get(d.id, ()))) for d in page],
             truncated=more,
         )
         payload = {
@@ -429,7 +462,10 @@ class SystemToolExecutor:
             "total": len(ordered),
             "effective_filters": {**effective, "sort": args.sort},
             "offset": args.offset,
-            "items": [_doc_row(d) for d in page],
+            "items": [
+                {**_doc_row(d), "attention": list(reasons[d.id])} if with_reasons else _doc_row(d)
+                for d in page
+            ],
             "next_offset": args.offset + len(page) if more else None,
         }
         if definition:
@@ -470,6 +506,8 @@ class SystemToolExecutor:
                 "aliases": list(doc.aliases[:5]),
                 "source": doc.source,
                 "summary": truncate(doc.summary or "", 300) or None,
+                # «Требуют внимания» reasons (the documents tree's rule, today); [] = no attention needed
+                "attention": list(self._knowledge.attention_reasons(doc)),
             }
             for doc in found
         ]

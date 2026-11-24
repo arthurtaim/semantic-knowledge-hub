@@ -34,7 +34,14 @@ from app.domain.models import UserContext
 from app.services.assistant import FIXED_INSUFFICIENT, GENERAL_WARNING
 from app.services.assistant_loop import bounded_json
 from tests.support.scripted_model import Recorder, claude_transport, openai_transport
-from tests.test_assistant_tools import FIXTURE, INJECTION, ScopedRepository, oracle, render
+from tests.test_assistant_tools import (
+    FIXTURE,
+    INJECTION,
+    ScopedRepository,
+    attention_oracle,
+    oracle,
+    render,
+)
 
 GUEST = UserContext(user_id="local-demo-user", display_name="Guest", roles=["reader", "editor"])
 OWNER = UserContext(user_id="local-demo-user", display_name="Owner", roles=["reader", "editor", "restricted"])
@@ -58,7 +65,7 @@ def tool_client(client_factory: Callable[..., TestClient], m57_workspace: Path) 
     def factory(
         kind: str = "openai", *, user: UserContext = GUEST, **overrides: Any
     ) -> tuple[TestClient, Recorder]:
-        client = client_factory(local_knowledge_dir=m57_workspace, **overrides)
+        client = client_factory(**{"local_knowledge_dir": m57_workspace, **overrides})
         container = client.app.state.container  # type: ignore[attr-defined]
         container.knowledge._repository = ScopedRepository(container.knowledge._repository)
         container.demo_user = lambda: user
@@ -233,6 +240,56 @@ def test_aris_documents_without_owner(tool_client: Factory) -> None:
     assert [i["id"] for i in data["system_facts"][0]["items"]] == expected
     assert all(i["id"] in data["answer"] for i in data["system_facts"][0]["items"])
     assert "unassigned" in data["answer"]
+
+
+# --- «требуют внимания»: the documents tree's rule, not proxies (found on the stand with a real model) ------------
+def tree_attention(client: TestClient) -> tuple[int, list[str]]:
+    """The independent oracle of the UI: `GET /api/documents/tree` for the same reader."""
+    tree = client.get("/api/documents/tree").json()
+    return tree["attention_total"], sorted(i for i, d in tree["documents"].items() if d["attention"])
+
+
+@pytest.mark.parametrize("kind", ["openai", "claude"])
+def test_attention_count_is_the_documents_tree_number_with_its_rule(tool_client: Factory, kind: str) -> None:
+    client, recorder = tool_client(kind)
+    data = ask(client, "Сколько документов требуют внимания?")
+    total, _ = tree_attention(client)
+    assert fact_values(data) == [total] == [len(attention_oracle(GUEST))] == [4]
+    fact = data["system_facts"][0]
+    assert fact["effective_filters"] == {"needs_attention": True} and data["confidence"] == "supported"
+    assert "то же правило, что в разделе «Документы»" in fact["definition"]
+    assert "то же правило, что в разделе «Документы»" in data["answer"]  # the answer explains the term
+    assert "не определ" not in data["answer"]
+    assert '"needs_attention": true' in recorder.calls[0][0]  # the model is told the filter exists
+
+
+def test_total_and_attention_in_one_question(tool_client: Factory) -> None:
+    client, _ = tool_client("claude")
+    data = ask(client, "Сколько документов в базе и сколько требуют внимания?")
+    total, _ = tree_attention(client)
+    assert fact_values(data) == [len(oracle(GUEST)), total]
+    assert len(data["tool_steps"]) == 2 and {s["round"] for s in data["tool_steps"]} == {1}
+    assert "[F1]" in data["answer"] and "[F2]" in data["answer"]
+
+
+def test_which_documents_need_attention_and_why(tool_client: Factory) -> None:
+    client, _ = tool_client(user=OWNER)
+    data = ask(client, "Какие документы требуют внимания и почему?")
+    _, flagged = tree_attention(client)
+    fact = data["system_facts"][0]
+    assert [i["id"] for i in fact["items"]] == flagged == sorted(attention_oracle(OWNER))
+    assert all(i["id"] in data["answer"] for i in fact["items"])
+    assert "draft, owner_missing" in data["answer"]  # M57-GDE-002: the reasons the tool returned
+    assert any("требует внимания: черновик, без владельца" in (i["detail"] or "") for i in fact["items"])
+
+
+def test_attention_on_the_demo_base_is_twelve_like_the_tree(
+    tool_client: Factory, full_workspace: Path
+) -> None:
+    client, _ = tool_client("openai", local_knowledge_dir=full_workspace)
+    data = ask(client, "Сколько документов требуют внимания?")
+    total, _ = tree_attention(client)
+    assert fact_values(data) == [total] == [12]  # «today» pinned to TEST_TODAY (tests/conftest.py)
 
 
 # --- F09 / F10: content questions keep the verified-citation pipeline ------------------------------------------------

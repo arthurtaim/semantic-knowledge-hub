@@ -107,6 +107,10 @@ export function filterParts(fact: SystemFact): string[] {
       case "owner_missing":
         parts.push(value === false ? "владелец назначен" : "владелец не назначен");
         break;
+      case "needs_attention":
+        // The same rule as «Требуют внимания» of «Документы»; the fact's definition states it in full.
+        parts.push(value === false ? "не требуют внимания" : "требуют внимания");
+        break;
       case "tags":
         if (list.length > 0) parts.push(`${list.length === 1 ? "тег" : "теги"}: ${list.join(", ")}`);
         break;
@@ -153,6 +157,16 @@ export function filterParts(fact: SystemFact): string[] {
   }
   return parts;
 }
+
+/** Why a document needs attention (`catalog_query` with `needs_attention`; the documents tree's rule). */
+export const ATTENTION_REASON_LABEL: Record<string, string> = {
+  in_review: "на ревью",
+  draft: "черновик",
+  deprecated: "устарел",
+  review_stale: "проверка устарела",
+  never_reviewed: "не проверялся",
+  owner_missing: "без владельца",
+};
 
 /** «Фильтр: статус: утверждён · тег: aris», or the whole visible catalog; null when the filters say nothing. */
 export function filtersText(fact: SystemFact): string | null {

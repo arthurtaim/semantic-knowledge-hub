@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import Literal
 
 from app.domain.models import DocStatus, DocType, DocumentRecord, RelationType, ReviewState
 
@@ -60,9 +61,32 @@ SECTION_LABELS: dict[str, str] = {
 
 SYSTEM_TAG_PREFIX = "sys-"
 TEMPLATE_TAGS = frozenset({"template", "шаблон"})
-# Statuses that always need attention; an approved document needs it only when its review or owner does.
-ATTENTION_STATUSES = frozenset({DocStatus.in_review, DocStatus.draft, DocStatus.deprecated})
-ATTENTION_REVIEW_STATES: frozenset[ReviewState] = frozenset({"stale", "never_reviewed"})
+# «Требуют внимания» — ONE rule for the tree, the overview, the table and the assistant's `catalog_query`
+# (`needs_attention` filter, M5.7): statuses that always need attention; an approved document needs it only when its
+# review or owner does. `attention_reasons` is the rule; `needs_attention` is «at least one reason».
+AttentionReason = Literal[
+    "in_review", "draft", "deprecated", "review_stale", "never_reviewed", "owner_missing"
+]
+_STATUS_REASONS: dict[DocStatus, AttentionReason] = {
+    DocStatus.in_review: "in_review",
+    DocStatus.draft: "draft",
+    DocStatus.deprecated: "deprecated",
+}
+_REVIEW_REASONS: dict[ReviewState, AttentionReason] = {
+    "stale": "review_stale",
+    "never_reviewed": "never_reviewed",
+}
+ATTENTION_STATUSES = frozenset(_STATUS_REASONS)
+ATTENTION_REVIEW_STATES: frozenset[ReviewState] = frozenset(_REVIEW_REASONS)
+# The reasons in words (the UI's own labels: «На ревью», «Черновик», «Устарел», «Проверка устарела», …).
+ATTENTION_REASON_LABELS: dict[AttentionReason, str] = {
+    "in_review": "на ревью",
+    "draft": "черновик",
+    "deprecated": "устарел",
+    "review_stale": "проверка устарела",
+    "never_reviewed": "не проверялся",
+    "owner_missing": "без владельца",
+}
 
 # Group keys that are not systems start with «_»; a system key never does (see `system_key`).
 COMMON_GROUP = "_common"
@@ -210,9 +234,34 @@ def resolve_group(
     return None
 
 
+def attention_reasons(
+    status: DocStatus, review_state: ReviewState, owner_missing: bool
+) -> tuple[AttentionReason, ...]:
+    """Why a document needs attention (empty: it does not): in review, draft or deprecated; a review that is stale
+    or never happened (`review_state`, computed for today by `KnowledgeService.review_state`); no owner."""
+    reasons: list[AttentionReason] = []
+    if (by_status := _STATUS_REASONS.get(status)) is not None:
+        reasons.append(by_status)
+    if (by_review := _REVIEW_REASONS.get(review_state)) is not None:
+        reasons.append(by_review)
+    if owner_missing:
+        reasons.append("owner_missing")
+    return tuple(reasons)
+
+
 def needs_attention(status: DocStatus, review_state: ReviewState, owner_missing: bool) -> bool:
     """In review, draft or deprecated; or a review that is stale / never happened; or no owner."""
-    return status in ATTENTION_STATUSES or review_state in ATTENTION_REVIEW_STATES or owner_missing
+    return bool(attention_reasons(status, review_state, owner_missing))
+
+
+def attention_rule_text(stale_days: int) -> str:
+    """The rule in words (Russian), for the assistant's fact definition and its tool description."""
+    return (
+        "«Требуют внимания» — то же правило, что в разделе «Документы» (дерево, «Обзор», «Таблица»): статус «на "
+        "ревью», «черновик» или «устарел»; или проверка устарела (последняя проверка, reviewed_at, старше "
+        f"{stale_days} дней) или не проводилась у утверждённого документа или документа на ревью; или не назначен "
+        "владелец. Достаточно одного условия."
+    )
 
 
 def section_rank(section: str) -> tuple[int, str]:

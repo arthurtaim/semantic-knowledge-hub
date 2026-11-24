@@ -111,6 +111,35 @@ test("F03 «из них» after a filtered question narrows THAT set (tag aris),
   await expect(card).toContainText("Фильтр: статус: утверждён · тег: aris");
 });
 
+/** The UI's own «Требуют внимания» (the documents tree), the independent oracle of the attention count. */
+async function treeAttention(request: APIRequestContext): Promise<number> {
+  const response = await request.get("/api/documents/tree");
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as { attention_total: number };
+  return body.attention_total;
+}
+
+test("F29 «в базе и сколько требуют внимания?» — the documents tree's number and rule, not proxies", async ({ page, request }) => {
+  const problems = watch(page);
+  const total = await catalogTotal(request);
+  const attention = await treeAttention(request);
+  expect(attention).toBeGreaterThan(0);
+  await askFromHome(page, "Сколько документов в базе и сколько требуют внимания?");
+
+  const cards = factsOf(page, 0).getByRole("listitem");
+  await expect(cards.nth(0).locator(".fact__value")).toHaveText(valueText(total));
+  const card = cards.nth(1);
+  await expect(card.locator(".fact__value")).toHaveText(valueText(attention));
+  await expect(card).toContainText("Фильтр: требуют внимания");
+  await expect(card).toContainText("то же правило, что в разделе «Документы»");
+  await expect(card).toContainText("По причинам");
+  const text = page.locator(".answer__text").first();
+  await expect(text).toContainText(String(attention));
+  await expect(text).toContainText("то же правило, что в разделе «Документы»");
+  await expect(text).not.toContainText("не определ");
+  expect(problems).toEqual([]);
+});
+
 test("F14 composite: a registry fact card AND a verified document citation, visibly apart", async ({ page, request }) => {
   const taggedApproved = await catalogTotal(request, { tag: "aris", status: "approved" });
   await askFromHome(page, "Сколько утверждённых документов об ARIS и где пробелы?");

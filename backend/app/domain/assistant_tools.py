@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, model_validator
 
 from app.domain.models import DocStatus, DocType, RelationType
 
@@ -40,6 +40,9 @@ class CatalogFilters(_Args):
     type: list[DocType] | None = Field(default=None, min_length=1, max_length=11)
     owner: str | None = Field(default=None, min_length=1, max_length=120)
     owner_missing: bool | None = None  # owner is `unassigned` (or another "no owner" marker) — never guessed
+    # «Требуют внимания» — exactly the documents tree's rule (app/domain/doc_tree.py `attention_reasons`): in review,
+    # draft or deprecated; or a stale / missing review; or no owner. True: only those; false: only the others.
+    needs_attention: StrictBool | None = None
     tags: list[TagArg] | None = Field(default=None, min_length=1, max_length=5)  # every tag must be present
     text: str | None = Field(default=None, min_length=2, max_length=200)  # full-text match, NOT a system tag
     updated_from: date | None = None  # the document's own `updated_at` (front matter), inclusive
@@ -194,16 +197,22 @@ _RELATIONS = "|".join(r.value for r in RelationType)
 TOOL_DESCRIPTIONS: dict[ToolName, str] = {
     "catalog_query": (
         "Реестр документов SKH (каталог): точные числа, списки и метаданные по документам, ДОСТУПНЫМ пользователю. "
-        "Используй для вопросов «сколько», «какие документы», «у каких нет владельца», «последние обновлённые». "
+        "Используй для вопросов «сколько», «какие документы», «у каких нет владельца», «какие требуют внимания», "
+        "«последние обновлённые». "
         "Считает уникальные канонические ID документов — не версии, не фрагменты поиска, не шаблоны, не вложения, "
         "не страницы Confluence.\n"
         'arguments: {"operation": "count|list|facets|get_metadata", "filters": {"status": ['
-        f'"{_STATUSES}"], "type": ["{_TYPES}"], "owner": "…", "owner_missing": true, "tags": ["…"], '
+        f'"{_STATUSES}"], "type": ["{_TYPES}"], "owner": "…", "owner_missing": true, "needs_attention": true, '
+        '"tags": ["…"], '
         '"text": "полнотекстовое совпадение (не системный тег)", "updated_from": "YYYY-MM-DD", '
         '"updated_to": "YYYY-MM-DD", "template_id": "…", "eligible_for_answers": true}, '
         '"document_ids": ["ID", …≤20], "sort": "updated|title|status|id", "limit": 1-50, "offset": 0}\n'
         "facets — распределение по статусам, типам, владельцам и тегам (узнать допустимые значения фильтров); "
-        "eligible_for_answers=true — только документы, которые ассистент может цитировать в этом запросе."
+        "eligible_for_answers=true — только документы, которые ассистент может цитировать в этом запросе; "
+        "needs_attention=true — «требуют внимания», ровно как в разделе «Документы»: статус in_review, draft или "
+        "deprecated, ИЛИ проверка устарела / не проводилась, ИЛИ нет владельца (одного условия достаточно); list "
+        "даёт причины по каждому документу (attention), facets — сколько документов по каждой причине. Не "
+        "подменяй это другими фильтрами и не говори, что понятие не определено."
     ),
     "knowledge_search": (
         "Содержимое документов: полнотекстовый поиск по разрешённым для ответа документам (search) или чтение "

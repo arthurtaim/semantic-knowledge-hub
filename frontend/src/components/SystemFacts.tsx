@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { AskResponse, DocStatus, SystemFact, SystemFactItem, ToolStepInfo } from "../api/types";
 import { formatWhen, STATUS_LABEL, TEMPLATE_STATUS_LABEL } from "../lib/labels";
 import {
+  ATTENTION_REASON_LABEL,
   CHECK_OUTCOME_LABEL,
   factCardId,
   factSourceTitle,
@@ -164,7 +165,19 @@ function truncatedNote(fact: SystemFact): string | null {
   return `Показаны первые ${fact.items.length} — есть ещё.`;
 }
 
-const BREAKDOWN_TITLE: Record<string, string> = { status: "По статусу", type: "По типу", owner: "По владельцу", tag: "По тегам" };
+const BREAKDOWN_TITLE: Record<string, string> = {
+  status: "По статусу",
+  type: "По типу",
+  owner: "По владельцу",
+  tag: "По тегам",
+  attention: "По причинам",
+};
+
+function breakdownName(key: string, name: string): string {
+  if (key === "status") return (STATUS_LABEL[name as DocStatus] ?? name).toLocaleLowerCase("ru");
+  if (key === "attention") return ATTENTION_REASON_LABEL[name] ?? name;
+  return name;
+}
 
 function Breakdown({ fact }: { fact: SystemFact }) {
   if (!fact.breakdown) return null;
@@ -177,7 +190,7 @@ function Breakdown({ fact }: { fact: SystemFact }) {
           <dt>{BREAKDOWN_TITLE[key] ?? key}</dt>
           <dd>
             {Object.entries(counts)
-              .map(([name, n]) => `${key === "status" ? (STATUS_LABEL[name as DocStatus] ?? name).toLocaleLowerCase("ru") : name} ${n.toLocaleString("ru-RU")}`)
+              .map(([name, n]) => `${breakdownName(key, name)} ${n.toLocaleString("ru-RU")}`)
               .join(" · ")}
           </dd>
         </div>
