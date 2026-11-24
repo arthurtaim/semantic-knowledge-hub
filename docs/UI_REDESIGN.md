@@ -3,7 +3,9 @@
 Task specification for Claude Code (and GigaCode later) to make the interface simpler, more consistent and
 less templated, with a green visual identity. Functionality, Russian copy, accessible names and test
 contracts stay unchanged unless a phase says otherwise. Phases 1–4 are implemented (phase 4, the AI-first entry
-from the 2026 research: §5); the dark colour scheme is deferred (see §3).
+from the 2026 research: §5). **UI v2 (§6) supersedes the visual system of §2–§3**: new tokens with a dark theme,
+Inter, a sidebar shell, the assistant as the main screen, the document and catalog layouts and the knowledge map.
+§1–§5 stay as the record of what came before.
 
 ## 1. Audit of the previous UI (2026-11-23)
 
@@ -266,3 +268,247 @@ separate labelled step.
   gitlab-mock + gitlab-mock-mobile 10 passed.
 - Screenshots of every route at 1440×900 and 390×844 in `mock` and `disabled`, before and after, kept outside
   the repository.
+
+## 6. UI v2 — the new interface (phases A–F, 2026-11-24)
+
+Task: `docs/ui-v2/TASK.md`; specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
+`04_KNOWLEDGE_GRAPH.md`; mockups `docs/ui-v2/screens/design/`. Branch `feature/ui-v2-workspace`. Routes, existing API
+contracts and the AI rules (`02_ASSISTANT.md` §6) are unchanged; the only new endpoints are those of `02_ASSISTANT.md`
+§5. New dependencies: `@fontsource/inter` (frontend); `pypdf`, `python-docx`, `openpyxl` (backend, attachments).
+Paths below without a prefix are under `frontend/src/`; `public/` and `e2e/` are under `frontend/`.
+
+### 6.1 What changed, by phase
+
+| Phase | What | Commits |
+|---|---|---|
+| A. Visual system | Colour tokens for light and dark in one block of `styles/app.css` (`tokens.test.ts`: no colour literal outside it, the two dark blocks identical, WCAG pairs); theme «Как в системе» / light / dark in the user menu (`lib/theme.ts`), applied before first paint by `public/theme-init.js`; Inter as the one typeface (Golos Text and PT Serif removed; JetBrains Mono only for Markdown source, diffs, code); `components/ui`: `Icon` (inline SVG from `design-source/`), `Button` / `IconButton`, `SegmentedControl`, `Chip`, `StatusMark`, `Popover` / `Menu` (APG keyboard), `Tooltip`; every existing screen moved onto the tokens | 4c37f92, a983929, 2125321, d4f2e2d |
+| B. Shell | Left sidebar (logo and workspace, «Поиск ⌘K», Ассистент, Ревью, groups Знания / Работа / Система, user), icon rail (⌘\\), drawer below 960 px; the 52 px page toolbar with the path or title, page actions, the «Демо» badge and the AI-mode chip (`components/shell/*`, `lib/routes.ts`) | 3d2f9cb, 54cb82d, b74493b, 9422c9d, 353bf56 |
+| C. Assistant | Backend: skills registry over the M5.6.3 scenarios, conversation attachments (md, txt, csv, json, yaml, sql, pdf, docx, xlsx; text only; per-dialog; TTL), new `ask` fields and the `attachment` citation (API v0.4, `docs/API_CONTRACTS.md`). Frontend: `Composer` (files by button / drag / paste, skills by button and «/», documents by button and «@», «Где искать», AI-mode label), the home page as the assistant screen, `/ask` as a dialog (markers in the text, citation card, one «Источники» block in three groups, excluded documents folded, pinned field), the ⌘K palette as `QuickFind` | 85d40d4, d7aff6b, 6546d1a, 5bd9f84, e2ee2d0, 2b21bfd, 78fa6ee, a2fb106, 4ce9cef, dbd51e9, 51e4f98, 66f23d0, e6208bf |
+| D. Document, catalog, other pages | Document: status line, 30/36 title, properties grid, segments Текст / Связи / История / Markdown, «Сведения» panel, assistant panel (⌘J) with context chips, quick actions and the compact field, floating bar over a selection (Alt+F10). Catalog: table with groups and counts, filter chips and «+ Фильтр», Список / Таблица / Карта, phone card rows and a filter sheet. Templates, import, create, proposals, publication, corporate page, integrations and 404 in the toolbar / content / right-panel pattern | e8b707f, 325da89, 80b5d31, 915dfc6, 5be8e16, 3ac55e7, fa96c5b, 59d26bf |
+| E. Knowledge map | Deterministic layout without overlaps (rings around a centre, unlinked nodes on an outer ring), type colours and shapes, label placement by priority, highlight of a node's neighbourhood, legend, node dragging with manual positions per view (`sessionStorage`), «Сбросить расположение», Alt+arrows (`docs/KNOWLEDGE_GRAPH.md`) | 6147ce9, cb7a152, bef9602, 45a0106, 5f3152d, 5c1e783 |
+| F. Polish | Dark theme pass, phone 360 / 390 px, WCAG 2.2 AA audit and fixes, dead styles and exports removed, flaky tests made robust, this section (§6.4) | §6.7 |
+
+### 6.2 Checklist — `TASK.md` §2 and the specs
+
+Status: **сделано**, **частично** (what is missing is said), **нет**.
+
+| Item | Status | Where |
+|---|---|---|
+| A · tokens as CSS custom properties, light and dark, theme from the system or chosen | сделано | `styles/app.css` (token block), `lib/theme.ts`, `public/theme-init.js`, sidebar user menu «Тема» |
+| A · Inter only (`@fontsource/inter`), Golos and PT Serif removed | сделано | `package.json`, `styles/fonts.css` |
+| A · `Icon` from `design-source/` (inline SVG, no library) | сделано | `components/ui/Icon.tsx` |
+| A · Button (primary / secondary / quiet / icon), SegmentedControl, Chip, StatusMark, Popover / Menu, Tooltip | сделано | `components/ui/*`; since phase F the map and the create page use `SegmentedControl` too (one segmented style) |
+| A · no hex outside the tokens | сделано | `tokens.test.ts` («uses no colour literal outside the token definitions») |
+| 01 · CiteMarker, SourceBadge | частично | markers are `CitationMarker` / `.cite-pill` (`AnswerParts.tsx`); the source is a group heading and a meta line, not a separate badge component |
+| 01 · type scale, radii, 4 px grid, shadows only on floating layers and the field, focus ring, motion 120–180 ms, reduced motion | сделано | token block; `@media (prefers-reduced-motion: reduce)` turns animations and transitions off |
+| 01 · contrast: text 4.5:1, field boundaries and marks 3:1 | сделано | `tokens.test.ts`: 81 pairs per theme (deviations §6.5) |
+| B · sidebar: logo and workspace, «Поиск Ctrl K», Ассистент, Ревью, Знания (Документы, Карта знаний, Шаблоны), Работа (Предложения, Публикации), Система (Интеграции), user | сделано | `components/shell/Sidebar.tsx`, `lib/routes.ts` |
+| B · collapse to icons; below 960 px a slide-over with Esc, focus return, scrim | сделано | `Layout.tsx`, `Sidebar.tsx`; `a11y.test.tsx` |
+| B · 52 px toolbar: path or title, actions on the right (≤ 1 primary), demo badge, AI-mode chip | сделано | `components/shell/PageToolbar.tsx`; phase F: the path shortens and never runs under the badges |
+| B · counts: Документы, Ревью (green badge), Предложения | частично | numbers from the API only; «Ревью» counts «Готово к ревью» (no reviewer assignment in the API) |
+| C · home = assistant: title, one line, field ≤ 760 px, four quick skills, «Недавние диалоги», «Ждёт вашего решения»; `disabled`: «Что нужно найти?», search, no skills | сделано | `pages/HomePage.tsx` |
+| C · `/ask` dialog: toolbar «Ассистент / вопрос», demo badge, «Новый диалог»; user bubble with chips; support level; markers and card; one main action, «Открыть документ», «Копировать с источниками»; «Источники» in three groups with the attachment caption; excluded documents folded; no duplicated quotes; pinned field; chips kept after sending | сделано | `pages/AskPage.tsx`, `components/AssistantTurn.tsx`, `AnswerParts.tsx`, `AnswerSources.tsx`, `lib/useComposer.ts` |
+| C · unconfirmed claims underlined in amber | частично | the API does not mark claims: an amber line lists the terms the server reports as unconfirmed |
+| C · states: stream stages, «Недостаточно данных», error with retry, conflict | сделано | `components/AssistantTurn.tsx`, `lib/useAssistantTurns.ts` |
+| C · `Composer`: chips with «убрать», Backspace, placeholder, Enter / Shift+Enter, up to 8 lines, files (button, drag, paste) with states, skills («/»), documents («@»), «Где искать», AI label, 34 px send disabled while reading or empty | сделано | `components/Composer.tsx`, `ComposerPalette.tsx`, `lib/useComposer.ts`, `composer.test.tsx` |
+| C · attachment limits (10 per dialog, 20 MB, formats, text only, per dialog, expiry, delete) | сделано | `backend/app/services/attachments.py`, `backend/app/api/assistant.py` |
+| C · skills from the backend registry over `AiProposalKind`; «создаёт черновик» never applies anything | сделано | `backend/app/domain/skills.py`, `services/skills.py`; `useSkills.ts` |
+| C · modes: everything in `internal_api` / `claude_cli`; `mock` disables skills without a deterministic implementation with a reason; `disabled` = search field | сделано | `aiModes.test.tsx`, e2e `assistant.spec.ts` |
+| C · API: `GET /api/assistant/skills`, attachments POST / DELETE, new `ask` fields, `attachment` citations; pytest per endpoint | сделано | `backend/app/api/assistant.py`, `backend/tests/` |
+| D · document toolbar: path, «Предложить изменение», «Ассистент» (pressed tone), «Ещё» | сделано | `pages/DocumentPage.tsx` |
+| D · status line, 30/36 title, properties grid (Владелец, Раздел, Проверен, Источник, Ревизия, Связи); passport removed, all its fields kept | сделано | `DocumentPage.tsx`, `components/DocumentDetails.tsx` («Все сведения») |
+| D · segments Текст / Связи / История / Markdown; text Inter 16/27 ≤ 700 px; repeated H1 hidden | сделано | `DocumentPage.tsx`, `.prose` |
+| D · floating bar over a selection (Объяснить / Найти связанные / Предложить правку), keyboard selection, Esc | сделано | `components/SelectionToolbar.tsx` (Alt+F10) |
+| D · assistant panel 360–380 px (⌘J): context chips, quick actions, short conversation, compact field; closed by default, remembered; a sheet below 1200 px | сделано | `components/DocumentAssistant.tsx`, `components/shell/SidePanel.tsx` |
+| D · publication, AI proposals block, links and WikiLinks kept | сделано | `DocumentPublication.tsx`, `AiProposal.tsx`, `DocumentLinks.tsx` |
+| D · catalog toolbar: «Документы 83», Список / Таблица / Карта, «Найти в списке», «Создать документ» | сделано | `pages/ExplorerPage.tsx` |
+| D · filter chips, «+ Фильтр», «Группировка», «Вид» | частично | «Вид» holds only the sort (nothing else to set) |
+| D · table: Название + ID, Статус, Владелец, Обновлён, Связи; 42 px rows, 36 px group rows with counts; whole row clickable; the view remembered | частично | no «Связи» column (the list API has no per-document link count); `components/CatalogTable.tsx` |
+| D · catalog on a phone: card rows, filters in a sheet | сделано | `CatalogTable.tsx` (`cards`), `ExplorerPage.tsx` |
+| D · other pages in the new system without logic changes | сделано | `pages/*` |
+| E · canvas, node colours and shapes, status styles, labels with halo and priority, edges and arrows, highlight, legend, controls | сделано | `components/GraphCanvas.tsx`, `GraphDetails.tsx`, `pages/GraphPage.tsx`, `lib/graph.ts` |
+| E · dragging (threshold, capture, rAF, click vs drag, no relayout, pan, wheel zoom), overrides, `sessionStorage`, pinned relayout, «Сбросить расположение», Alt+arrows with an announcement | сделано | `GraphCanvas.tsx`, `lib/graphPositions.ts`; `graphCanvas.test.tsx`, e2e `graph.spec.ts` |
+| E · layout: no overlaps on the demo graph, isolated ring, local rings, answer graph around the question, 200 nodes ≤ 300 ms | сделано | `lib/graph.ts`; `graphLayout.test.ts` (CPU time since phase F) |
+| F · dark theme on all screens | сделано | §6.4 |
+| F · phone 390 px (and 360 px); 03 §6: sidebar behind «Меню», field full width, lists and tables one column, right panels as bottom sheets, no horizontal scroll at 360 px | сделано | §6.4; e2e `polish.spec.ts` F-01 |
+| F · WCAG 2.2 AA | сделано (manual audit, no axe) | §6.4; `a11y.test.tsx`, `tokens.test.ts`, e2e `polish.spec.ts` |
+| F · dead styles removed | сделано | §6.4 |
+| F · this section with checklist and deviations | сделано | here |
+| 02 §6 · AI rules (evidence first, quotes with a source, categories not percent, sources never mixed, nothing applied by AI, full app with `disabled`, «ИИ» / «Демо» labels) | сделано | `answer.test.tsx`, `aiModes.test.tsx`, `m563.test.tsx`, e2e |
+
+### 6.3 Keyboard
+
+| Keys | Where | Does |
+|---|---|---|
+| ⌘K / Ctrl+K, «/» outside a text field | everywhere | the «Спросить или найти» palette (`QuickFind`); Tab switches question / search while the list is open, ↑↓ choose, Enter, Esc |
+| ⌘\\ / Ctrl+\\ | wide screens | collapse the sidebar to icons and back (remembered) |
+| Esc | drawer, panels, menus, popovers, palette | close and return focus to the control that opened it |
+| Enter / Shift+Enter | assistant field | send / new line |
+| «/» at the start of the line, «@» | assistant field | skills list / document search; ↑↓, Enter chooses, Esc closes |
+| Backspace in an empty field | assistant field | removes the last chip |
+| ⌘J / Ctrl+J (any layout) | document page | open / close the assistant panel |
+| Alt+F10 | document text with a selection | focus into the floating bar; arrows move inside it, Esc closes |
+| ←→ / Home / End | segments, document and diff tabs, toolbars | move the choice (roving tabindex); ↑↓ / Home / End / a letter in menus (APG) |
+| Tab, Enter / Space | knowledge map | reach and select a node |
+| Alt+arrows (Shift: 40 px) | knowledge map, selected node | move the node by 10 px — the alternative to dragging (WCAG 2.5.7); «Узел перемещён» is announced |
+| arrows; +, −, 0; Esc | knowledge map (canvas focused) | pan; zoom in, out, fit (also the buttons); clear the selection |
+
+### 6.4 Phase F — audit and fixes
+
+**How it was checked.** Screenshots of all 17 routes of `App.tsx` × `mock` / `disabled` × light / dark × 1440 / 390
+px, plus 27 interactive states in dark at 1440 px and 11 at 390 px (palette, skill and document lists, «Где искать»,
+citation card, excluded sources, demo and AI popovers, catalog filter / view menus, list view, «Ещё», «Сведения»,
+assistant panel, selection bar, «Связи» / «История» / «Markdown», map hover, proposal diff, editor, AI create,
+rail, disabled search, import preview, drawer). Playwright scripts outside the repository measured, at 360 and 390
+px on 21 routes and 8 states, every element sticking out of the viewport and every box scrolling sideways; and, on
+19 routes × both stacks × 1440 / 390 px, the number of H1s, `main` and named `nav` landmarks, duplicate ids, ARIA id
+references, positive `tabindex`, unnamed controls (from the ARIA snapshot), targets under 24 × 24 px that are not
+inline in text or spaced (2.5.8), and while tabbing 50–70 stops: a visible focus indicator and whether the focused
+element is the top-most one at its centre (2.4.11). No new dependency (no axe); the lasting checks are unit and
+e2e tests (below).
+
+**Dark theme.** All screens were legible and on tokens; fixed:
+- the chosen segment (segmented control, tabs, Список / Таблица, palette modes, wizard step) was darker than its
+  track and read as pressed in — new `--bg-raised` (white in light, `#2E3531` in dark);
+- the selection bar, tooltips and the map hint used `--bg-inverse` and turned light — new `--bg-floating-bar`,
+  `--text-floating-bar`, `--line-floating-bar` keep them dark, framed in the dark theme;
+- the native «Выберите файл» button stayed light grey — styled as a secondary button;
+- the «Как в системе» token block had three diff tokens twice;
+- 22 more pairs in `tokens.test.ts` (both themes): the new tokens, text on diffs, statuses and accent on a hovered
+  row, accent text on the panel surfaces, secondary text on the accent wash.
+
+**Phone (390 and 360 px).** Fixed:
+- the toolbar path ran under the «Демо» badge at 600–960 px (and could leave «A.» at 360): crumbs before the current
+  page shorten first, the path is clipped at its own edge, a container query shows only the current page when the
+  room left by the actions is under 26 rem, labelled toolbar actions keep only their icon below 760 px, the AI chip
+  shows «ИИ» on a phone (the mode stays in its accessible name);
+- `/proposals` scrolled sideways inside its own box: card rows below 720 px (as the catalog);
+- the import preview's field table scrolled sideways: a definition list below 720 px.
+A document's own Markdown tables and code blocks may scroll inside their frame (the page never does); such a block
+is a tab stop so it scrolls with the keyboard. The older smoke check read `documentElement.scrollWidth`, which
+`body { overflow-x: hidden }` always keeps at the window width — e2e `polish.spec.ts` F-01 measures elements instead.
+
+**Accessibility (WCAG 2.2 AA).** Every route has one H1 (some visually hidden, the document's Markdown H1 is
+`display: none`), one `main`, named `nav` landmarks, no duplicate ids, no positive `tabindex`, no unnamed control.
+Menus, popovers, tabs and segments follow the APG patterns of phase A (`ui.test.tsx`, `a11y.test.tsx`). Live
+regions report async results (answer stages, search and palette results, saves, map moves). Fixed:
+- 2.4.7 — the skip link was hidden under the sticky sidebar and toolbar when focused (z-index);
+- 2.4.11 — on `/ask` focus moving back from the pinned field could land under it: `usePinnedBottom` publishes the
+  field's height and `html { scroll-padding-bottom }` keeps focused controls above it (the toolbar already had
+  `scroll-padding-top`);
+- 2.5.8 — source titles, «Показать» (excluded documents) and the map's «why linked» node names were 20 px tall;
+  a map node's ring is now its hit area;
+- 4.1.2 — «Создать с ИИ» on a template pointed `aria-controls` at a panel rendered only when open;
+- 1.4.3 — tertiary text on the selected template-history row was 4.23:1;
+- 2.1.1 — wide document tables and code blocks are keyboard-scrollable.
+Kept as they are: map nodes can be smaller than 24 px at the fit zoom — «Списком» on the same page is the
+full-size equivalent (2.5.8 exception) and the zoom enlarges them; the «Показать» link-button sits in a sentence.
+Reduced motion turns animations and transitions off (the spec allows fades; off is stricter). What the scripts
+still flag was checked by hand and is not a defect: a segment's radio is visually hidden and its visible label
+draws the focus ring; a map node's focus ring is drawn on its ring circle; document Markdown tables and code
+blocks scroll in their own frame as tab stops.
+
+**Dead code.** A script listed class selectors of `app.css` that no string or template literal in
+`src/**/*.ts(x)` contains (templates such as `stamp--${status}` counted by their static prefix, each dynamic family
+checked against its TypeScript union): 12 dead classes — `.citation__head` / `__meta` / `__excerpt` (old ask
+page), `.home__create`, `.home__actions`, `.search-box(--compact)`, `.index-list`, `.scope-status`, `.flag--block`,
+`.button--ask` (no such `Button` variant), `.graph-node--status-neutral` (never returned by
+`nodeStatusClass`). A browser pass recorded which selectors match on all routes and states above (mock and
+disabled, 1440 and 390 px); combinations that never matched were reviewed by hand
+(most belong to states that need data, e.g. AI proposals, publication jobs, conflicts): `.result__title a` (the
+title is the link) and `.proposals .page-head .button` (the action moved to the toolbar) were dead, and the 520 px
+block repeated the base `h1` size. In all 27 selectors, 79 lines. `.popover--top` / `--start` are built by
+`placementClass()` and `.md-image-placeholder` by the backend Markdown renderer — kept. Unused exports removed: `ORIGIN_ORDER`, `PROPOSAL_NEEDS_ACTION`, `isExternal`,
+`insertAt`, `forgetDraft`, `clearWikiLinkPreviewCache` and the phase-4 wrappers `readRecentQuestions` /
+`rememberQuestion` (tests now use the dialog API). `SegmentedControl` had no CSS and no users while the map and
+the create page hand-wrote `.segmented`: it now renders that markup and both use it.
+
+**Flaky tests.** Reproduced with 20 busy loops on 10 cores while the whole suite ran: «saves with POST, switches the
+URL to the draft…» read the URL right after «Черновик сохранён» appeared, but React Router applies `navigate()` in a
+transition — the test now waits for the URL (which must still switch). Waits for the debounced live check get the
+editor's `CHECK_DELAY_MS` on top of the default 1 s. The 200-node layout budget (300 ms) is measured as the layout's
+own CPU time (`process.threadCpuUsage`, else `process.cpuUsage`) instead of wall time scaled by a lagging load
+average. Under the same load the suite then passed four times in a row, and five times in a row idle.
+
+### 6.5 Deviations from the mockups and specs (each checked in the code)
+
+Visual
+- Field boundaries are darker than in the mockup: `--line-field` `#808A83` is 3.57:1 on white (3.14:1 on the
+  sidebar) instead of the mockup's `#D7DCD8` 1.39:1 — WCAG 1.4.11. Decorative frames keep `--line-strong`.
+- Tertiary text `#646D67` instead of `#6B746E` (4.24:1 on the sidebar) → 4.70:1.
+- Dark values that the spec does not give are ours, tuned for contrast: the status marks and texts, `--danger`
+  and `--danger-border`, badge, cite and graph colours, `--bg-raised` and the floating bar.
+- The theme is applied before the first paint by `public/theme-init.js`: the production CSP blocks inline scripts.
+- The selection bar, tooltips and the map hint are dark in both themes (the spec describes the light theme only).
+
+Shell
+- The AI-mode chip stays in the page toolbar (design-04 shows it in the assistant panel; the panel also names the
+  mode). On a phone it reads «ИИ».
+- The collapse button sits next to the logo (⌘\\).
+- With AI disabled the first item is «Главная» (there is no assistant).
+- «Ревью» opens `/proposals?status=ready_for_review` and its badge counts that status: the API has no reviewer
+  assignment («на мне»).
+- «Публикации» opens the Confluence publisher row of the integrations page: there is no publications list page.
+- «Предложения» shows the total from the API (the mockup shows a "needs action" number).
+- Labelled toolbar actions keep only their icon below 760 px; the path shows only the current page when the
+  toolbar is narrow.
+
+Assistant
+- Demo answers have no prose of their own: the quotes appear only in «Источники» (no duplication).
+- No amber underline of sentences — the API does not mark claims; an amber line lists the terms the server reports
+  as unconfirmed.
+- The citation card highlights the question's words inside the quote (the API returns only the excerpt).
+- Corporate markers are К1, К2…; attachment markers Ф1….
+- The main action is «Предложить правку» with the target document named under it.
+- The «Где искать» menu also holds the phase-4 options for drafts and deprecated documents.
+- The drop overlay shows only the number of files (browsers do not expose sizes during a drag).
+- The skill list has no letter badges and no «Все навыки» (there is no such page).
+- On phones the field's tools and «Новый диалог» are icons only and the AI label is hidden.
+- «Ждёт вашего решения» says «Готово к ревью», not «На ревью у вас».
+- Backend: multipart is parsed with the standard library (`python-multipart` is not an allowed dependency);
+  `improve_section` is unavailable in `mock`; extra limits — 100 ready files per user, `ATTACHMENTS_TTL_HOURS` = 24;
+  an answer cited only from attachments is capped at «Частично подтверждено».
+
+Document and catalog
+- No «Связи» column in the catalog: the list API has no per-document link count.
+- «Вид» holds only the sort.
+- Group counts are per loaded page (≤ 100 rows).
+- The revision is shown short, `sha256:02b52b3c`.
+- Default view: table when browsing, list for a search, then the remembered choice.
+- The «ИИ-помощник по документу» block stays under the text (spec §3 keeps the AI proposals block).
+- «Предложить правку» in `mock` opens the manual editor; «Объяснить раздел» without a selection explains the
+  document.
+- Proposals and the import preview become card rows / a field list on phones (the spec names only the catalog).
+
+Map
+- The mode segments are in the map's own bar, not in the 52 px toolbar.
+- The relation chip is «Связь: все» (relation type), not «Связи: подтверждённые»: an origin filter would be a new
+  filter, which the spec forbids; confirmed vs unconfirmed is shown by line style and the legend.
+- Node shapes unchanged (as the spec says); the answer graph's radial rings add some edge crossings.
+
+### 6.6 Open questions for the owner
+
+1. Allow `python-multipart` instead of the standard-library parser?
+2. «Ревью»: which source — a reviewer assignment in the API, or keep «Готово к ревью»?
+3. «Предложения» count: total, or proposals that need an action (which statuses)?
+4. «Проверить актуальность» is built on `impact_analysis`: is the wording right?
+5. `improve_section` stays off in `mock` (no language model): agreed?
+6. «Найти связи» needs a document or a question; the skills registry cannot express «one of»: extend it?
+7. A per-document link count in the list API (for the catalog's «Связи» column)?
+8. Should a recent dialog restore its skill and files, not only the question?
+9. Should the document's «Сведения» panel be remembered like the assistant panel?
+
+### 6.7 Phase F acceptance
+
+Commits: 9352726 toolbar path; b8f32d1 proposals cards; 8355c76 import fields list; 9a8796e skip link, targets,
+`aria-controls`; e272e0f pinned field and keyboard-scrollable blocks; 73bb023 dark tokens; 42bc422 one segmented
+control; b133ea7 flaky tests; d72c774 unused exports; ba0b471 e2e `polish.spec.ts`; acecbec dead CSS; and this
+section.
+
+- `npx tsc --noEmit -p tsconfig.json`, `npx eslint .` clean. `npx vitest run`: 341 tests before phase F →
+  346 after (29 files; new: proposal cards, import preview at two widths, keyboard-scrollable blocks,
+  `usePinnedBottom`); five consecutive runs: 346 passed each (4.7–4.8 s).
+- `npx playwright test` (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 51 passed,
+  1 skipped before → 55 passed, 1 skipped after (`polish.spec.ts` F-01…F-04).
+- Screenshots of every route × `mock` / `disabled` × light / dark × 1440 / 390 px and 360 px, and the interactive
+  states in dark (1440 and 390 px) and light, before and after — kept outside the repository.
