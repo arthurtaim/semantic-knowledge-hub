@@ -475,7 +475,9 @@ def test_answer_cites_the_attachment_as_a_separate_source(map_client: TestClient
     assert cited["attachment_id"] == attachment["id"] and cited["attachment_name"] == "fields.csv"
     assert cited["locator"] == "строка 1" and cited["excerpt"].startswith("region_code;region_name")
     assert cited["app_path"] is None and cited["status"] is None and cited["document_id"] == attachment["id"]
-    assert "Вложения этого диалога" in answer["answer"] and answer["answer"].startswith("Без языковой модели:")
+    assert "Вложения этого диалога" in answer["answer"] and answer["answer"].startswith(
+        "Без языковой модели:"
+    )
 
 
 def test_compare_with_file_skill_quotes_the_header_and_the_knowledge_base(map_client: TestClient) -> None:
