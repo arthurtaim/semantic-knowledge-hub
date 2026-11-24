@@ -421,3 +421,6 @@ Additive only; every v0.4 field and behaviour is unchanged. Design, semantics an
 - Which answers use tools: a plain question (or `skill_id: "answer"`) with a provider that supports the loop
   (`internal_api`, `claude_cli`) and `AI_TOOLS_ENABLED=true`. `mock`, explicit skills and `AI_TOOLS_ENABLED=false`
   behave exactly as v0.4 (empty `system_facts` / `tool_steps`).
+- Client (UI v2, `frontend/src/api/client.ts`): passes `status.round`, `tool_call` and `tool_result` to the caller; a
+  malformed tool event is skipped like an unknown event (it only feeds a progress line). A follow-up echoes the
+  previous answer's `conversation_context` as `history[i].context`.

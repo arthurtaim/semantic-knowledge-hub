@@ -137,6 +137,23 @@ dropping IDs the reader can no longer see**, and every tool call re-checks acces
 step}`; `status: generating` carries `round` (each round starts a new preliminary text). Unknown events were already
 skipped by the client.
 
+## UI (UI v2, minimal changes — `docs/UI_REDESIGN.md` §6.10)
+
+- `system_facts` → the block «Данные системы SKH» under the answer text, apart from «Источники»: per fact «По данным
+  реестра SKH — {label}», the value and unit from the observation (not from the text), the effective filters in words
+  (a text match is named as such), the definition, items as links (`app_path`), «Показаны первые N из M» when
+  `truncated`, scope · generation · time. `[F1]` → an outlined marker «С1» (citations stay 1 / К1 / Ф1); it leads to
+  its row, or — for a `drafts_propose` fact — to the existing proposal card (Accept/Reject unchanged).
+- `general_knowledge` → a quiet tag «Общие знания, не данные SKH».
+- Failed steps: `unavailable` / `timeout` / `denied` / `not_found` / `error` are shown with their server message and
+  their own wording; an unconfirmed answer of the tool loop says «Не удалось проверить данные системы», never «В базе
+  знаний нет ответа» with near matches; `duplicate_call` is not a failure (the server leaves it out of its texts too).
+- Follow-ups send `history[i].context = conversation_context` (≤ 5). The stream client passes `round`, `tool_call`,
+  `tool_result`; each round after the first resets the preliminary text; a `tool_call` shows one progress line.
+- E2E against the scripted double: `frontend/e2e/m57.spec.ts`, selected only when `E2E_SCRIPTED_URL` points at a Vite
+  UI whose backend talks to the double (projects `scripted`, `scripted-mobile`):
+  `E2E_SKIP_GITLAB_STACK=1 E2E_SCRIPTED_URL=http://127.0.0.1:5186 npx playwright test --project=scripted --project=scripted-mobile`.
+
 ## Security
 
 - Identity is the server's (`UserContext` from `get_user`); tool arguments cannot carry a principal. Every tool
