@@ -53,6 +53,8 @@ interface UseAssistantTurnsOptions {
   onStart?: (request: AskRequest, display: TurnDisplay) => void;
   /** A validated answer arrived. */
   onAnswer?: (request: AskRequest, display: TurnDisplay, response: AskResponse) => void;
+  /** The request failed (not when it was cancelled) — e.g. an attached file the server no longer has. */
+  onError?: (request: AskRequest, display: TurnDisplay, error: ApiError) => void;
 }
 
 export interface AssistantTurns {
@@ -71,7 +73,7 @@ export interface AssistantTurns {
   busy: () => boolean;
 }
 
-export function useAssistantTurns({ composer, initial, onStart, onAnswer }: UseAssistantTurnsOptions): AssistantTurns {
+export function useAssistantTurns({ composer, initial, onStart, onAnswer, onError }: UseAssistantTurnsOptions): AssistantTurns {
   const [turns, setTurns] = useState<Turn[]>(() => initial?.() ?? []);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
@@ -126,6 +128,7 @@ export function useAssistantTurns({ composer, initial, onStart, onAnswer }: UseA
       const error = toApiError(err);
       const cancelled = isCancelled(error);
       patchTurn(id, cancelled ? { phase: "cancelled", preliminary: "" } : { phase: "error", error, preliminary: "" });
+      if (!cancelled) onError?.(request, display, error);
       // The question is never lost: put it back unless something else has been typed meanwhile.
       const current = composer.message().question;
       if (request.question && (current === "" || current === request.question)) composer.setText(request.question);

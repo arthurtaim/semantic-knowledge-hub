@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { DocumentSummary, ProposalSummary } from "../api/types";
@@ -13,7 +13,7 @@ import { askHref, QUICK_SKILL_IDS } from "../lib/assistant";
 import { handOff } from "../lib/conversation";
 import { OPERATION_LABEL, pluralRu, TYPE_LABEL } from "../lib/labels";
 import { REVIEW_HREF } from "../lib/routes";
-import { clearRecentQuestions, readRecentDialogs, type RecentDialog } from "../lib/recentQuestions";
+import { clearRecentQuestions, readRecentDialogs, rerunsAtOnce, type RecentDialog } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { useComposer, type ComposerDraft, type ComposerMessage } from "../lib/useComposer";
@@ -32,6 +32,11 @@ export interface HomeHandOff {
   message: ComposerMessage;
 }
 
+/** A recent dialog reopened from the home page: the dialog page restores its field (lib/recentQuestions.ts). */
+export interface RecentHandOff {
+  recent: RecentDialog;
+}
+
 const REVIEW_LIMIT = 3;
 
 function sourcesText(n: number): string {
@@ -40,18 +45,38 @@ function sourcesText(n: number): string {
 
 /** «Ответ по базе, 3 источника» / «Сравнить с файлом, aris_export.csv». */
 function dialogDetail(item: RecentDialog): string {
-  const what = item.skill ?? "Ответ по базе";
+  const what = item.skill?.name ?? "Ответ по базе";
   const detail = item.context ?? (item.sources !== null ? sourcesText(item.sources) : null);
   return detail ? `${what}, ${detail}` : what;
 }
 
-/** The user's recent dialogs (this browser only); a question opens its answer again. */
+/** Where a row points without the hand-off (a new tab): a plain question is asked again, anything else is put back. */
+function recentHref(item: RecentDialog): string {
+  if (rerunsAtOnce(item)) return askHref(item.question);
+  return item.question ? `/ask?${new URLSearchParams({ q: item.question }).toString()}` : "/ask";
+}
+
+/**
+ * The user's recent dialogs (this browser only). Reopening one restores its field on the dialog page — the skill,
+ * the files (grey when the server no longer has them), the chosen documents, in the same dialog; a plain question
+ * opens its answer again. A skill run without a question opens too, with an empty field.
+ */
 function RecentDialogs() {
   const session = useSession();
+  const navigate = useNavigate();
   const userId = session?.user.user_id;
   const [items, setItems] = useState(() => readRecentDialogs(userId));
   useEffect(() => setItems(readRecentDialogs(userId)), [userId]);
   if (items.length === 0) return null;
+
+  function reopen(event: MouseEvent<HTMLAnchorElement>, item: RecentDialog) {
+    // A new tab or window keeps the plain link (the hand-off lives in this tab's memory only).
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    handOff<RecentHandOff>({ recent: item });
+    navigate("/ask");
+  }
+
   return (
     <section className="assistant-home__list" aria-labelledby="recent-dialogs-title">
       <h2 id="recent-dialogs-title">Недавние диалоги</h2>
@@ -60,7 +85,7 @@ function RecentDialogs() {
           const body = (
             <>
               <span className="assistant-home__row-text">
-                <span className="assistant-home__row-title">{item.question || item.skill}</span>
+                <span className="assistant-home__row-title">{item.question || item.skill?.name}</span>
                 <span className="assistant-home__row-meta">{dialogDetail(item)}</span>
               </span>
               {item.at ? (
@@ -71,14 +96,10 @@ function RecentDialogs() {
             </>
           );
           return (
-            <li key={`${index}-${item.question}-${item.skill ?? ""}`}>
-              {item.question ? (
-                <Link to={askHref(item.question)} className="assistant-home__row">
-                  {body}
-                </Link>
-              ) : (
-                <span className="assistant-home__row">{body}</span>
-              )}
+            <li key={`${index}-${item.question}-${item.skill?.name ?? ""}`}>
+              <Link to={recentHref(item)} className="assistant-home__row" onClick={(event) => reopen(event, item)}>
+                {body}
+              </Link>
             </li>
           );
         })}

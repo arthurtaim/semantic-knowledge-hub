@@ -38,6 +38,11 @@ function ReviewFlag({ doc }: { doc: DocumentSummary }) {
   ) : null;
 }
 
+/** «3 связи» / «нет связей» on a card; nothing when the list did not report a count. */
+function linksText(count: number): string {
+  return count === 0 ? "нет связей" : `${count} ${pluralRu(count, "связь", "связи", "связей")}`;
+}
+
 function TitleCell({ doc, singleSource }: { doc: DocumentSummary; singleSource: boolean }) {
   return (
     <>
@@ -54,9 +59,11 @@ function TitleCell({ doc, singleSource }: { doc: DocumentSummary; singleSource: 
 }
 
 /**
- * The catalog table of design-05: Название (+ ID), Статус, Владелец, Обновлён; 42 px rows, 36 px group headers
- * with counts that collapse; the whole row opens the document. «Связи» is not a column: the list API has no
- * per-document link count, and the catalog does not invent one.
+ * The catalog table of design-05: Название (+ ID), Статус, Владелец, Обновлён, Связи; 42 px rows, 36 px group
+ * headers with counts that collapse; the whole row opens the document. «Обновлён» is the document's own date
+ * (`updated_at` in its metadata) — «—» without one, never the time the file was loaded or indexed. «Связи» is the
+ * API's `link_count` — the same number as the document page's «Связи» (linked documents the reader can see); «—»
+ * when it is not reported. A phone card leaves out what is unknown.
  */
 export function CatalogTable({ items, group, singleSource, cards = false }: CatalogTableProps) {
   const groups = groupDocuments(items, group);
@@ -107,7 +114,8 @@ export function CatalogTable({ items, group, singleSource, cards = false }: Cata
                       <StatusMark status={doc.status} />
                       <ReviewFlag doc={doc} />
                       <span className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? "не назначен" : doc.owner}</span>
-                      <When value={doc.updated_at} fallback="не указано" />
+                      {doc.metadata_updated_at ? <When value={doc.metadata_updated_at} /> : null}
+                      {doc.link_count != null ? <span className="catalog-card__links">{linksText(doc.link_count)}</span> : null}
                     </span>
                   </li>
                 ))}
@@ -130,6 +138,7 @@ export function CatalogTable({ items, group, singleSource, cards = false }: Cata
           <col className="catalog-table__col-status" />
           <col className="catalog-table__col-owner" />
           <col className="catalog-table__col-updated" />
+          <col className="catalog-table__col-links" />
         </colgroup>
         <thead>
           <tr>
@@ -137,13 +146,16 @@ export function CatalogTable({ items, group, singleSource, cards = false }: Cata
             <th scope="col">Статус</th>
             <th scope="col">Владелец</th>
             <th scope="col">Обновлён</th>
+            <th scope="col" className="catalog-table__num" title="Связанные документы: ссылки из документа и на него">
+              Связи
+            </th>
           </tr>
         </thead>
         {groups.map((g) => (
           <tbody key={g.key}>
             {grouped ? (
               <tr className="catalog-group">
-                <th scope="rowgroup" colSpan={4}>
+                <th scope="rowgroup" colSpan={5}>
                   {groupToggle(g.key, g.label, g.items.length)}
                 </th>
               </tr>
@@ -162,8 +174,11 @@ export function CatalogTable({ items, group, singleSource, cards = false }: Cata
                       </span>
                     </td>
                     <td className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? "не назначен" : doc.owner}</td>
-                    <td>
-                      <When value={doc.updated_at} fallback="не указано" />
+                    <td className={doc.metadata_updated_at ? undefined : "catalog-row__none"}>
+                      <When value={doc.metadata_updated_at} />
+                    </td>
+                    <td className={doc.link_count ? "catalog-table__num" : "catalog-table__num catalog-row__none"}>
+                      {doc.link_count ?? "—"}
                     </td>
                   </tr>
                 ))}

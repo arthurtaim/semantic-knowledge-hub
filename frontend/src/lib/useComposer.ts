@@ -18,9 +18,13 @@ import { restoreDraft, saveDraft } from "./conversation";
  * keeps the previous message's skill and files as chips after sending.
  */
 
-export type ComposerFileStatus = "reading" | "ready" | "error";
+export type ComposerFileStatus = "reading" | "ready" | "error" | "unavailable";
 
-/** A file chip: «Читаю…» while uploading, then ready (with the server's summary) or an error. */
+/**
+ * A file chip: «Читаю…» while uploading, then ready (with the server's summary) or an error. `unavailable`: a file
+ * of a reopened dialog that expired or was deleted (or the server answered `attachment_not_found`) — a grey chip
+ * that is never sent.
+ */
 export interface ComposerFile {
   key: string;
   name: string;
@@ -132,6 +136,8 @@ export interface ComposerController {
   addFiles: (files: File[]) => void;
   /** Removes a chip; a ready file is deleted on the server, a reading one is cancelled. */
   removeFile: (key: string) => void;
+  /** The server no longer has these attachments: their chips turn «файл больше недоступен» and are not sent. */
+  markUnavailable: (attachmentIds: string[]) => void;
   /** false when the document is already there or the limit is reached. */
   addDocument: (document: ComposerDocument) => boolean;
   removeDocument: (id: string) => void;
@@ -168,9 +174,11 @@ interface UseComposerOptions {
   initial?: Saved | null;
   /** The first draft of a new field (e.g. a document as context in a document's panel). */
   defaults?: Partial<ComposerDraft>;
+  /** Ready attachments this field deleted on the server (a removed chip, «Новый диалог», a replaced dialog). */
+  onDiscard?: (attachmentIds: string[]) => void;
 }
 
-export function useComposer({ persistKey, initial, defaults }: UseComposerOptions = {}): ComposerController {
+export function useComposer({ persistKey, initial, defaults, onDiscard }: UseComposerOptions = {}): ComposerController {
   const [start] = useState<Saved & { replaced: Saved | null }>(() => {
     const previous = persistKey ? restoreDraft<Saved>(persistKey) : null;
     const remembered = initial ?? previous;
@@ -191,14 +199,21 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
   conversationRef.current = conversationId;
   const uploads = useRef(new Map<string, AbortController>());
   const keySeq = useRef(0);
+  const discarded = useRef(onDiscard);
+  discarded.current = onDiscard;
 
-  // A field that starts from another dialog (a message from the home page) replaces the remembered one: the
-  // files of that dialog are deleted — nobody will see them again. Declared before the save below.
+  /** Deletes ready attachments on the server and reports them (recent dialogs grey them out). */
+  const deleteOnServer = useCallback((files: ComposerFile[]) => {
+    const ids = files.flatMap((file) => (file.status === "ready" && file.attachment ? [file.attachment.id] : []));
+    for (const id of ids) void api.deleteAttachment(id).catch(() => undefined);
+    if (ids.length > 0) discarded.current?.(ids);
+  }, []);
+
+  // A field that starts from another dialog (a message from the home page, a reopened recent dialog) replaces the
+  // remembered one: the files of that dialog are deleted — nobody will see them again. Declared before the save.
   useEffect(() => {
-    for (const file of start.replaced?.draft.files ?? []) {
-      if (file.status === "ready" && file.attachment) void api.deleteAttachment(file.attachment.id).catch(() => undefined);
-    }
-  }, [start]);
+    deleteOnServer(start.replaced?.draft.files ?? []);
+  }, [start, deleteOnServer]);
 
   useEffect(() => {
     if (persistKey) saveDraft<Saved>(persistKey, { conversationId, draft: settled(draft) });
@@ -255,7 +270,7 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
   const addFiles = useCallback(
     (files: File[]) => {
       if (files.length === 0) return;
-      let inDialog = draftRef.current.files.filter((file) => file.status !== "error").length;
+      let inDialog = draftRef.current.files.filter((file) => file.status === "ready" || file.status === "reading").length;
       const added: ComposerFile[] = [];
       const toUpload: [string, File][] = [];
       for (const file of files) {
@@ -288,20 +303,28 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
     if (!file) return;
     uploads.current.get(key)?.abort();
     uploads.current.delete(key);
-    if (file.status === "ready" && file.attachment) void api.deleteAttachment(file.attachment.id).catch(() => undefined);
+    deleteOnServer([file]);
     const next = { ...draftRef.current, files: draftRef.current.files.filter((item) => item.key !== key) };
     draftRef.current = next;
     setDraft((current) => ({ ...current, files: current.files.filter((item) => item.key !== key) }));
     setAnnouncement(`Файл «${file.name}» убран.`);
+  }, [deleteOnServer]);
+
+  const markUnavailable = useCallback((attachmentIds: string[]) => {
+    const gone = (file: ComposerFile) => file.status === "ready" && file.attachment !== null && attachmentIds.includes(file.attachment.id);
+    const names = draftRef.current.files.filter(gone).map((file) => file.name);
+    if (names.length === 0) return;
+    const mark = (files: ComposerFile[]) => files.map((file) => (gone(file) ? { ...file, status: "unavailable" as const } : file));
+    draftRef.current = { ...draftRef.current, files: mark(draftRef.current.files) };
+    setDraft((current) => ({ ...current, files: mark(current.files) }));
+    setAnnouncement(`${names.map((name) => `Файл «${name}»`).join(", ")}: больше недоступен и не будет отправлен.`);
   }, []);
 
   const discardAll = useCallback(() => {
     for (const controller of uploads.current.values()) controller.abort();
     uploads.current.clear();
-    for (const file of draftRef.current.files) {
-      if (file.status === "ready" && file.attachment) void api.deleteAttachment(file.attachment.id).catch(() => undefined);
-    }
-  }, []);
+    deleteOnServer(draftRef.current.files);
+  }, [deleteOnServer]);
 
   const setText = useCallback((text: string) => {
     draftRef.current = { ...draftRef.current, text };
@@ -327,6 +350,7 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
       setIncludeDeprecated: (includeDeprecated) => update({ includeDeprecated }),
       addFiles,
       removeFile,
+      markUnavailable,
       addDocument: (document) => {
         const current = draftRef.current.documents;
         if (current.some((item) => item.id === document.id) || current.length >= MAX_CONTEXT_DOCUMENTS) return false;
@@ -399,6 +423,6 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
     }),
     // `defaults` is read at reset time only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draft, conversationId, announcement, setText, update, addFiles, removeFile, discardAll],
+    [draft, conversationId, announcement, setText, update, addFiles, removeFile, markUnavailable, discardAll],
   );
 }

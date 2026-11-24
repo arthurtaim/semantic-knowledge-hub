@@ -141,9 +141,10 @@ function ResultRow({ doc, singleSource }: { doc: DocumentSummary; singleSource: 
           <dd>{SOURCE_LABEL[doc.source]}</dd>
         </div>
         <div>
+          {/* The document's own date from its metadata, not the time the file was loaded or indexed. */}
           <dt>Обновлён</dt>
           <dd>
-            <When value={doc.updated_at} fallback="не указано" />
+            <When value={doc.metadata_updated_at} />
           </dd>
         </div>
       </dl>

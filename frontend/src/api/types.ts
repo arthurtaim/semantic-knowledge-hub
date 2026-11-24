@@ -95,6 +95,16 @@ export interface DocumentSummary {
   /** Found through a declared relation of this document ID (graph expansion), not by its own text. */
   related_via?: string | null;
   version?: string | null;
+  /**
+   * Distinct documents linked to this one in the reader's snapshot — the document page's «Связи». Set by
+   * GET /api/documents; null (or absent) elsewhere.
+   */
+  link_count?: number | null;
+  /**
+   * The document's own date — `updated_at` in its front matter (YYYY-MM-DD), the catalog's «Обновлён»; null when
+   * the document has none. `updated_at` above is the time of the source revision (commit date / file mtime).
+   */
+  metadata_updated_at?: string | null;
 }
 
 export interface Section {

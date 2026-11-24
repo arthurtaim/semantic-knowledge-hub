@@ -53,11 +53,36 @@ def sort_documents(docs: list[DocumentRecord], order: SortOrder | None) -> list[
     if order == "title":
         return sorted(docs, key=lambda d: (d.title.lower(), d.id))
     if order == "updated":
-        dated = sorted((d for d in docs if d.updated_at), key=lambda d: (d.updated_at, d.id), reverse=True)
-        return dated + sorted((d for d in docs if not d.updated_at), key=lambda d: (d.title.lower(), d.id))
+        # The document's own date (front matter `updated_at`), the one the catalog shows — never the time the
+        # file was written or indexed. Newest first; undated documents last, by title.
+        dated = sorted(
+            (d for d in docs if d.metadata_updated_at),
+            key=lambda d: (d.metadata_updated_at, d.id),
+            reverse=True,
+        )
+        undated = (d for d in docs if not d.metadata_updated_at)
+        return dated + sorted(undated, key=lambda d: (d.title.lower(), d.id))
     if order == "status":
         return sorted(docs, key=lambda d: (_STATUS_RANK[d.status], d.title.lower(), d.id))
     return docs  # relevance / default: keep the incoming order
+
+
+def linked_document_counts(snapshot: KnowledgeSnapshot) -> dict[str, int]:
+    """Distinct linked documents per document of THIS snapshot (lower-cased id -> count), in one pass over its
+    declared, `related_ids` and inline relations: the targets of a document's own relations plus the documents
+    whose relations point at it. Same meaning as the document page's «Связи» (`GET /api/documents/{id}/links`:
+    outgoing targets ∪ backlink sources). A target or a source outside the reader's snapshot does not count."""
+    linked: dict[str, set[str]] = {key: set() for key in snapshot.documents}
+    for key, doc in snapshot.documents.items():
+        for rel in doc.relations:
+            target = snapshot.get(rel.target)
+            if target is None:
+                continue
+            target_key = target.id.lower()
+            linked[key].add(target_key)
+            if target_key != key:  # a backlink never comes from the document itself
+                linked[target_key].add(key)
+    return {key: len(ids) for key, ids in linked.items()}
 
 
 class KnowledgeService:
@@ -75,6 +100,7 @@ class KnowledgeService:
         self.retrieval = RetrievalService(search, dictionary or load_dictionary())
         self._listeners: list[Callable[[], object]] = []
         self._explicit_sync: Any = None  # result of the last explicit sync (reported even when a no-op)
+        self._link_counts: tuple[KnowledgeSnapshot, dict[str, int]] | None = None
         self.template_registry_label: Callable[[], str] = lambda: "-"
 
     @property
@@ -97,6 +123,15 @@ class KnowledgeService:
     @property
     def generation(self) -> int:
         return self._search.generation
+
+    def link_counts(self, snapshot: KnowledgeSnapshot) -> dict[str, int]:
+        """`linked_document_counts` of this reader's snapshot, computed once per snapshot object."""
+        cached = self._link_counts
+        if cached is not None and cached[0] is snapshot:
+            return cached[1]
+        counts = linked_document_counts(snapshot)
+        self._link_counts = (snapshot, counts)
+        return counts
 
     def stale_ids(self, snapshot: KnowledgeSnapshot) -> frozenset[str]:
         """Documents that must not be presented as current: individual failed refreshes, or all of
@@ -126,6 +161,7 @@ class KnowledgeService:
         *,
         stale: bool = False,
         ranked: RankedHit | None = None,
+        link_count: int | None = None,
     ) -> DocumentSummary:
         excerpt = hit.excerpt if hit and hit.excerpt else (doc.summary or "")
         return DocumentSummary(
@@ -142,6 +178,7 @@ class KnowledgeService:
             is_demo=doc.is_demo,
             reviewed_at=doc.reviewed_at,
             updated_at=doc.updated_at,
+            metadata_updated_at=doc.metadata_updated_at,
             review_state=self.review_state(doc),
             owner_missing=doc.owner.strip().lower() in UNASSIGNED_OWNERS,
             web_url=doc.web_url,
@@ -150,6 +187,7 @@ class KnowledgeService:
             match_reasons=ranked.reasons if ranked else None,
             related_via=ranked.via if ranked else None,
             version=doc.version,
+            link_count=link_count,
         )
 
     @staticmethod
@@ -187,12 +225,14 @@ class KnowledgeService:
         page = ordered[start : start + q.size]
         if analysis is not None:
             self.retrieval.with_snippets(analysis, [ranked[d.id] for d in page if d.id in ranked])
+        links = self.link_counts(snapshot)
         items = [
             self.summarize(
                 d,
                 ranked[d.id].hit if d.id in ranked else None,
                 stale=d.id.lower() in stale,
                 ranked=ranked.get(d.id),
+                link_count=links.get(d.id.lower(), 0),
             )
             for d in page
         ]

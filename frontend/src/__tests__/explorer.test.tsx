@@ -12,9 +12,18 @@ const doc = (overrides: Partial<DocumentSummary>): DocumentSummary => ({ ...aris
 /** Three sections, two statuses: enough to see grouping. */
 const catalog: DocumentPage = {
   items: [
-    doc({ id: "DEMO-INT-001", title: "ARIS → Catalog: обзор потока", status: "approved", type: "integration", owner: "demo-integration-team" }),
-    doc({ id: "DEMO-INT-018", title: "Ночная полная выгрузка ARIS", status: "deprecated", type: "integration", owner: "demo-integration-team" }),
-    doc({ id: "DEMO-SRC-010", title: "Archive Store: исторические снимки", status: "in_review", type: "source", owner: "demo-semantic-team" }),
+    doc({
+      id: "DEMO-INT-001",
+      title: "ARIS → Catalog: обзор потока",
+      status: "approved",
+      type: "integration",
+      owner: "demo-integration-team",
+      link_count: 12,
+      metadata_updated_at: "2026-09-30",
+    }),
+    doc({ id: "DEMO-INT-018", title: "Ночная полная выгрузка ARIS", status: "deprecated", type: "integration", owner: "demo-integration-team", link_count: 0 }),
+    doc({ id: "DEMO-SRC-010", title: "Archive Store: исторические снимки", status: "in_review", type: "source", owner: "demo-semantic-team", link_count: 3 }),
+    // An older backend without `link_count`: the catalog says «—», it does not invent a number.
     doc({ id: "DEMO-SEM-009", title: "Датасет Process Overview", status: "approved", type: "dataset", owner: "demo-semantic-team" }),
   ],
   total: 4,
@@ -101,16 +110,19 @@ describe("Catalog: the list with snippets (a search)", () => {
     expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("sorts through the «Вид» menu (URL-backed) and shows the update date", async () => {
+  // Round 2: «Обновлён» is the document's own date (`metadata_updated_at`), not the revision / load time.
+  it("sorts through the «Вид» menu (URL-backed) and shows the document's own update date", async () => {
+    const dated = { ...documentPage, items: [{ ...arisSummary, metadata_updated_at: "2026-10-05" }] };
     const calls = mockApi([
       { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: documentPage },
+      { path: /\/api\/documents\?/, body: dated },
     ]);
     renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
     const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
     const result = link.closest("li") as HTMLElement;
     expect(within(result).getByText("Обновлён")).toBeInTheDocument();
-    expect(within(result).getByText(formatWhen(arisSummary.updated_at).text, { exact: false })).toBeInTheDocument();
+    expect(within(result).getByText(formatWhen("2026-10-05").text, { exact: false })).toBeInTheDocument();
+    expect(within(result).queryByText(formatWhen(arisSummary.updated_at).text, { exact: false })).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Вид" }));
     const menu = screen.getByRole("menu", { name: "Вид списка" });
@@ -124,13 +136,18 @@ describe("Catalog: the list with snippets (a search)", () => {
   it("restores the sort from the URL and offers relevance only with a query", async () => {
     const calls = mockApi([
       { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: { ...documentPage, items: [{ ...arisSummary, index_state: "stale", updated_at: null }] } },
+      // The revision time is known (the file was just loaded), the document's own date is not: «—».
+      {
+        path: /\/api\/documents\?/,
+        body: { ...documentPage, items: [{ ...arisSummary, index_state: "stale", updated_at: new Date().toISOString(), link_count: 2 }] },
+      },
     ]);
     renderAt("/documents?sort=status", "/documents", <ExplorerPage />);
     const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
     const row = link.closest("tr") as HTMLElement;
     expect(within(row).getByText("Версия может быть устаревшей")).toBeInTheDocument();
-    expect(within(row).getByText("не указано")).toBeInTheDocument();
+    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent).slice(-2)).toEqual(["—", "2"]);
+    expect(within(row).queryByText(/только что|сегодня/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Вид" }));
     expect(screen.getByRole("menuitemradio", { name: "Статус" })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByRole("menuitemradio", { name: "Релевантность" })).toBeNull();
@@ -240,16 +257,39 @@ describe("Catalog: the table", () => {
     ]);
   }
 
-  it("is the default for browsing: Название + ID, Статус, Владелец, Обновлён — and no invented «Связи» column", async () => {
+  // Round 2 (decision 7): «Связи» is a column now — the API's `link_count`, never a number the UI makes up.
+  it("is the default for browsing: Название + ID, Статус, Владелец, Обновлён, Связи", async () => {
     const calls = catalogRoutes();
     renderAt("/documents", "/documents", <ExplorerPage />);
     const table = await screen.findByRole("table");
     expect(screen.getByRole("button", { name: "Таблица" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Название", "Статус", "Владелец", "Обновлён"]);
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Название",
+      "Статус",
+      "Владелец",
+      "Обновлён",
+      "Связи",
+    ]);
     const row = within(table).getByRole("link", { name: "Archive Store: исторические снимки" }).closest("tr") as HTMLElement;
     expect(within(row).getByText("DEMO-SRC-010")).toBeInTheDocument();
     expect(within(row).getByText("На ревью")).toBeInTheDocument();
     expect(within(row).getByText("demo-semantic-team")).toBeInTheDocument();
+    const linksCell = (title: string) => {
+      const cells = within(within(table).getByRole("link", { name: title }).closest("tr") as HTMLElement).getAllByRole("cell");
+      return cells[cells.length - 1] as HTMLElement;
+    };
+    expect(linksCell("Archive Store: исторические снимки")).toHaveTextContent(/^3$/);
+    expect(linksCell("Archive Store: исторические снимки")).toHaveClass("catalog-table__num");
+    expect(linksCell("ARIS → Catalog: обзор потока")).toHaveTextContent(/^12$/);
+    expect(linksCell("Ночная полная выгрузка ARIS")).toHaveTextContent(/^0$/);
+    expect(linksCell("Датасет Process Overview")).toHaveTextContent(/^—$/);
+    // «Обновлён»: the document's own date; «—» without one — never the revision (load) time every row has.
+    const updatedCell = (title: string) => {
+      const cells = within(within(table).getByRole("link", { name: title }).closest("tr") as HTMLElement).getAllByRole("cell");
+      return cells[cells.length - 2] as HTMLElement;
+    };
+    expect(updatedCell("ARIS → Catalog: обзор потока")).toHaveTextContent(formatWhen("2026-09-30").text);
+    expect(updatedCell("Archive Store: исторические снимки")).toHaveTextContent(/^—$/);
     // the table loads up to the API maximum so the groups are whole
     expect(calls.some((c) => c.url === "/api/documents?page=1&size=100")).toBe(true);
     expect(screen.getByRole("heading", { level: 1, name: "Документы" })).toBeInTheDocument();
@@ -386,6 +426,15 @@ describe("Catalog: filter chips", () => {
       await screen.findByRole("link", { name: "Датасет Process Overview" });
       expect(screen.queryByRole("table")).toBeNull();
       expect(screen.getByRole("region", { name: "Раздел: Датасеты" })).toBeInTheDocument();
+      // The card says the link count in words; a card without a reported count says nothing about links.
+      const card = (title: string) => screen.getByRole("link", { name: title }).closest("li") as HTMLElement;
+      expect(within(card("ARIS → Catalog: обзор потока")).getByText("12 связей")).toBeInTheDocument();
+      expect(within(card("Archive Store: исторические снимки")).getByText("3 связи")).toBeInTheDocument();
+      expect(within(card("Ночная полная выгрузка ARIS")).getByText("нет связей")).toBeInTheDocument();
+      expect(within(card("Датасет Process Overview")).queryByText(/связ/)).toBeNull();
+      // A card shows the document's own date when it has one and nothing (not the load time) otherwise.
+      expect(within(card("ARIS → Catalog: обзор потока")).getByText(formatWhen("2026-09-30").text)).toBeInTheDocument();
+      expect(card("Датасет Process Overview").querySelector("time")).toBeNull();
 
       const open = screen.getByRole("button", { name: "Фильтр (1)" });
       await userEvent.click(open);

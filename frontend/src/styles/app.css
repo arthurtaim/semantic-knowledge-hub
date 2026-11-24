@@ -794,6 +794,12 @@ button.chip__body {
   color: var(--danger-text);
 }
 
+/* A reopened dialog's file that expired or was deleted: grey and dashed — it stays visible but is never sent. */
+.chip--unavailable {
+  border-style: dashed;
+  color: var(--text-secondary);
+}
+
 /* Document status: text + shape, never colour alone. Approved is a quiet stamp in ordinary text. */
 .status-mark {
   display: inline-flex;
@@ -3469,6 +3475,21 @@ h1 a:hover {
   width: 8.5rem;
 }
 
+.catalog-table__col-links {
+  width: 5.5rem;
+}
+
+/* Numbers line up in a column: tabular figures, right-aligned under a right-aligned heading. */
+.catalog-table th.catalog-table__num,
+.catalog-table td.catalog-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog-row__none {
+  color: var(--text-tertiary);
+}
+
 .catalog-table th,
 .catalog-table td {
   padding: 0 var(--space-4);
@@ -3479,6 +3500,11 @@ h1 a:hover {
 .catalog-table th:first-child,
 .catalog-table td:first-child {
   padding-left: var(--space-6);
+}
+
+.catalog-table thead th:last-child,
+.catalog-row td:last-child {
+  padding-right: var(--space-6);
 }
 
 .catalog-table thead th {
@@ -3630,6 +3656,11 @@ h1 a:hover {
   .catalog-table th:first-child,
   .catalog-table td:first-child {
     padding-left: var(--space-4);
+  }
+
+  .catalog-table thead th:last-child,
+  .catalog-row td:last-child {
+    padding-right: var(--space-4);
   }
 }
 

@@ -23,6 +23,7 @@ MIN_BODY_CHARS = 20
 REQUIRED_FIELDS = ("id", "title", "type", "status", "owner", "tags")
 OPTIONAL_FIELDS = (
     "reviewed_at",
+    "updated_at",
     "related_ids",
     "relations",
     "aliases",
@@ -204,9 +205,8 @@ def _parse_relations(value: Any, issues: list[ValidationIssue]) -> list[tuple[st
     return result
 
 
-def _parse_date(value: Any, issues: list[ValidationIssue]) -> date | None:
-    if value is None or value == "":
-        return None
+def _date_value(value: Any) -> date | None:
+    """A YAML date / datetime or an ISO `YYYY-MM-DD` string as a date; None for anything else."""
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -215,11 +215,19 @@ def _parse_date(value: Any, issues: list[ValidationIssue]) -> date | None:
         try:
             return date.fromisoformat(value.strip())
         except ValueError:
-            pass
-    issues.append(
-        _err("invalid_date", "Поле `reviewed_at` должно быть датой YYYY-MM-DD или null.", "reviewed_at")
-    )
+            return None
     return None
+
+
+def _parse_date(value: Any, issues: list[ValidationIssue]) -> date | None:
+    if value is None or value == "":
+        return None
+    parsed = _date_value(value)
+    if parsed is None:
+        issues.append(
+            _err("invalid_date", "Поле `reviewed_at` должно быть датой YYYY-MM-DD или null.", "reviewed_at")
+        )
+    return parsed
 
 
 def parse_document(text: str, *, expected_id: str | None = None) -> ParsedDocument:
@@ -347,6 +355,20 @@ def parse_document(text: str, *, expected_id: str | None = None) -> ParsedDocume
             meta["template_version"] = template_version
     meta["source_refs"] = _string_list(raw_meta.get("source_refs"), "source_refs", issues)
     meta["reviewed_at"] = _parse_date(raw_meta.get("reviewed_at"), issues)
+    # `updated_at`: the date the author last changed the document (shown as «Обновлён» in the catalog). Optional;
+    # a value that is not a date is a warning, kept as extra metadata — it never rejects a document that loaded
+    # before the field was known, and the date is never taken from the file or the index instead.
+    updated_raw = raw_meta.get("updated_at")
+    meta["updated_at"] = _date_value(updated_raw)
+    if updated_raw not in (None, "") and meta["updated_at"] is None:
+        result.extra_metadata["updated_at"] = str(updated_raw)[:200]
+        issues.append(
+            _warn(
+                "invalid_updated_at",
+                "Поле `updated_at` должно быть датой YYYY-MM-DD — дата обновления не показана.",
+                "updated_at",
+            )
+        )
 
     summary = raw_meta.get("summary")
     if summary is not None:
