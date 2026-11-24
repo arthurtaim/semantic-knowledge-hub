@@ -111,12 +111,16 @@ interface SourceRowProps {
   turnNo: number;
   /** Trace of the answer: feedback controls for the first citation of each Confluence page. */
   actionsTrace: string | null;
+  /** The document panel: the section only (the revision and the store are on the document itself). */
+  compact: boolean;
 }
 
-function SourceRow({ citation, label, turnNo, actionsTrace }: SourceRowProps) {
+function SourceRow({ citation, label, turnNo, actionsTrace, compact }: SourceRowProps) {
   const group = citationGroup(citation);
   const meta: string[] = [];
-  if (group === "team") {
+  if (group === "team" && compact) {
+    if (citation.section) meta.push(`раздел «${citation.section}»`);
+  } else if (group === "team") {
     meta.push(citation.document_id);
     if (citation.section) meta.push(`раздел «${citation.section}»`);
     meta.push(`ред. ${shortRevision(citation.revision)}`);
@@ -220,9 +224,11 @@ interface AnswerSourcesProps {
   answer: AskResponse;
   labels: Map<number, string>;
   turnNo: number;
+  /** The document panel: compact rows and one heading level deeper (the answer there is an h3). */
+  compact?: boolean;
 }
 
-export function AnswerSources({ answer, labels, turnNo }: AnswerSourcesProps) {
+export function AnswerSources({ answer, labels, turnNo, compact = false }: AnswerSourcesProps) {
   const headingId = `sources-title-${turnNo}`;
   const excludedId = useId();
   const [excludedOpen, setExcludedOpen] = useState(false);
@@ -246,10 +252,12 @@ export function AnswerSources({ answer, labels, turnNo }: AnswerSourcesProps) {
       </div>
     ) : null;
   }
+  const Title = compact ? "h4" : "h3";
+  const GroupTitle = compact ? "h5" : "h4";
   return (
-    <section className="sources" aria-labelledby={headingId}>
+    <section className={`sources${compact ? " sources--compact" : ""}`} aria-labelledby={headingId}>
       <div className="sources__head">
-        <h3 id={headingId}>Источники</h3>
+        <Title id={headingId}>Источники</Title>
         {excluded.length > 0 ? <ExcludedLine excluded={excluded} open={excludedOpen} listId={excludedId} onToggle={toggle} /> : null}
       </div>
       {excluded.length > 0 ? <ExcludedList excluded={excluded} open={excludedOpen} id={excludedId} /> : null}
@@ -259,9 +267,9 @@ export function AnswerSources({ answer, labels, turnNo }: AnswerSourcesProps) {
         const groupId = `${group}-sources-${turnNo}`;
         return (
           <section key={group} className={`sources__group sources__group--${group}`} aria-labelledby={groupId}>
-            <h4 id={groupId} className="sources__title">
+            <GroupTitle id={groupId} className="sources__title">
               {title}
-            </h4>
+            </GroupTitle>
             <ol className="sources__list">
               {items.map((citation) => (
                 <SourceRow
@@ -270,6 +278,7 @@ export function AnswerSources({ answer, labels, turnNo }: AnswerSourcesProps) {
                   label={labels.get(citation.ref) ?? String(citation.ref)}
                   turnNo={turnNo}
                   actionsTrace={withActions.has(citation.ref) ? traceId : null}
+                  compact={compact}
                 />
               ))}
             </ol>
