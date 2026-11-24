@@ -254,6 +254,14 @@ test("E2E-MAP-7 the legend is one line by default, expands and remembers the cho
   await expect(page.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "false");
 });
 
+test("E2E-MAP-8 the graph generation is not in the bar: in «Сведения» with nothing selected", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  await expect(page.locator(".graph-caption")).not.toContainText("Поколение графа");
+  await expect(page.getByText("97 узлов, 326 связей")).toHaveAttribute("title", /^Поколение графа: g\d+$/);
+  await expect(details(page).getByText(/^Поколение графа: g\d+$/)).toBeVisible();
+});
+
 test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and «Граф ответа» from an assistant answer", async ({ page }) => {
   const session = (await (await page.request.get("/api/session", { headers: { "X-SKH-Client": "web" } })).json()) as {
     features: { ai_mode: string };
