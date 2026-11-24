@@ -234,6 +234,26 @@ test("E2E-MAP-6 «Вся база»: only the most connected nodes are named, th
   expect(await overlapping()).toBe(0);
 });
 
+test("E2E-MAP-7 the legend is one line by default, expands and remembers the choice", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  const legend = page.getByRole("region", { name: "Условные обозначения" });
+  const toggle = legend.getByRole("button", { name: "Условные обозначения" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  // One line: the title and a swatch per kind on the map.
+  expect((await legend.boundingBox())!.height).toBeLessThanOrEqual(44);
+  await expect(legend.locator(".graph-legend__swatches svg")).toHaveCount(6);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(legend.getByText("Подтверждённая связь")).toBeVisible();
+  await expect(legend.getByText("Временная или не подтверждённая")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Условные обозначения" }).click();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "false");
+});
+
 test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and «Граф ответа» from an assistant answer", async ({ page }) => {
   const session = (await (await page.request.get("/api/session", { headers: { "X-SKH-Client": "web" } })).json()) as {
     features: { ai_mode: string };

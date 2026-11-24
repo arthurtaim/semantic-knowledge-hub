@@ -578,12 +578,7 @@ export function GraphPage() {
                       focusRequest={focusRequest}
                       overview={mode.kind === "global"}
                       legend={
-                        <GraphLegendView
-                          labels={labels}
-                          kinds={presentKinds}
-                          statuses={presentStatuses}
-                          defaultOpen={!narrow}
-                        />
+                        <GraphLegendView labels={labels} kinds={presentKinds} statuses={presentStatuses} />
                       }
                     />
                   ) : (

@@ -24,8 +24,11 @@ import { Icon } from "./ui/Icon";
 
 const isDocStatus = (value: string | null): value is DocStatus => value !== null && value in STATUS_LABEL;
 
-/** The shape of a node kind (legend, lists, details); decorative — the kind is always named in text too. */
-export function ShapeIcon({ kind, status = "none" }: { kind: string; status?: string }) {
+/**
+ * The shape of a node kind (legend, lists, details); decorative — the kind is always named in text too. `title`
+ * is a pointer tooltip only (the collapsed legend's swatches).
+ */
+export function ShapeIcon({ kind, status = "none", title }: { kind: string; status?: string; title?: string }) {
   return (
     <svg
       className={`graph-icon graph-node--${kind} graph-node--status-${status}`}
@@ -35,6 +38,7 @@ export function ShapeIcon({ kind, status = "none" }: { kind: string; status?: st
       aria-hidden="true"
       focusable="false"
     >
+      {title ? <title>{title}</title> : null}
       <path className="graph-node__shape" d={nodeShapePath(kind, 7)} />
     </svg>
   );
@@ -454,9 +458,9 @@ export function GraphListView({ nodes, edges, labels, center, selectedId, matche
   );
 }
 
-// --- legend: a collapsible card over the canvas, only what is on the map -------------------------------------
+// --- legend: one line over the canvas (the kinds' swatches), expandable; only what is on the map ----------------
 
-const LEGEND_PREFERENCE = "skh.graph.legend";
+export const LEGEND_PREFERENCE = "skh.graph.legend";
 const STATUS_HINT: Partial<Record<DocStatus, string>> = {
   draft: "пунктир",
   in_review: "точки",
@@ -469,31 +473,39 @@ export interface GraphLegendProps {
   kinds: string[];
   /** Statuses present on the map that change a node's look (draft, in review, deprecated). */
   statuses: DocStatus[];
-  /** Open until the user collapses it (the choice is remembered in this browser). */
-  defaultOpen: boolean;
 }
 
-export function GraphLegendView({ labels, kinds, statuses, defaultOpen }: GraphLegendProps) {
-  const [open, setOpen] = useState(() => {
-    const saved = readPreference(LEGEND_PREFERENCE);
-    return saved === null ? defaultOpen : saved === "open";
-  });
+/**
+ * The legend: collapsed to one line by default — «Условные обозначения» and the swatches of the kinds on the map —
+ * so that it leaves the map free; expanded, the kinds, statuses and both kinds of edges with their names. The
+ * choice is remembered in this browser (localStorage; without storage it holds until the page is reloaded).
+ */
+export function GraphLegendView({ labels, kinds, statuses }: GraphLegendProps) {
+  const [open, setOpen] = useState(() => readPreference(LEGEND_PREFERENCE) === "open");
   const bodyId = useId();
   const toggle = () => {
     setOpen(!open);
     writePreference(LEGEND_PREFERENCE, open ? "closed" : "open");
   };
+  const shown = KIND_ORDER.filter((k) => kinds.includes(k));
   return (
     <section className={`graph-legend${open ? " is-open" : ""}`} aria-labelledby={`${bodyId}-title`}>
       <h2 className="graph-legend__title" id={`${bodyId}-title`}>
         <button type="button" className="graph-legend__toggle" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
           <Icon name="chevron" size={14} className="graph-legend__chevron" />
           Условные обозначения
+          {open ? null : (
+            <span className="graph-legend__swatches" aria-hidden="true">
+              {shown.map((kind) => (
+                <ShapeIcon key={kind} kind={kind} status={LEGEND_STATUS[kind] ?? "none"} title={labels.kind(kind)} />
+              ))}
+            </span>
+          )}
         </button>
       </h2>
       <div id={bodyId} className="graph-legend__body" hidden={!open}>
         <ul className="graph-legend__list">
-          {KIND_ORDER.filter((k) => kinds.includes(k)).map((kind) => (
+          {shown.map((kind) => (
             <li key={kind}>
               <ShapeIcon kind={kind} status={LEGEND_STATUS[kind] ?? "none"} />
               <span>{labels.kind(kind)}</span>

@@ -22,9 +22,12 @@ class TestPointerEvent extends MouseEvent {
 }
 
 let session: Storage;
+let browser: Storage;
 beforeEach(() => {
   session = memoryStorage();
   vi.stubGlobal("sessionStorage", session);
+  browser = memoryStorage();
+  vi.stubGlobal("localStorage", browser);
   vi.stubGlobal("PointerEvent", TestPointerEvent);
 });
 
@@ -222,21 +225,58 @@ describe("Knowledge map: modes, legend, phone", () => {
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/graph?trace=TRACE-0123456789abcdef"));
   });
 
-  it("shows a legend of only the kinds on the map, which collapses", async () => {
+  it("collapses the legend into one line by default: its title and the swatches of the kinds on the map", async () => {
     mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
     renderRoutes("/graph", GRAPH);
     await screen.findByRole("group", { name: /Схема графа/ });
     const legendRegion = screen.getByRole("region", { name: "Условные обозначения" });
-    for (const kind of ["Документ", "Интеграция", "Сущность / модель", "Черновик", "Подтверждённая связь"]) {
-      expect(within(legendRegion).getByText(kind)).toBeInTheDocument();
+    const toggle = within(legendRegion).getByRole("button", { name: "Условные обозначения" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(within(legendRegion).getByText("Интеграция", { selector: "span" })).not.toBeVisible();
+    // One swatch per kind on the map, in the legend's order, named on hover; decorative for screen readers.
+    const swatches = legendRegion.querySelector(".graph-legend__swatches")!;
+    expect(swatches).toHaveAttribute("aria-hidden", "true");
+    expect(Array.from(swatches.querySelectorAll("svg title")).map((t) => t.textContent)).toEqual(["Документ", "Интеграция", "Сущность / модель"]);
+
+    // Expanded: only the kinds and statuses on the map, both kinds of edges.
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(legendRegion.querySelector(".graph-legend__swatches")).toBeNull();
+    for (const kind of ["Документ", "Интеграция", "Сущность / модель", "Черновик", "Подтверждённая связь", "Временная или не подтверждённая"]) {
+      expect(within(legendRegion).getByText(kind)).toBeVisible();
     }
     expect(within(legendRegion).queryByText("Датасет")).toBeNull();
     expect(within(legendRegion).queryByText("Шаблон")).toBeNull();
-    const toggle = within(legendRegion).getByRole("button", { name: "Условные обозначения" });
+    expect(browser.getItem("skh.graph.legend")).toBe("open");
+  });
+
+  it("remembers the legend's state in this browser and works without storage", async () => {
+    browser.setItem("skh.graph.legend", "open");
+    mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
+    const first = renderRoutes("/graph", GRAPH);
+    await screen.findByRole("group", { name: /Схема графа/ });
+    const toggle = screen.getByRole("button", { name: "Условные обозначения" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     await userEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(within(legendRegion).getByText("Интеграция")).not.toBeVisible();
+    expect(browser.getItem("skh.graph.legend")).toBe("closed");
+    first.unmount();
+
+    const second = renderRoutes("/graph", GRAPH);
+    await screen.findByRole("group", { name: /Схема графа/ });
+    expect(screen.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "false");
+    second.unmount();
+
+    // Blocked storage: collapsed by default, and the toggle still works on this page.
+    const blocked = () => {
+      throw new DOMException("blocked", "SecurityError");
+    };
+    vi.stubGlobal("localStorage", { getItem: blocked, setItem: blocked, removeItem: blocked, key: blocked, clear: blocked, length: 0 });
+    renderRoutes("/graph", GRAPH);
+    await screen.findByRole("group", { name: /Схема графа/ });
+    const again = screen.getByRole("button", { name: "Условные обозначения" });
+    expect(again).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(again);
+    expect(again).toHaveAttribute("aria-expanded", "true");
   });
 
   it("on a phone opens the details as a sheet from the bottom and closes it back to the list", async () => {
