@@ -344,13 +344,39 @@ export function GraphCanvas({
     const rect = legendElement?.getBoundingClientRect();
     return rect ? { w: rect.width, h: rect.height } : { w: 0, h: 0 };
   }, []);
+  /** The view set by the last fit: while it is still the current view, the user has not panned or zoomed. */
+  const fitted = useRef<View | null>(null);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
   const fitAll = useCallback(
-    (at: Size) => setView(fitView(boundsOf(positionsRef.current, layout.extent), at, legendReserve())),
+    (at: Size) => {
+      const next = fitView(boundsOf(positionsRef.current, layout.extent), at, legendReserve());
+      fitted.current = next;
+      setView(next);
+    },
     [layout.extent, legendReserve],
   );
 
   // A new layout (other data, a reset) or a resized canvas shows the whole graph; manual positions stay.
   useEffect(() => fitAll(size), [layout, size, fitAll]);
+
+  // Opening or closing the legend fits the graph again — unless the user has panned or zoomed since the last fit —
+  // so that the open legend does not cover nodes.
+  useEffect(() => {
+    const legendElement = containerRef.current?.querySelector(".graph-legend");
+    if (!legendElement || typeof ResizeObserver === "undefined") return undefined;
+    let initial = true;
+    const observer = new ResizeObserver(() => {
+      // The observer reports the size once when it starts: that is not a change.
+      if (initial) {
+        initial = false;
+        return;
+      }
+      if (viewRef.current === fitted.current) fitAll(sizeRef.current);
+    });
+    observer.observe(legendElement);
+    return () => observer.disconnect();
+  }, [fitAll]);
 
   useEffect(() => {
     if (!announcement) return undefined;

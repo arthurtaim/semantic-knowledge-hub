@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import css from "../styles/app.css?raw";
 import type { GraphEdge, GraphNode, GraphNodeKind, GraphRelation } from "../api/types";
 import { DRAG_THRESHOLD, GraphCanvas, MOVE_STEP, MOVE_STEP_LARGE } from "../components/GraphCanvas";
+import { GraphLegendView } from "../components/GraphDetails";
 import {
   estimateTextWidth,
   graphLabels,
@@ -110,10 +111,11 @@ interface HarnessProps {
   selectedId?: string | null;
   onRender?: () => void;
   overview?: boolean;
+  withLegend?: boolean;
 }
 
 /** The canvas with its manual positions held like the page holds them. */
-function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, onRender, overview }: HarnessProps) {
+function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, onRender, overview, withLegend }: HarnessProps) {
   const [overrides, setOverrides] = useState<Map<string, Point>>(new Map());
   const [layout] = useState(() => fixedLayout());
   const canvas = (
@@ -134,6 +136,7 @@ function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, on
       onSelect={onSelect}
       focusRequest={null}
       overview={overview}
+      legend={withLegend ? <GraphLegendView labels={graphLabels(null)} kinds={["document", "integration"]} statuses={[]} /> : undefined}
     />
   );
   return <MemoryRouter>{onRender ? <Profiler id="canvas" onRender={onRender}>{canvas}</Profiler> : canvas}</MemoryRouter>;
@@ -481,5 +484,59 @@ describe("Knowledge map: labels", () => {
     unmount();
     render(<MapView nodes={grid} edges={chain} layout={layout} />);
     expect(labelled().size).toBe(15);
+  });
+});
+
+describe("Knowledge map: the legend and the fitted view", () => {
+  /** A ResizeObserver the test drives: jsdom has none. */
+  class FakeResizeObserver {
+    static all: FakeResizeObserver[] = [];
+    elements: Element[] = [];
+    constructor(readonly callback: ResizeObserverCallback) {
+      FakeResizeObserver.all.push(this);
+    }
+    observe(element: Element) {
+      this.elements.push(element);
+    }
+    unobserve() {}
+    disconnect() {
+      this.elements = [];
+    }
+  }
+  const resized = (element: Element) => {
+    for (const observer of FakeResizeObserver.all) {
+      if (observer.elements.includes(element)) act(() => observer.callback([], observer as unknown as ResizeObserver));
+    }
+  };
+
+  beforeEach(() => {
+    FakeResizeObserver.all = [];
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+  });
+
+  it("fits the graph again when the legend opens or closes, unless the user has moved the view", () => {
+    render(<Harness withLegend />);
+    const legend = document.querySelector(".graph-legend")!;
+    resized(legend); // the observer's first report: no change
+    const closed = view();
+    // Opened, the legend takes the bottom-left corner: the graph is fitted beside it (here: to its right).
+    fireEvent.click(screen.getByRole("button", { name: "Условные обозначения" }));
+    vi.spyOn(legend, "getBoundingClientRect").mockReturnValue(new DOMRect(16, 314, 440, 230));
+    resized(legend);
+    const opened = view();
+    expect(opened).not.toEqual(closed);
+    // The graph's left edge (x = -13 in graph units) is now right of the legend (16 + 440 px).
+    expect(opened.x + opened.k * -13).toBeGreaterThan(456);
+    // Closed again: back to the full fit.
+    fireEvent.click(screen.getByRole("button", { name: "Условные обозначения" }));
+    resized(legend);
+    expect(view()).toEqual(closed);
+    // After a pan the view is the user's: the legend does not move it.
+    drag(svg(), 40, 30);
+    const panned = view();
+    fireEvent.click(screen.getByRole("button", { name: "Условные обозначения" }));
+    resized(legend);
+    expect(view()).toEqual(panned);
   });
 });

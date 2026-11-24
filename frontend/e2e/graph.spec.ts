@@ -246,6 +246,18 @@ test("E2E-MAP-7 the legend is one line by default, expands and remembers the cho
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-expanded", "true");
   await expect(legend.getByText("Подтверждённая связь")).toBeVisible();
+  // The map is fitted again beside or above the open legend: no node is under it.
+  const covered = () =>
+    page.evaluate(() => {
+      const box = document.querySelector(".graph-legend")!.getBoundingClientRect();
+      return Array.from(document.querySelectorAll("[data-node-id] .graph-node__shape")).filter((shape) => {
+        const r = shape.getBoundingClientRect();
+        const x = r.x + r.width / 2;
+        const y = r.y + r.height / 2;
+        return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+      }).length;
+    });
+  await expect.poll(covered).toBe(0);
   await expect(legend.getByText("Временная или не подтверждённая")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "true");
