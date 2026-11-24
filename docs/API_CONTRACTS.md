@@ -300,7 +300,9 @@ body beyond 20 MB + 64 KiB is not read to the end). `limit_reached`: the limits 
 encrypted, without a text layer, binary under a text extension, empty, zip-bomb guard (entries, total and per-entry
 uncompressed size, ratio) or extraction over 20 s. Text: UTF-8 (BOM), UTF-16 with BOM, CP1251 fallback; units are
 lines (text, pdf pages), paragraphs and table rows (docx), rows (xlsx, ≤ 50 sheets); ≤ 300 000 characters kept
-(`summary` then ends with «, текст сокращён»). Only the extracted text is stored (app-state SQLite, table
+(`summary` then ends with «, текст сокращён»). The body is read by `python-multipart`'s streaming parser under a hard
+byte cap checked before each chunk is parsed (never spooled to a temporary file; malformed bodies → `422
+invalid_multipart` with a message that never quotes the body). Only the extracted text is stored (app-state SQLite, table
 `assistant_attachments`), never the bytes; the file name never touches the filesystem; contents are never logged.
 Expiry: `ATTACHMENTS_TTL_HOURS` (default 24); expired rows are purged on access. Attachments are visible only in
 their conversation and to their uploader, never indexed into search, the graph or the discovery memory. With

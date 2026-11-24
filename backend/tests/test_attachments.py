@@ -15,7 +15,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.multipart import MultipartError, parse_parts
+from app.api.multipart import PREFIX_BYTES, FormReader, MultipartError
 from app.services.attachments import (
     LINES,
     PAGES,
@@ -269,25 +269,115 @@ def test_disabled_ai_refuses_uploads(client_factory: Callable[..., TestClient]) 
     assert response.status_code == 503 and response.json()["code"] == "assistant_disabled"
 
 
-def test_multipart_parser_is_binary_safe() -> None:
-    payload = os.urandom(4096) + b"\r\n--not-the-boundary\r\n\r\n" + bytes(range(256))
-    body = (
-        b"--BOUNDARY\r\n"
-        b'Content-Disposition: form-data; name="conversation_id"\r\n\r\n'
-        b"conv-0001-test\r\n"
-        b"--BOUNDARY\r\n"
-        b'Content-Disposition: form-data; name="file"; filename="x.bin"\r\n'
-        b"Content-Type: application/octet-stream\r\n\r\n" + payload + b"\r\n--BOUNDARY--\r\n"
+FORM_TYPE = "multipart/form-data; boundary=BOUNDARY"
+
+
+def form_body(*parts: tuple[str, str | None, bytes]) -> bytes:
+    """A multipart body of (field name, file name or None, data) parts, closed with the final boundary."""
+    out = b""
+    for name, filename, data in parts:
+        disposition = f'form-data; name="{name}"' + (f'; filename="{filename}"' if filename else "")
+        out += b"--BOUNDARY\r\nContent-Disposition: " + disposition.encode()
+        out += b"\r\nContent-Type: application/octet-stream" if filename else b""
+        out += b"\r\n\r\n" + data + b"\r\n"
+    return out + b"--BOUNDARY--\r\n"
+
+
+def read_chunks(body: bytes, size: int, *, max_bytes: int = 1 * MIB, declared: int | None = None) -> Any:
+    reader = FormReader(FORM_TYPE, max_bytes=max_bytes, declared_length=declared)
+    for at in range(0, len(body), size):
+        if not reader.feed(body[at : at + size]):
+            break
+    return reader.result()
+
+
+@pytest.mark.parametrize("chunk", [1, 7, 64, 100_000])
+def test_multipart_reader_is_binary_safe_across_chunks(chunk: int) -> None:
+    payload = os.urandom(4096) + b"\r\n--not-the-boundary\r\n\r\n--BOUNDAR" + bytes(range(256))
+    form = read_chunks(
+        form_body(("conversation_id", None, b"conv-0001-test"), ("file", "x.bin", payload)), chunk
     )
-    parts, partial = parse_parts(body, b"BOUNDARY", complete=True)
-    assert partial is None and [p.name for p in parts] == ["conversation_id", "file"]
-    assert parts[0].data == b"conv-0001-test" and parts[1].data == payload and parts[1].filename == "x.bin"
-    cut, partial = parse_parts(body[:400], b"BOUNDARY", complete=False)  # inside the file's data
-    assert (
-        [p.name for p in cut] == ["conversation_id"] and partial is not None and partial.filename == "x.bin"
+    assert not form.truncated and form.partial is None
+    assert [p.name for p in form.parts] == ["conversation_id", "file"]
+    assert form.field("conversation_id") == "conv-0001-test"
+    file = form.file("file")
+    assert file is not None and file.data == payload and file.filename == "x.bin"
+    assert file.content_type == "application/octet-stream"
+
+
+def test_multipart_reader_tolerates_field_order_and_utf8_names() -> None:
+    form = read_chunks(
+        form_body(("file", "отчёт.csv", b"a;b\n"), ("conversation_id", None, b"conv-0001-test")), 5
     )
+    assert form.field("conversation_id") == "conv-0001-test"
+    file = form.file("file")
+    assert file is not None and file.filename == "отчёт.csv" and file.data == b"a;b\n"
+
+
+def test_multipart_reader_stops_at_the_cap_while_streaming() -> None:
+    body = form_body(("conversation_id", None, b"conv-0001-test"), ("file", "big.bin", b"z" * 50_000))
+    reader = FormReader(FORM_TYPE, max_bytes=10_000)
+    fed = 0
+    for at in range(0, len(body), 4096):
+        fed += 1
+        if not reader.feed(body[at : at + 4096]):
+            break
+    assert fed == 3  # the third chunk crosses the cap: nothing after it is read
+    form = reader.result()
+    assert form.truncated and [p.name for p in form.parts] == ["conversation_id"]
+    assert form.partial is not None and form.partial.filename == "big.bin"
+    assert 0 < len(form.partial.data) < 10_000
+
+
+def test_multipart_reader_reads_only_a_prefix_of_a_body_declared_too_large() -> None:
+    body = form_body(
+        ("conversation_id", None, b"conv-0001-test"), ("file", "huge.txt", b"h" * (PREFIX_BYTES * 2))
+    )
+    form = read_chunks(body, 8192, max_bytes=len(body) + 1, declared=len(body) + 2)
+    assert form.truncated and form.declared_length == len(body) + 2
+    assert form.partial is not None and len(form.partial.data) < PREFIX_BYTES
+
+
+@pytest.mark.parametrize(
+    ("body", "content_type"),
+    [
+        (form_body(("a", None, b"1"))[:-15], FORM_TYPE),  # no closing boundary
+        (b"", FORM_TYPE),  # no part at all
+        (b"--OTHER\r\nContent-Disposition: form-data; name=a\r\n\r\nx\r\n--OTHER--\r\n", FORM_TYPE),
+        (b"--BOUNDARY\r\nContent-Type: text/plain\r\n\r\nx\r\n--BOUNDARY--\r\n", FORM_TYPE),  # no disposition
+        (b"--BOUNDARY\r\nContent-Disposition: form-data\r\n\r\nx\r\n--BOUNDARY--\r\n", FORM_TYPE),  # no name
+        (b"--BOUNDARY\r\nX: " + b"h" * 9000 + b"\r\n\r\nx\r\n--BOUNDARY--\r\n", FORM_TYPE),  # header too long
+        (form_body(*[(f"f{i}", None, b"x") for i in range(9)]), FORM_TYPE),  # more than 8 parts
+        (form_body(("a", None, b"1")), "multipart/form-data"),  # no boundary
+        (form_body(("a", None, b"1")), "application/json"),
+    ],
+)
+def test_multipart_reader_rejects_malformed_bodies(body: bytes, content_type: str) -> None:
     with pytest.raises(MultipartError):
-        parse_parts(body[:-15], b"BOUNDARY", complete=True)  # no closing boundary
+        reader = FormReader(content_type, max_bytes=1 * MIB)
+        reader.feed(body)
+        reader.result()
+
+
+def test_parser_errors_never_echo_the_body(client: TestClient) -> None:
+    response = client.post(
+        "/api/assistant/attachments",
+        content=b"--BOUNDARY\r\nsecret-zq7 body text\r\n",
+        headers={"Content-Type": FORM_TYPE},
+    )
+    assert response.status_code == 422 and response.json()["code"] == "invalid_multipart"
+    assert "zq7" not in response.text and "secret" not in response.text
+
+
+def test_upload_never_touches_a_temporary_file(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import tempfile
+
+    def no_disk(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("an upload must not be spooled to disk")
+
+    for name in ("TemporaryFile", "NamedTemporaryFile", "SpooledTemporaryFile", "mkstemp"):
+        monkeypatch.setattr(tempfile, name, no_disk)
+    uploaded(client, "notes.txt", b"synthetic text\n" * 10_000)
 
 
 # --- scope, expiry, deletion ---------------------------------------------------------------------------------
