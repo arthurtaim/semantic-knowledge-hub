@@ -336,3 +336,17 @@ re-verified verbatim against the reader's snapshot, `confidence` = `insufficient
 insufficient, `supported` with verified citations, otherwise `partial`. Nothing is applied: Accept / Reject stay
 `POST /api/ai/proposals/{id}/accept|reject`. On `/ask/stream` a workflow skill sends `status` retrieving →
 generating → validating and `final` (no `delta`).
+
+### v0.4 additions (UI v2 review round)
+
+Additive: without the new parameters every response is the same as before.
+
+**Proposals list filters.** `GET /api/drafts` (`read_knowledge`) adds optional boolean query parameters that combine
+with `status` and `document_id` (AND):
+
+| Parameter | Default | Effect | Used by |
+|---|---|---|---|
+| `exclude_own` | `false` | leaves out the caller's own proposals (`author == user_id`): nobody reviews their own change | «Ревью»: `?status=ready_for_review&exclude_own=true` (sidebar badge, the list behind it, the home «Ждёт вашего решения») |
+
+A non-boolean value is `422 invalid_request`. In demo single-user mode every proposal is the caller's own, so
+the «Ревью» list is usually empty (no badge).

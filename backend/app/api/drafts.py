@@ -40,8 +40,12 @@ async def list_drafts(
     user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
     status: ProposalStatus | None = None,
     document_id: Annotated[str | None, Query(max_length=128)] = None,
+    exclude_own: Annotated[
+        bool, Query(description="Leave out the caller's own proposals (the «Ревью» list).")
+    ] = False,
 ) -> ProposalList:
-    return await container.proposals.list_proposals(user, status, document_id)
+    """Filters combine with AND; without them the list is the same as before (newest first)."""
+    return await container.proposals.list_proposals(user, status, document_id, exclude_own=exclude_own)
 
 
 @router.post("/suggest", response_model=SuggestResponse)

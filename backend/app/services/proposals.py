@@ -299,7 +299,13 @@ class ProposalStore:
             ).fetchone()
             return row
 
-    def list_rows(self, status: str | None, document_id: str | None) -> list[sqlite3.Row]:
+    def list_rows(
+        self,
+        status: str | None,
+        document_id: str | None,
+        *,
+        exclude_author: str | None = None,
+    ) -> list[sqlite3.Row]:
         sql = "SELECT * FROM proposals WHERE 1=1"
         params: list[str] = []
         if status:
@@ -308,6 +314,9 @@ class ProposalStore:
         if document_id:
             sql += " AND lower(document_id) = lower(?)"
             params.append(document_id)
+        if exclude_author is not None:
+            sql += " AND author != ?"
+            params.append(exclude_author)
         sql += " ORDER BY created_at DESC, id"
         with self._lock:
             return list(self._conn.execute(sql, params).fetchall())
@@ -1020,9 +1029,20 @@ class ProposalService:
         return await self._detail(self._row(proposal_id), user)
 
     async def list_proposals(
-        self, user: UserContext, status: ProposalStatus | None, document_id: str | None
+        self,
+        user: UserContext,
+        status: ProposalStatus | None,
+        document_id: str | None,
+        *,
+        exclude_own: bool = False,
     ) -> ProposalList:
-        rows = self._store.list_rows(status.value if status else None, document_id)
+        """`exclude_own`: leave out the caller's own proposals (nobody reviews their own change — the «Ревью»
+        list)."""
+        rows = self._store.list_rows(
+            status.value if status else None,
+            document_id,
+            exclude_author=user.user_id if exclude_own else None,
+        )
         items = [self._summary(r) for r in rows]
         return ProposalList(items=items, total=len(items))
 
