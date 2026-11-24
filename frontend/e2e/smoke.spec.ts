@@ -117,7 +117,11 @@ test("Integration status is honest", async ({ page }) => {
   await expect(gitlab).toContainText("Не подключено");
   await expect(page.locator(".integration", { hasText: "Confluence Data Center (MCP" })).toContainText("Не подключено");
   await expect(page.locator(".integration", { hasText: "AI-провайдер" })).toContainText("Без модели (mock)");
-  await expect(page.locator(".integration", { hasText: "Система задач" })).toContainText("Не подключено");
+  // M6: the task system is the built-in work module (not an external tracker) — connected, and the mode is said:
+  // a single local operator, not a team.
+  const tasks = page.locator(".integration", { hasText: "Задачи и планирование (встроенный модуль)" });
+  await expect(tasks).toContainText("Подключено");
+  await expect(tasks).toContainText("Локальная демонстрация — один оператор");
 });
 
 test("@mobile phone layout has no horizontal scroll and a working menu", async ({ page }) => {
