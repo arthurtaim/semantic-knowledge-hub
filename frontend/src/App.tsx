@@ -16,11 +16,14 @@ import { HomePage } from "./pages/HomePage";
 import { ImportPage } from "./pages/ImportPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { ProjectPage } from "./pages/ProjectPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProposalDetailPage } from "./pages/ProposalDetailPage";
 import { ProposalEditorPage } from "./pages/ProposalEditorPage";
 import { ProposalsPage } from "./pages/ProposalsPage";
 import { PublicationJobPage } from "./pages/PublicationJobPage";
 import { PublicationsPage } from "./pages/PublicationsPage";
+import { TaskPage } from "./pages/TaskPage";
 import { TemplateDetailPage } from "./pages/TemplateDetailPage";
 import { TemplateEditorPage } from "./pages/TemplateEditorPage";
 import { TemplatesPage } from "./pages/TemplatesPage";
@@ -56,6 +59,9 @@ export function App() {
           <Route path="/templates/:id" element={<TemplateDetailPage />} />
           <Route path="/templates/:id/edit" element={<TemplateEditorPage />} />
           <Route path="/ask" element={<AskPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:key" element={<ProjectPage />} />
+          <Route path="/tasks/:key" element={<TaskPage />} />
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalEditorPage />} />
           <Route path="/proposals/:id" element={<ProposalDetailPage />} />
