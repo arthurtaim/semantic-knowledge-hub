@@ -43,6 +43,7 @@ test("R2-01 «Таблица»: «Связи» equals the document page; «Пр�
 
   // «Связи» descending: the API's link counts in order
   await table.getByRole("columnheader", { name: "Связи" }).getByRole("button").click();
+  await expect(page).toHaveURL(/sort=links/); // the first click has landed before the second turns it around
   await table.getByRole("columnheader", { name: "Связи" }).getByRole("button").click();
   await expect(page).toHaveURL(/sort=-links/);
   await expect(table.getByRole("columnheader", { name: "Связи" })).toHaveAttribute("aria-sort", "descending");
