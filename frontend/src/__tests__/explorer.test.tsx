@@ -208,6 +208,31 @@ describe("Таблица: a search", () => {
     expect(await screen.findByText("11 из 11")).toBeInTheDocument();
   });
 
+  it("never shows the rows of the previous search while a new one loads", async () => {
+    let answer: (response: Response) => void = () => {};
+    mockApi([
+      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/documents?query=ARIS&page=1&size=100", body: documentPage },
+      { path: /\/api\/documents\?query=CDC/, respond: () => new Promise<Response>((resolve) => (answer = resolve)) },
+    ]);
+    renderRoutes("/documents?view=table&q=ARIS", { "/documents": <ExplorerPage /> });
+    expect(await screen.findByRole("link", { name: "ARIS integration — questions for discovery" })).toBeInTheDocument();
+    const field = screen.getByRole("searchbox", { name: "Найти в документах" });
+    await userEvent.clear(field);
+    await userEvent.type(field, "CDC{Enter}");
+    expect(await screen.findAllByText("Поиск…")).not.toHaveLength(0);
+    expect(screen.queryByRole("link", { name: "ARIS integration — questions for discovery" })).toBeNull();
+    answer(
+      new Response(JSON.stringify({ ...documentPage, items: [{ ...arisSummary, id: "DEMO-INT-010", title: "CDC и full refresh: сравнение" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(await screen.findByRole("link", { name: "CDC и full refresh: сравнение" })).toBeInTheDocument();
+    expect(screen.getByText("1 из 11")).toBeInTheDocument();
+  });
+
   it("reads the sort of an old link (`sort=status` → Состояние; `sort=updated` → the default) and marks a stale row", async () => {
     const staleTree: DocumentTree = {
       ...demoTree,

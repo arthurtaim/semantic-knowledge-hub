@@ -76,10 +76,14 @@ const SERVER_PAGES = 5;
 const docHref = (id: string) => `/documents/${encodeURIComponent(id)}`;
 const sourceLabel = (source: string) => SOURCE_LABEL[source as SourceType] ?? source;
 
-/** The documents the server answers for the toolbar search and the tag filter (the tree has neither). */
+/**
+ * The documents the server answers for the toolbar search and the tag filter (the tree has neither). The answer
+ * carries the request it belongs to: while a new search loads, the rows of the previous one are not shown.
+ */
 function useServerIds(query: string, tags: string[]) {
   const tag = tags.join(",");
-  return useAsync<{ ids: Set<string>; notes: string[] } | null>(async () => {
+  const key = `${query}|${tag}`;
+  const state = useAsync<{ key: string; ids: Set<string>; notes: string[] } | null>(async () => {
     if (!query && !tag) return null;
     const ids = new Set<string>();
     let notes: string[] = [];
@@ -89,8 +93,19 @@ function useServerIds(query: string, tags: string[]) {
       for (const item of answer.items) ids.add(item.id);
       if (page * SERVER_PAGE >= answer.total || answer.items.length === 0) break;
     }
-    return { ids, notes };
-  }, `table-ids|${query}|${tag}`);
+    return { key, ids, notes };
+  }, `table-ids|${key}`);
+  const active = Boolean(query || tag);
+  const current = active && state.data?.key === key ? state.data : null;
+  return {
+    /** A search or a tag is set: the rows are the server's. */
+    active,
+    /** The answer to the current search (null while it loads). */
+    current,
+    busy: active && !current && !state.error,
+    error: state.error,
+    reload: state.reload,
+  };
 }
 
 interface FilterGroup {
@@ -217,13 +232,15 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   if (!index) return <Loading />;
   const documents = index.tree.documents;
   // Up to a few hundred rows: filtered and sorted on every render (cheaper than keeping it in sync).
-  const rows = sortIdsBy(
-    Object.keys(documents).filter(
-      (id) => matchesFilters(documents[id] as DocumentTreeEntry, filters) && (!server.data || server.data.ids.has(id)),
-    ),
-    documents,
-    sort,
-  );
+  const rows = server.busy
+    ? []
+    : sortIdsBy(
+        Object.keys(documents).filter(
+          (id) => matchesFilters(documents[id] as DocumentTreeEntry, filters) && (!server.active || Boolean(server.current?.ids.has(id))),
+        ),
+        documents,
+        sort,
+      );
 
   function update(changes: Record<string, string | null>) {
     setParams(withParams(params, { ...changes, page: null }));
@@ -278,7 +295,7 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   const mixedSources = sources.size > 1;
   const singleSource = sources.size === 1 ? [...sources][0] : undefined;
   const activeCount = filterCount(filters) + (query ? 1 : 0);
-  const busy = server.loading && !server.data && (Boolean(query) || filters.tag.length > 0);
+  const busy = server.busy;
   const countText = busy ? "Поиск…" : `${rows.length} из ${total}`;
   const countLabel = busy ? "Поиск…" : `Показано ${rows.length} ${pluralRu(rows.length, "документ", "документа", "документов")} из ${total}`;
   const allSources = sourceOptions(index, sourceLabel);
@@ -415,10 +432,10 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   }
 
   const notes =
-    server.data && server.data.notes.length > 0 ? (
+    server.current && server.current.notes.length > 0 ? (
       <Notice tone="info" className="docs-table__notes">
         <ul>
-          {server.data.notes.map((note) => (
+          {server.current.notes.map((note) => (
             <li key={note}>{note}</li>
           ))}
         </ul>
@@ -426,7 +443,7 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
     ) : null;
 
   const empty =
-    rows.length === 0 && !busy ? (
+    rows.length === 0 && !busy && !server.error ? (
       <EmptyState title={query ? `По запросу «${query}» ничего не найдено` : "Документов с такими фильтрами нет"}>
         <p>Измените или сбросьте фильтры. Поиск ищет по названию, тексту, тегам и связанным ID.</p>
         {activeCount > 0 ? <Button onClick={resetFilters}>Сбросить фильтры</Button> : null}
