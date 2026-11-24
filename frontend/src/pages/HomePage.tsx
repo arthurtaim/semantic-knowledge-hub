@@ -10,7 +10,7 @@ import { Icon } from "../components/ui/Icon";
 import { When } from "../components/When";
 import { canAsk } from "../lib/aiMode";
 import { askHref, QUICK_SKILL_IDS } from "../lib/assistant";
-import { handOff } from "../lib/conversation";
+import { forgetLastDialog, handOff } from "../lib/conversation";
 import { forgetAllConversations } from "../lib/conversationStore";
 import { OPERATION_LABEL, pluralRu, TYPE_LABEL } from "../lib/labels";
 import { REVIEW_HREF } from "../lib/routes";
@@ -132,6 +132,7 @@ function RecentDialogs() {
         return;
       }
       forgetAllConversations();
+      forgetLastDialog(); // plain /ask no longer continues a deleted dialog
     }
     clearRecentQuestions(userId);
     setConfirm(false);
