@@ -390,7 +390,11 @@ def test_a_loop_that_never_finishes_stops_at_the_limit(tool_client: Factory) -> 
     client, recorder = tool_client(ai_tools_max_rounds=3)
     data = ask(client, "Бесконечный цикл: считай документы")
     assert len(recorder.calls) == 3  # rounds are bounded; the last round offers no tools
-    assert len(data["tool_steps"]) == 2 and "лимит шагов" in data["answer"]
+    assert [(s["outcome"], s["error_code"]) for s in data["tool_steps"]] == [
+        ("ok", None),
+        ("invalid", "duplicate_call"),  # the identical call is answered «already done», not re-run
+    ]
+    assert "лимит шагов" in data["answer"] and len(data["system_facts"]) == 1
     assert data["confidence"] == "partial" and data["system_facts"]  # the verified count is still reported
     assert f"{len(oracle(GUEST))} [F" in data["answer"]
     assert "### catalog_query" not in recorder.calls[-1][0]

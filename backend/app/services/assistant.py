@@ -511,7 +511,15 @@ class AssistantService:
         """Honest answer when the loop stopped without a final answer: what was verified (server-composed from
         the facts), what could not be checked — never the model's unvalidated text."""
         reason = LIMIT_TEXTS.get(outcome.limit or "round_limit", "ответ не завершён")
-        facts = list(outcome.facts.values())
+        facts: list[SystemFact] = []
+        seen: set[str] = set()
+        for fact in outcome.facts.values():  # the same observation twice is listed once
+            key = json.dumps(
+                [fact.tool, fact.operation, fact.value, fact.effective_filters], sort_keys=True, default=str
+            )
+            if key not in seen:
+                seen.add(key)
+                facts.append(fact)
         lines = [] if facts else [FIXED_INSUFFICIENT, ""]
         lines.append(f"Не удалось завершить ответ: {reason}.")
         if facts:

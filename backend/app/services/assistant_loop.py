@@ -138,6 +138,9 @@ class ToolLoop:
         exchanges: list[ToolExchange] = []
         repair, repaired = "", False
         calls_total = proposals = transcript = 0
+        executed: dict[
+            str, str
+        ] = {}  # canonical (tool, arguments) -> call id: an identical call is not re-run
         deadline = self._clock() + limits.budget_seconds
 
         for round_no in range(1, limits.max_rounds + 1):
@@ -213,6 +216,7 @@ class ToolLoop:
                 call_id = f"T{len(outcome.steps) + 1}"
                 operation = _operation_hint(arguments)
                 started = self._clock()
+                key = json.dumps([name, arguments], ensure_ascii=False, sort_keys=True, default=str)
                 if index >= limits.max_calls_per_round or calls_total >= limits.max_calls_total:
                     result = failure_result(
                         name[:64],
@@ -221,7 +225,18 @@ class ToolLoop:
                             "invalid", "call_limit", "Превышен лимит вызовов инструментов: вызов не выполнен."
                         ),
                     )
+                elif key in executed:
+                    result = failure_result(
+                        name[:64],
+                        operation or "-",
+                        ToolFailure(
+                            "invalid",
+                            "duplicate_call",
+                            f"Такой вызов уже выполнен ({executed[key]}): используй его результат выше.",
+                        ),
+                    )
                 else:
+                    executed[key] = call_id
                     calls_total += 1
                     yield {
                         "type": "tool_call",
