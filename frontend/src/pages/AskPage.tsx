@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { NOTHING_ATTACHED, TurnView, type Turn } from "../components/AssistantTurn";
+import type { AskRequest } from "../api/types";
+import { NOTHING_ATTACHED, TurnView, type Turn, type TurnDisplay } from "../components/AssistantTurn";
 import { Composer } from "../components/Composer";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { Button } from "../components/ui/Button";
@@ -8,13 +9,21 @@ import { canAsk } from "../lib/aiMode";
 import { scopeFromParam, scopeSources } from "../lib/assistant";
 import { clearHandOff, peekHandOff, restoreConversation, saveConversation } from "../lib/conversation";
 import { pluralRu } from "../lib/labels";
-import { noteDialogSources, rememberDialog } from "../lib/recentQuestions";
+import {
+  findSkill,
+  markAttachmentsGone,
+  noteDialogSources,
+  rememberDialog,
+  rerunsAtOnce,
+  restoreDialog,
+  type RecentAttachment,
+} from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { displayOf, MAX_HISTORY_TURNS, useAssistantTurns } from "../lib/useAssistantTurns";
 import { toAskRequest, useComposer, type ComposerMessage } from "../lib/useComposer";
 import { usePinnedBottom } from "../lib/usePinnedBottom";
 import { useSkills } from "../lib/useSkills";
-import type { HomeHandOff } from "./HomePage";
+import type { HomeHandOff, RecentHandOff } from "./HomePage";
 
 /*
  * /ask is a dialog (docs/ui-v2/specs/02_ASSISTANT.md §2, design-03): the user's messages on the right with what
@@ -57,16 +66,38 @@ export function AskPage() {
   // `?run=1` (from «Спросить или найти»): ask at once. The flag is removed from the URL first, so a reload or a
   // second effect run (React StrictMode) never asks twice.
   const runRequested = params.get("run") === "1";
-  // A message sent from the home page: it starts a new dialog here with its chips (lib/conversation.ts).
-  const [handed] = useState(() => peekHandOff<HomeHandOff>());
+  // A message sent from the home page starts a new dialog here with its chips; a reopened recent dialog puts its
+  // question, skill, files and documents back into the field of that dialog (lib/conversation.ts).
+  const [handed] = useState(() => peekHandOff<HomeHandOff | RecentHandOff>());
+  const sent = handed && "message" in handed ? handed : null;
+  const reopened = handed && "recent" in handed ? handed.recent : null;
+  const [restored] = useState(() => (reopened ? restoreDialog(reopened) : null));
+  const reopenDone = useRef(false);
   // The pinned field: focus moving to a source or a button scrolls it above the field, not under it (2.4.11).
   const pinned = useRef<HTMLDivElement>(null);
   usePinnedBottom(pinned);
   const composer = useComposer({
     persistKey: "dialog",
-    initial: handed ? { conversationId: handed.conversationId, draft: handed.draft } : null,
+    initial: sent ? { conversationId: sent.conversationId, draft: sent.draft } : restored,
+    // Files deleted on the server can no longer come back with a recent dialog.
+    onDiscard: (ids) => markAttachmentsGone(userId, ids),
   });
   const skills = useSkills(aiMode);
+
+  /** What was attached, as the field holds it (size, summary, expiry); a file no longer there was deleted. */
+  function attachmentsOf(request: AskRequest, display: TurnDisplay): RecentAttachment[] {
+    const ready = new Map(composer.message().attachments.map((a) => [a.id, a]));
+    return (request.attachment_ids ?? []).map((id) => {
+      const a = ready.get(id);
+      const name = a?.name ?? display.files.find((file) => file.id === id)?.name ?? id;
+      return a
+        ? { id, name, size: a.size, mime: a.mime, summary: a.summary, expiresAt: a.expires_at, gone: false }
+        : { id, name, size: null, mime: null, summary: null, expiresAt: null, gone: true };
+    });
+  }
+
+  const recentSkill = (display: TurnDisplay) => (display.skill ? { id: display.skill.id, name: display.skill.name } : null);
+
   // Completed turns survive a visit to a cited document (memory only; see lib/conversation.ts).
   const conversation = useAssistantTurns({
     composer,
@@ -74,11 +105,22 @@ export function AskPage() {
     onStart: (request, display) =>
       rememberDialog(userId, {
         question: request.question,
-        skill: display.skill?.name,
+        skill: recentSkill(display),
         context: display.files[0]?.name ?? display.documents[0]?.title ?? null,
+        conversationId: request.conversation_id ?? null,
+        attachments: attachmentsOf(request, display),
+        documents: display.documents,
       }),
     onAnswer: (request, display, response) =>
-      noteDialogSources(userId, request.question, display.skill?.name ?? null, response.citations.length),
+      noteDialogSources(userId, { question: request.question, skill: recentSkill(display) }, response.citations.length),
+    onError: (request, _display, error) => {
+      if (error.code !== "attachment_not_found") return;
+      // The server names the file it could not find; without a name every file of the request is suspect.
+      const named = typeof error.details.attachment_id === "string" ? [error.details.attachment_id] : [];
+      const ids = named.length > 0 ? named : (request.attachment_ids ?? []);
+      composer.markUnavailable(ids);
+      markAttachmentsGone(userId, ids);
+    },
   });
   const { turns, pending, run, history: context } = conversation;
 
@@ -107,16 +149,38 @@ export function AskPage() {
 
   // The hand-off from the home page runs once (the timer survives StrictMode's double effects).
   useEffect(() => {
-    if (!handed || !canAsk(aiMode)) return undefined;
+    if (!sent || !canAsk(aiMode)) return undefined;
     const timer = window.setTimeout(() => {
       clearHandOff();
       if (runRequested) dropRunFlag();
       conversation.clear();
-      void run(toAskRequest(handed.message), displayOf(handed.message));
+      void run(toAskRequest(sent.message), displayOf(sent.message));
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handed, aiMode]);
+  }, [sent, aiMode]);
+
+  // A reopened recent dialog: its skill chip comes from the registry (wait for it); a plain question is asked
+  // again at once, anything with a skill or files waits in the field for Enter (lib/recentQuestions.ts).
+  useEffect(() => {
+    if (!reopened || reopenDone.current || !canAsk(aiMode)) return undefined;
+    if (reopened.skill && skills.items === null && !skills.failed) return undefined;
+    const timer = window.setTimeout(() => {
+      reopenDone.current = true;
+      clearHandOff();
+      const skill = findSkill(skills.items, reopened.skill);
+      if (skill) composer.setSkill(skill);
+      if (rerunsAtOnce(reopened)) {
+        conversation.clear();
+        const message = composer.message();
+        void run(toAskRequest(message), displayOf(message));
+      } else {
+        composer.focus();
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reopened, aiMode, skills.items, skills.failed]);
 
   useEffect(() => {
     if (handed || !runRequested || !canAsk(aiMode)) return undefined;

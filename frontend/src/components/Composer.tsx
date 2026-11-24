@@ -100,13 +100,18 @@ export interface ComposerProps {
 
 function fileIcon(file: ComposerFile): IconName {
   if (file.status === "error") return "alert";
+  if (file.status === "unavailable") return "clock";
   return ["csv", "xlsx", "json", "yaml", "yml", "sql"].includes(extensionOf(file.name)) ? "file" : "file-text";
 }
+
+/** A reopened dialog's file the server no longer keeps (expired or deleted): shown grey, never sent. */
+export const FILE_UNAVAILABLE = "файл больше недоступен";
 
 /** The size, plus the server's summary when the file has been read («48 КБ · 3 листа»). */
 function fileMeta(file: ComposerFile): string {
   if (file.status === "reading") return "Читаю…";
   if (file.status === "error") return file.error ?? "не принят";
+  if (file.status === "unavailable") return FILE_UNAVAILABLE;
   const size = formatBytes(file.attachment?.size ?? file.size);
   const summary = file.attachment?.summary;
   return summary ? `${size} · ${summary}` : size;
@@ -513,9 +518,15 @@ export function Composer({
                 <Chip
                   tone={file.status === "error" ? "danger" : "file"}
                   icon={file.status === "reading" ? undefined : fileIcon(file)}
-                  className={file.status === "reading" ? "chip--reading" : undefined}
+                  className={file.status === "reading" ? "chip--reading" : file.status === "unavailable" ? "chip--unavailable" : undefined}
                   meta={fileMeta(file)}
-                  title={file.status === "error" ? `${file.name}: ${file.error ?? ""}` : file.name}
+                  title={
+                    file.status === "error"
+                      ? `${file.name}: ${file.error ?? ""}`
+                      : file.status === "unavailable"
+                        ? `${file.name}: ${FILE_UNAVAILABLE} — не будет отправлен`
+                        : file.name
+                  }
                   onRemove={() => composer.removeFile(file.key)}
                   removeLabel={`Убрать файл «${file.name}»`}
                 >

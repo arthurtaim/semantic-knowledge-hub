@@ -794,6 +794,12 @@ button.chip__body {
   color: var(--danger-text);
 }
 
+/* A reopened dialog's file that expired or was deleted: grey and dashed — it stays visible but is never sent. */
+.chip--unavailable {
+  border-style: dashed;
+  color: var(--text-secondary);
+}
+
 /* Document status: text + shape, never colour alone. Approved is a quiet stamp in ordinary text. */
 .status-mark {
   display: inline-flex;
