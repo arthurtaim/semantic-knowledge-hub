@@ -339,6 +339,19 @@ class ExcerptPart(BaseModel):
     rows: list[list[str]] | None = None
 
 
+# Origin of a source as its METADATA states it (docs/API_CONTRACTS.md «Answer provenance»): `synthetic` — marked
+# synthetic/demo (front matter `synthetic: true`, a `demo` tag, a demo workspace, the mock Confluence corpus);
+# `not_synthetic` — a team document or corporate page without that mark; `unknown` — no provenance metadata at all
+# (a file attached to the conversation). Never inferred from text and never a claim that a source is "real".
+ProvenanceOrigin = Literal["synthetic", "not_synthetic", "unknown"]
+
+
+def provenance_origin(source_type: str, is_demo: bool) -> ProvenanceOrigin:
+    if source_type == "attachment":
+        return "unknown"
+    return "synthetic" if is_demo else "not_synthetic"
+
+
 class Citation(BaseModel):
     """Provenance of a cited excerpt. `ref` is the stable number shown in the answer ([1], [2]…)."""
 
@@ -372,6 +385,15 @@ class Citation(BaseModel):
     # it touches, taken by the server from the cited section of the same revision (app/domain/excerpts.py).
     # None: show `excerpt` as is. `excerpt` stays the verbatim quote the server verified.
     excerpt_parts: list[ExcerptPart] | None = None
+    # Origin of this source from its metadata (derived from `source_type` + `is_demo` unless given): the per-source
+    # badge of the UI. `is_demo` alone cannot tell «not synthetic» from «unknown» (an attachment is `is_demo: false`).
+    provenance: ProvenanceOrigin | None = None
+
+    @model_validator(mode="after")
+    def _derive_provenance(self) -> Citation:
+        if self.provenance is None:
+            self.provenance = provenance_origin(self.source_type, self.is_demo)
+        return self
 
 
 class ExcludedSource(BaseModel):
@@ -407,6 +429,9 @@ class SystemFactItem(BaseModel):
         None  # e.g. "владелец не назначен", "references · WikiLink, строка 12", "v2 · active"
     )
     app_path: str | None = None
+    # A document item: whether its metadata marks it synthetic/demo (source metadata, like Citation.is_demo);
+    # None for templates, relations and proposals.
+    is_demo: bool | None = None
 
 
 class SystemFact(BaseModel):
@@ -546,6 +571,21 @@ class ProposalRef(BaseModel):
     graph_link: str | None = None
 
 
+class AnswerProvenance(BaseModel):
+    """Origin of the evidence an answer ACTUALLY relies on: its validated citations and the documents named by its
+    system facts — never every retrieved passage, never «some document of the catalog is demo». Counts are distinct
+    sources. The UI shows it as one quiet indicator (and per-source badges from `Citation.provenance`) instead of a
+    warning on every answer; a server warning is added only when it is material (mixed synthetic and non-synthetic
+    evidence). `overall`: `none` — the answer relies on no source (insufficient evidence, general knowledge, a bare
+    registry count); `mixed` — more than one origin."""
+
+    overall: Literal["synthetic", "not_synthetic", "unknown", "mixed", "none"] = "none"
+    synthetic: int = 0
+    not_synthetic: int = 0
+    unknown: int = 0
+    by_kind: dict[str, int] = Field(default_factory=dict)  # "team" | "corporate" | "attachment" → sources
+
+
 class AskResponse(BaseModel):
     answer: str
     mode: Literal["mock", "internal_api", "claude_cli", "disabled"]
@@ -571,6 +611,8 @@ class AskResponse(BaseModel):
     tool_steps: list[ToolStepInfo] = Field(default_factory=list)
     general_knowledge: bool = False
     conversation_context: list[TurnFactContext] = Field(default_factory=list)
+    # Answer-quality fix (additive): origin of the validated evidence (app/domain/provenance.py).
+    provenance: AnswerProvenance = Field(default_factory=AnswerProvenance)
 
 
 IntegrationTarget = Literal["none", "local", "mock", "real"]

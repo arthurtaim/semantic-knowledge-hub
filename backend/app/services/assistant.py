@@ -44,6 +44,7 @@ from app.domain.models import (
     TurnFactContext,
     UserContext,
 )
+from app.domain.provenance import apply_provenance
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
 from app.domain.skills import DEFAULT_SKILL
 from app.domain.text import QueryTerm, reportable_terms, term_matches_text, tokenize
@@ -71,7 +72,6 @@ FIXED_INSUFFICIENT = (
     "Ассистент не делает предположений о том, чего нет в документах."
 )
 
-DEMO_WARNING = "Используются только демо-документы (синтетические данные) — они не являются фактами о банке."
 ATTACHMENT_ONLY_WARNING = (
     "Ответ опирается только на вложение этого диалога: это не утверждённый документ базы знаний."
 )
@@ -473,7 +473,6 @@ class AssistantService:
                 facts=used,
                 general_knowledge=final.general_knowledge,
                 insufficient_text=self._tools_insufficient_text(steps_failed),
-                demo=None if passages else await self._knowledge_is_demo(user),
             )
             response.system_facts = used
             response.general_knowledge = (
@@ -502,13 +501,6 @@ class AssistantService:
             outcome.limit or "-",
         )
         return self._record(user, req, replace(prepared, passages=passages), response, extras)
-
-    async def _knowledge_is_demo(self, user: UserContext) -> bool | None:
-        try:
-            snapshot = await self._knowledge.snapshot(user)
-        except RepositoryUnavailableError:
-            return None
-        return any(d.is_demo for d in snapshot.documents.values())
 
     @staticmethod
     def _tools_insufficient_text(failed: list[Any]) -> str:
@@ -545,8 +537,6 @@ class AssistantService:
             *prepared.warnings,
             "Ответ модели не получен полностью: показаны только проверенные данные.",
         ]
-        if any(p.is_demo for p in outcome.passages) or not outcome.passages:
-            warnings.insert(0, DEMO_WARNING)
         return AskResponse(
             answer="\n".join(lines),
             mode=self._provider.mode,
@@ -792,6 +782,7 @@ class AssistantService:
         """Attach provenance (generation, instructions) and, when allowed, store the retrieval trace:
         which fragments were in context and which were cited — never the answer text. Attachments of a
         conversation are never written to the discovery memory."""
+        apply_provenance(response)
         response.index_generation = prepared.index_generation
         response.instructions_version = self._instructions_version()
         response.external = prepared.external.summary() if prepared.external else None
@@ -941,8 +932,6 @@ class AssistantService:
         facts: list[SystemFact] | None = None,
         general_knowledge: bool = False,
         insufficient_text: str = FIXED_INSUFFICIENT,
-        demo: bool
-        | None = None,  # tool mode without passages: whether the reader's knowledge is demo content
     ) -> AskResponse:
         """Every citation is verified against the passage it names. M5.7: verified SYSTEM FACTS (`facts`) are the
         evidence of system claims — an answer backed by them is not rejected for lacking a document quote; a
@@ -1092,9 +1081,8 @@ class AssistantService:
                 if fact.operation == "count" and f"[{fact.ref}]" in answer and str(fact.value) not in stated:
                     warnings.append(FACT_NUMBER_WARNING)
 
-        used = [by_cid[c] for c in cid_to_ref] if citations else passages
-        if any(p.is_demo for p in used) or (not passages and demo is not False):
-            warnings.insert(0, DEMO_WARNING)
+        # Provenance (synthetic or not) is metadata of the validated evidence: `_record` summarizes it
+        # (app/domain/provenance.py) — no fixed «only demo» warning on every answer.
         if any(c.status in (DocStatus.draft, DocStatus.in_review) for c in citations):
             warnings.append("Среди цитируемых источников есть неутверждённые документы (draft / in_review).")
         if any(c.status == DocStatus.deprecated for c in citations):

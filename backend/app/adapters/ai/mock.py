@@ -222,7 +222,7 @@ class MockAIProvider:
                         if listed
                         else "нет совпадений со словами вопроса"
                     )
-                    + ". Демо-ассистент не делает предположений о том, чего нет в документах."
+                    + ". Ассистент не делает предположений о том, чего нет в документах."
                 )
             return self._quote_team(passages, options)
 
@@ -230,7 +230,7 @@ class MockAIProvider:
         if missing_entities:
             return insufficient(
                 "Недостаточно данных: в доступных источниках нет упоминаний "
-                f"{_format_terms(missing_entities)}. Демо-ассистент не делает предположений о том, "
+                f"{_format_terms(missing_entities)}. Ассистент не делает предположений о том, "
                 "чего нет в документах."
             )
 
@@ -245,7 +245,7 @@ class MockAIProvider:
                     if listed
                     else "нет подтверждённого ответа на вопрос"
                 )
-                + ". Демо-ассистент не делает предположений о том, чего нет в документах."
+                + ". Ассистент не делает предположений о том, чего нет в документах."
             )
         return self._quote_team(passages, options)
 

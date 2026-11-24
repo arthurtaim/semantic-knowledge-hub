@@ -166,6 +166,10 @@ def format_passages(passages: list[ContextPassage], max_chars: int) -> list[str]
                 "section": p.section,
                 "status": p.status.value if p.status else None,
                 "source": p.source_type,
+                # Provenance is METADATA (the UI shows it per source): the model needs it to answer «are these real
+                # data?» truthfully and to notice mixed sources, not to recite a disclaimer (RETRIEVAL_GROUNDING).
+                # An attachment has no provenance metadata, so it carries no such field.
+                "synthetic": p.is_demo,
             }
         )
         if p.chosen:
