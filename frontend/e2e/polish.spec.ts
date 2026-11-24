@@ -85,6 +85,22 @@ test("F-02 the toolbar path never runs under the badges; a narrow toolbar shows 
     await page.goto("/documents/DEMO-INT-001");
     const current = page.locator(".page-toolbar .crumbs [aria-current='page']");
     await expect(current).toBeVisible();
+    // Measure the settled toolbar: the document's own path and actions («Ещё») replace the route's default path
+    // only after the document loads; measuring before that compared a transient toolbar (flaky under load).
+    await expect(page.locator(".page-toolbar").getByRole("button", { name: "Ещё", exact: true })).toBeVisible();
+    await expect(current).toContainText("ARIS");
+    if (width <= 860) {
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              Array.from(document.querySelectorAll(".page-toolbar .crumbs li")).filter(
+                (li) => getComputedStyle(li).display !== "none",
+              ).length,
+          ),
+        )
+        .toBe(1);
+    }
     const layout = await page.evaluate(() => {
       const lead = document.querySelector(".page-toolbar__lead")!.getBoundingClientRect();
       const end = document.querySelector(".page-toolbar__end")!.getBoundingClientRect();
