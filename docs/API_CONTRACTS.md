@@ -2,7 +2,7 @@
 
 These are proposed MVP HTTP contracts. Claude Code may refine field details but must document changes, keep tests consistent and preserve adapter boundaries. All routes prefixed `/api`.
 
-**Current implemented contract: v0.3 (M4.6 authoring + M4 readiness + M5 publication)** — see the last section. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
+**Current implemented contract: v0.4 (v0.3 + UI v2 phase C: assistant skills and attachments)** — see the last two sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
 
 ## 1. Health and integrations
 - `GET /api/health` -> `{ "status": "ok", "mode": "local_demo" }` (no secrets).
@@ -247,3 +247,90 @@ Problem codes: `revision_superseded`, `not_merged`, `status_not_publishable`, `s
   `read_marker`, `create_page`, `update_page`, `write_marker`, `status`; failures raise `PublicationError`
   (`uncertain`, `retryable`).
 - `KnowledgeRepository` protocol adds `file_exists(path)` (local and GitLab; fresh read for ID/path checks); `GitLabKnowledgeRepository` adds `merged_merge_request(revision)` (merge evidence for publication).
+
+## Implemented contract (v0.4, UI v2 phase C: assistant skills and attachments)
+
+Source: `docs/ui-v2/specs/02_ASSISTANT.md` §3–§6. Additive: every new request field is optional and every new
+response field has a default, so a v0.3 request gets exactly the v0.3 answer (deterministic eval unchanged).
+Code: `app/domain/skills.py`, `app/services/skills.py`, `app/services/attachments.py`, `app/api/multipart.py`,
+`app/api/assistant.py`; tests `tests/test_assistant_skills.py`, `tests/test_attachments.py`.
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/assistant/skills` | `ask_assistant` | — | `SkillInfo[]` in a fixed order | — |
+| `POST /api/assistant/attachments` | `ask_assistant` | `multipart/form-data`: `conversation_id`, `file` (send `conversation_id` first) | `201 AttachmentInfo` (`status: ready`) or `200 AttachmentInfo` (`status: error` + `error_code`, nothing stored) | `422 invalid_request` (`details.fields[].loc` = `body.conversation_id` / `body.file`), `422 invalid_multipart`, `503 assistant_disabled` |
+| `DELETE /api/assistant/attachments/{attachment_id}` | `ask_assistant` | — | `204` — idempotent (also for an expired, deleted or never stored id) | `422` (id is not `ATT-<16 hex>`) |
+| `POST /api/assistant/ask`, `/ask/stream` | `ask_assistant` (+ `create_proposal` for workflow skills, `read_corporate` for `corporate`) | v0.3 body + the fields below | `AskResponse` + `skill`, `proposal`; citations may have `source_type: attachment` | see below |
+
+Shapes:
+
+```text
+SkillInfo { id, name, description, access: read|draft,
+            requires: {document: bool, selection: bool, attachment: bool},
+            prompt_optional: bool, available: bool, unavailable_reason: string|null }
+
+AttachmentInfo { id: "ATT-<16 hex>", conversation_id, name (display only, sanitized), size, mime,
+                 status: ready|error, summary: string|null («3 листа», «12 страниц», «1 240 строк»),
+                 error_code: unsupported_type|too_large|limit_reached|unreadable|null,
+                 expires_at: datetime|null (null for an error result) }
+
+AskRequest += { conversation_id?: ^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$ (required with attachment_ids),
+                skill_id?: string, attachment_ids?: string[≤10], context_document_ids?: string[≤5],
+                selection?: {document_id, section_anchor?, text? (≤ 8000, "" = the whole section)} | null }
+                question: ≥ 3 characters, or "" when the skill has prompt_optional
+
+AskResponse += { skill: {id, name, access} | null      (echoed when the request named a skill)
+                 proposal: {id, kind, status, graph_link?} | null   (workflow skills; GET /api/ai/proposals/{id}) }
+
+Citation   += { source_type: local|gitlab|confluence|attachment,
+                attachment_id?, attachment_name?, locator? («строка 1», «стр. 4», «лист Fields, строка 12», «строки 3–5») }
+                for an attachment: document_id = attachment id, source_uri = attachment://<id>, status/section/app_path = null
+```
+
+**Skills and AI modes.** `internal_api`, `claude_cli`: all available. `mock`: all except `improve_section`
+(`unavailable_reason`: «В демо-режиме нет языковой модели: переписать раздел нельзя.» — the mock can only normalize
+layout). `disabled`: none available, reason «ИИ отключён». `draft_document` additionally needs a provider with
+`supports_authoring`.
+
+**Attachments.** ≤ 10 ready files per conversation (≤ 100 per user over all conversations), ≤ 20 MB each; formats
+md/markdown, txt, csv, json, yaml/yml, sql, pdf, docx, xlsx; text extraction only. `unsupported_type`: another
+extension, an executable by content (PE/DOS, ELF, Mach-O, universal binary / Java class, WebAssembly, `#!` script —
+also under a text extension), a docx/xlsx carrying a macro project or executable entries. `too_large`: > 20 MB (a
+body beyond 20 MB + 64 KiB is not read to the end). `limit_reached`: the limits above. `unreadable`: corrupt,
+encrypted, without a text layer, binary under a text extension, empty, zip-bomb guard (entries, total and per-entry
+uncompressed size, ratio) or extraction over 20 s. Text: UTF-8 (BOM), UTF-16 with BOM, CP1251 fallback; units are
+lines (text, pdf pages), paragraphs and table rows (docx), rows (xlsx, ≤ 50 sheets); ≤ 300 000 characters kept
+(`summary` then ends with «, текст сокращён»). Only the extracted text is stored (app-state SQLite, table
+`assistant_attachments`), never the bytes; the file name never touches the filesystem; contents are never logged.
+Expiry: `ATTACHMENTS_TTL_HOURS` (default 24); expired rows are purged on access. Attachments are visible only in
+their conversation and to their uploader, never indexed into search, the graph or the discovery memory. With
+`AI_PROVIDER=disabled` uploads are refused (`503 assistant_disabled`; the UI has no file button then).
+
+**Ask errors (HTTP before any stream event).** `503 assistant_disabled`; `422 skill_unknown`; `503 skill_unavailable`
+(`details.skill_id`, message = the reason); `422 skill_input_missing` (`details.missing`: `document` | `selection` |
+`attachment`; `find_related` needs a document or a question, `improve_section` a selection with `section_anchor`);
+`404 attachment_not_found` (unknown, expired, deleted, another conversation or user — indistinguishable on purpose);
+`404 document_not_found` (chosen document or selection document not visible); `422 selection_not_found` (the
+selected text is not verbatim in the document / section, or the anchor does not exist); `403 forbidden`; `422
+invalid_request` (validation). Provider failures keep the v0.3 behaviour (HTTP error on `/ask`, `error` event on
+the stream).
+
+**Evidence rules.** Chosen documents (best sections for the question) and the verified selection are handed to the
+provider first, marked `chosen`, and quoted first when they contain a question term; a chosen document that is a
+draft keeps its status in the citation and the usual warning. Attachment fragments are a separate group (header line
++ windows around matching lines, ≤ 4 000 characters per answer, own budget); a citation of a fragment exists only
+with a verbatim quote, and its `locator` is computed by the server from the cited lines. An answer cited only from
+attachments is never `supported` (capped at `partial`, warning «Ответ опирается только на вложение…»). With
+attachments, the discovery trace stores only the user's own question (never the file's words or name).
+
+**Skills.** `answer` (default), `explain` (ask with «Объясни: …» over the selection / document), `compare_with_file`
+(ask; the file header joins the retrieval text; absent terms are reported, not a refusal) run through the grounded
+ask pipeline: `proposal = null`. The others call `AiWorkflowService.propose` (M5.6.3) and return `proposal`:
+`summarize` → `summarize`, `check_completeness` → `check_completeness`, `check_freshness` → `impact_analysis`,
+`find_related` → `find_related` (one document, or the best approved document for a question) / `explain_relation`
+(two documents), `draft_document` → `draft_from_prompt`, `improve_section` → `improve_section`, `suggest_metadata`
+→ `suggest_metadata`. For them `answer` = the proposal summary, `citations` = the proposal's evidence quotes
+re-verified verbatim against the reader's snapshot, `confidence` = `insufficient_evidence` when the proposal is
+insufficient, `supported` with verified citations, otherwise `partial`. Nothing is applied: Accept / Reject stay
+`POST /api/ai/proposals/{id}/accept|reject`. On `/ask/stream` a workflow skill sends `status` retrieving →
+generating → validating and `final` (no `delta`).

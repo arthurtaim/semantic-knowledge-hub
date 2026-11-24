@@ -7,6 +7,8 @@ import type {
   AskRequest,
   AskResponse,
   AskStreamEvent,
+  AssistantAttachment,
+  AssistantSkill,
   AuthoringCheckRequest,
   AuthoringCheckResponse,
   ChangeDraftUpdate,
@@ -54,6 +56,8 @@ import type {
 const TIMEOUT_MS = 30_000;
 /** An AI draft may take minutes with the Claude Code CLI provider (the backend bounds it as well). */
 const AI_DRAFT_TIMEOUT_MS = 300_000;
+/** Uploading up to 20 MB and extracting its text (the server bounds extraction at 20 s). */
+const ATTACHMENT_TIMEOUT_MS = 120_000;
 /** The answer stream has no total timeout: it is aborted only when no data arrives for this long. */
 const STREAM_IDLE_TIMEOUT_MS = 330_000;
 /** A single NDJSON line larger than this is treated as a broken stream (bounded memory). */
@@ -148,7 +152,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (signal?.aborted) throw cancelledError();
   const abort = linkedAbort(signal, timeoutMs);
   const headers: Record<string, string> = { Accept: "application/json", "X-SKH-Client": "web" };
-  if (init.body !== undefined) headers["Content-Type"] = "application/json";
+  // FormData sets its own multipart Content-Type with the boundary.
+  if (init.body !== undefined && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
   let response: Response;
   let text: string;
   try {
@@ -378,6 +383,28 @@ export const api = {
   ask: (payload: AskRequest) => request<AskResponse>("/assistant/ask", { method: "POST", body: json(payload) }),
   /** Streaming variant of `ask` (NDJSON); works with every provider — mock sends only status + final. */
   askStream,
+
+  // --- UI v2: assistant skills and conversation attachments ---
+  /** The skill registry with availability in the current AI mode (never hard-code the list). */
+  assistantSkills: () => request<AssistantSkill[]>("/assistant/skills"),
+  /**
+   * Attaches a file to one conversation. Resolves with `status: "ready"` or `status: "error"` + `error_code`
+   * (unsupported_type, too_large, limit_reached, unreadable); throws ApiError for 422/503.
+   */
+  uploadAttachment: (conversationId: string, file: Blob, name?: string, options: { signal?: AbortSignal } = {}) => {
+    const form = new FormData();
+    form.append("conversation_id", conversationId); // before the file: read even when the file is too large
+    form.append("file", file, name ?? (file instanceof File ? file.name : "file"));
+    return request<AssistantAttachment>("/assistant/attachments", {
+      method: "POST",
+      body: form,
+      timeoutMs: ATTACHMENT_TIMEOUT_MS,
+      signal: options.signal,
+    });
+  },
+  /** Idempotent: also succeeds for an attachment that already expired or was never stored. */
+  deleteAttachment: (id: string) =>
+    request<null>(`/assistant/attachments/${encodeURIComponent(id)}`, { method: "DELETE" }),
   corporatePage: (id: string) => request<CorporatePage>(`/corporate/pages/${encodeURIComponent(id)}`),
   drafts: (params: { status?: ProposalStatus; document_id?: string } = {}) =>
     request<ProposalList>(`/drafts${query({ ...params })}`),

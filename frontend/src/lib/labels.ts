@@ -21,7 +21,7 @@ import type {
   PublicationJobState,
   PublisherMode,
   ReviewState,
-  SourceType,
+  CitationSourceType,
   SyncState,
   UnresolvedReason,
 } from "../api/types";
@@ -64,10 +64,11 @@ export const STATUS_LABEL: Record<DocStatus, string> = {
   deprecated: "Устарел",
 };
 
-export const SOURCE_LABEL: Record<SourceType, string> = {
+export const SOURCE_LABEL: Record<CitationSourceType, string> = {
   local: "Локальный workspace",
   gitlab: "GitLab",
   confluence: "Confluence",
+  attachment: "Вложение",
 };
 
 export const REVIEW_LABEL: Record<ReviewState, string> = {
