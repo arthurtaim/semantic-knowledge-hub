@@ -443,9 +443,9 @@ describe("Таблица: grouping, columns, keyboard", () => {
     expect(within(table()).getAllByRole("columnheader")).toHaveLength(6);
   });
 
-  it("below 1280 px «Системы» starts hidden until the reader chooses the columns", async () => {
+  it("below 1280 px «Системы» starts hidden; «Колонки» brings it back and the choice is remembered", async () => {
     mockViewport(1100);
-    renderTable();
+    const { unmount } = renderTable();
     await screen.findByRole("table");
     expect(within(table()).queryByRole("columnheader", { name: "Системы" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Колонки" }));
@@ -454,6 +454,18 @@ describe("Таблица: grouping, columns, keyboard", () => {
     await userEvent.click(systems);
     expect(within(table()).getByRole("columnheader", { name: "Системы" })).toBeInTheDocument();
     expect(localStorage.getItem("skh.documents.columns")).toBe("[]"); // the choice holds at any width
+    // the next visit at the same narrow width: «Системы» is shown, as chosen
+    unmount();
+    const again = renderTable();
+    await screen.findByRole("table");
+    expect(within(table()).getByRole("columnheader", { name: "Системы" })).toBeInTheDocument();
+    expect(within(table()).getAllByRole("columnheader")).toHaveLength(7);
+    // (still narrow: without a remembered choice it starts hidden again)
+    again.unmount();
+    localStorage.removeItem("skh.documents.columns");
+    renderTable();
+    await screen.findByRole("table");
+    expect(within(table()).queryByRole("columnheader", { name: "Системы" })).toBeNull();
   });
 
   it("one tab stop for the rows; ↑↓ Home End move between rows; Enter opens the document", async () => {
