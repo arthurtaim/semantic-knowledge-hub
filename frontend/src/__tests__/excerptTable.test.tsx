@@ -84,6 +84,9 @@ describe("Excerpts from Markdown tables", () => {
     ]);
     // Narrow columns stack each cell as «заголовок: значение» (CSS reads the label from data-label).
     expect(within(rows[0] as HTMLElement).getByText("SYS-ARIS")).toHaveAttribute("data-label", "Код");
+    // A one-token code stays on one line; prose cells wrap.
+    expect(within(rows[0] as HTMLElement).getByText("SYS-ARIS")).toHaveClass("excerpt-table__token");
+    expect(within(rows[0] as HTMLElement).getByText("процессные модели")).not.toHaveClass("excerpt-table__token");
     expect(within(sources).getByText("Со стороны каталога отвечает стюард.").tagName).toBe("Q");
     expect(sources).not.toHaveTextContent("Роль Система Код");
   });

@@ -52,6 +52,11 @@ export function excerptParts(citation: Citation): ExcerptPart[] | null {
   return parts && parts.some(isTable) ? parts : null;
 }
 
+/** A cell that is one short code or name (SYS-ARIS, process_id, demo-integration-team): kept on one line. */
+function isToken(cell: string): boolean {
+  return cell.length > 0 && cell.length <= 32 && !/\s/.test(cell);
+}
+
 /** One row of a table as text: «Источник — ARIS — SYS-ARIS». Empty cells keep their place as «—». */
 export function rowText(cells: string[]): string {
   return cells.map((cell) => cell.trim() || "—").join(CELL_SEPARATOR);
@@ -96,7 +101,12 @@ export function SourceExcerpt({ citation }: { citation: Citation }) {
                 {(part.rows ?? []).map((row, rowIndex) => (
                   <tr key={rowIndex} role="row">
                     {row.map((cell, col) => (
-                      <td key={col} role="cell" data-label={part.headers?.[col] ?? ""}>
+                      <td
+                        key={col}
+                        role="cell"
+                        data-label={part.headers?.[col] ?? ""}
+                        className={isToken(cell) ? "excerpt-table__token" : undefined}
+                      >
                         {cell}
                       </td>
                     ))}

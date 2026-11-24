@@ -5342,7 +5342,12 @@ a.source__title:hover {
   border: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
-  overflow-wrap: break-word; /* a code like SYS-ARIS stays whole; only a word wider than the column breaks */
+  overflow-wrap: break-word;
+}
+
+/* A one-token cell (SYS-ARIS, process_id) never breaks at its hyphen or underscore. */
+.excerpt-table td.excerpt-table__token {
+  white-space: nowrap;
 }
 
 .excerpt-table th {
