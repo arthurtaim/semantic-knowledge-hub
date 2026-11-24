@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { NOTHING_ATTACHED, TurnView, type Turn } from "../components/AssistantTurn";
 import { Composer } from "../components/Composer";
@@ -12,6 +12,7 @@ import { noteDialogSources, rememberDialog } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { displayOf, MAX_HISTORY_TURNS, useAssistantTurns } from "../lib/useAssistantTurns";
 import { toAskRequest, useComposer, type ComposerMessage } from "../lib/useComposer";
+import { usePinnedBottom } from "../lib/usePinnedBottom";
 import { useSkills } from "../lib/useSkills";
 import type { HomeHandOff } from "./HomePage";
 
@@ -58,6 +59,9 @@ export function AskPage() {
   const runRequested = params.get("run") === "1";
   // A message sent from the home page: it starts a new dialog here with its chips (lib/conversation.ts).
   const [handed] = useState(() => peekHandOff<HomeHandOff>());
+  // The pinned field: focus moving to a source or a button scrolls it above the field, not under it (2.4.11).
+  const pinned = useRef<HTMLDivElement>(null);
+  usePinnedBottom(pinned);
   const composer = useComposer({
     persistKey: "dialog",
     initial: handed ? { conversationId: handed.conversationId, draft: handed.draft } : null,
@@ -220,7 +224,7 @@ export function AskPage() {
         </div>
       )}
 
-      <div className="dialog__composer">
+      <div className="dialog__composer" ref={pinned}>
         <Composer
           variant="dialog"
           composer={composer}

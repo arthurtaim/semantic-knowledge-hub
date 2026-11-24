@@ -294,8 +294,10 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  /* Anchors and focused elements land below the sticky page toolbar, with a 16 px gap (WCAG 2.4.11). */
+  /* Anchors and focused elements land below the sticky page toolbar, with a 16 px gap, and above a field pinned
+     to the bottom of the dialog (its height is --pinned-bottom, lib/usePinnedBottom.ts) — WCAG 2.4.11. */
   scroll-padding-top: calc(var(--toolbar-height) + var(--space-4));
+  scroll-padding-bottom: calc(var(--pinned-bottom, 0px) + var(--space-2));
 }
 
 body {
@@ -3179,6 +3181,13 @@ h1 a:hover {
   width: 100%;
   font-family: var(--font-ui);
   font-size: var(--fs-ui);
+}
+
+/* A wide table or code block that scrolls in its own frame is a tab stop (SafeHtml), with a visible focus ring. */
+.prose pre:focus-visible,
+.prose table:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .prose th,

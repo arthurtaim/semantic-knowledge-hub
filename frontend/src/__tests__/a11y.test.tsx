@@ -1,8 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
+import { useRef } from "react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../App";
+import { SafeHtml } from "../components/SafeHtml";
+import { usePinnedBottom } from "../lib/usePinnedBottom";
 import { DocumentPage } from "../pages/DocumentPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { arisDetail, session } from "./fixtures";
@@ -85,5 +88,37 @@ describe("Phase 4 accessibility", () => {
     expect(screen.queryByRole("dialog", { name: "Меню" })).toBeNull();
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveFocus();
+  });
+});
+
+describe("UI v2 phase F accessibility", () => {
+  it("gives a document table or code block that scrolls in its own frame a tab stop (keyboard scrolling)", () => {
+    // jsdom has no layout: the code block is wider than its frame, the table fits.
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.tagName === "PRE" ? 640 : 300;
+    });
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(320);
+    render(
+      <MemoryRouter>
+        <SafeHtml className="prose" html={"<pre><code>SELECT * FROM very_long_table_name;</code></pre><table><tr><td>A</td></tr></table>"} />
+      </MemoryRouter>,
+    );
+    expect(document.querySelector("pre")).toHaveAttribute("tabindex", "0");
+    expect(document.querySelector("table")).not.toHaveAttribute("tabindex");
+    vi.restoreAllMocks();
+  });
+
+  it("publishes the pinned field's height for html scroll-padding-bottom and removes it on unmount (2.4.11)", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ height: 131.4 } as DOMRect);
+    function Pinned() {
+      const ref = useRef<HTMLDivElement>(null);
+      usePinnedBottom(ref);
+      return <div ref={ref}>поле</div>;
+    }
+    const { unmount } = render(<Pinned />);
+    expect(document.documentElement.style.getPropertyValue("--pinned-bottom")).toBe("132px");
+    unmount();
+    expect(document.documentElement.style.getPropertyValue("--pinned-bottom")).toBe("");
+    vi.restoreAllMocks();
   });
 });
