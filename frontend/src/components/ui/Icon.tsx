@@ -138,6 +138,16 @@ const PATHS = {
     </>
   ),
   check: <path d="m5 12.5 4.5 4.5L19 7" />,
+  /** A sorted column's direction (rotated for descending). */
+  "sort-up": <path d="M12 19V5M6 11l6-6 6 6" />,
+  // «Документы» v2 (docs/ui-v2/documents/design-source/DocsBrowser.dc.html): the tree filter and «Свернуть всё».
+  filter: <path d="M3 5h18M6 12h12M10 19h4" />,
+  collapse: (
+    <>
+      <path d="m7 15 5-5 5 5" />
+      <path d="m7 20 5-5 5 5" opacity=".45" />
+    </>
+  ),
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   sidebar: (
     <>

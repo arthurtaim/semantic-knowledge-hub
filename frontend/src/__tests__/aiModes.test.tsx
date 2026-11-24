@@ -8,7 +8,7 @@ import { DocumentCreatePage } from "../pages/DocumentCreatePage";
 import { DocumentPage } from "../pages/DocumentPage";
 import { ExplorerPage } from "../pages/ExplorerPage";
 import { ProposalEditorPage } from "../pages/ProposalEditorPage";
-import { arisDetail, documentPage, facets, insufficientAnswer, session, templates } from "./fixtures";
+import { arisDetail, documentPage, insufficientAnswer, session, templates } from "./fixtures";
 import { mockApi, ndjsonStream, renderAt, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 const STREAM = "/api/assistant/ask/stream";
@@ -106,13 +106,15 @@ describe("Four AI modes: no dead controls", () => {
   });
 
   it("disabled: the explorer does not offer «Спросить ИИ об этих документах»", async () => {
+    // «Документы» v2: a search is listed in «Список» (the tree plus 100 results at a time); a row is named by its
+    // title and, when it is not approved, its status.
     const routes = [
-      { path: "/api/knowledge/facets", body: facets },
-      { path: "/api/documents?query=ARIS&page=1&size=20", body: documentPage },
+      { path: "/api/documents/tree", body: { total: 0, attention_total: 0, sections: [], documents: {} } },
+      { path: "/api/documents?query=ARIS&page=1&size=100", body: documentPage },
     ];
     mockApi(routes);
     const { unmount } = renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />, withMode("disabled"));
-    await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    await screen.findByRole("link", { name: "ARIS integration — questions for discovery, Черновик" });
     expect(screen.queryByRole("link", { name: "Спросить ИИ об этих документах" })).toBeNull();
     unmount();
     renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />, withMode("mock"));

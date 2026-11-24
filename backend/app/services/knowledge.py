@@ -15,6 +15,13 @@ from app.adapters.knowledge.base import (
 )
 from app.adapters.search.base import DocumentHit, SearchFilters, SearchProvider
 from app.domain.dictionary import SearchDictionary, load_dictionary
+from app.domain.doc_tree import (
+    SystemIndex,
+    build_layout,
+    build_system_index,
+    document_systems,
+    needs_attention,
+)
 from app.domain.markdown import render_html, truncate
 from app.domain.models import (
     DocStatus,
@@ -23,6 +30,10 @@ from app.domain.models import (
     DocumentPage,
     DocumentRecord,
     DocumentSummary,
+    DocumentTree,
+    DocumentTreeEntry,
+    DocumentTreeGroup,
+    DocumentTreeSection,
     FacetCount,
     LoadIssue,
     RelatedLink,
@@ -85,6 +96,11 @@ def linked_document_counts(snapshot: KnowledgeSnapshot) -> dict[str, int]:
     return {key: len(ids) for key, ids in linked.items()}
 
 
+def owner_missing(doc: DocumentRecord) -> bool:
+    """The owner is a placeholder («unassigned», «tbd», «-», …): the document has nobody responsible."""
+    return doc.owner.strip().lower() in UNASSIGNED_OWNERS
+
+
 class KnowledgeService:
     def __init__(
         self,
@@ -101,6 +117,9 @@ class KnowledgeService:
         self._listeners: list[Callable[[], object]] = []
         self._explicit_sync: Any = None  # result of the last explicit sync (reported even when a no-op)
         self._link_counts: tuple[KnowledgeSnapshot, dict[str, int]] | None = None
+        self._systems: tuple[KnowledgeSnapshot, SystemIndex] | None = None
+        # «Today» for `review_state` (stale after `review_stale_days`); replaceable so tests can pin the date.
+        self.today: Callable[[], date] = lambda: datetime.now(UTC).date()
         self.template_registry_label: Callable[[], str] = lambda: "-"
 
     @property
@@ -133,6 +152,15 @@ class KnowledgeService:
         self._link_counts = (snapshot, counts)
         return counts
 
+    def system_index(self, snapshot: KnowledgeSnapshot) -> SystemIndex:
+        """The source systems of this reader's snapshot (app/domain/doc_tree.py), built once per snapshot object."""
+        cached = self._systems
+        if cached is not None and cached[0] is snapshot:
+            return cached[1]
+        index = build_system_index(snapshot.documents.values())
+        self._systems = (snapshot, index)
+        return index
+
     def stale_ids(self, snapshot: KnowledgeSnapshot) -> frozenset[str]:
         """Documents that must not be presented as current: individual failed refreshes, or all of
         them while the source itself is unreachable and the last synchronised snapshot is served."""
@@ -143,7 +171,7 @@ class KnowledgeService:
 
     # --- presentation helpers ------------------------------------------------------------------
     def review_state(self, doc: DocumentRecord, today: date | None = None) -> ReviewState:
-        today = today or datetime.now(UTC).date()
+        today = today or self.today()
         if doc.reviewed_at is None:
             return (
                 "never_reviewed"
@@ -162,6 +190,8 @@ class KnowledgeService:
         stale: bool = False,
         ranked: RankedHit | None = None,
         link_count: int | None = None,
+        systems: list[str] | None = None,
+        with_summary: bool = False,
     ) -> DocumentSummary:
         excerpt = hit.excerpt if hit and hit.excerpt else (doc.summary or "")
         return DocumentSummary(
@@ -180,7 +210,7 @@ class KnowledgeService:
             updated_at=doc.updated_at,
             metadata_updated_at=doc.metadata_updated_at,
             review_state=self.review_state(doc),
-            owner_missing=doc.owner.strip().lower() in UNASSIGNED_OWNERS,
+            owner_missing=owner_missing(doc),
             web_url=doc.web_url,
             index_state="stale" if stale else "current",
             highlights=hit.segments if hit and hit.segments else None,
@@ -188,6 +218,8 @@ class KnowledgeService:
             related_via=ranked.via if ranked else None,
             version=doc.version,
             link_count=link_count,
+            summary=doc.summary if with_summary else None,
+            systems=systems,
         )
 
     @staticmethod
@@ -226,6 +258,7 @@ class KnowledgeService:
         if analysis is not None:
             self.retrieval.with_snippets(analysis, [ranked[d.id] for d in page if d.id in ranked])
         links = self.link_counts(snapshot)
+        systems = self.system_index(snapshot)
         items = [
             self.summarize(
                 d,
@@ -233,6 +266,8 @@ class KnowledgeService:
                 stale=d.id.lower() in stale,
                 ranked=ranked.get(d.id),
                 link_count=links.get(d.id.lower(), 0),
+                systems=document_systems(d, systems),
+                with_summary=True,
             )
             for d in page
         ]
@@ -262,9 +297,13 @@ class KnowledgeService:
                     resolved=target is not None,
                 )
             )
-        summary = self.summarize(doc, stale=doc.id.lower() in self.stale_ids(snapshot))
+        summary = self.summarize(
+            doc,
+            stale=doc.id.lower() in self.stale_ids(snapshot),
+            systems=document_systems(doc, self.system_index(snapshot)),
+        )
         return DocumentDetail(
-            **summary.model_dump(),
+            **summary.model_dump(exclude={"summary"}),
             summary=doc.summary,
             related=related,
             source_refs=list(doc.source_refs),
@@ -278,6 +317,61 @@ class KnowledgeService:
             sections=list(doc.sections),
             warnings=list(doc.warnings),
             extra_metadata=dict(doc.extra_metadata),
+        )
+
+    async def document_tree(self, user: UserContext) -> DocumentTree:
+        """Sections → groups → documents of the reader's snapshot (the same visibility as `list_documents`), with
+        attention counts. The group rule and the ordering live in app/domain/doc_tree.py."""
+        snapshot = await self.snapshot(user)
+        today = self.today()
+        docs = list(snapshot.documents.values())
+        states = {doc.id: self.review_state(doc, today) for doc in docs}
+        flagged = {doc.id: needs_attention(doc.status, states[doc.id], owner_missing(doc)) for doc in docs}
+        layout = build_layout(docs, lambda doc: flagged[doc.id])
+        links = self.link_counts(snapshot)
+        stale = self.stale_ids(snapshot)
+        documents = {
+            doc.id: DocumentTreeEntry(
+                title=doc.title,
+                type=doc.type,
+                status=doc.status,
+                review_state=states[doc.id],
+                reviewed_at=doc.reviewed_at,
+                owner=doc.owner,
+                owner_missing=owner_missing(doc),
+                summary=doc.summary,
+                systems=layout.systems[doc.id],
+                link_count=links.get(doc.id.lower(), 0),
+                is_demo=doc.is_demo,
+                source=doc.source,
+                index_state="stale" if doc.id.lower() in stale else "current",
+                group=layout.group_of[doc.id],
+                attention=flagged[doc.id],
+            )
+            for doc in docs
+        }
+        sections = [
+            DocumentTreeSection(
+                key=section.key,
+                label=section.label,
+                count=section.count,
+                attention=section.attention,
+                groups=[
+                    DocumentTreeGroup(
+                        key=group.key,
+                        label=group.label,
+                        count=len(group.doc_ids),
+                        attention=group.attention,
+                        doc_ids=list(group.doc_ids),
+                    )
+                    for group in section.groups
+                ],
+                doc_ids=list(section.doc_ids),
+            )
+            for section in layout.sections
+        ]
+        return DocumentTree(
+            total=layout.total, attention_total=layout.attention_total, sections=sections, documents=documents
         )
 
     async def facets(self, user: UserContext) -> DocumentFacets:

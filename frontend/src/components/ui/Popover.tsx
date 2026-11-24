@@ -63,6 +63,8 @@ export interface MenuItem {
   icon?: IconName;
   /** A second line under the label. */
   description?: string;
+  /** A short note at the end of the item (a count). */
+  meta?: string;
   onSelect: () => void;
   /** For a radio group: the current choice (`menuitemradio` + `aria-checked`). */
   checked?: boolean;
@@ -74,6 +76,11 @@ export interface MenuGroup {
   label?: string;
   /** The items are mutually exclusive choices (theme and the like). */
   radio?: boolean;
+  /**
+   * The items are independent on/off choices (`menuitemcheckbox` + `aria-checked`): choosing one toggles it and the
+   * menu stays open, so several can be chosen in a row (filters, columns).
+   */
+  multi?: boolean;
   items: MenuItem[];
 }
 
@@ -102,7 +109,8 @@ interface MenuProps {
 /**
  * A menu button (WAI-ARIA APG «Menu Button»): Enter, Space or ↓ opens the menu on its first item, ↑ on the last;
  * ↑/↓ move (wrapping), Home/End jump, a letter moves to the next item starting with it; Enter or Space
- * chooses and closes; Esc closes and returns focus to the button; Tab or a press outside closes it.
+ * chooses and closes (an item of a `multi` group toggles and keeps the menu open); Esc closes and returns focus to
+ * the button; Tab or a press outside closes it.
  */
 export function Menu({ label, trigger, groups, header, side = "bottom", align = "start", className }: MenuProps) {
   const [open, setOpen] = useState(false);
@@ -190,10 +198,10 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
     }
   }
 
-  function choose(item: MenuItem) {
+  function choose(item: MenuItem, keepOpen: boolean) {
     if (item.disabled) return;
     item.onSelect();
-    closeAndReturn();
+    if (!keepOpen) closeAndReturn();
   }
 
   return (
@@ -211,23 +219,25 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
         {header ? <div className="menu__header">{header}</div> : null}
         <div id={menuId} role="menu" aria-label={label} className="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
           {groups.map((group, groupIndex) => {
+            const checkable = Boolean(group.radio || group.multi);
             const body = group.items.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                role={group.radio ? "menuitemradio" : "menuitem"}
-                aria-checked={group.radio ? Boolean(item.checked) : undefined}
+                role={group.radio ? "menuitemradio" : group.multi ? "menuitemcheckbox" : "menuitem"}
+                aria-checked={checkable ? Boolean(item.checked) : undefined}
                 aria-disabled={item.disabled || undefined}
                 tabIndex={-1}
                 className="menu__item"
-                onClick={() => choose(item)}
+                onClick={() => choose(item, Boolean(group.multi))}
               >
                 {item.icon ? <Icon name={item.icon} /> : null}
                 <span className="menu__text">
                   <span className="menu__label">{item.label}</span>
                   {item.description ? <span className="menu__description">{item.description}</span> : null}
                 </span>
-                {group.radio ? <Icon name="check" className="menu__check" /> : null}
+                {item.meta ? <span className="menu__meta">{item.meta}</span> : null}
+                {checkable ? <Icon name="check" className="menu__check" /> : null}
               </button>
             ));
             return (

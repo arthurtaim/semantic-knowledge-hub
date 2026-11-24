@@ -29,14 +29,16 @@ test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ p
   await palette.getByRole("button", { name: "Найти в документах" }).click();
   await palette.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ARIS");
   await palette.getByRole("button", { name: "Найти", exact: true }).click();
-  const result = page.getByRole("link", { name: "ARIS integration — questions for discovery" });
+  // «Документы» v2: the results are rows of «Список» (a row is a link named by its title and status); a click
+  // shows the document in the preview, «Открыть» opens it.
+  const result = page.getByRole("link", { name: "ARIS integration — questions for discovery, Черновик" });
   await expect(result).toBeVisible();
   // 83-document demo base: other ARIS documents may rank first, so check the row of this document.
-  const row = page.locator(".result", { has: result });
-  await expect(row).toContainText("Черновик");
-  await expect(row).toContainText("Локальный workspace");
+  await expect(result).toContainText("Черновик");
+  await expect(result).toContainText("Локальный workspace");
 
   await result.click();
+  await page.getByRole("article", { name: "ARIS integration — questions for discovery" }).getByRole("link", { name: "Открыть" }).click();
   // UI v2: the former passport is «Сведения о документе» (a right panel opened from «Все сведения»).
   await page.getByRole("button", { name: "Все сведения" }).click();
   const details = page.getByRole("complementary", { name: "Сведения о документе" });

@@ -57,6 +57,8 @@ interface PageToolbarProps {
   actions?: ReactNode;
   /** Shown right after the title or path: a count, a view switch (the catalog: «Документы 83 · Список / Таблица»). */
   meta?: ReactNode;
+  /** Shown before the title or path: a «Назад» of a page that shows one screen at a time on a phone. */
+  lead?: ReactNode;
   /** Several wide actions: on a phone they go to the top of the content instead of overflowing the 52 px bar. */
   actionsInContentOnPhone?: boolean;
 }
@@ -64,17 +66,18 @@ interface PageToolbarProps {
 /** Phones (docs/ui-v2/specs/03_SCREENS.md §6). */
 const PHONE_QUERY = "(max-width: 599.98px)";
 
-export function PageToolbar({ crumbs, title, actions, meta, actionsInContentOnPhone = false }: PageToolbarProps) {
+export function PageToolbar({ crumbs, title, actions, meta, lead, actionsInContentOnPhone = false }: PageToolbarProps) {
   const slots = useContext(ToolbarSlotsContext);
   const register = slots?.register;
   const phone = useMediaQuery(PHONE_QUERY);
   const actionsInContent = actionsInContentOnPhone && phone;
   const named = crumbs ? <ToolbarPath crumbs={crumbs} /> : title ? <ToolbarPath crumbs={[{ label: title }]} /> : null;
   const path =
-    named && meta ? (
+    named && (meta || lead) ? (
       <>
+        {lead ? <div className="page-toolbar__before">{lead}</div> : null}
         {named}
-        <div className="page-toolbar__meta">{meta}</div>
+        {meta ? <div className="page-toolbar__meta">{meta}</div> : null}
       </>
     ) : (
       named
