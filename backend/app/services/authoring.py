@@ -11,6 +11,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import Any
 
 from app.adapters.ai.base import (
     AIProvider,
@@ -22,19 +23,27 @@ from app.adapters.ai.base import (
 from app.adapters.knowledge.base import KnowledgeRepository, RepositoryUnavailableError
 from app.adapters.search.base import SearchFilters
 from app.domain.markdown import render_html
-from app.domain.models import DocStatus, UserContext, ValidationIssue
+from app.domain.models import DocStatus, DocType, UserContext, ValidationIssue
 from app.domain.proposals import (
     AiDraftRequest,
     AiDraftResponse,
     AuthoringCheckResponse,
     AuthoringCitationInfo,
     AuthoringReferenceInfo,
+    BlankDocumentInfo,
     DocumentTemplateInfo,
     NewDocumentMetadata,
 )
-from app.domain.schema import is_valid_document_id, parse_document, split_frontmatter
+from app.domain.schema import (
+    FrontmatterError,
+    is_valid_document_id,
+    load_frontmatter,
+    parse_document,
+    split_frontmatter,
+)
 from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import (
+    FRONTMATTER_ORDER,
     PLACEHOLDER,
     DocumentTemplate,
     compose_document,
@@ -57,6 +66,10 @@ MIN_QUOTE_CHARS = 12  # same floor as grounded answers: a shorter "quote" proves
 MAX_REFERENCE_SECTION_CHARS = 1500
 _HINT_RE = re.compile(rf"^>?\s*{PLACEHOLDER}:?\s*(.*)$")
 TAKEN_CODES = frozenset({"document_id_taken", "document_path_taken"})
+# A blank document (no template, docs/TEMPLATE_HUB.md): IDs `SEM-DOC-NNN` (kept when a template is applied
+# later — IDs never change), and the general section «Руководства» when the person does not choose one.
+BLANK_ID_PREFIX = "SEM-DOC"
+BLANK_DEFAULT_TYPE = DocType.guide
 
 
 @dataclass
@@ -191,25 +204,70 @@ class AuthoringService:
             )
         return result
 
-    async def allocate_id(self, user: UserContext, template: DocumentTemplate) -> str:
-        """Next free `<PREFIX>-NNN` against visible documents, load issues and open create proposals."""
+    async def allocate_id(self, user: UserContext, template: DocumentTemplate | None) -> str:
+        """Next free `<PREFIX>-NNN` against visible documents, load issues and open create proposals
+        (the template's prefix; `SEM-DOC` for a blank document)."""
         ids, _ = await self._snapshot_ids(user)
-        return suggest_document_id(template.id_prefix, ids | self._store.open_create_ids())
+        prefix = template.id_prefix if template is not None else BLANK_ID_PREFIX
+        return suggest_document_id(prefix, ids | self._store.open_create_ids())
+
+    async def blank(self, user: UserContext) -> BlankDocumentInfo:
+        """What a document without a template gets from the server (the ID is only a preview)."""
+        suggested = await self.allocate_id(user, None)
+        return BlankDocumentInfo(
+            id_prefix=BLANK_ID_PREFIX,
+            suggested_id=suggested,
+            suggested_path=suggest_path(suggested, self._prefix),
+            default_type=BLANK_DEFAULT_TYPE,
+        )
+
+    def stored_frontmatter(self, proposal_id: str | None) -> dict[str, Any]:
+        """YAML of a stored `create` draft (empty for anything else): the keys the form does not manage are kept
+        on every save, so a draft opened in the editor never loses e.g. `relations` of an imported file."""
+        row = self._store.get(proposal_id) if proposal_id else None
+        if row is None or (row["operation"] or "update") != "create":
+            return {}
+        try:
+            return dict(load_frontmatter(split_frontmatter(row["proposed_content"])[0]))
+        except FrontmatterError:
+            return {}
 
     # --- validation --------------------------------------------------------------------------------
-    def compose(self, template: DocumentTemplate, metadata: NewDocumentMetadata, body: str) -> str:
-        fields = metadata.model_dump()
+    def compose(
+        self,
+        template: DocumentTemplate | None,
+        metadata: NewDocumentMetadata,
+        body: str,
+        *,
+        doc_type: DocType | None = None,
+        stored: dict[str, Any] | None = None,
+    ) -> str:
+        """The file of a new document. With a template: its type and pinned version. Without one (blank): the chosen
+        type and no `template` (an unknown `template` of an imported file is kept as it was)."""
+        kept = stored or {}
+        fields = metadata.model_dump(exclude={"type"})
         fields["owner"] = metadata.owner.strip() or UNASSIGNED_OWNER
-        fields["type"] = template.doc_type
-        fields["template"] = template.id
-        fields["template_version"] = template.version
+        if template is not None:
+            fields["type"] = template.doc_type
+            fields["template"] = template.id
+            fields["template_version"] = template.version
+        else:
+            fields["type"] = doc_type or metadata.type or BLANK_DEFAULT_TYPE
+            fields["template"] = kept.get("template")
+            fields["template_version"] = kept.get("template_version")
         fields["tags"] = [t.lower() for t in metadata.tags]
-        return compose_document(fields, body)
+        extra = {k: v for k, v in kept.items() if k not in FRONTMATTER_ORDER}
+        return compose_document(fields, body, extra)
+
+    @staticmethod
+    def _stored_type(stored: dict[str, Any]) -> DocType | None:
+        value = stored.get("type")
+        return DocType(value) if isinstance(value, str) and value in DocType._value2member_map_ else None
 
     async def check_new_document(
         self,
         user: UserContext,
-        template_id: str,
+        template_id: str | None,
         metadata: NewDocumentMetadata,
         body: str,
         path: str | None,
@@ -219,17 +277,30 @@ class AuthoringService:
         fresh: bool = False,
         template_version: int | None = None,
     ) -> NewDocumentCheck:
-        template = self.template(template_id, template_version)
-        if template_version is None and template.status in ("draft", "archived"):
+        template = self.template(template_id, template_version) if template_id else None
+        if template is not None and template_version is None and template.status in ("draft", "archived"):
             raise ApiError(
                 409,
                 "template_not_active",
                 f"Шаблон «{template.title}» в статусе {template.status}: новые документы по нему не создаются.",
             )
+        if template is not None and metadata.type is not None and metadata.type != template.doc_type:
+            raise ApiError(
+                422,
+                "template_type_mismatch",
+                f"Раздел документа задаёт шаблон «{template.title}»: {template.doc_type.value}.",
+                {"field": "type"},
+            )
+        stored = self.stored_frontmatter(exclude_proposal_id)
+        doc_type = (
+            template.doc_type
+            if template is not None
+            else metadata.type or self._stored_type(stored) or BLANK_DEFAULT_TYPE
+        )
         if not metadata.id.strip():  # stateless check of a new document: preview the ID it would get
             metadata = metadata.model_copy(update={"id": await self.allocate_id(user, template)})
         target = path.strip() if path and path.strip() else suggest_path(metadata.id.strip(), self._prefix)
-        content = self.compose(template, metadata, body)
+        content = self.compose(template, metadata, body, doc_type=doc_type, stored=stored)
         return await self.check_content(
             user,
             template,
@@ -432,7 +503,7 @@ class AuthoringService:
     async def check(
         self,
         user: UserContext,
-        template_id: str,
+        template_id: str | None,
         metadata: NewDocumentMetadata,
         body: str,
         path: str | None,

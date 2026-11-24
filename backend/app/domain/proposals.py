@@ -112,14 +112,20 @@ class NewDocumentMetadata(BaseModel):
     related_ids: list[str] = Field(default_factory=list, max_length=50)
     source_refs: list[str] = Field(default_factory=list, max_length=50)
     summary: str | None = Field(default=None, max_length=1000)
+    # The catalogue section. A document of a template takes the template's type (another value is
+    # `422 template_type_mismatch`); a blank document takes this one — on creation `guide` when it is empty,
+    # on a save the type it already has. Only the existing `DocType` values (never invented).
+    type: DocType | None = None
 
 
 class NewDocumentDraftCreate(BaseModel):
-    """`POST /api/authoring/drafts`: a persistent draft of a NEW document (operation=create)."""
+    """`POST /api/authoring/drafts`: a persistent draft of a NEW document (operation=create).
+    Without `template_id`: a BLANK document — free Markdown, no required sections, no `template` in the YAML; a
+    template can be applied later (`POST /api/drafts/{id}/apply-template`)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    template_id: str = Field(min_length=1, max_length=40)
+    template_id: str | None = Field(default=None, min_length=1, max_length=40)
     metadata: NewDocumentMetadata
     body: str = Field(min_length=1, max_length=MAX_PROPOSED_CHARS)
     path: str | None = Field(default=None, max_length=400)
@@ -145,11 +151,11 @@ class DraftUpdate(BaseModel):
 
 
 class AuthoringCheckRequest(BaseModel):
-    """Stateless validation + preview of a new document (nothing is stored)."""
+    """Stateless validation + preview of a new document (nothing is stored). No `template_id`: a blank document."""
 
     model_config = ConfigDict(extra="forbid")
 
-    template_id: str = Field(min_length=1, max_length=40)
+    template_id: str | None = Field(default=None, min_length=1, max_length=40)
     metadata: NewDocumentMetadata
     body: str = Field(min_length=1, max_length=MAX_PROPOSED_CHARS)
     path: str | None = Field(default=None, max_length=400)
@@ -185,6 +191,77 @@ class DocumentTemplateInfo(BaseModel):
     # False: not offered for new documents (still resolvable for its existing drafts, `include_hidden`).
     listed: bool = True
     previous_versions: list[int] = Field(default_factory=list)
+
+
+class BlankDocumentInfo(BaseModel):
+    """`GET /api/authoring/blank`: what the server will generate for a document without a template."""
+
+    id_prefix: str
+    suggested_id: str  # preview only: the ID is allocated once, at the first save
+    suggested_path: str
+    default_type: DocType  # the general section when the person does not choose one
+
+
+# --- applying a template later (docs/TEMPLATE_HUB.md) -------------------------------------------------------
+_TEMPLATE_ID = r"^[a-z][a-z0-9_]{1,40}$"
+TemplateSectionState = Literal["matched", "added", "kept", "optional_missing"]
+
+
+class TemplateApplyPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=2, max_length=41, pattern=_TEMPLATE_ID)
+
+
+class DraftTemplateApply(BaseModel):
+    """Confirm on a draft: the template version and the draft version the person saw in the preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=2, max_length=41, pattern=_TEMPLATE_ID)
+    template_version: int = Field(ge=1, le=1000)
+    expected_version: int = Field(ge=1)
+
+
+class DocumentTemplateApply(BaseModel):
+    """Confirm on an indexed document: a change proposal is created; the document itself never changes here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=2, max_length=41, pattern=_TEMPLATE_ID)
+    template_version: int = Field(ge=1, le=1000)
+    base_revision: str = Field(min_length=1, max_length=128)
+    reason: str | None = Field(default=None, min_length=3, max_length=2000)
+
+
+class TemplateSectionMapping(BaseModel):
+    heading: str
+    template_heading: str | None
+    state: TemplateSectionState
+    required: bool
+
+
+class TemplateApplyPreview(BaseModel):
+    """What applying the template would change. Nothing is stored."""
+
+    target: Literal["draft", "document"]
+    document_id: str
+    draft_id: str | None = None
+    expected_version: int | None = None  # draft: confirm with this `edit_version`
+    base_revision: str | None = None  # document: confirm with this revision
+    template_id: str
+    template_version: int
+    template_title: str
+    previous_template_id: str | None
+    previous_template_version: int | None
+    type_before: DocType | None
+    type_after: DocType
+    sections: list[TemplateSectionMapping]
+    content_before: str
+    content_after: str
+    diff: DiffResult
+    changed: bool
+    validation: list[ValidationIssue]  # of the result
 
 
 class AiDraftRequest(BaseModel):

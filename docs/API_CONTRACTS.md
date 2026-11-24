@@ -220,6 +220,41 @@ generates the front matter (`docs/DOCUMENT_TEMPLATES.md`).
 | `PUT /api/drafts/{id}` | `create_proposal` | `DraftUpdate {expected_version (≥ 1), reason?, origin?}` plus `proposed_content` (operation `update`) **or** `metadata` + `body` + `path?` (operation `create`) | `200 ProposalDetail`, `edit_version` + 1; for `update` the base revision is unchanged | `404 proposal_not_found`, `409 draft_not_editable` (status ≠ `draft`), `409 draft_modified` (stale version, `details.current_version`), `409 document_id_taken\|document_path_taken` (create), `422 validation_failed` (fields missing for the operation), `404 document_not_found` (update) |
 | `DELETE /api/drafts/{id}` | `create_proposal` | — | `204`; the content-free audit trail is kept | `404 proposal_not_found`, `409 draft_not_deletable` (allowed only for `draft`, or `conflict` with no submission attempt and no MR) |
 
+### Blank documents and «Применить шаблон» (additive)
+
+Templates structure documents; they do not gate their creation (`docs/TEMPLATE_HUB.md`). Without the new fields
+every request and response is the same as before.
+
+- `template_id` is **optional** in `POST /api/authoring/drafts`, `POST /api/authoring/check` and
+  `POST /api/documents/import` (with `metadata`). Without it the document is **blank**: the server allocates
+  `SEM-DOC-NNN` (once, immutable), writes `status: draft`, `owner: unassigned` when empty, origin `manual`
+  (`import` for an import) and **no** `template` / `template_version`; free Markdown — no required sections, the
+  body / size / secret / PII / unsafe-markup rules stay.
+- `NewDocumentMetadata.type?` (`DocType`): the section of a blank document; on creation empty → `guide`, on a
+  save empty → the draft's own type. For a template document it must be the template's type or absent, else
+  `422 template_type_mismatch` (`details.field = "type"`). Unknown values are `422` (only the existing types).
+- A `create` draft saved from the editor keeps every YAML key the form does not manage (`relations`,
+  `aliases`, `reviewed_at`, `synthetic`, unknown keys…), so an imported file opened in the editor loses nothing.
+- `POST /api/documents/import/preview` without any active template: a blank `SEM-DOC-NNN` preview (`template`
+  field `missing`, `type` suggested `guide`) instead of `409 no_active_template`.
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/authoring/blank` | `read_knowledge` | — | `BlankDocumentInfo {id_prefix: "SEM-DOC", suggested_id, suggested_path, default_type: "guide"}`; the ID is a preview only | `503` source unavailable |
+| `POST /api/drafts/{id}/apply-template/preview` | `create_proposal` | `{template_id}` | `TemplateApplyPreview` (below); nothing stored | `404 proposal_not_found\|template_not_found`, `409 draft_not_editable` (status ≠ `draft`), `409 template_not_active` (draft / deprecated / archived / hidden template), `422 template_apply_invalid_document` |
+| `POST /api/drafts/{id}/apply-template` | `create_proposal` | `{template_id, template_version, expected_version}` | `200 ProposalDetail`: `create` draft — `template_id` / `template_version` re-pinned, text updated, `edit_version` + 1; `update` draft — `proposed_content` updated through the usual save. History `template_applied` | the preview's errors + `409 draft_modified` (`details.current_version`), `409 template_version_changed` (the active version is not the previewed one; `details.current_version`), `409 template_apply_no_change` |
+| `POST /api/documents/{id}/apply-template/preview` | `create_proposal` | `{template_id}` | `TemplateApplyPreview` with `base_revision`; nothing stored | `404 document_not_found\|template_not_found`, `409 template_not_active`, `422`, `503` |
+| `POST /api/documents/{id}/apply-template` | `create_proposal` | `{template_id, template_version, base_revision, reason? (3–2000)}` | `201 ProposalDetail` — a CHANGE proposal (`operation=update`, `status=draft`, default reason «Применить шаблон «…» vN»); **the document itself is not modified** | `409 revision_conflict` (`details.current_revision`, `base_revision`), `409 template_version_changed`, `409 template_not_active`, `409 template_apply_no_change`, `404` |
+
+`TemplateApplyPreview`: `{target: draft|document, document_id, draft_id?, expected_version?, base_revision?,
+template_id, template_version, template_title, previous_template_id?, previous_template_version?, type_before?,
+type_after, sections[{heading, template_heading?, state: matched|added|kept|optional_missing, required}],
+content_before, content_after, diff: DiffResult, changed, validation[]}`. Applying keeps every existing line in
+order (the body only gains lines), maps `##` headings to template sections by title (case and surrounding spaces
+ignored), adds the skeleton («Требует уточнения») of each missing **required** section after the nearest preceding
+template section present, keeps unknown sections, and rewrites only the `type`, `template` and `template_version`
+lines of the YAML (the ID never changes).
+
 ### Proposal changes
 
 - `ProposalSummary.operation`: `create | update` (stores from earlier builds are migrated to `update`).
@@ -306,8 +341,8 @@ Problem codes: `revision_superseded`, `not_merged`, `status_not_publishable`, `s
 
 | Action | Routes |
 |---|---|
-| `create_proposal` | + `POST /api/authoring/check`, `POST /api/authoring/ai-draft`, `POST /api/authoring/drafts`, `PUT /api/drafts/{id}`, `DELETE /api/drafts/{id}` |
-| `read_knowledge` | + `GET /api/authoring/templates`, `GET /api/documents/{id}/publication`, `GET /api/publications/jobs*` |
+| `create_proposal` | + `POST /api/authoring/check`, `POST /api/authoring/ai-draft`, `POST /api/authoring/drafts`, `PUT /api/drafts/{id}`, `DELETE /api/drafts/{id}`, `POST /api/drafts/{id}/apply-template[/preview]`, `POST /api/documents/{id}/apply-template[/preview]` |
+| `read_knowledge` | + `GET /api/authoring/templates`, `GET /api/authoring/blank`, `GET /api/documents/{id}/publication`, `GET /api/publications/jobs*` |
 | `prepare_publication` (new) | `POST …/publication/prepare`, `POST …/dry-run`, `POST …/reconcile` — Confluence reads only |
 | `publish_confluence` (new) | `POST …/publish`, `POST …/acknowledge-manual-edit`, `POST …/release-missing-page` |
 

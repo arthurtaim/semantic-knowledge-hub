@@ -24,6 +24,7 @@ from app.api import (
     metadata,
     publications,
     system,
+    template_apply,
     templates,
 )
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
@@ -119,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         links.router,
         metadata.router,
         templates.router,
+        template_apply.router,
         ai.router,
     ):
         app.include_router(router)

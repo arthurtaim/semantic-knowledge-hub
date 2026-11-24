@@ -48,6 +48,43 @@ in place without a new version. A schema change without a version bump is regist
 - `draft` / `archived` cannot start documents; `deprecated` is shown, warns when used, and is never
   recommended by the AI or offered in the picker.
 
+## Templates help structure, they do not gate creation
+
+A document can be created **without a template** («Пустой документ», as in Obsidian or Notion): a title and a
+catalogue section, then free Markdown with `[[` WikiLinks, preview and the AI actions that make sense without a
+template (metadata, related documents, improve, summarize, explain). The server writes the technical metadata
+(`docs/METADATA_AND_LINKS.md`); there are no required sections. The completeness check («Проверить полноту»)
+needs a template and appears once one is applied. «По шаблону» stays as it was: the template gives the skeleton,
+the section and the default tags at once.
+
+### «Применить шаблон» — later, to an existing draft or document
+
+In the editor (a saved draft without unsaved edits) and in the document page's «Ещё» menu. The person chooses an
+ACTIVE template (draft / deprecated / archived / hidden ones are refused), sees the result as a diff, and confirms:
+
+| Target | On confirm | Guard |
+|---|---|---|
+| a draft (blank, imported or of another template) | the draft is updated: `template` + `template_version` pinned to the **current active** version | `expected_version` (the draft's `edit_version`) |
+| an indexed document (approved or not) | a **change proposal** via the usual «Предложить изменение» path; the original is never modified | `base_revision` (the document's revision) |
+
+Both also refuse a confirm whose template version is no longer the active one (`template_version_changed`): a
+pinned version is never switched silently. The algorithm (`app/domain/template_apply.py`):
+
+1. Keep **all** content: every existing line stays, in its order; the body only gains lines.
+2. Map an existing `## ` heading to a template section when the titles match (case and surrounding spaces ignored —
+   the same rule as the template validation). `##` lines inside code fences are text.
+3. For each missing **required** section, add the template's skeleton (the «Требует уточнения» placeholder) after
+   the nearest preceding template section present in the document (template order where the document allows it),
+   else before the nearest following one, else at the end. Missing optional sections are not added.
+4. Keep sections the template does not know, unchanged and in place.
+5. In the YAML change only `type` (to the template's section — the preview says when it changes), `template` and
+   `template_version`; the ID, status, owner, relations and dates stay byte for byte. IDs never change, so a
+   `SEM-DOC-NNN` document keeps its ID under any template.
+
+Applying the same template again is `template_apply_no_change`. API: `docs/API_CONTRACTS.md` («Blank documents and
+«Применить шаблон»»). Checks: `tests/test_blank_document.py`, `src/__tests__/blankDocument.test.tsx`,
+`e2e/blankDocument.spec.ts`.
+
 ## Shipped templates (12 active)
 
 architecture, integration (v2: +4 required sections), dataset_spec, business_entity, adr, team_process,

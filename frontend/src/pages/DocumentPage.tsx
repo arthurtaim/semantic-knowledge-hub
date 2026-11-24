@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, type ApiError } from "../api/client";
 import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList, ProposalSummary } from "../api/types";
+import { ApplyTemplatePanel } from "../components/ApplyTemplate";
 import { isEditable } from "../components/ComposerPalette";
 import {
   ASSISTANT_PANEL_ID,
@@ -441,6 +442,8 @@ function DocumentBody({
   }
 
   const openProposals = proposals.items.filter((p) => p.status !== "rejected" && p.status !== "merged");
+  // «Применить шаблон»: a preview, then a CHANGE PROPOSAL — the document itself never changes here.
+  const [applyOpen, setApplyOpen] = useState(false);
   const more: MenuItem[] = [
     {
       id: "details",
@@ -453,6 +456,13 @@ function DocumentBody({
       label: "Показать на карте знаний",
       icon: "map",
       onSelect: () => navigate(`/graph?focus=${encodeURIComponent(doc.id)}`),
+    },
+    {
+      id: "apply-template",
+      label: "Применить шаблон",
+      icon: "templates",
+      description: doc.template_id ? `Сейчас: ${doc.template_id} v${doc.template_version ?? 1}` : "Документ без шаблона",
+      onSelect: () => setApplyOpen(true),
     },
     ...(aiOff
       ? []
@@ -640,6 +650,14 @@ function DocumentBody({
           />
         ) : null}
       </div>
+      {applyOpen ? (
+        <ApplyTemplatePanel
+          target={{ kind: "document", id: doc.id }}
+          currentTemplateId={doc.template_id ?? null}
+          onClose={() => setApplyOpen(false)}
+          onApplied={(proposal) => navigate(`/proposals/${encodeURIComponent(proposal.id)}`)}
+        />
+      ) : null}
     </article>
   );
 }

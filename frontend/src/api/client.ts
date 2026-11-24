@@ -11,6 +11,10 @@ import type {
   AssistantSkill,
   AuthoringCheckRequest,
   AuthoringCheckResponse,
+  BlankDocumentInfo,
+  DocumentTemplateApply,
+  DraftTemplateApply,
+  TemplateApplyPreview,
   ChangeDraftUpdate,
   CorporatePage,
   DocumentDetail,
@@ -485,6 +489,29 @@ export const api = {
   /** Persists a draft of a NEW document (proposal with operation=create). 409 when the ID/path is taken. */
   createNewDocumentDraft: (payload: NewDocumentDraftCreate) =>
     request<ProposalDetail>("/authoring/drafts", { method: "POST", body: json(payload) }),
+  /** «Пустой документ»: the ID prefix, a preview of the next ID / path and the default section. */
+  blankDocument: () => request<BlankDocumentInfo>("/authoring/blank"),
+  /** «Применить шаблон» to a draft: the result as a diff (nothing stored). */
+  previewDraftTemplate: (id: string, templateId: string) =>
+    request<TemplateApplyPreview>(`/drafts/${encodeURIComponent(id)}/apply-template/preview`, {
+      method: "POST",
+      body: json({ template_id: templateId }),
+    }),
+  /** Pins the template and updates the draft; 409 `draft_modified` / `template_version_changed` when stale. */
+  applyDraftTemplate: (id: string, payload: DraftTemplateApply) =>
+    request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/apply-template`, { method: "POST", body: json(payload) }),
+  /** «Применить шаблон» to an indexed document: the result as a diff (nothing stored). */
+  previewDocumentTemplate: (documentId: string, templateId: string) =>
+    request<TemplateApplyPreview>(`/documents/${encodeURIComponent(documentId)}/apply-template/preview`, {
+      method: "POST",
+      body: json({ template_id: templateId }),
+    }),
+  /** A change PROPOSAL (the document itself never changes here); 409 `revision_conflict` when stale. */
+  applyDocumentTemplate: (documentId: string, payload: DocumentTemplateApply) =>
+    request<ProposalDetail>(`/documents/${encodeURIComponent(documentId)}/apply-template`, {
+      method: "POST",
+      body: json(payload),
+    }),
 
   // --- publication to Confluence (M5) ---
   documentPublication: (id: string) =>

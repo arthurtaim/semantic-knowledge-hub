@@ -26,7 +26,7 @@ from app.domain.templates import DocumentTemplate
 from app.domain.text import stem, tokenize
 from app.domain.wikilinks import extract_wikilinks
 from app.errors import ApiError
-from app.services.authoring import UNASSIGNED_OWNER, AuthoringService
+from app.services.authoring import BLANK_DEFAULT_TYPE, UNASSIGNED_OWNER, AuthoringService
 from app.services.knowledge import KnowledgeService
 from app.services.retrieval import ID_CANDIDATE_RE
 
@@ -288,8 +288,7 @@ class MetadataService:
                     )
                 )
         else:
-            if template is None:
-                raise ApiError(409, "no_active_template", "Нет активного шаблона для нового документа.")
+            # No active template at all: the document is imported as a BLANK one (a template can be applied later).
             document_id = await self._authoring.allocate_id(user, template)
             fields.append(
                 MetadataField(
@@ -307,21 +306,39 @@ class MetadataService:
                     else "из имени файла",
                 )
             )
-            fields.append(
-                MetadataField(
-                    field="template",
-                    value=template.id,
-                    origin="suggested",
-                    note="; ".join(recommendations[0].reasons)
-                    if recommendations
-                    else "тип по тексту не распознан: выбран шаблон по умолчанию, проверьте его",
+            if template is not None:
+                fields.append(
+                    MetadataField(
+                        field="template",
+                        value=template.id,
+                        origin="suggested",
+                        note="; ".join(recommendations[0].reasons)
+                        if recommendations
+                        else "тип по тексту не распознан: выбран шаблон по умолчанию, проверьте его",
+                    )
                 )
-            )
-            fields.append(
-                MetadataField(
-                    field="type", value=template.doc_type.value, origin="suggested", note="тип шаблона"
+                fields.append(
+                    MetadataField(
+                        field="type", value=template.doc_type.value, origin="suggested", note="тип шаблона"
+                    )
                 )
-            )
+            else:
+                fields.append(
+                    MetadataField(
+                        field="template",
+                        value=None,
+                        origin="missing",
+                        note="активных шаблонов нет: документ без шаблона, шаблон можно применить позже",
+                    )
+                )
+                fields.append(
+                    MetadataField(
+                        field="type",
+                        value=BLANK_DEFAULT_TYPE.value,
+                        origin="suggested",
+                        note="общий раздел для документа без шаблона",
+                    )
+                )
             fields.append(
                 MetadataField(
                     field="owner",
