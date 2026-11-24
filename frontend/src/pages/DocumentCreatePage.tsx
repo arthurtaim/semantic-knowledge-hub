@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, api, isCancelled } from "../api/client";
-import type { AiDraftResponse, BlankDocumentInfo, DocType, DocumentTemplateInfo } from "../api/types";
+import type { AiDraftResponse, BlankDocumentInfo, DocType, DocumentTemplateInfo, ProposalDetail } from "../api/types";
 import { AI_MODE_LABEL } from "../components/AiSourcesPanel";
 import { AuthoringRoute, DocumentEditor } from "../components/DocumentEditor";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
@@ -28,6 +28,13 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
 }
 
+/** «Применить шаблон» changed the stored draft: the page reopens it with its new template and says so. */
+interface TemplateApplied {
+  draftId: string;
+  title: string;
+  version: number | null;
+}
+
 /**
  * `/documents/new`: Создать → Тип → Редактор → Сохранить черновик → Проверка → Ревью.
  * «Пустой документ» (first) opens the editor with a title and a section only; «По шаблону» is the template flow.
@@ -41,14 +48,29 @@ export function DocumentCreatePage() {
   const [adopted, setAdopted] = useState<string | null>(null);
   const [flowKey, setFlowKey] = useState(0);
   const [previousDraftId, setPreviousDraftId] = useState(draftId);
+  const [applied, setApplied] = useState<TemplateApplied | null>(null);
   if (draftId !== previousDraftId) {
     setPreviousDraftId(draftId);
+    setApplied(null);
     if (!draftId) {
       // Navigating from a draft to a plain `/documents/new` starts a fresh document.
       setFlowKey((key) => key + 1);
       setAdopted(null);
     }
   }
+  // After «Применить шаблон» the draft is reopened from the server (a fresh editor with the pinned template).
+  const onTemplateApplied = (detail: ProposalDetail) => {
+    setApplied({ draftId: detail.id, title: detail.template_id ?? "", version: detail.template_version ?? null });
+    setAdopted(null);
+    setFlowKey((key) => key + 1);
+  };
+  const appliedNotice =
+    applied && applied.draftId === draftId ? (
+      <Notice tone="success">
+        Шаблон применён и закреплён (v{applied.version ?? "?"}): недостающие разделы добавлены с пометкой «Требует
+        уточнения», весь прежний текст сохранён. Черновик сохранён.
+      </Notice>
+    ) : null;
 
   return (
     <div className="authoring">
@@ -61,9 +83,9 @@ export function DocumentCreatePage() {
         </p>
       </div>
       {draftId && draftId !== adopted ? (
-        <ResumeDraft key={draftId} id={draftId} />
+        <ResumeDraft key={`${draftId}-${flowKey}`} id={draftId} notice={appliedNotice} onTemplateApplied={onTemplateApplied} />
       ) : (
-        <NewDocumentFlow key={flowKey} onCreated={setAdopted} />
+        <NewDocumentFlow key={flowKey} onCreated={setAdopted} onTemplateApplied={onTemplateApplied} />
       )}
     </div>
   );
@@ -79,7 +101,12 @@ interface EditorStart {
   aiResult: AiDraftResponse | null;
 }
 
-function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
+interface NewDocumentFlowProps {
+  onCreated: (id: string) => void;
+  onTemplateApplied: (detail: ProposalDetail) => void;
+}
+
+function NewDocumentFlow({ onCreated, onTemplateApplied }: NewDocumentFlowProps) {
   const session = useSession();
   const [params] = useSearchParams();
   // Read once: the URL changes to `?draft=<id>` after the first save, the flow must not restart then.
@@ -111,6 +138,7 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
         aiResult={start.aiResult}
         draft={null}
         onCreated={onCreated}
+        onTemplateApplied={onTemplateApplied}
       />
     );
   }
@@ -463,7 +491,13 @@ function AiRequestStep({ template, aiMode, onBack, onManual, onResult }: AiReque
 
 // --- an existing draft ------------------------------------------------------------------------------
 
-function ResumeDraft({ id }: { id: string }) {
+interface ResumeDraftProps {
+  id: string;
+  notice?: ReactNode;
+  onTemplateApplied: (detail: ProposalDetail) => void;
+}
+
+function ResumeDraft({ id, notice, onTemplateApplied }: ResumeDraftProps) {
   const { data, error, loading, reload } = useAsync(async () => {
     const [proposal, templates] = await Promise.all([api.draft(id), api.templates(true)]);
     return { proposal, templates };
@@ -523,7 +557,9 @@ function ResumeDraft({ id }: { id: string }) {
       </Notice>
     );
   }
-  return <DocumentEditor template={template} initial={initial} draft={p} />;
+  return (
+    <DocumentEditor template={template} initial={initial} draft={p} notice={notice} onTemplateApplied={onTemplateApplied} />
+  );
 }
 
 /** `?from=<id>`: a NEW draft with the text of an earlier `create` proposal and a fresh suggested ID. */

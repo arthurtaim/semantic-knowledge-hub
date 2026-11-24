@@ -1,11 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BlankDocumentInfo, DocumentTypeInfo, ImportPreview, ProposalDetail } from "../api/types";
+import type { BlankDocumentInfo, DocumentTypeInfo, ImportPreview, ProposalDetail, TemplateApplyPreview } from "../api/types";
 import { fieldsFromBlank, fieldsFromProposal, toMetadata } from "../lib/authoring";
 import { DocumentCreatePage } from "../pages/DocumentCreatePage";
+import { DocumentPage } from "../pages/DocumentPage";
 import { ImportPage } from "../pages/ImportPage";
-import { checkResponse, NEW_DOC_ID, newDocumentProposal, session, templates } from "./fixtures";
+import { arisDetail, checkResponse, NEW_DOC_ID, newDocumentProposal, session, templates } from "./fixtures";
 import { memoryStorage, mockApi, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 const CREATE = { "/documents/new": <DocumentCreatePage /> };
@@ -61,6 +62,46 @@ function blankProposal(overrides: Partial<ProposalDetail> = {}): ProposalDetail 
   });
 }
 
+function applyPreview(overrides: Partial<TemplateApplyPreview> = {}): TemplateApplyPreview {
+  return {
+    target: "draft",
+    document_id: "SEM-DOC-001",
+    draft_id: NEW_DOC_ID,
+    expected_version: 1,
+    base_revision: null,
+    template_id: "architecture",
+    template_version: 1,
+    template_title: "Архитектура",
+    previous_template_id: null,
+    previous_template_version: null,
+    type_before: "guide",
+    type_after: "architecture",
+    sections: [
+      { heading: "Назначение", template_heading: "Назначение", state: "added", required: true },
+      { heading: "Контекст", template_heading: "Контекст", state: "matched", required: true },
+      { heading: "Компоненты", template_heading: "Компоненты", state: "added", required: true },
+    ],
+    content_before: "",
+    content_after: "",
+    diff: {
+      unified: "",
+      lines: [
+        { kind: "hunk", old_no: null, new_no: null, text: "@@ -1,4 +1,6 @@" },
+        { kind: "remove", old_no: 3, new_no: null, text: "type: guide" },
+        { kind: "add", old_no: null, new_no: 3, text: "type: architecture" },
+        { kind: "add", old_no: null, new_no: 9, text: "## Назначение" },
+        { kind: "add", old_no: null, new_no: 10, text: "> Требует уточнения: какую задачу решает система." },
+      ],
+      additions: 3,
+      deletions: 1,
+      changed: true,
+    },
+    changed: true,
+    validation: [],
+    ...overrides,
+  };
+}
+
 function blankRoutes(extra: MockRoute[] = []): MockRoute[] {
   return [
     ...extra,
@@ -109,6 +150,9 @@ describe("«Пустой документ» on the create page", () => {
     expect(body.value).toBe("# Регламент сверки\n\n"); // no skeleton: free Markdown
     expect(screen.getByRole("combobox", { name: "Раздел каталога" })).toHaveValue("process");
     expect(screen.getByText("Происхождение").parentElement).toHaveTextContent("без шаблона");
+    expect(screen.getByText("Шаблон", { selector: ".field__label" }).parentElement).toHaveTextContent("не применён");
+    expect(screen.getByRole("button", { name: "Применить шаблон" })).toBeDisabled();
+    expect(screen.getByText(/сначала сохраните его/)).toBeInTheDocument();
     expect(screen.getByText(/Свободный Markdown: обязательных разделов нет/)).toBeInTheDocument();
     // live preview from the server, as for template documents
     expect(await screen.findByText("Предпросмотр документа", {}, AFTER_CHECK)).toBeInTheDocument();
@@ -169,6 +213,7 @@ describe("Editor of a draft without a template", () => {
     expect(body.value).toBe(BLANK_BODY);
     expect(screen.getByText(/Документ импортирован из Markdown/)).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Раздел каталога" })).toHaveValue("guide");
+    expect(screen.getByRole("button", { name: "Применить шаблон" })).toBeEnabled();
 
     // AI actions that make sense without a template; the completeness check waits for one
     const ai = screen.getByRole("region", { name: "ИИ-помощник по черновику" });
@@ -206,6 +251,135 @@ describe("Editor of a draft without a template", () => {
     });
     expect(await screen.findByRole("textbox", { name: /Markdown/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "ИИ-помощник по черновику" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Применить шаблон" })).toBeEnabled(); // no AI needed
+  });
+});
+
+describe("«Применить шаблон»", () => {
+  it("previews the result as a diff and updates the draft after confirmation", async () => {
+    let applied = false;
+    const calls = mockApi(
+      blankRoutes([
+        {
+          path: `/api/drafts/${NEW_DOC_ID}`,
+          body: () =>
+            applied
+              ? newDocumentProposal({ document_id: "SEM-DOC-001", template_version: 1, edit_version: 2 })
+              : blankProposal(),
+        },
+        { method: "POST", path: `/api/drafts/${NEW_DOC_ID}/apply-template/preview`, body: applyPreview() },
+        {
+          method: "POST",
+          path: `/api/drafts/${NEW_DOC_ID}/apply-template`,
+          body: () => {
+            applied = true;
+            return newDocumentProposal({ document_id: "SEM-DOC-001", template_version: 1, edit_version: 2 });
+          },
+        },
+      ]),
+    );
+    renderRoutes(`/documents/new?draft=${NEW_DOC_ID}`, CREATE);
+    await userEvent.click(await screen.findByRole("button", { name: "Применить шаблон" }));
+    const panel = await screen.findByRole("dialog", { name: "Применить шаблон" });
+    expect(within(panel).getByText(/Весь текст сохраняется/)).toBeInTheDocument();
+    const confirm = within(panel).getByRole("button", { name: "Применить шаблон" });
+    expect(confirm).toBeDisabled(); // nothing chosen yet
+    await userEvent.selectOptions(await within(panel).findByRole("combobox", { name: "Шаблон" }), "architecture");
+
+    expect(await within(panel).findByRole("heading", { name: "Что изменится" })).toBeInTheDocument();
+    expect(within(panel).getByText(/Шаблон «Архитектура» v1 будет закреплён/)).toBeInTheDocument();
+    expect(within(panel).getByText("Раздел каталога: «Руководства» → «Архитектура».")).toBeInTheDocument();
+    expect(within(panel).getByText(/не меняется/, { selector: "li" })).toHaveTextContent("ID SEM-DOC-001 не меняется.");
+    const sections = within(panel).getAllByRole("listitem").filter((li) => li.classList.contains("apply-template__section"));
+    expect(sections.map((li) => li.textContent)).toEqual([
+      "+Назначение — добавится из шаблона с пометкой «Требует уточнения»",
+      "✓Контекст — совпал с разделом шаблона",
+      "+Компоненты — добавится из шаблона с пометкой «Требует уточнения»",
+    ]);
+    expect(within(panel).getByRole("table", { name: "Изменения после применения шаблона" })).toHaveTextContent("## Назначение");
+
+    await userEvent.click(confirm);
+    const apply = posts(calls, `/api/drafts/${NEW_DOC_ID}/apply-template`);
+    expect(apply[0]?.body).toEqual({ template_id: "architecture", template_version: 1, expected_version: 1 });
+    // the draft reopens with its pinned template
+    expect(await screen.findByText(/Шаблон применён и закреплён \(v1\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Применить шаблон" })).toBeNull();
+    expect(screen.getByText("Раздел каталога").parentElement).toHaveTextContent("шаблон «Архитектура»");
+  });
+
+  it("explains a stale preview and offers a fresh one", async () => {
+    let previews = 0;
+    mockApi(
+      blankRoutes([
+        { path: `/api/drafts/${NEW_DOC_ID}`, body: blankProposal() },
+        {
+          method: "POST",
+          path: `/api/drafts/${NEW_DOC_ID}/apply-template/preview`,
+          body: () => {
+            previews += 1;
+            return applyPreview({ expected_version: previews });
+          },
+        },
+        {
+          method: "POST",
+          path: `/api/drafts/${NEW_DOC_ID}/apply-template`,
+          status: 409,
+          body: { code: "draft_modified", message: "Черновик изменён после предпросмотра.", request_id: "r" },
+        },
+      ]),
+    );
+    renderRoutes(`/documents/new?draft=${NEW_DOC_ID}`, CREATE);
+    await userEvent.click(await screen.findByRole("button", { name: "Применить шаблон" }));
+    const panel = await screen.findByRole("dialog", { name: "Применить шаблон" });
+    await userEvent.selectOptions(await within(panel).findByRole("combobox", { name: "Шаблон" }), "architecture");
+    await within(panel).findByRole("heading", { name: "Что изменится" });
+    await userEvent.click(within(panel).getByRole("button", { name: "Применить шаблон" }));
+    expect(await within(panel).findByText("Черновик изменён в другом окне или другим пользователем")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "Применить шаблон" })).toBeDisabled();
+    await userEvent.click(within(panel).getByRole("button", { name: "Обновить предпросмотр" }));
+    await waitFor(() => expect(previews).toBe(2));
+    expect(await within(panel).findByRole("heading", { name: "Что изменится" })).toBeInTheDocument();
+  });
+
+  it("on a document page creates a change proposal and never changes the document", async () => {
+    const calls = mockApi([
+      { path: "/api/documents/SEM-INT-ARIS-001", body: arisDetail },
+      { path: "/api/drafts?document_id=SEM-INT-ARIS-001", body: { items: [], total: 0 } },
+      { path: /^\/api\/authoring\/templates$/, body: templates },
+      {
+        method: "POST",
+        path: "/api/documents/SEM-INT-ARIS-001/apply-template/preview",
+        body: applyPreview({
+          target: "document",
+          document_id: "SEM-INT-ARIS-001",
+          draft_id: null,
+          expected_version: null,
+          base_revision: arisDetail.revision,
+          type_before: "architecture",
+          type_after: "architecture",
+        }),
+      },
+      {
+        method: "POST",
+        path: "/api/documents/SEM-INT-ARIS-001/apply-template",
+        status: 201,
+        body: newDocumentProposal({ id: "e".repeat(32), operation: "update", document_id: "SEM-INT-ARIS-001" }),
+      },
+    ]);
+    renderRoutes("/documents/SEM-INT-ARIS-001", { "/documents/:id": <DocumentPage /> });
+    await userEvent.click(await screen.findByRole("button", { name: "Ещё" }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /Применить шаблон/ }));
+    const panel = await screen.findByRole("dialog", { name: "Применить шаблон" });
+    expect(within(panel).getByText(/Документ не изменится: будет создано предложение изменения/)).toBeInTheDocument();
+    await userEvent.selectOptions(await within(panel).findByRole("combobox", { name: "Шаблон" }), "architecture");
+    expect(await within(panel).findByText("Раздел каталога не меняется: «Архитектура».")).toBeInTheDocument();
+    await userEvent.click(within(panel).getByRole("button", { name: "Создать предложение изменения" }));
+    await waitFor(() => expect(location()).toBe(`/proposals/${"e".repeat(32)}`));
+    expect(posts(calls, "/api/documents/SEM-INT-ARIS-001/apply-template")[0]?.body).toEqual({
+      template_id: "architecture",
+      template_version: 1,
+      base_revision: arisDetail.revision,
+    });
   });
 });
 

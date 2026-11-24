@@ -806,7 +806,7 @@ export interface ChangeDraftUpdate {
   proposed_content: string;
 }
 
-// --- «Пустой документ» (api/authoring.py) ---
+// --- «Пустой документ» and «Применить шаблон» (api/authoring.py, api/template_apply.py) ---
 
 /** GET /api/authoring/blank: what the server generates for a document without a template. */
 export interface BlankDocumentInfo {
@@ -818,6 +818,53 @@ export interface BlankDocumentInfo {
   default_type: DocType;
 }
 
+export type TemplateSectionState = "matched" | "added" | "kept" | "optional_missing";
+
+export interface TemplateSectionMapping {
+  heading: string;
+  template_heading: string | null;
+  /** matched: an existing `##` section maps to the template; added: a skeleton of a missing required section;
+   * kept: a section the template does not know (kept as is); optional_missing: optional, not added. */
+  state: TemplateSectionState;
+  required: boolean;
+}
+
+/** POST …/apply-template/preview: the result as a diff; nothing is stored. */
+export interface TemplateApplyPreview {
+  target: "draft" | "document";
+  document_id: string;
+  draft_id: string | null;
+  /** Draft: confirm with this `edit_version`. */
+  expected_version: number | null;
+  /** Document: confirm with this revision (a change proposal is created on it). */
+  base_revision: string | null;
+  template_id: string;
+  template_version: number;
+  template_title: string;
+  previous_template_id: string | null;
+  previous_template_version: number | null;
+  type_before: DocType | null;
+  type_after: DocType;
+  sections: TemplateSectionMapping[];
+  content_before: string;
+  content_after: string;
+  diff: DiffResult;
+  changed: boolean;
+  validation: ValidationIssue[];
+}
+
+export interface DraftTemplateApply {
+  template_id: string;
+  template_version: number;
+  expected_version: number;
+}
+
+export interface DocumentTemplateApply {
+  template_id: string;
+  template_version: number;
+  base_revision: string;
+  reason?: string | null;
+}
 
 // --- M5: publication of merged GitLab documents to Confluence (backend/app/domain/publications.py) ---
 

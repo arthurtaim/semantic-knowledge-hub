@@ -32,10 +32,12 @@ import { useSession } from "../lib/session";
 import { sectionHeadings } from "../lib/wikilink";
 import { AiAssistPanel, useAiProposal, type AiAction } from "./AiProposal";
 import { AiSourcesPanel } from "./AiSourcesPanel";
+import { ApplyTemplatePanel } from "./ApplyTemplate";
 import { ErrorState, Notice } from "./Feedback";
 import { MarkdownToolbar } from "./MarkdownToolbar";
 import { SafeHtml } from "./SafeHtml";
 import { SECTION_HINT, SectionSelect } from "./SectionSelect";
+import { buttonClass } from "./ui/Button";
 import { StatusStamp } from "./StatusStamp";
 import { TemplateVersionNotice } from "./TemplateVersionNotice";
 import { WikiLinkTextarea } from "./WikiLinkTextarea";
@@ -213,6 +215,8 @@ export interface DocumentEditorProps {
   notice?: ReactNode;
   /** Called once the first save created the draft (before the URL changes to `?draft=<id>`). */
   onCreated?: (id: string) => void;
+  /** «Применить шаблон» updated the stored draft (its template changed): the page reopens it. */
+  onTemplateApplied?: (detail: ProposalDetail) => void;
 }
 
 /**
@@ -227,6 +231,7 @@ export function DocumentEditor({
   aiResult = null,
   notice,
   onCreated,
+  onTemplateApplied,
 }: DocumentEditorProps) {
   const navigate = useNavigate();
   const session = useSession();
@@ -254,6 +259,7 @@ export function DocumentEditor({
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(initial.pathEdited);
   const [view, setView] = useState<"source" | "preview">("source");
+  const [applyOpen, setApplyOpen] = useState(false);
   const seq = useRef(0);
   const inFlight = useRef(false);
   const idRef = useRef<HTMLInputElement>(null);
@@ -623,6 +629,11 @@ export function DocumentEditor({
     required: required(missing.body, "Текст документа не может быть пустым."),
   };
   const typeIssues = issuesFor("type");
+  // «Применить шаблон» works on the SAVED draft (like the AI proposals): unsaved edits are saved first.
+  let applyBlocker: string | null = null;
+  if (locked) applyBlocker = "Черновик больше нельзя редактировать.";
+  else if (!saved) applyBlocker = "Шаблон применяется к сохранённому черновику: сначала сохраните его.";
+  else if (dirty) applyBlocker = "Есть несохранённые изменения: сохраните черновик, затем примените шаблон.";
 
   let submitBlocker: string | null = null;
   if (locked) submitBlocker = "Черновик больше нельзя редактировать.";
@@ -781,6 +792,31 @@ export function DocumentEditor({
                 {" "}
                 · {template ? `шаблон v${draft?.template_version ?? template.version ?? 1} закреплён` : "без шаблона"}
               </span>
+            </p>
+          </div>
+          <div className="field">
+            <span className="field__label" id="doc-template-label">
+              Шаблон
+            </span>
+            <div className="field__row authoring__template-row">
+              <p className="field__static" aria-labelledby="doc-template-label">
+                {template ? `«${template.title}» v${draft?.template_version ?? template.version ?? 1}` : "не применён"}
+              </p>
+              <button
+                type="button"
+                className={buttonClass("secondary", "sm")}
+                disabled={applyBlocker !== null || busy}
+                aria-describedby="doc-template-hint"
+                onClick={() => setApplyOpen(true)}
+              >
+                Применить шаблон
+              </button>
+            </div>
+            <p id="doc-template-hint" className="field__hint">
+              {applyBlocker ??
+                (template
+                  ? "Другой шаблон или новая версия этого — с предпросмотром изменений; текст сохраняется."
+                  : "Шаблоны помогают структурировать текст, но не обязательны. Шаблон добавит недостающие разделы, ничего не удаляя.")}
             </p>
           </div>
           <div className="field">
@@ -988,6 +1024,18 @@ export function DocumentEditor({
           onApplied={reloadSaved}
         />
       )}
+      {applyOpen && saved ? (
+        <ApplyTemplatePanel
+          target={{ kind: "draft", id: saved.id }}
+          currentTemplateId={template?.id ?? null}
+          onClose={() => setApplyOpen(false)}
+          onApplied={(detail) => {
+            setApplyOpen(false);
+            if (onTemplateApplied) onTemplateApplied(detail);
+            else void reloadSaved();
+          }}
+        />
+      ) : null}
 
       <section className="authoring__check" aria-labelledby="check-title">
         <h2 id="check-title">Проверка</h2>

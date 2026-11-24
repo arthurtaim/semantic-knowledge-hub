@@ -6795,7 +6795,7 @@ a.source__title:hover {
   }
 }
 
-/* ---------- «Пустой документ» ---------- */
+/* ---------- «Пустой документ» and «Применить шаблон» ---------- */
 
 .authoring__template-start {
   display: flex;
@@ -6832,9 +6832,83 @@ a.source__title:hover {
   margin: 0;
 }
 
+.authoring__template-row {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+}
+
+.authoring__template-row .field__static {
+  min-width: 0;
+}
+
+.apply-template {
+  --side-panel-width: 46rem;
+}
+
+.apply-template__intro {
+  margin: 0 0 var(--space-4);
+}
+
+.apply-template__chooser {
+  margin-bottom: var(--space-2);
+}
+
+.apply-template__chooser select {
+  width: 100%;
+}
+
+.apply-template__preview h3,
+.apply-template__preview h4 {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.apply-template__summary,
+.apply-template__sections {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.apply-template__summary li::before {
+  content: "· ";
+  color: var(--text-secondary);
+}
+
+.apply-template__section {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.apply-template__mark {
+  flex: none;
+  width: 1.25rem;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.apply-template__section--added .apply-template__mark {
+  color: var(--success-text);
+}
+
+.apply-template__section--optional_missing {
+  color: var(--text-secondary);
+}
+
+.apply-template__actions {
+  margin: 0;
+}
+
 @media (max-width: 700px) {
   .blank-start__grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .authoring__template-row {
+    flex-wrap: wrap;
   }
 }
 
