@@ -186,6 +186,9 @@ class DocumentSummary(BaseModel):
     match_reasons: list[str] | None = None  # "why matched" (text query only)
     related_via: str | None = None  # found through a declared relation of this document (graph expansion)
     version: str | None = None
+    # Distinct documents linked to this one in the READER's snapshot (its links ∪ its backlinks) — the document
+    # page's «Связи». Set by `GET /api/documents`; null where a summary is built without it.
+    link_count: int | None = None
 
 
 class RelatedLink(BaseModel):

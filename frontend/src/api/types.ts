@@ -95,6 +95,11 @@ export interface DocumentSummary {
   /** Found through a declared relation of this document ID (graph expansion), not by its own text. */
   related_via?: string | null;
   version?: string | null;
+  /**
+   * Distinct documents linked to this one in the reader's snapshot — the document page's «Связи». Set by
+   * GET /api/documents; null (or absent) elsewhere.
+   */
+  link_count?: number | null;
 }
 
 export interface Section {

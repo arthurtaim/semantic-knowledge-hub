@@ -12,9 +12,10 @@ const doc = (overrides: Partial<DocumentSummary>): DocumentSummary => ({ ...aris
 /** Three sections, two statuses: enough to see grouping. */
 const catalog: DocumentPage = {
   items: [
-    doc({ id: "DEMO-INT-001", title: "ARIS → Catalog: обзор потока", status: "approved", type: "integration", owner: "demo-integration-team" }),
-    doc({ id: "DEMO-INT-018", title: "Ночная полная выгрузка ARIS", status: "deprecated", type: "integration", owner: "demo-integration-team" }),
-    doc({ id: "DEMO-SRC-010", title: "Archive Store: исторические снимки", status: "in_review", type: "source", owner: "demo-semantic-team" }),
+    doc({ id: "DEMO-INT-001", title: "ARIS → Catalog: обзор потока", status: "approved", type: "integration", owner: "demo-integration-team", link_count: 12 }),
+    doc({ id: "DEMO-INT-018", title: "Ночная полная выгрузка ARIS", status: "deprecated", type: "integration", owner: "demo-integration-team", link_count: 0 }),
+    doc({ id: "DEMO-SRC-010", title: "Archive Store: исторические снимки", status: "in_review", type: "source", owner: "demo-semantic-team", link_count: 3 }),
+    // An older backend without `link_count`: the catalog says «—», it does not invent a number.
     doc({ id: "DEMO-SEM-009", title: "Датасет Process Overview", status: "approved", type: "dataset", owner: "demo-semantic-team" }),
   ],
   total: 4,
@@ -240,16 +241,32 @@ describe("Catalog: the table", () => {
     ]);
   }
 
-  it("is the default for browsing: Название + ID, Статус, Владелец, Обновлён — and no invented «Связи» column", async () => {
+  // Round 2 (decision 7): «Связи» is a column now — the API's `link_count`, never a number the UI makes up.
+  it("is the default for browsing: Название + ID, Статус, Владелец, Обновлён, Связи", async () => {
     const calls = catalogRoutes();
     renderAt("/documents", "/documents", <ExplorerPage />);
     const table = await screen.findByRole("table");
     expect(screen.getByRole("button", { name: "Таблица" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Название", "Статус", "Владелец", "Обновлён"]);
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Название",
+      "Статус",
+      "Владелец",
+      "Обновлён",
+      "Связи",
+    ]);
     const row = within(table).getByRole("link", { name: "Archive Store: исторические снимки" }).closest("tr") as HTMLElement;
     expect(within(row).getByText("DEMO-SRC-010")).toBeInTheDocument();
     expect(within(row).getByText("На ревью")).toBeInTheDocument();
     expect(within(row).getByText("demo-semantic-team")).toBeInTheDocument();
+    const linksCell = (title: string) => {
+      const cells = within(within(table).getByRole("link", { name: title }).closest("tr") as HTMLElement).getAllByRole("cell");
+      return cells[cells.length - 1] as HTMLElement;
+    };
+    expect(linksCell("Archive Store: исторические снимки")).toHaveTextContent(/^3$/);
+    expect(linksCell("Archive Store: исторические снимки")).toHaveClass("catalog-table__num");
+    expect(linksCell("ARIS → Catalog: обзор потока")).toHaveTextContent(/^12$/);
+    expect(linksCell("Ночная полная выгрузка ARIS")).toHaveTextContent(/^0$/);
+    expect(linksCell("Датасет Process Overview")).toHaveTextContent(/^—$/);
     // the table loads up to the API maximum so the groups are whole
     expect(calls.some((c) => c.url === "/api/documents?page=1&size=100")).toBe(true);
     expect(screen.getByRole("heading", { level: 1, name: "Документы" })).toBeInTheDocument();
@@ -386,6 +403,12 @@ describe("Catalog: filter chips", () => {
       await screen.findByRole("link", { name: "Датасет Process Overview" });
       expect(screen.queryByRole("table")).toBeNull();
       expect(screen.getByRole("region", { name: "Раздел: Датасеты" })).toBeInTheDocument();
+      // The card says the link count in words; a card without a reported count says nothing about links.
+      const card = (title: string) => screen.getByRole("link", { name: title }).closest("li") as HTMLElement;
+      expect(within(card("ARIS → Catalog: обзор потока")).getByText("12 связей")).toBeInTheDocument();
+      expect(within(card("Archive Store: исторические снимки")).getByText("3 связи")).toBeInTheDocument();
+      expect(within(card("Ночная полная выгрузка ARIS")).getByText("нет связей")).toBeInTheDocument();
+      expect(within(card("Датасет Process Overview")).queryByText(/связ/)).toBeNull();
 
       const open = screen.getByRole("button", { name: "Фильтр (1)" });
       await userEvent.click(open);

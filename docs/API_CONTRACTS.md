@@ -10,6 +10,13 @@ These are proposed MVP HTTP contracts. Claude Code may refine field details but 
 
 ## 2. Knowledge
 - `GET /api/documents?query=&type=&status=&owner=&source=&page=1&size=20` -> `{items:[DocumentSummary],total,page,size}`.
+  - *UI v2 round 2 (additive).* Each item carries `link_count: int` — the distinct documents linked to it in the
+    **reader's** snapshot: targets of its declared, `related_ids` and inline `[[ID]]` relations plus the documents whose
+    relations point at it. Same number as the document page's «Связи» (`GET /api/documents/{id}/links`: outgoing
+    targets ∪ backlink sources); a document the reader cannot see neither appears nor counts. Computed in one pass over
+    the snapshot the list is built from (cached per snapshot), never per row. Other routes that return a
+    `DocumentSummary` / `DocumentDetail` leave it `null`. Code: `services/knowledge.py` `linked_document_counts`;
+    tests `tests/test_catalog_fields.py`.
 - `GET /api/documents/{id}` -> `DocumentDetail` with rendered-safe markdown/source content, frontmatter metadata and revision.
 - `GET /api/search?q=...&source=team,corporate&limit=10` -> ranked `SearchResult[]`.
 
