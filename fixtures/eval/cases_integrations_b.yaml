@@ -1,0 +1,148 @@
+# Gold evaluation cases for integrations group C2 (DEMO-INT-010 … DEMO-INT-018). Synthetic data only.
+# Format: docs/MOCK_KNOWLEDGE_BASE.md §6.
+
+- case_id: KE-INTB-001
+  category: exact_id
+  question: "DEMO-INT-011"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-011]
+  k: 1
+  facts_required: ["dlq.metadata.v1"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id of the retry/DLQ policy document."
+
+- case_id: KE-INTB-002
+  category: exact_id
+  question: "DEMO-INT-015"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-015]
+  k: 1
+  facts_required: ["GET /demo/v1/process-overview?process_id=PRC-000417", "60 запросов в минуту"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id of the synthetic Consumer API contract (not a real endpoint)."
+
+- case_id: KE-INTB-003
+  category: synonym
+  question: "линейдж датасета Process Overview от ARIS"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-014]
+  k: 3
+  facts_required: ["LIN-ARIS-PRC-000417"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "«линейдж» is the Russian slang synonym of data lineage; the document title uses «lineage»."
+
+- case_id: KE-INTB-004
+  category: synonym
+  question: "сколько повторных попыток при недоступности источника"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-011]
+  k: 3
+  facts_required: ["30 с → 60 с → 2 мин → 4 мин → 8 мин", "E-SRC-003"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "«повторные попытки» = retry; the title says «retry». Several flow documents also mention retries, hence k 3."
+
+- case_id: KE-INTB-005
+  category: abbreviation
+  question: "когда выбирать CDC, а когда полную перезагрузку"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-010]
+  k: 3
+  facts_required: ["demo.metadata.changes.v1", "2 000 строк"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "CDC = Change Data Capture; «полная перезагрузка» = full refresh."
+
+- case_id: KE-INTB-006
+  category: metadata_filter
+  question: "Черновики команды интеграций"
+  method: catalog
+  filters: {owner: demo-integration-team, status: draft}
+  expected_doc_ids: [DEMO-INT-017]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: the only draft owned by demo-integration-team is the hourly schedule proposal."
+
+- case_id: KE-INTB-007
+  category: metadata_filter
+  question: "Устаревшие интеграции"
+  method: catalog
+  filters: {status: deprecated, type: integration}
+  expected_doc_ids: [DEMO-INT-018]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set over the whole base: the original SEM-* documents contain no deprecated integration (SEM-PROC-OLD-001 is a process)."
+
+- case_id: KE-INTB-008
+  category: relation
+  question: "Какие звенья цепочки описывает схема lineage Process Overview?"
+  method: graph_neighbors
+  start: DEMO-INT-014
+  relation: describes
+  direction: out
+  max_depth: 1
+  expected_doc_ids: [DEMO-SRC-002, DEMO-INT-001, DEMO-INT-002, DEMO-SEM-002, DEMO-SEM-009]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Outgoing `describes` edges of the lineage document: ARIS → INT-001 → INT-002 → BusinessProcess → Process Overview."
+
+- case_id: KE-INTB-009
+  category: relation
+  question: "Какой действующий поток заменил ночную полную выгрузку ARIS?"
+  method: graph_neighbors
+  start: DEMO-INT-018
+  relation: supersedes
+  direction: in
+  max_depth: 1
+  expected_doc_ids: [DEMO-INT-001]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "DEMO-INT-001 declares `supersedes: [DEMO-INT-018]`; the deprecated document only references DEMO-INT-001."
+
+- case_id: KE-INTB-010
+  category: relation
+  question: "Как проект нового расписания связан со сравнением CDC и full refresh?"
+  method: graph_path
+  start: DEMO-INT-017
+  end: DEMO-INT-010
+  expected_path: [DEMO-INT-017, DEMO-INT-013, DEMO-INT-010]
+  max_depth: 3
+  expected_doc_ids: [DEMO-INT-017, DEMO-INT-013, DEMO-INT-010]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "Two `depends_on` hops: draft INT-017 → approved schedule INT-013 → INT-010. Any path of length ≤ 3 nodes passes."
+
+- case_id: KE-INTB-011
+  category: synthesis
+  question: "Как часто метаданные ARIS обновляются в каталоге и выдерживается ли актуальность Process Overview?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-INT-013]
+  facts_required: ["каждые 6 ч", "12 ч"]
+  facts_forbidden: ["каждый час", "в начале каждого часа"]
+  expected_no_answer: false
+  holdout: false
+  notes: "Grounded answer must use the approved schedule (DEMO-INT-013), never the hourly value of the draft DEMO-INT-017. «ежечасно» is not forbidden because approved GOV-005/GOV-007/ADR-002 mention «ежечасной» while warning about the draft."

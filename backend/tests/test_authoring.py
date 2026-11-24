@@ -32,6 +32,22 @@ TEMPLATE_SECTIONS = {
         "Ограничения",
         "Ошибки",
         "Требования",
+        # v2 (M5.6.2): v1 with these four sections stays readable in document_templates/history/
+        "Правила качества данных (Data Quality Rules)",
+        "Происхождение данных (Data Lineage)",
+        "Частота обновления (Update Frequency)",
+        "Валидационные ограничения (Validation Constraints)",
+    ],
+    "dataset_spec": [
+        "Обзор (Overview)",
+        "Системы-источники (Source Systems)",
+        "Бизнес-сущности (Business Entities)",
+        "Атрибуты (Attributes)",
+        "Правила маппинга (Mapping Rules)",
+        "Качество данных (Data Quality)",
+        "Политика обновления (Refresh Policy)",
+        "Ограничения доступа (Access Restrictions)",
+        "Связанные документы (Related Docs)",
     ],
     "business_entity": [
         "Определение",
@@ -53,6 +69,30 @@ TEMPLATE_SECTIONS = {
         "Исключения",
         "Связи",
     ],
+    # M5.6.3 Template Hub: required sections only (optional ones are listed in `optional_sections`).
+    "source_system": [
+        "Назначение",
+        "Владелец и контакты",
+        "Состав данных",
+        "Выгрузки и интерфейсы",
+        "Ограничения",
+    ],
+    "mapping": [  # v2 (breaking): v1 «Правила» split in two
+        "Назначение",
+        "Соответствие полей",
+        "Правила преобразования",
+        "Исключения и ошибки",
+        "Связанные документы",
+    ],
+    "change_request": ["Что меняется", "Причина", "Затронутые документы", "Решение"],
+    "data_quality_rule": [
+        "Назначение",
+        "Условие проверки",
+        "Порог и область действия",
+        "Реакция на нарушение",
+    ],
+    "runbook": ["Когда применять", "Предварительные проверки", "Шаги", "Откат", "Эскалация"],
+    "knowledge_article": ["Суть", "Подробности"],
 }
 
 
@@ -103,7 +143,7 @@ def create_draft(client: TestClient, **kwargs: Any) -> dict[str, Any]:
     return data
 
 
-def test_five_templates_with_required_structure_and_free_ids(client: TestClient) -> None:
+def test_templates_with_required_structure_and_free_ids(client: TestClient) -> None:
     found = templates(client)
     assert set(found) == set(TEMPLATE_SECTIONS)
     for template_id, sections in TEMPLATE_SECTIONS.items():
@@ -179,7 +219,14 @@ def test_unsafe_path_and_mismatched_filename_are_errors(client: TestClient) -> N
 
 def test_save_draft_with_optimistic_versioning(client: TestClient) -> None:
     draft = create_draft(client)
-    payload = new_doc_payload(client, doc_id="SEM-ARCH-010", title="Новое имя")
+    # M5.6.3: the ID is allocated once, at creation; a draft keeps it (title and text stay editable).
+    renamed = new_doc_payload(client, doc_id="SEM-ARCH-010", title="Новое имя")
+    moved = client.put(
+        f"/api/drafts/{draft['id']}",
+        json={"expected_version": 1, "metadata": renamed["metadata"], "body": renamed["body"]},
+    )
+    assert moved.status_code == 422 and moved.json()["code"] == "document_id_immutable"
+    payload = new_doc_payload(client, doc_id=draft["document_id"], title="Новое имя")
     saved = client.put(
         f"/api/drafts/{draft['id']}",
         json={
@@ -191,8 +238,8 @@ def test_save_draft_with_optimistic_versioning(client: TestClient) -> None:
     )
     assert saved.status_code == 200, saved.text
     body = saved.json()
-    assert body["edit_version"] == 2 and body["document_id"] == "SEM-ARCH-010"
-    assert body["document_path"] == "SEM-ARCH-010.md" and body["document_title"] == "Новое имя"
+    assert body["edit_version"] == 2 and body["document_id"] == draft["document_id"]
+    assert body["document_path"] == f"{draft['document_id']}.md" and body["document_title"] == "Новое имя"
     stale = client.put(
         f"/api/drafts/{draft['id']}",
         json={"expected_version": 1, "metadata": payload["metadata"], "body": payload["body"]},

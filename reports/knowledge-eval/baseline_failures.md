@@ -1,0 +1,116 @@
+# Failures — baseline
+
+- `KE-ADR-004` (relation, graph_path, unsupported): graph API not available
+- `KE-ADR-005` (synthesis, assistant, fail): facts missing from the grounded answer: ['Черновик (draft) никогда не авторитетен']
+- `KE-GUIDE-002` (synonym, search, fail): expected ['DEMO-GUIDE-005'] within top 5, got ['DEMO-PROC-004']
+- `KE-GUIDE-005` (relation, graph_neighbors, unsupported): graph API not available
+- `KX-RAG-01` (external_rag, assistant, fail): not cited: ['200101'] (cited ['DEMO-INT-013', 'DEMO-INT-016', 'DEMO-INT-016', 'DEMO-INT-010'], confidence partial); facts missing from the grounded answer: ['последние 2 рабочих дня']; external called=False, expected True; no warning containing «статус которых не подтверждён»
+- `KX-RAG-02` (external_rag, assistant, fail): not cited: ['200102'] (cited ['DEMO-SEM-009', 'DEMO-GOV-005', 'DEMO-SEM-004', 'DEMO-INT-010'], confidence partial); facts missing from the grounded answer: ['через 30 минут']
+- `KX-RAG-03` (external_rag, assistant, fail): not cited: ['200103'] (cited ['DEMO-SEM-010', 'DEMO-SEM-009', 'DEMO-PROC-002', 'DEMO-INT-016'], confidence partial); facts missing from the grounded answer: ['3 рабочих дней']
+- `KX-RAG-04` (external_rag, assistant, fail): not cited: ['200104'] (cited ['DEMO-PROC-002', 'DEMO-INT-002', 'DEMO-INT-001', 'DEMO-INT-008'], confidence partial); facts missing from the grounded answer: ['internal']
+- `KX-RAG-05` (external_rag, assistant, fail): not cited: ['200106'] (cited ['DEMO-INT-003', 'DEMO-INT-011', 'DEMO-SEM-006', 'DEMO-INT-003'], confidence partial)
+- `KX-RAG-06` (external_rag, assistant, fail): not cited: ['200108'] (cited [], confidence insufficient_evidence); facts missing from the grounded answer: ['Mean Time To Restore']
+- `KX-RAG-08` (external_rag, assistant, fail): none of ['DEMO-SEM-007', 'DEMO-SEM-002'] cited (cited ['DEMO-SRC-007', 'DEMO-INT-015', 'DEMO-INT-014', 'DEMO-SRC-002'], confidence supported)
+- `KX-RAG-09` (external_rag, assistant, fail): facts missing from the grounded answer: ['Решения на встрече не принимаются']
+- `KX-RAG-10` (external_rag, assistant, fail): page 200113 not rejected as duplicate_of:DEMO-INT-011 (rejected {})
+- `KX-RAG-11` (external_rag, assistant, fail): not cited: ['200123'] (cited [], confidence insufficient_evidence); facts missing from the grounded answer: ['1 рабочего дня']
+- `KX-RAG-12` (external_rag, assistant, fail): not cited: ['200117'] (cited ['MOCK-1001'], confidence partial); facts missing from the grounded answer: ['90 дней']; no warning containing «статус которых не подтверждён»
+- `KX-CACHE-01` (external_cache, ext_cache_hit_after_fresh_search, unsupported): method ext_cache_hit_after_fresh_search not implemented
+- `KX-CACHE-02` (external_cache, ext_revoke_no_reuse, unsupported): method ext_revoke_no_reuse not implemented
+- `KX-CACHE-03` (external_cache, ext_version_update, unsupported): method ext_version_update not implemented
+- `KX-CACHE-04` (external_cache, ext_delete, unsupported): method ext_delete not implemented
+- `KX-CACHE-05` (external_cache, ext_cross_scope, unsupported): method ext_cross_scope not implemented
+- `KX-CACHE-06` (external_cache, ext_ttl_zero_no_cache, unsupported): method ext_ttl_zero_no_cache not implemented
+- `KX-CACHE-08` (external_cache, assistant, fail): not cited: ['200122'] (cited ['MOCK-1001'], confidence partial); facts missing from the grounded answer: ['четверг']
+- `KX-CACHE-09` (external_cache, assistant, fail): no warning containing «слишком большая»
+- `KX-CACHE-10` (external_cache, assistant, fail): not cited: ['200121'] (cited [], confidence insufficient_evidence); facts missing from the grounded answer: ['09:00']
+- `KX-DISC-01` (discovery, disc_feedback_relevant_boosts_same_intent, unsupported): method disc_feedback_relevant_boosts_same_intent not implemented
+- `KX-DISC-02` (discovery, disc_feedback_irrelevant_is_local_to_the_intent, unsupported): method disc_feedback_irrelevant_is_local_to_the_intent not implemented
+- `KX-DISC-03` (discovery, disc_feedback_changes_no_authority, unsupported): method disc_feedback_changes_no_authority not implemented
+- `KX-DISC-04` (discovery, disc_query_text_not_stored, unsupported): method disc_query_text_not_stored not implemented
+- `KX-DISC-05` (discovery, disc_purge, unsupported): method disc_purge not implemented
+- `KX-DISC-06` (discovery, disc_propose_is_a_draft, unsupported): method disc_propose_is_a_draft not implemented
+- `KX-DISC-07` (discovery, disc_trace_is_reproducible, unsupported): method disc_trace_is_reproducible not implemented
+- `KX-DISC-08` (discovery, assistant, fail): expected no answer, got partial citing ['DEMO-INT-013', 'DEMO-INT-016', 'DEMO-INT-016', 'DEMO-INT-010']
+- `KX-GR-01` (graph, graph_overview_bounded_and_typed, unsupported): method graph_overview_bounded_and_typed not implemented
+- `KX-GR-02` (graph, graph_local_depth_bounded, unsupported): method graph_local_depth_bounded not implemented
+- `KX-GR-03` (graph, graph_query_shows_external_evidence, unsupported): method graph_query_shows_external_evidence not implemented
+- `KX-GR-04` (graph, graph_query_hides_revoked, unsupported): method graph_query_hides_revoked not implemented
+- `KX-GR-05` (graph, graph_scoped_trace, unsupported): method graph_scoped_trace not implemented
+- `KX-GR-06` (graph, graph_dangling_after_delete, unsupported): method graph_dangling_after_delete not implemented
+- `KX-GR-07` (graph, graph_path, unsupported): graph API not available
+- `KX-GR-08` (graph, graph_path, unsupported): graph API not available
+- `KX-GR-09` (graph, graph_path, unsupported): graph API not available
+- `KX-GR-10` (graph, graph_path, unsupported): graph API not available
+- `KX-GR-11` (graph, graph_neighbors, unsupported): graph API not available
+- `KX-GR-12` (graph, graph_neighbors, unsupported): graph API not available
+- `KX-RES-03` (resource, res_timeout_falls_back, unsupported): method res_timeout_falls_back not implemented
+- `KX-RES-04` (resource, res_concurrency_bounded, unsupported): method res_concurrency_bounded not implemented
+- `KX-RES-05` (resource, res_parallel_requests_isolated, unsupported): method res_parallel_requests_isolated not implemented
+- `KX-RES-06` (resource, res_api_limits_clamped, unsupported): method res_api_limits_clamped not implemented
+- `KX-RES-07` (resource, assistant, fail): not cited: ['200115'] (cited [], confidence insufficient_evidence)
+- `KE-GOV-003` (synonym, search, fail): expected ['DEMO-GOV-005'] within top 3, got []
+- `KE-GOV-004` (synonym, search, fail): expected ['DEMO-GOV-003'] within top 3, got []
+- `KE-GOV-005` (abbreviation, search, error): OperationalError: fts5: syntax error near ""одног""
+- `KE-GOV-008` (relation, graph_path, unsupported): graph API not available
+- `KE-GOV-009` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-GOV-010` (synthesis, assistant, fail): not cited: ['DEMO-SEM-009'] (cited ['DEMO-GOV-007', 'DEMO-GOV-003', 'DEMO-SEM-001'], confidence supported)
+- `KE-INTA-001` (exact_id, search, fail): expected ['DEMO-INT-002'] within top 1, got ['DEMO-GUIDE-002']
+- `KE-INTA-002` (exact_id, search, fail): expected ['DEMO-INT-008'] within top 1, got ['DEMO-SRC-008']
+- `KE-INTA-003` (synonym, search, fail): expected ['DEMO-INT-002'] within top 3, got []
+- `KE-INTA-004` (synonym, search, fail): expected ['DEMO-INT-009'] within top 3, got []
+- `KE-INTA-006` (abbreviation, search, error): OperationalError: fts5: syntax error near ""пакет""
+- `KE-INTA-009` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-INTA-010` (relation, graph_path, unsupported): graph API not available
+- `KE-INTA-011` (relation, search, fail): expected ['DEMO-INT-007', 'DEMO-SEM-006'] within top 5, got ['DEMO-INT-007']
+- `KE-INTA-012` (synthesis, assistant, fail): not cited: ['DEMO-INT-002'] (cited ['DEMO-INT-001', 'DEMO-SRC-001', 'DEMO-INT-001', 'DEMO-SRC-007'], confidence partial); facts missing from the grounded answer: ['MAP_ARIS_PROCESS']
+- `KE-INTB-008` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-INTB-009` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-INTB-010` (relation, graph_path, unsupported): graph API not available
+- `KE-SY-001` (sync, sync_add_approved, error): KeyError: 'last_sync'
+- `KE-SY-002` (sync, sync_add_draft, error): KeyError: 'last_sync'
+- `KE-SY-003` (sync, sync_update_rule, error): KeyError: 'last_sync'
+- `KE-SY-004` (sync, sync_update_metadata, error): KeyError: 'last_sync'
+- `KE-SY-005` (sync, sync_update_relation, error): KeyError: 'edges'
+- `KE-SY-006` (sync, sync_delete, error): KeyError: 'last_sync'
+- `KE-SY-007` (sync, sync_rename, error): KeyError: 'last_sync'
+- `KE-SY-008` (sync, sync_duplicate_id, error): KeyError: 'last_sync'
+- `KE-SY-009` (sync, sync_invalid_yaml, error): KeyError: 'last_sync'
+- `KE-SY-010` (sync, sync_idempotent_parallel, error): KeyError: 'last_sync'
+- `KE-TP-001` (template, template_new_visible, fail): new template not offered without a code change
+- `KE-TP-002` (template, template_v2_for_new_drafts, error): KeyError: 'version'
+- `KE-TP-003` (template, template_old_draft_keeps_version, error): KeyError: 'dataset_spec'
+- `KE-TP-004` (template, template_removed_old_draft_opens, error): KeyError: 'dataset_spec'
+- `KE-TP-005` (template, template_silent_edit_versioned, error): KeyError: 'version'
+- `KE-TP-006` (template, template_ai_authoring_uses_registry, error): KeyError: 'dataset_spec'
+- `KE-TP-007` (template, template_required_section_only_for_new_docs, error): KeyError: 'dataset_spec'
+- `KE-TP-008` (template, template_registry_restart, error): KeyError: 'version'
+- `KE-PROC-001` (exact_id, search, fail): expected ['DEMO-PROC-006'] within top 1, got ['DEMO-GOV-006']
+- `KE-PROC-002` (exact_id, search, fail): expected ['DEMO-PROC-010'] within top 1, got ['DEMO-SRC-010']
+- `KE-PROC-008` (relation, graph_path, unsupported): graph API not available
+- `KE-PROC-009` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-PROC-010` (synthesis, assistant, fail): facts missing from the grounded answer: ['остаются на v1']
+- `KE-SEM-001` (exact_id, search, fail): expected ['DEMO-SEM-007'] within top 1, got ['DEMO-GOV-007']
+- `KE-SEM-002` (exact_id, search, fail): expected ['DEMO-SEM-012'] within top 1, got ['DEMO-GOV-012']
+- `KE-SEM-003` (synonym, search, fail): expected ['DEMO-SEM-001'] within top 3, got []
+- `KE-SEM-004` (synonym, search, fail): expected ['DEMO-SEM-006'] within top 3, got []
+- `KE-SEM-005` (abbreviation, search, error): OperationalError: fts5: syntax error near "("
+- `KE-SEM-008` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-SEM-009` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-SEM-010` (relation, graph_path, unsupported): graph API not available
+- `KE-SEM-011` (synthesis, assistant, fail): facts missing from the grounded answer: ['mapping_state = retired']
+- `KE-SRC-001` (exact_id, search, fail): expected ['DEMO-SRC-011'] within top 1, got ['DEMO-INT-011']
+- `KE-SRC-003` (synonym, search, fail): expected ['DEMO-SRC-006'] within top 3, got []
+- `KE-SRC-004` (synonym, search, fail): expected ['DEMO-SRC-008'] within top 3, got []
+- `KE-SRC-005` (abbreviation, search, fail): expected ['DEMO-SRC-011'] within top 3, got []
+- `KE-SRC-006` (abbreviation, search, error): OperationalError: fts5: syntax error near "("
+- `KE-SRC-009` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-SRC-010` (relation, graph_neighbors, unsupported): graph API not available
+- `KE-SRC-011` (relation, graph_path, unsupported): graph API not available
+- `KE-SRC-012` (synthesis, assistant, fail): not cited: ['DEMO-SRC-004'] (cited ['DEMO-INT-006', 'DEMO-SRC-006', 'DEMO-SRC-006'], confidence partial); facts missing from the grounded answer: ['mdm_golden_id']
+- `KE-SRC-013` (synthesis, assistant, fail): facts missing from the grounded answer: ['DQ-COMP-001', '95 %', '24 ч']
+- `KE-ST-006` (status, assistant, fail): not cited: ['DEMO-SEM-012'] (cited ['DEMO-INT-012', 'DEMO-SEM-003', 'DEMO-SEM-008', 'DEMO-GOV-007'], confidence supported)
+- `KE-ST-008` (status, assistant, fail): not cited: ['DEMO-SEM-009'] (cited ['DEMO-SEM-001', 'DEMO-INT-013', 'DEMO-INT-013', 'DEMO-INT-013'], confidence partial)
+- `KE-NA-001` (no_answer, assistant, fail): expected no answer, got partial citing ['DEMO-INT-001', 'DEMO-SEM-006', 'DEMO-INT-012']
+- `KE-NA-002` (no_answer, assistant, fail): expected no answer, got partial citing ['DEMO-INT-015', 'DEMO-INT-014', 'DEMO-GOV-003', 'DEMO-GOV-003']
+- `KE-NA-003` (no_answer, assistant, fail): expected no answer, got partial citing ['DEMO-INT-001', 'DEMO-GOV-005', 'DEMO-SEM-007']

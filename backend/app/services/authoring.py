@@ -12,7 +12,13 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from app.adapters.ai.base import AIProvider, AIProviderError, AuthoringReference, AuthoringRequest
+from app.adapters.ai.base import (
+    AIProvider,
+    AIProviderError,
+    AuthoringReference,
+    AuthoringRequest,
+    ai_error_status,
+)
 from app.adapters.knowledge.base import KnowledgeRepository, RepositoryUnavailableError
 from app.adapters.search.base import SearchFilters
 from app.domain.markdown import render_html
@@ -27,6 +33,7 @@ from app.domain.proposals import (
     NewDocumentMetadata,
 )
 from app.domain.schema import is_valid_document_id, parse_document, split_frontmatter
+from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import (
     PLACEHOLDER,
     DocumentTemplate,
@@ -45,6 +52,7 @@ from app.services.proposals import ProposalStore, repository_path_problem
 logger = logging.getLogger("skh.authoring")
 
 MAX_REFERENCES = 4
+UNASSIGNED_OWNER = "unassigned"  # an unknown owner stays explicit, never invented
 MIN_QUOTE_CHARS = 12  # same floor as grounded answers: a shorter "quote" proves nothing
 MAX_REFERENCE_SECTION_CHARS = 1500
 _HINT_RE = re.compile(rf"^>?\s*{PLACEHOLDER}:?\s*(.*)$")
@@ -105,7 +113,7 @@ class AuthoringService:
     def __init__(
         self,
         *,
-        templates: dict[str, DocumentTemplate],
+        templates: TemplateRegistry,
         repository: KnowledgeRepository,
         knowledge: KnowledgeService,
         store: ProposalStore,
@@ -125,8 +133,18 @@ class AuthoringService:
     def knowledge_prefix(self) -> str:
         return self._prefix
 
-    def template(self, template_id: str) -> DocumentTemplate:
-        template = self._templates.get(template_id)
+    @property
+    def registry(self) -> TemplateRegistry:
+        return self._templates
+
+    @property
+    def store(self) -> ProposalStore:
+        return self._store
+
+    def template(self, template_id: str, version: int | None = None) -> DocumentTemplate:
+        """Current version for new documents; an explicit version for existing drafts (also of templates that
+        were changed or removed since — a draft is never validated against a newer template silently)."""
+        template = self._templates.get(template_id, version)
         if template is None:
             raise ApiError(404, "template_not_found", "Шаблон документа не найден.")
         return template
@@ -140,11 +158,15 @@ class AuthoringService:
         paths = {d.path for d in snapshot.documents.values()} | {i.path for i in snapshot.issues}
         return ids, paths
 
-    async def templates(self, user: UserContext) -> list[DocumentTemplateInfo]:
+    async def templates(
+        self, user: UserContext, *, include_hidden: bool = False
+    ) -> list[DocumentTemplateInfo]:
         ids, _ = await self._snapshot_ids(user)
         taken = ids | self._store.open_create_ids()
         result = []
-        for template in self._templates.values():
+        for template in self._templates.active().values():
+            if (not template.listed or template.status != "active") and not include_hidden:
+                continue
             suggested = suggest_document_id(template.id_prefix, taken)
             result.append(
                 DocumentTemplateInfo(
@@ -158,14 +180,29 @@ class AuthoringService:
                     skeleton=template.body,
                     suggested_id=suggested,
                     suggested_path=suggest_path(suggested, self._prefix),
+                    version=template.version,
+                    listed=template.listed,
+                    previous_versions=[
+                        v.version
+                        for v in self._templates.versions(template.id)
+                        if v.version != template.version
+                    ],
                 )
             )
         return result
 
+    async def allocate_id(self, user: UserContext, template: DocumentTemplate) -> str:
+        """Next free `<PREFIX>-NNN` against visible documents, load issues and open create proposals."""
+        ids, _ = await self._snapshot_ids(user)
+        return suggest_document_id(template.id_prefix, ids | self._store.open_create_ids())
+
     # --- validation --------------------------------------------------------------------------------
     def compose(self, template: DocumentTemplate, metadata: NewDocumentMetadata, body: str) -> str:
         fields = metadata.model_dump()
+        fields["owner"] = metadata.owner.strip() or UNASSIGNED_OWNER
         fields["type"] = template.doc_type
+        fields["template"] = template.id
+        fields["template_version"] = template.version
         fields["tags"] = [t.lower() for t in metadata.tags]
         return compose_document(fields, body)
 
@@ -180,8 +217,17 @@ class AuthoringService:
         *,
         exclude_proposal_id: str | None = None,
         fresh: bool = False,
+        template_version: int | None = None,
     ) -> NewDocumentCheck:
-        template = self.template(template_id)
+        template = self.template(template_id, template_version)
+        if template_version is None and template.status in ("draft", "archived"):
+            raise ApiError(
+                409,
+                "template_not_active",
+                f"Шаблон «{template.title}» в статусе {template.status}: новые документы по нему не создаются.",
+            )
+        if not metadata.id.strip():  # stateless check of a new document: preview the ID it would get
+            metadata = metadata.model_copy(update={"id": await self.allocate_id(user, template)})
         target = path.strip() if path and path.strip() else suggest_path(metadata.id.strip(), self._prefix)
         content = self.compose(template, metadata, body)
         return await self.check_content(
@@ -238,7 +284,7 @@ class AuthoringService:
                 )
             )
         elif status == DocStatus.approved:
-            if origin == "ai_suggestion":
+            if origin in ("ai_suggestion", "external_page"):
                 issues.append(
                     _issue(
                         "error",
@@ -256,6 +302,15 @@ class AuthoringService:
                         "status",
                     )
                 )
+        if template is not None and template.status == "deprecated":
+            issues.append(
+                _issue(
+                    "warning",
+                    "template_deprecated",
+                    f"Шаблон «{template.title}» v{template.version} устарел: для новых документов выберите "
+                    "актуальный шаблон.",
+                )
+            )
         if template is not None:
             doc_type = parsed.metadata.get("type")
             if doc_type is not None and doc_type != template.doc_type:
@@ -289,6 +344,31 @@ class AuthoringService:
             raise ApiError(
                 503, exc.code, f"Не удалось проверить уникальность ID и пути: {exc.message}"
             ) from exc
+        if parsed.metadata.get("owner") == UNASSIGNED_OWNER:
+            issues.append(
+                _issue(
+                    "warning",
+                    "owner_unassigned",
+                    "Владелец не указан: документ сохранится как «unassigned», ревьюер назначит владельца.",
+                    "owner",
+                )
+            )
+        title = str(parsed.metadata.get("title") or "").strip().casefold()
+        same_title = sorted(
+            d.id
+            for d in snapshot.documents.values()
+            if title and d.title.strip().casefold() == title and d.id.lower() != document_id.lower()
+        )
+        if same_title:
+            issues.append(
+                _issue(
+                    "warning",
+                    "duplicate_title",
+                    f"Такое же название уже у документа {', '.join(same_title[:3])}: ID разные, "
+                    "но читателю будет трудно их различить.",
+                    "title",
+                )
+            )
         unresolved = [r for r in parsed.metadata.get("related_ids", []) if snapshot.get(r) is None]
         if unresolved:
             issues.append(
@@ -358,15 +438,25 @@ class AuthoringService:
         path: str | None,
         origin: str,
         exclude_proposal_id: str | None,
+        template_version: int | None = None,
     ) -> AuthoringCheckResponse:
         result = await self.check_new_document(
-            user, template_id, metadata, body, path, origin, exclude_proposal_id=exclude_proposal_id
+            user,
+            template_id,
+            metadata,
+            body,
+            path,
+            origin,
+            exclude_proposal_id=exclude_proposal_id,
+            template_version=template_version,
         )
         return AuthoringCheckResponse(
             content=result.content,
             path=result.path,
             validation=result.issues,
-            preview_html=render_html(body),
+            preview_html=render_html(
+                body, self._knowledge.wikilink_resolver(await self._knowledge.snapshot(user))
+            ),
             id_available=result.id_available,
             path_available=result.path_available,
             error_count=len(result.errors),
@@ -429,11 +519,13 @@ class AuthoringService:
             sections=template_hints(template),
             references=tuple(references),
             access_scope="team",
+            guidance=template.ai_guidance,
+            template_version=template.version,
         )
         try:
             draft = await self._ai.draft_document(request)
         except AIProviderError as exc:
-            status = 503 if exc.code in ("assistant_disabled", "ai_misconfigured") else 502
+            status = ai_error_status(exc.code)
             raise ApiError(status, exc.code, exc.message) from exc
         by_id = {r.document_id: r for r in references}
         citations: list[AuthoringCitationInfo] = []

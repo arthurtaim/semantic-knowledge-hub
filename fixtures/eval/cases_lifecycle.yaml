@@ -1,0 +1,20 @@
+# Lifecycle cases: sync of documents (add / update / delete / rename / conflicts) and templates.
+# Each runs on its own temporary copy of fixtures/knowledge_updates (app.evaluation.scenarios).
+- {case_id: KE-SY-001, category: sync, method: sync_add_approved, question: "", notes: "Experiment A: unknown field → add approved doc → found, cited, graph edge, nothing else changed"}
+- {case_id: KE-SY-002, category: sync, method: sync_add_draft, question: "", notes: "draft visible in catalog, not evidence by default"}
+- {case_id: KE-SY-003, category: sync, method: sync_update_rule, question: "", notes: "Experiment B: DEMO_VALIDATION_LIMIT 7 → 11, old term gone, new revision cited"}
+- {case_id: KE-SY-004, category: sync, method: sync_update_metadata, question: "", notes: "facets and authority follow status/owner change", holdout: true}
+- {case_id: KE-SY-005, category: sync, method: sync_update_relation, question: "", notes: "Experiment D: maps_to changes, old edge disappears"}
+- {case_id: KE-SY-006, category: sync, method: sync_delete, question: "", notes: "Experiment C: deleted doc leaves search/AI, dangling link reported"}
+- {case_id: KE-SY-007, category: sync, method: sync_rename, question: "", notes: "Experiment C: rename keeps one document and updates the locator"}
+- {case_id: KE-SY-008, category: sync, method: sync_duplicate_id, question: "", notes: "duplicate id quarantined, never guessed", holdout: true}
+- {case_id: KE-SY-009, category: sync, method: sync_invalid_yaml, question: "", notes: "invalid file rejected, valid subset served"}
+- {case_id: KE-SY-010, category: sync, method: sync_idempotent_parallel, question: "", notes: "repeat = no-op, rebuild = incremental, parallel syncs consistent"}
+- {case_id: KE-TP-001, category: template, method: template_new_visible, question: "", notes: "new template file appears without code change"}
+- {case_id: KE-TP-002, category: template, method: template_v2_for_new_drafts, question: "", notes: "Integration Specification v2 for new drafts"}
+- {case_id: KE-TP-003, category: template, method: template_old_draft_keeps_version, question: "", notes: "old draft keeps v1, not rewritten"}
+- {case_id: KE-TP-004, category: template, method: template_removed_old_draft_opens, question: "", notes: "removed template: old drafts still open", holdout: true}
+- {case_id: KE-TP-005, category: template, method: template_silent_edit_versioned, question: "", notes: "edit without version bump gets a new version"}
+- {case_id: KE-TP-006, category: template, method: template_ai_authoring_uses_registry, question: "", notes: "AI authoring takes the structure from the registry"}
+- {case_id: KE-TP-007, category: template, method: template_required_section_only_for_new_docs, question: "", notes: "new required section only for new documents"}
+- {case_id: KE-TP-008, category: template, method: template_registry_restart, question: "", notes: "registry versions survive a restart"}

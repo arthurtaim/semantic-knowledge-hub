@@ -1,6 +1,15 @@
 import { useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
-import type { IntegrationStatus, PublisherMode, SyncStatus } from "../api/types";
+import type {
+  DiscoveryMemoryStats,
+  DiscoveryStats,
+  ExternalSourceStats,
+  IntegrationState,
+  IntegrationStatus,
+  LastSync,
+  PublisherMode,
+  SyncStatus,
+} from "../api/types";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import {
@@ -13,8 +22,11 @@ import {
   SYNC_STATE_LABEL,
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 const PUBLISHER_MODES = new Set<string>(["disabled", "dry_run_only", "write"]);
+/** Failed checks first (they need attention), then connected, demo doubles; unconfigured ones last. */
+const STATE_ORDER: Record<IntegrationState, number> = { error: 0, connected: 1, mock: 2, disabled: 3 };
 
 /** Target, access and last check of one integration; a configured address alone is never shown as "green". */
 function IntegrationFacts({ item }: { item: IntegrationStatus }) {
@@ -42,10 +54,53 @@ function IntegrationFacts({ item }: { item: IntegrationStatus }) {
       ) : null}
       <div>
         <dt>Последняя проверка</dt>
-        <dd>{item.checked_at ? formatDateTime(item.checked_at) : "не проверялось"}</dd>
+        <dd>
+          <When value={item.checked_at} fallback="не проверялось" />
+        </dd>
       </div>
+      {item.capabilities.length > 0 ? (
+        <div>
+          <dt>Возможности</dt>
+          <dd className="integration__caps">
+            {item.capabilities.map((cap) => (
+              <code key={cap}>{cap}</code>
+            ))}
+          </dd>
+        </div>
+      ) : null}
     </dl>
   );
+}
+
+/** One row: name, state and what it means on the left; target, access, last check and capabilities on the right. */
+function IntegrationRow({ item }: { item: IntegrationStatus }) {
+  return (
+    <li className={`integration integration--${item.state}`}>
+      <div className="integration__main">
+        <div className="integration__head">
+          <h2>{item.title}</h2>
+          <StateBadge state={item.state} />
+        </div>
+        <p>{item.human_readable_message}</p>
+      </div>
+      <IntegrationFacts item={item} />
+    </li>
+  );
+}
+
+/** A list of IDs or a number (the backend reports lists of document IDs; older versions counts). */
+const count = (value: unknown[] | number | undefined): number => (Array.isArray(value) ? value.length : (value ?? 0));
+
+function lastSyncText(sync: LastSync): string {
+  const parts = [
+    `добавлено ${count(sync.added)}`,
+    `обновлено ${count(sync.updated)}`,
+    `переименовано ${count(sync.renamed)}`,
+    `удалено ${count(sync.deleted)}`,
+    `без изменений ${count(sync.unchanged)}`,
+  ];
+  if (sync.rejected.length > 0) parts.push(`отклонено ${sync.rejected.length}`);
+  return parts.join(", ");
 }
 
 function SyncFacts({ status }: { status: SyncStatus }) {
@@ -64,11 +119,15 @@ function SyncFacts({ status }: { status: SyncStatus }) {
       </div>
       <div>
         <dt>Последняя успешная синхронизация</dt>
-        <dd>{status.last_success_at ? formatDateTime(status.last_success_at) : "не было"}</dd>
+        <dd>
+          <When value={status.last_success_at} fallback="не было" />
+        </dd>
       </div>
       <div>
         <dt>Последняя попытка</dt>
-        <dd>{status.last_attempt_at ? formatDateTime(status.last_attempt_at) : "не было"}</dd>
+        <dd>
+          <When value={status.last_attempt_at} fallback="не было" />
+        </dd>
       </div>
       <div>
         <dt>Документов в источнике</dt>
@@ -87,6 +146,24 @@ function SyncFacts({ status }: { status: SyncStatus }) {
           <dt>Версия источника</dt>
           <dd>
             <code className="doc-id">{status.head_commit ?? status.source_version}</code>
+          </dd>
+        </div>
+      ) : null}
+      {status.generation !== undefined && status.generation !== null ? (
+        <div>
+          <dt>Поколение индекса</dt>
+          <dd>
+            <code className="doc-id">{status.generation}</code>
+          </dd>
+        </div>
+      ) : null}
+      {status.last_sync ? (
+        <div>
+          <dt>{status.last_sync.full_rebuild ? "Последняя полная перестройка" : "Последняя синхронизация"}</dt>
+          <dd>
+            {lastSyncText(status.last_sync)}
+            {status.last_sync.applied ? "" : " — не применена"}
+            <span className="muted"> · {Math.round(status.last_sync.elapsed_ms)} мс</span>
           </dd>
         </div>
       ) : null}
@@ -180,9 +257,191 @@ function SyncSection() {
   );
 }
 
+const BREAKER_LABEL: Record<string, string> = {
+  closed: "в норме — запросы к Confluence выполняются",
+  open: "сработал — запросы к Confluence временно приостановлены",
+  half_open: "проверка восстановления — пробный запрос",
+};
+
+const FEEDBACK_KEY_LABEL: Record<string, string> = {
+  relevant: "подошёл",
+  irrelevant: "не подошёл",
+  unsure: "не уверен",
+  unrated: "без отзыва",
+};
+
+const isEnabled = <T extends object>(value: T | { enabled: false }): value is T => !("enabled" in value && value.enabled === false);
+
+function ms(value: number | null): string {
+  return value === null || value === undefined ? "нет данных" : `${Math.round(value)} мс`;
+}
+
+function ExternalFacts({ stats }: { stats: ExternalSourceStats }) {
+  return (
+    <dl className="sync__facts">
+      <div>
+        <dt>Страниц в кэше</dt>
+        <dd>
+          {stats.cache_pages} из {stats.cache_limit}
+        </dd>
+      </div>
+      <div>
+        <dt>Вызовы MCP</dt>
+        <dd>{stats.mcp_calls}</dd>
+      </div>
+      <div>
+        <dt>Попадания в кэш</dt>
+        <dd>
+          {stats.cache_hits}
+          <span className="muted"> · промахов {stats.cache_misses}</span>
+        </dd>
+      </div>
+      <div>
+        <dt>Задержка p95</dt>
+        <dd>
+          {ms(stats.latency_p95_ms)}
+          <span className="muted"> · p50 {ms(stats.latency_p50_ms)}</span>
+        </dd>
+      </div>
+      <div>
+        <dt>Предохранитель</dt>
+        <dd data-breaker={stats.breaker}>{BREAKER_LABEL[stats.breaker] ?? stats.breaker}</dd>
+      </div>
+      <div>
+        <dt>Ошибки и тайм-ауты</dt>
+        <dd>
+          {stats.errors} / {stats.timeouts}
+          {stats.rejected > 0 ? <span className="muted"> · отклонено страниц {stats.rejected}</span> : null}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function MemoryFacts({ stats }: { stats: DiscoveryMemoryStats }) {
+  const feedback = Object.entries(stats.links_by_feedback)
+    .map(([key, value]) => `${FEEDBACK_KEY_LABEL[key] ?? key}: ${value}`)
+    .join(", ");
+  return (
+    <dl className="sync__facts">
+      <div>
+        <dt>Следов ответов</dt>
+        <dd>{stats.traces}</dd>
+      </div>
+      <div>
+        <dt>Срок хранения</dt>
+        <dd>
+          {stats.retention_hours} {pluralRu(stats.retention_hours, "час", "часа", "часов")}
+        </dd>
+      </div>
+      <div>
+        <dt>Связи с источниками</dt>
+        <dd>{feedback || "нет"}</dd>
+      </div>
+      <div>
+        <dt>Текст вопросов</dt>
+        <dd>{stats.stores_query_text ? "хранится в течение срока хранения" : "текст вопросов не хранится"}</dd>
+      </div>
+    </dl>
+  );
+}
+
+/** Operator view of the discovery memory and the external source cache, with an erase action (confirm step). */
+function DiscoverySection() {
+  const stats = useAsync<DiscoveryStats>(() => api.discoveryStats(), "discovery-stats");
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState("");
+  const [purgeError, setPurgeError] = useState<ApiError | null>(null);
+
+  async function purge() {
+    if (pending) return;
+    setPending(true);
+    setPurgeError(null);
+    setResult("");
+    try {
+      const removed = await api.discoveryPurge();
+      setResult(
+        `Память поиска очищена: удалено записей — ${removed.removed_records}, страниц кэша — ${removed.removed_cache_pages}. Документы и их статусы не изменились.`,
+      );
+      setConfirming(false);
+      stats.reload();
+    } catch (err) {
+      setPurgeError(err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const data = stats.data;
+  const memory = data && isEnabled(data.discovery) ? data.discovery : null;
+  const external = data && isEnabled(data.external) ? data.external : null;
+  return (
+    <section className="discovery" aria-labelledby="discovery-title">
+      <h2 id="discovery-title">Память поиска и внешний источник</h2>
+      <p className="muted">
+        Временные следы ответов (какие источники нашлись и были процитированы) и кэш страниц Confluence. Они помогают
+        похожим вопросам и строят граф ответа, но не меняют статус и права доступа документов.
+      </p>
+      {stats.loading && !data ? <Loading label="Загрузка состояния памяти поиска…" /> : null}
+      {/* Secondary operator information: a failed load is a quiet note, not an alert. */}
+      {stats.error && !data ? (
+        <p className="muted">
+          Состояние памяти поиска недоступно: {stats.error.message}{" "}
+          <button type="button" className="button button--quiet" onClick={stats.reload}>
+            Повторить
+          </button>
+        </p>
+      ) : null}
+      {data ? (
+        <>
+          <div className="discovery__group">
+            <h3>Память поиска</h3>
+            {memory ? <MemoryFacts stats={memory} /> : <p>Память поиска отключена конфигурацией.</p>}
+          </div>
+          <div className="discovery__group">
+            <h3>Внешний источник (Confluence через MCP)</h3>
+            {external ? <ExternalFacts stats={external} /> : <p>Внешний источник не подключён — запросов к Confluence нет.</p>}
+          </div>
+        </>
+      ) : null}
+      {memory || external ? (
+        confirming ? (
+          <div className="discovery__confirm">
+            <p>
+              Удалить следы ответов, отзывы и кэш внешних страниц? Графы прошлых ответов станут недоступны. Документы базы
+              знаний не изменятся.
+            </p>
+            <button type="button" className="button button--danger" onClick={() => void purge()} disabled={pending}>
+              {pending ? "Очищаем…" : "Подтвердить очистку"}
+            </button>
+            <button type="button" className="button button--ghost" onClick={() => setConfirming(false)} disabled={pending}>
+              Отмена
+            </button>
+          </div>
+        ) : (
+          <div className="button-row discovery__actions">
+            <button type="button" className="button button--secondary" onClick={() => setConfirming(true)}>
+              Очистить память поиска
+            </button>
+          </div>
+        )
+      ) : null}
+      <div aria-live="polite" role="status">
+        {result ? <p className="success">{result}</p> : null}
+      </div>
+      {purgeError ? <ErrorState error={purgeError} title="Память поиска не очищена" /> : null}
+    </section>
+  );
+}
+
 export function IntegrationsPage() {
   const { data, error, loading, reload } = useAsync(() => api.integrations(), "integrations");
   const issues = useAsync(() => api.issues(), "issues");
+  // Stable sort: within one state the server's order is kept.
+  const sorted = [...(data?.items ?? [])].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
+  const active = sorted.filter((item) => item.state !== "disabled");
+  const off = sorted.filter((item) => item.state === "disabled");
 
   return (
     <div className="integrations">
@@ -198,30 +457,30 @@ export function IntegrationsPage() {
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
       {data ? (
         <>
-          <ul className="integration-list">
-            {data.items.map((item) => (
-              <li key={item.name} className={`integration integration--${item.state}`}>
-                <div className="integration__head">
-                  <h2>{item.title}</h2>
-                  <StateBadge state={item.state} />
-                </div>
-                <p>{item.human_readable_message}</p>
-                <IntegrationFacts item={item} />
-                {item.capabilities.length > 0 ? (
-                  <p className="integration__caps">
-                    Возможности:{" "}
-                    {item.capabilities.map((cap) => (
-                      <code key={cap}>{cap}</code>
-                    ))}
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          <p className="muted">Проверено: {formatDateTime(data.checked_at)}</p>
+          {active.length > 0 ? (
+            <ul className="integration-list">
+              {active.map((item) => (
+                <IntegrationRow key={item.name} item={item} />
+              ))}
+            </ul>
+          ) : null}
+          {off.length > 0 ? (
+            <>
+              <h2 className="integration-group__title">Не подключено</h2>
+              <ul className="integration-list integration-list--off">
+                {off.map((item) => (
+                  <IntegrationRow key={item.name} item={item} />
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <p className="muted">
+            Проверено: <When value={data.checked_at} />
+          </p>
         </>
       ) : null}
       <SyncSection />
+      <DiscoverySection />
       {issues.data && issues.data.length > 0 ? (
         <section aria-labelledby="issues-title">
           <h2 id="issues-title">Проблемы загрузки документов</h2>

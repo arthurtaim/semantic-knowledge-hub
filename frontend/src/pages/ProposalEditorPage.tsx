@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { DocumentDetail, ProposalDetail } from "../api/types";
+import { ChangeContentEditor } from "../components/ChangeContentEditor";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { StatusStamp } from "../components/StatusStamp";
 import { AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL } from "../lib/labels";
@@ -32,7 +33,7 @@ function NewProposal() {
 
   if (!documentId) {
     return (
-      <EmptyState title="Не выбран документ">
+      <EmptyState title="Не выбран документ" page>
         <p>Откройте документ в базе знаний и нажмите «Предложить изменение».</p>
         <Link to="/documents" className="button button--secondary">
           Перейти к документам
@@ -41,7 +42,7 @@ function NewProposal() {
     );
   }
   if (loading && !doc) return <Loading />;
-  if (error) return <ErrorState error={error} onRetry={reload} />;
+  if (error) return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Документ не найден" : undefined} page />;
   if (fromId && source.loading && !source.data && !source.error) {
     return <Loading label="Загрузка исходного предложения…" />;
   }
@@ -83,13 +84,15 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
   const [content, setContent] = useState(basis?.proposed_content ?? doc.raw);
   const [reason, setReason] = useState(basis?.reason ?? "");
   const [instruction, setInstruction] = useState("");
-  const [origin, setOrigin] = useState<"manual" | "ai_suggestion">(basis?.origin ?? "manual");
+  // A change of an existing document is manual or AI-assisted; `external_page` applies to new documents only.
+  const [origin, setOrigin] = useState<"manual" | "ai_suggestion">(basis?.origin === "ai_suggestion" ? "ai_suggestion" : "manual");
   const [submitError, setSubmitError] = useState<ApiError | null>(null);
   const [suggestNote, setSuggestNote] = useState<string[]>([]);
   const [pending, setPending] = useState(false);
 
   const changed = content !== doc.raw;
   const aiAvailable = session?.features.ai_edit_suggestions ?? false;
+  const aiMode = session?.features.ai_mode;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -160,34 +163,44 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
         </div>
       </dl>
 
-      <section className="panel ai-draft" aria-labelledby="ai-draft-title">
-        <h2 id="ai-draft-title">Черновик от ИИ</h2>
-        {aiAvailable ? (
-          <>
-            <label htmlFor="instruction">Что изменить</label>
-            <input
-              id="instruction"
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              maxLength={2000}
-              placeholder="Например: сформулируй открытые вопросы яснее"
-            />
-            <button
-              type="button"
-              className="button button--secondary"
-              disabled={pending || instruction.trim().length < 3}
-              onClick={suggest}
-            >
-              Подготовить черновик
-            </button>
-            {suggestNote.length > 0 ? <Notice tone="warning">{suggestNote.join(" ")}</Notice> : null}
-          </>
-        ) : (
-          <p className="muted">
-            В демо-режиме ИИ не генерирует правки. Отредактируйте текст вручную — он пройдёт ту же проверку.
-          </p>
-        )}
-      </section>
+      {/* AI_PROVIDER=disabled: no AI section at all — manual editing below is the whole flow. */}
+      {aiMode === "disabled" ? null : (
+        <section className="panel ai-draft" aria-labelledby="ai-draft-title">
+          <h2 id="ai-draft-title">Черновик от ИИ</h2>
+          {aiAvailable ? (
+            <>
+              <label htmlFor="instruction">Что изменить</label>
+              <input
+                id="instruction"
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                maxLength={2000}
+                placeholder="Например: сформулируй открытые вопросы яснее"
+              />
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={pending || instruction.trim().length < 3}
+                onClick={suggest}
+              >
+                Подготовить черновик
+              </button>
+              {suggestNote.length > 0 ? <Notice tone="warning">{suggestNote.join(" ")}</Notice> : null}
+            </>
+          ) : (
+            <div className="ai-draft__off">
+              <button type="button" className="button button--secondary" disabled aria-describedby="ai-draft-off">
+                Подготовить черновик
+              </button>
+              <p id="ai-draft-off" className="muted">
+                {aiMode === "mock"
+                  ? "В демо-режиме ИИ не генерирует правки. Отредактируйте текст вручную — он пройдёт ту же проверку."
+                  : "ИИ-правки документов выключены в этой установке. Отредактируйте текст вручную — он пройдёт ту же проверку."}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
 
       {basisProblem ? (
         <Notice tone="warning">
@@ -228,15 +241,7 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
         </Notice>
       ) : null}
       <form className="editor__form" onSubmit={submit}>
-        <label htmlFor="content">Текст документа (Markdown с YAML-заголовком)</label>
-        <textarea
-          id="content"
-          className="editor__source"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={22}
-          spellCheck={false}
-        />
+        <ChangeContentEditor value={content} onChange={setContent} />
         <label htmlFor="reason">Причина изменения</label>
         <input
           id="reason"
@@ -282,7 +287,7 @@ function EditChangeDraft({ id }: { id: string }) {
 
   if (loading && !data) return <Loading label="Загрузка черновика…" />;
   if (error && !data) {
-    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Черновик не найден" : undefined} />;
+    return <ErrorState error={error} onRetry={reload} title={error.status === 404 ? "Черновик не найден" : undefined} page />;
   }
   if (!data) return null;
   if (data.operation === "create") return <Navigate to={`/documents/new?draft=${encodeURIComponent(id)}`} replace />;
@@ -399,15 +404,7 @@ function ChangeDraftForm({ proposal: p, previousText, onReload }: ChangeDraftFor
         </Notice>
       ) : null}
       <form className="editor__form" onSubmit={save}>
-        <label htmlFor="content">Текст документа (Markdown с YAML-заголовком)</label>
-        <textarea
-          id="content"
-          className="editor__source"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          rows={22}
-          spellCheck={false}
-        />
+        <ChangeContentEditor value={content} onChange={setContent} />
         <label htmlFor="reason">Причина изменения</label>
         <input
           id="reason"

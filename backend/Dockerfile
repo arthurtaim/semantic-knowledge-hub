@@ -18,6 +18,8 @@ RUN pip install --require-hashes -r /app/requirements.lock
 COPY backend/app /app/app
 # Synthetic fixtures only — seeded into the (empty) workspace volume on first start.
 COPY fixtures/knowledge /app/fixtures/knowledge
+# Synthetic mock Confluence corpus (M5.6.2) — used only when CONFLUENCE_CONNECTOR=mock.
+COPY fixtures/confluence_mock /app/fixtures/confluence_mock
 
 USER skh
 
@@ -30,7 +32,9 @@ ENV PROJECT_ROOT=/app \
     LOCAL_KNOWLEDGE_DIR=/data/workspace/knowledge \
     SEARCH_INDEX_PATH=/data/workspace/search.sqlite3 \
     APP_STATE_PATH=/data/workspace/app_state.sqlite3 \
-    PUBLICATION_STATE_PATH=/data/workspace/publications.sqlite3
+    PUBLICATION_STATE_PATH=/data/workspace/publications.sqlite3 \
+    CONFLUENCE_MOCK_PAGES_PATH=/app/fixtures/confluence_mock/pages.yaml \
+    CONFLUENCE_MOCK_STATE_PATH=/data/workspace/mock_confluence_state.json
 
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \

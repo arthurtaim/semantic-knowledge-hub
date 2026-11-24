@@ -117,7 +117,7 @@ class Settings(BaseSettings):
     publication_state_path: Path = Path("./workspace/publications.sqlite3")
 
     # --- AI ----------------------------------------------------------------------------------
-    ai_provider: Literal["mock", "internal_api", "disabled"] = "mock"
+    ai_provider: Literal["mock", "internal_api", "claude_cli", "disabled"] = "mock"
     ai_base_url: str = ""
     ai_model: str = ""
     ai_api_key: SecretStr = SecretStr("")
@@ -128,6 +128,13 @@ class Settings(BaseSettings):
     ai_allow_insecure_http: bool = False
     ai_max_context_chars: int = Field(default=12000, ge=1000, le=200_000)
     ai_max_response_bytes: int = Field(default=256 * 1024, ge=1024)
+    # EXPERIMENTAL personal-test provider (AI_PROVIDER=claude_cli): the backend calls an isolated worker that
+    # runs the Claude Code CLI with the owner's subscription. Never a multi-user service
+    # (docs/CLAUDE_CODE_CLI_INTEGRATION.md). The backend itself never holds Claude credentials.
+    claude_cli_worker_url: str = ""
+    claude_cli_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
+    claude_cli_draft_timeout_seconds: float = Field(default=240.0, gt=0, le=600)
+    claude_cli_personal_use_ack: bool = False
 
     # --- Confluence ----------------------------------------------------------------------------
     confluence_connector: Literal["disabled", "mock", "mcp"] = "disabled"
@@ -191,6 +198,32 @@ class Settings(BaseSettings):
     def _upper_level(cls, value: str) -> str:
         return value.upper()
 
+    # Directory with the in-app assistant's runtime policy (empty: app/assistant_instructions).
+    assistant_instructions_dir: str = ""
+
+    # --- external (Confluence MCP) evidence, discovery memory (M5.6.2 §G, docs/EXTERNAL_RAG.md) ----
+    # Synthetic corpus of the MOCK connector and its scenario state (revoke / delete / new version).
+    confluence_mock_pages_path: Path = Path("./fixtures/confluence_mock/pages.yaml")
+    confluence_mock_state_path: Path = Path("./workspace/mock_confluence_state.json")
+    external_candidates: int = Field(default=10, ge=1, le=50)
+    external_fetches: int = Field(default=3, ge=0, le=10)
+    external_fragments: int = Field(default=6, ge=1, le=20)
+    external_context_chars: int = Field(default=16_000, ge=1000, le=100_000)  # ≈ 4 000 tokens
+    external_cache_pages: int = Field(default=100, ge=0, le=5000)
+    external_cache_ttl_seconds: int = Field(default=24 * 3600, ge=0, le=7 * 24 * 3600)
+    external_concurrency: int = Field(default=2, ge=1, le=8)
+    external_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
+    external_deadline_seconds: float = Field(default=12.0, gt=0, le=120)
+    external_breaker_failures: int = Field(default=5, ge=1, le=100)
+    external_breaker_reset_seconds: float = Field(default=60.0, ge=1, le=3600)
+    # Discovery memory: query→source links, traces and relevance feedback (never the answer text).
+    discovery_enabled: bool = True
+    discovery_retention_hours: int = Field(default=24, ge=1, le=24 * 90)
+    # Plain query text is NOT stored unless explicitly allowed (synthetic demo only).
+    discovery_store_query_text: bool = False
+    # Key for the query fingerprint (HMAC). Empty: a random key is created next to the app state.
+    discovery_hmac_key_file: str = ""
+
     # --- derived helpers -----------------------------------------------------------------------
     def resolve_path(self, path: Path) -> Path:
         return path if path.is_absolute() else (self.project_root / path).resolve()
@@ -214,6 +247,14 @@ class Settings(BaseSettings):
     @cached_property
     def publication_state_file(self) -> Path:
         return self.resolve_path(self.publication_state_path)
+
+    @cached_property
+    def confluence_mock_pages_file(self) -> Path:
+        return self.resolve_path(self.confluence_mock_pages_path)
+
+    @cached_property
+    def confluence_mock_state_file(self) -> Path:
+        return self.resolve_path(self.confluence_mock_state_path)
 
     @property
     def allowed_host_list(self) -> list[str]:
@@ -370,6 +411,7 @@ def security_violations(settings: Settings, *, in_container: bool | None = None)
             )
     problems.extend(_profile_violations(settings))
     problems.extend(_publisher_violations(settings))
+    problems.extend(_claude_cli_violations(settings))
     # TLS is never switched off for real hosts: plain http is accepted only for declared test doubles.
     for name, url, enabled in (
         ("AI_BASE_URL", settings.ai_base_url, settings.ai_provider == "internal_api"),
@@ -442,6 +484,34 @@ def _profile_violations(settings: Settings) -> list[str]:
                 problems.append(
                     "INTEGRATION_PROFILE=live_read_only запрещает CONFLUENCE_PUBLISH_ENABLED=true."
                 )
+    return problems
+
+
+def _claude_cli_violations(settings: Settings) -> list[str]:
+    """AI_PROVIDER=claude_cli is an experimental single-owner provider: explicit acknowledgement, one local
+    operator, never in the network-free offline profile, worker reachable only on a private hop."""
+    if settings.ai_provider != "claude_cli":
+        return []
+    from app.adapters.ai.claude_cli import validate_worker_url  # local import: adapters depend on config
+
+    problems: list[str] = []
+    if not settings.claude_cli_personal_use_ack:
+        problems.append(
+            "AI_PROVIDER=claude_cli — экспериментальный провайдер для личного тестирования владельцем подписки; "
+            "подтвердите это явно: CLAUDE_CLI_PERSONAL_USE_ACK=true."
+        )
+    if settings.auth_mode != "local_demo":
+        problems.append(
+            "AI_PROVIDER=claude_cli допускается только для одного оператора (AUTH_MODE=local_demo)."
+        )
+    if settings.integration_profile == "offline":
+        problems.append(
+            "INTEGRATION_PROFILE=offline не обращается к внешним сервисам, а Claude Code CLI отправляет запросы "
+            "в Anthropic. Для личного теста задайте live_read_only (или integration_mock с mock CLI)."
+        )
+    problem = validate_worker_url(settings.claude_cli_worker_url)
+    if problem:
+        problems.append(problem)
     return problems
 
 

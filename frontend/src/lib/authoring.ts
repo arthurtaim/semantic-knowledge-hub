@@ -10,10 +10,15 @@ import { NEW_DOCUMENT_STATUSES } from "./labels";
 
 /** Heading text used in the body until the author enters a title. */
 export const TITLE_PLACEHOLDER = "Название документа";
+/** How the server stores an unknown owner (never invented). */
+export const UNASSIGNED_OWNER = "unassigned";
 
 /** Form state of the new-document editor. Lists are kept as typed (comma-separated) until they are sent. */
 export interface EditorFields {
+  /** Empty until the server allocates the ID at the first save (unless `manualId`). */
   id: string;
+  /** The author chose to set the ID by hand (e.g. migrating a document with a known ID); default: the server. */
+  manualId: boolean;
   title: string;
   status: NewDocumentStatus;
   owner: string;
@@ -68,13 +73,20 @@ function withTrailingNewline(text: string): string {
   return text.endsWith("\n") ? text : `${text}\n`;
 }
 
+/** The path that follows the ID; empty while the server has not allocated the ID yet. */
+export function followingPath(dir: string, id: string): string {
+  return id.trim() ? autoPath(dir, id) : "";
+}
+
 /**
- * Initial form of a manually written document: suggested ID/path, template tags and the section skeleton.
- * `owner` defaults to the current user; it stays an editable, required field.
+ * Initial form of a manually written document: template tags and the section skeleton. The ID (and the path that
+ * follows it) is allocated by the server at the first save; `owner` defaults to the current user and is optional
+ * (empty → stored as `unassigned`).
  */
 export function fieldsFromTemplate(template: DocumentTemplateInfo, owner = ""): EditorFields {
   return {
-    id: template.suggested_id,
+    id: "",
+    manualId: false,
     title: "",
     status: "draft",
     owner,
@@ -82,7 +94,7 @@ export function fieldsFromTemplate(template: DocumentTemplateInfo, owner = ""): 
     relatedIds: "",
     sourceRefs: "",
     summary: "",
-    path: template.suggested_path,
+    path: "",
     pathEdited: false,
     reason: "",
     body: `${headingFor("")}\n\n${withTrailingNewline(template.skeleton.trim())}`,
@@ -134,11 +146,13 @@ export function fieldsFromProposal(p: ProposalDetail): EditorFields | null {
     : "draft";
   const id = text(meta.id) || p.document_id;
   const path = p.document_path;
+  const owner = text(meta.owner);
   return {
     id,
+    manualId: false,
     title: text(meta.title) || p.document_title,
     status,
-    owner: text(meta.owner),
+    owner: owner === UNASSIGNED_OWNER ? "" : owner,
     tags: joinList(list(meta.tags)),
     relatedIds: joinList(list(meta.related_ids)),
     sourceRefs: joinList(list(meta.source_refs)),

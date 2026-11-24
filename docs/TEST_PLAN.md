@@ -208,3 +208,23 @@ make e2e                                     # Playwright: E2E-01…12 and the b
 ```
 
 Results of the latest run are recorded in `README.md` («Последний прогон») by the lead engineer.
+
+## Claude Code CLI provider (experimental personal test)
+
+All automated tests use the MOCK CLI `backend/tests/support/fake_claude_cli.py` (event shapes recorded from Claude
+Code 2.1.318) — no subscription, no network. Real-CLI checks are opt-in.
+
+| Scenario | Where |
+|---|---|
+| Safety flags (`--tools ""`, `--restricted`, no MCP, `dontAsk`, no `--bare`), prompt via stdin, allow-listed env, empty per-request cwd removed afterwards | `test_claude_cli_worker.py` |
+| Expired/missing authorization, rate limit, CLI missing, crash, non-JSON lines | `test_claude_cli_worker.py` |
+| Tool call / tools in `init` / permission denials abort the run | `test_claude_cli_worker.py` |
+| Timeout and cancellation kill the process group; concurrency limit → `ai_busy`; no token/e-mail/prompts in health or logs | `test_claude_cli_worker.py` |
+| Answer with server-verified citations; streaming stages + preliminary deltas + one validated final | `test_claude_cli_provider.py` |
+| Invented sources dropped, answer without evidence block not trusted, unknown topic never reaches Claude (Test 2) | `test_claude_cli_provider.py` |
+| History passed as data, bounded to 6 turns, conversations do not mix (Test 4) | `test_claude_cli_provider.py` |
+| CLI failures → clear 503/502 + `error` event; worker unreachable; status labels | `test_claude_cli_provider.py` |
+| AI draft through Claude: template, verified sources, «Требует уточнения», cannot be approved (Test 3) | `test_claude_cli_provider.py` |
+| Prompt injection in a source stays data; startup rules (ack, offline, private worker URL) | `test_claude_cli_provider.py` |
+| Real CLI in the worker image: `python -m claude_worker check` | manual / `make claude-test-check` |
+| Real end-to-end through the SSH tunnel (Tests 1–3) | `tests/live/test_claude_cli_live.py` (`SKH_LIVE_TESTS=1`, `SKH_CLAUDE_LIVE_URL`) |

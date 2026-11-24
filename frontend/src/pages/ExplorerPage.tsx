@@ -8,7 +8,6 @@ import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { StaleMark } from "../components/StaleMark";
 import { StatusStamp } from "../components/StatusStamp";
 import {
-  formatDate,
   pluralRu,
   REVIEW_LABEL,
   SORT_LABEL,
@@ -18,7 +17,11 @@ import {
   TYPE_LABEL,
   TYPE_ORDER,
 } from "../lib/labels";
+import { canAsk } from "../lib/aiMode";
+import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
+import { useMediaQuery } from "../lib/useMediaQuery";
+import { When } from "../components/When";
 
 const PAGE_SIZE = 20;
 /** Explicit orders; relevance (with a query) and section/title order (without) are the server default. */
@@ -29,6 +32,8 @@ function parseSort(value: string | null): DocumentSort | null {
 }
 const FILTER_KEYS = ["type", "status", "owner", "tag", "source"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
+/** Same breakpoint as the one-column explorer layout in app.css. */
+const NARROW = "(max-width: 860px)";
 
 interface FilterGroupProps {
   title: string;
@@ -70,13 +75,30 @@ function counts(facets: FacetCount[] | undefined): Map<string, number> {
   return new Map(facets?.map((f) => [f.value, f.count]) ?? []);
 }
 
+/** «Спросить ИИ об этих документах»: the assistant page with a question about the query and the top results. */
+function askAboutResults(query: string, ids: string[]): string {
+  const top = ids.slice(0, 5);
+  const question = `Что говорят документы по запросу «${query.slice(0, 200)}»${top.length ? ` (${top.join(", ")})` : ""}? Ответь со ссылками на источники.`;
+  return `/ask?q=${encodeURIComponent(question)}`;
+}
+
 export function ExplorerPage() {
+  const session = useSession();
   const [params, setParams] = useSearchParams();
   const query = params.get("query") ?? "";
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
   const filters = Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k)])) as Record<FilterKey, string | null>;
   const sort = parseSort(params.get("sort"));
   const [draftQuery, setDraftQuery] = useState(query);
+  const narrow = useMediaQuery(NARROW);
+  const activeFilters = FILTER_KEYS.filter((k) => filters[k]).length;
+  // Phones: filters sit in a disclosure, closed by default and opened whenever a filter becomes active.
+  const [filtersOpen, setFiltersOpen] = useState(activeFilters > 0);
+  const [seenActiveFilters, setSeenActiveFilters] = useState(activeFilters);
+  if (activeFilters !== seenActiveFilters) {
+    setSeenActiveFilters(activeFilters);
+    if (activeFilters > 0) setFiltersOpen(true);
+  }
 
   useEffect(() => setDraftQuery(query), [query]);
 
@@ -124,6 +146,70 @@ export function ExplorerPage() {
   const total = list.data?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const activeType = filters.type as DocType | null;
+  const items = list.data?.items ?? [];
+  // The source is shown per row only when the results mix sources; otherwise once, above the list.
+  const sources = [...new Set(items.map((d) => d.source))];
+  const singleSource = sources.length === 1 ? sources[0] : null;
+
+  const filterGroups = (
+    <>
+      <FilterGroup
+        title="Раздел"
+        name="type"
+        active={filters.type}
+        onToggle={toggle}
+        options={TYPE_ORDER.filter((t) => typeCounts.has(t)).map((t) => ({
+          value: t,
+          label: TYPE_LABEL[t],
+          count: typeCounts.get(t),
+        }))}
+      />
+      <FilterGroup
+        title="Статус"
+        name="status"
+        active={filters.status}
+        onToggle={toggle}
+        options={STATUS_ORDER.filter((s) => statusCounts.has(s)).map((s) => ({
+          value: s,
+          label: STATUS_LABEL[s as DocStatus],
+          count: statusCounts.get(s),
+        }))}
+      />
+      <FilterGroup
+        title="Владелец"
+        name="owner"
+        collapsed
+        active={filters.owner}
+        onToggle={toggle}
+        options={(facets.data?.owners ?? []).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
+      />
+      <FilterGroup
+        title="Источник"
+        name="source"
+        collapsed
+        active={filters.source}
+        onToggle={toggle}
+        options={(facets.data?.sources ?? []).map((f) => ({
+          value: f.value,
+          label: SOURCE_LABEL[f.value as keyof typeof SOURCE_LABEL] ?? f.value,
+          count: f.count,
+        }))}
+      />
+      <FilterGroup
+        title="Тег"
+        name="tag"
+        collapsed
+        active={filters.tag}
+        onToggle={toggle}
+        options={(facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
+      />
+      {hasFilters ? (
+        <button type="button" className="button button--ghost" onClick={() => setParams(new URLSearchParams())}>
+          Сбросить фильтры
+        </button>
+      ) : null}
+    </>
+  );
 
   return (
     <div className="explorer">
@@ -155,70 +241,37 @@ export function ExplorerPage() {
 
       <div className="explorer__body">
         <aside className="filters" aria-label="Фильтры">
-          <FilterGroup
-            title="Раздел"
-            name="type"
-            active={filters.type}
-            onToggle={toggle}
-            options={TYPE_ORDER.filter((t) => typeCounts.has(t)).map((t) => ({
-              value: t,
-              label: TYPE_LABEL[t],
-              count: typeCounts.get(t),
-            }))}
-          />
-          <FilterGroup
-            title="Статус"
-            name="status"
-            active={filters.status}
-            onToggle={toggle}
-            options={STATUS_ORDER.filter((s) => statusCounts.has(s)).map((s) => ({
-              value: s,
-              label: STATUS_LABEL[s as DocStatus],
-              count: statusCounts.get(s),
-            }))}
-          />
-          <FilterGroup
-            title="Владелец"
-            name="owner"
-            collapsed
-            active={filters.owner}
-            onToggle={toggle}
-            options={(facets.data?.owners ?? []).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
-          />
-          <FilterGroup
-            title="Источник"
-            name="source"
-            collapsed
-            active={filters.source}
-            onToggle={toggle}
-            options={(facets.data?.sources ?? []).map((f) => ({
-              value: f.value,
-              label: SOURCE_LABEL[f.value as keyof typeof SOURCE_LABEL] ?? f.value,
-              count: f.count,
-            }))}
-          />
-          <FilterGroup
-            title="Тег"
-            name="tag"
-            collapsed
-            active={filters.tag}
-            onToggle={toggle}
-            options={(facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
-          />
-          {hasFilters ? (
-            <button type="button" className="button button--ghost" onClick={() => setParams(new URLSearchParams())}>
-              Сбросить фильтры
-            </button>
-          ) : null}
+          {narrow ? (
+            <details
+              className="filters-disclosure"
+              open={filtersOpen}
+              onToggle={(e) => setFiltersOpen(e.currentTarget.open)}
+            >
+              <summary>Фильтры{activeFilters > 0 ? ` (${activeFilters})` : ""}</summary>
+              <div className="filters-disclosure__body">{filterGroups}</div>
+            </details>
+          ) : (
+            filterGroups
+          )}
         </aside>
 
         <section className="results" aria-labelledby="results-title" aria-busy={list.loading}>
           <div className="results__bar">
-            <h2 id="results-title" className="results__summary" aria-live="polite">
-              {list.loading
-                ? "Поиск…"
-                : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
-            </h2>
+            <div className="results__heading">
+              <h2 id="results-title" className="results__summary" aria-live="polite">
+                {list.loading
+                  ? "Поиск…"
+                  : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`}
+              </h2>
+              {singleSource && !list.loading ? (
+                <p className="results__source">Источник: {SOURCE_LABEL[singleSource]}</p>
+              ) : null}
+              {query && list.data && list.data.items.length > 0 && !list.loading && canAsk(session?.features.ai_mode) ? (
+                <Link to={askAboutResults(query, list.data.items.map((d) => d.id))} className="button button--ask results__ask">
+                  Спросить ИИ об этих документах
+                </Link>
+              ) : null}
+            </div>
             <div className="sort-control">
               <label htmlFor="explorer-sort">Сортировка</label>
               <select id="explorer-sort" value={sort ?? ""} onChange={(e) => update({ sort: e.target.value || null })}>
@@ -232,6 +285,15 @@ export function ExplorerPage() {
             </div>
           </div>
           {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
+          {list.data?.notes && list.data.notes.length > 0 && !list.loading ? (
+            <Notice tone="info" className="results__notes">
+              <ul>
+                {list.data.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
           {list.loading && !list.data ? <Loading /> : null}
           {list.data && list.data.items.length === 0 && !list.loading ? (
             <EmptyState title={query ? `По запросу «${query}» ничего не найдено` : "Документов с такими фильтрами нет"}>
@@ -252,7 +314,17 @@ export function ExplorerPage() {
                       {doc.title}
                     </Link>
                     <span className="result__badges">
+                      {doc.related_via ? (
+                        <span className="related-via" title="Найден через объявленную связь, а не по своему тексту">
+                          Связан с {doc.related_via}
+                        </span>
+                      ) : null}
                       {doc.index_state === "stale" ? <StaleMark /> : null}
+                      {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
+                        <span className="review-flag" title="Проверка документа">
+                          {REVIEW_LABEL[doc.review_state]}
+                        </span>
+                      ) : null}
                       <StatusStamp status={doc.status} />
                     </span>
                   </div>
@@ -276,23 +348,21 @@ export function ExplorerPage() {
                         {doc.owner_missing ? "не назначен" : doc.owner}
                       </dd>
                     </div>
-                    <div>
+                    {/* One source for the whole list: shown once above it; the row keeps it for screen readers. */}
+                    <div className={singleSource ? "visually-hidden" : undefined}>
                       <dt>Источник</dt>
                       <dd>{SOURCE_LABEL[doc.source]}</dd>
                     </div>
                     <div>
                       <dt>Обновлён</dt>
                       <dd>
-                        {doc.updated_at ? <time dateTime={doc.updated_at}>{formatDate(doc.updated_at)}</time> : "не указано"}
+                        <When value={doc.updated_at} fallback="не указано" />
                       </dd>
                     </div>
-                    {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-                      <div>
-                        <dt>Проверка</dt>
-                        <dd className="flag">{REVIEW_LABEL[doc.review_state]}</dd>
-                      </div>
-                    ) : null}
                   </dl>
+                  {doc.match_reasons && doc.match_reasons.length > 0 ? (
+                    <p className="result__why">Почему найдено: {doc.match_reasons.join("; ")}</p>
+                  ) : null}
                 </li>
               ))}
             </ol>
@@ -319,9 +389,6 @@ export function ExplorerPage() {
                 Вперёд
               </button>
             </nav>
-          ) : null}
-          {list.data?.items.some((d) => d.is_demo) ? (
-            <Notice tone="info">Показаны синтетические демо-документы. Они не являются фактами о банке.</Notice>
           ) : null}
         </section>
       </div>

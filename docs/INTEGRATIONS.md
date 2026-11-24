@@ -11,6 +11,7 @@
 | Confluence Data Center | Wider bank knowledge and optional published team pages | Read via MCP; publication service only after approval |
 | Claude Code | Software implementation tool today | Edits code repository during development |
 | GigaCode | Target future agent platform | Migration by providers/tools, not a data migration |
+| Claude Code CLI (`claude_cli`) | EXPERIMENTAL AI provider for the owner's personal test | None: text in, text out; no tools |
 
 Never automatically import whole corporate Confluence spaces into GitHub, GitLab or a vector index. Always respect ACL and scope.
 
@@ -46,6 +47,11 @@ Never automatically import whole corporate Confluence spaces into GitHub, GitLab
 ## 5. AI provider now, GigaCode later
 - The installed **Claude Code** is an implementation tool, not automatically the runtime AI API.
 - Default runtime `AI_PROVIDER=mock` (offline); optional `AI_PROVIDER=internal_api` only if an approved bank model endpoint exists.
+- **Experimental, personal test only:** `AI_PROVIDER=claude_cli` — the owner's Claude subscription through the
+  Claude Code CLI in an isolated worker container (no tools, no MCP, no settings, no session persistence; the
+  backend keeps no Claude credentials and no internet egress). Single operator over an SSH tunnel, synthetic data
+  only, explicit `CLAUDE_CLI_PERSONAL_USE_ACK=true`, refused in the `offline` profile. Not a multi-user service
+  and not the corporate runtime: [CLAUDE_CODE_CLI_INTEGRATION.md](CLAUDE_CODE_CLI_INTEGRATION.md).
 - Expose provider URL, model ID, credentials and timeout through secure configuration; no public default endpoint.
 - Do not treat a GigaChat endpoint as the full GigaCode agent API. Future implementation must verify supported GigaCode installation surface (CLI/IDE/internal API) and MCP configuration.
 - Confluence MCP is a tool-layer connector; the underlying model is not necessarily an MCP client. Current app backend routes tool calls and keeps ACL enforcement independent of model.

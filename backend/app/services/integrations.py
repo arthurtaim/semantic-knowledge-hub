@@ -64,9 +64,12 @@ class IntegrationService:
             case "gitlab_proposals":
                 return s.target_kind(s.gitlab_url), "write"
             case "ai_provider":
-                return (
-                    ("local", "read") if s.ai_provider == "mock" else (s.target_kind(s.ai_base_url), "read")
-                )
+                if s.ai_provider == "mock":
+                    return "local", "read"
+                if s.ai_provider == "claude_cli":
+                    # The worker is local, but the CLI sends prompts to Anthropic: a real external service.
+                    return "real", "read"
+                return s.target_kind(s.ai_base_url), "read"
             case "confluence_mcp":
                 if s.confluence_connector == "mock":
                     return "local", "read"  # built-in synthetic pages

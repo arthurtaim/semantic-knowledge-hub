@@ -9,6 +9,8 @@ from app.adapters.ai.base import (
     AIMode,
     AIProviderError,
     AnswerOptions,
+    AssistRequest,
+    AssistResult,
     AuthoringCitation,
     AuthoringDraft,
     AuthoringReference,
@@ -150,6 +152,15 @@ class MockAIProvider:
                 "чего нет в документах."
             )
 
+        # Half of the question is absent from every allowed document: whatever matched is not an answer.
+        missing = options.unmatched_terms
+        if len(terms) >= 2 and len(missing) * 2 >= len(terms):
+            return insufficient(
+                "Недостаточно данных: в доступных источниках не встречаются "
+                f"{_format_terms(missing)} — подтверждённого ответа на вопрос нет. Демо-ассистент не делает "
+                "предположений о том, чего нет в документах."
+            )
+
         sentences = _sentences(passages, terms)
         index = {(s.cid, s.position): s for s in sentences}
         warnings: list[str] = []
@@ -162,6 +173,20 @@ class MockAIProvider:
         if not candidates:
             return insufficient(
                 "Недостаточно данных: в доступных источниках не найдено фрагментов, отвечающих на вопрос.",
+                warnings,
+            )
+
+        # Words scattered over different passages are not an answer: one passage must cover half the question.
+        per_passage: dict[str, set[str]] = {}
+        for sentence in candidates:
+            per_passage.setdefault(sentence.cid, set()).update(sentence.matched)
+        entity_hit = any(
+            t.is_entity_like and t.stem in matched for t in terms for matched in per_passage.values()
+        )
+        if len(terms) >= 2 and not entity_hit and max(len(m) for m in per_passage.values()) * 2 < len(terms):
+            return insufficient(
+                "Недостаточно данных: ни один найденный фрагмент не отвечает на вопрос — слова вопроса "
+                "встречаются только разрозненно в разных документах.",
                 warnings,
             )
 
@@ -230,6 +255,45 @@ class MockAIProvider:
         if not_covered and confidence == "partial":
             answer += f"\n\nВ процитированных фрагментах не встречаются: {_format_terms(not_covered)}."
         return ProviderAnswer(answer=answer, confidence=confidence, evidence=evidence, warnings=warnings)
+
+    async def assist(self, request: AssistRequest) -> AssistResult:
+        """Deterministic, never inventive: `summarize` quotes the first sentences of the fragment verbatim;
+        `improve` only normalizes the layout (spaces, list markers, sentence ends). An injected instruction
+        in the fragment is data: it is not followed, only reported."""
+        text = request.text.strip()
+        warnings = ["Демо-режим: без языковой модели — предложение построено по правилам, проверьте его."]
+        if looks_like_prompt_injection(text):
+            warnings.append("Во фрагменте есть текст, похожий на инструкцию для ИИ: он не выполнялся.")
+        if not text:
+            return AssistResult(text="", citations=[], warnings=warnings, insufficient_data=True)
+        if request.task == "summarize":
+            plain = " ".join(  # headings are structure, not content: never glued into the summary
+                line.strip().lstrip(">-*0123456789. ")
+                for line in text.splitlines()
+                if line.strip() and not line.lstrip().startswith("#")
+            )
+            sentences = [s for s in split_sentences(plain) if len(s) > 15][:2]
+            summary = " ".join(sentences) or plain[:300]
+            return AssistResult(
+                text=summary.strip(), citations=[], warnings=warnings, insufficient_data=False
+            )
+        lines = []
+        for raw in text.splitlines():
+            line = " ".join(raw.split())
+            line = line.replace(" ,", ",").replace(" .", ".")
+            if line.startswith(("* ", "+ ")):
+                line = "- " + line[2:]
+            if line and not line.startswith(("#", "-", "|", ">", "`")) and line[-1].isalnum():
+                line += "."
+            if line and line[0].islower() and not line.startswith(("-", "|", "`")):
+                line = line[0].upper() + line[1:]
+            lines.append(line)
+        improved = "\n".join(lines).strip()
+        while "\n\n\n" in improved:
+            improved = improved.replace("\n\n\n", "\n\n")
+        if improved == text:
+            warnings.append("Оформление уже в порядке: изменений нет.")
+        return AssistResult(text=improved, citations=[], warnings=warnings, insufficient_data=False)
 
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         raise AIProviderError(
@@ -321,6 +385,11 @@ class DisabledAIProvider:
         )
 
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
+        raise AIProviderError(
+            "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
+        )
+
+    async def assist(self, request: AssistRequest) -> AssistResult:
         raise AIProviderError(
             "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
         )

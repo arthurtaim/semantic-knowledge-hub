@@ -12,7 +12,7 @@ from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode, Node
 
 from app.domain.markdown import ParsedMarkdown, parse_markdown
-from app.domain.models import DocStatus, DocType, ValidationIssue
+from app.domain.models import DocStatus, DocType, RelationType, ValidationIssue
 from app.domain.safety import find_personal_identifiers, find_secrets
 
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -21,7 +21,25 @@ MAX_FRONTMATTER_BYTES = 16 * 1024
 MIN_BODY_CHARS = 20
 
 REQUIRED_FIELDS = ("id", "title", "type", "status", "owner", "tags")
-OPTIONAL_FIELDS = ("reviewed_at", "related_ids", "source_refs", "summary", "confluence_page_id")
+OPTIONAL_FIELDS = (
+    "reviewed_at",
+    "related_ids",
+    "relations",
+    "aliases",
+    "version",
+    "synthetic",
+    "template",
+    "template_version",
+    "source_refs",
+    "summary",
+    "confluence_page_id",
+)
+VERSION_RE = re.compile(r"^\d{1,4}(?:\.\d{1,4}){0,2}$")
+TEMPLATE_REF_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+MAX_RELATION_TARGETS = 50
+MAX_ALIASES = 20
+# `references` is reserved for plain related_ids; typed relations use the other types.
+DECLARABLE_RELATIONS = tuple(r.value for r in RelationType if r is not RelationType.references)
 UNASSIGNED_OWNERS = {"unassigned", "none", "tbd", "-", "нет"}
 
 
@@ -140,6 +158,52 @@ def _string_list(value: Any, field_name: str, issues: list[ValidationIssue]) -> 
     return [v for v in items if v]
 
 
+def _parse_relations(value: Any, issues: list[ValidationIssue]) -> list[tuple[str, str]]:
+    """`relations: {depends_on: [ID, …], maps_to: [ID]}` → [(type, target)] in declaration order."""
+    if value is None:
+        return []
+    if not isinstance(value, dict):
+        issues.append(
+            _err(
+                "invalid_relations",
+                "Поле `relations` должно быть словарём «тип связи: [ID, …]».",
+                "relations",
+            )
+        )
+        return []
+    result: list[tuple[str, str]] = []
+    total = 0
+    for rel_type, targets in value.items():
+        name = str(rel_type)
+        if name not in DECLARABLE_RELATIONS:
+            issues.append(
+                _err(
+                    "unknown_relation_type",
+                    f"Неизвестный тип связи `{name}`. Допустимо: {', '.join(DECLARABLE_RELATIONS)}.",
+                    "relations",
+                )
+            )
+            continue
+        items = _string_list(targets if isinstance(targets, list) else [targets], f"relations.{name}", issues)
+        for target in items:
+            if not is_valid_document_id(target):
+                issues.append(
+                    _err(
+                        "invalid_relation_target",
+                        f"Некорректный ID `{target}` в `relations.{name}`.",
+                        "relations",
+                    )
+                )
+                continue
+            if (name, target) not in result:
+                result.append((name, target))
+        total += len(items)
+    if total > MAX_RELATION_TARGETS:
+        issues.append(_err("too_many_relations", "В `relations` не более 50 ссылок.", "relations"))
+        return result[:MAX_RELATION_TARGETS]
+    return result
+
+
 def _parse_date(value: Any, issues: list[ValidationIssue]) -> date | None:
     if value is None or value == "":
         return None
@@ -235,6 +299,52 @@ def parse_document(text: str, *, expected_id: str | None = None) -> ParsedDocume
             _err("invalid_related_id", "Некорректные идентификаторы в `related_ids`.", "related_ids")
         )
     meta["related_ids"] = [r for r in related if is_valid_document_id(r)]
+    meta["relations"] = _parse_relations(raw_meta.get("relations"), issues)
+    if meta.get("id") and any(t.lower() == str(meta["id"]).lower() for _, t in meta["relations"]):
+        issues.append(
+            _err("self_relation", "Документ не может ссылаться сам на себя в `relations`.", "relations")
+        )
+    aliases = _string_list(raw_meta.get("aliases"), "aliases", issues)
+    if len(aliases) > MAX_ALIASES or any(len(a) > 120 for a in aliases):
+        issues.append(_err("invalid_aliases", "Не более 20 псевдонимов длиной до 120 символов.", "aliases"))
+    meta["aliases"] = aliases[:MAX_ALIASES]
+    version = raw_meta.get("version")
+    if version is not None:
+        text_version = str(version).strip()
+        if isinstance(version, bool) or not VERSION_RE.fullmatch(text_version):
+            issues.append(
+                _err("invalid_version", "Поле `version` должно быть вида 1, 1.2 или 1.2.3.", "version")
+            )
+        else:
+            meta["version"] = text_version
+    synthetic = raw_meta.get("synthetic")
+    if synthetic is not None and not isinstance(synthetic, bool):
+        issues.append(_err("invalid_synthetic", "Поле `synthetic` должно быть true или false.", "synthetic"))
+    meta["synthetic"] = synthetic is True
+    template_ref = raw_meta.get("template")
+    if template_ref is not None:
+        if not isinstance(template_ref, str) or not TEMPLATE_REF_RE.fullmatch(template_ref):
+            issues.append(
+                _err("invalid_template_ref", "Поле `template` — идентификатор шаблона.", "template")
+            )
+        else:
+            meta["template"] = template_ref
+    template_version = raw_meta.get("template_version")
+    if template_version is not None:
+        if (
+            isinstance(template_version, bool)
+            or not isinstance(template_version, int)
+            or template_version < 1
+        ):
+            issues.append(
+                _err(
+                    "invalid_template_version",
+                    "Поле `template_version` — целое число ≥ 1.",
+                    "template_version",
+                )
+            )
+        else:
+            meta["template_version"] = template_version
     meta["source_refs"] = _string_list(raw_meta.get("source_refs"), "source_refs", issues)
     meta["reviewed_at"] = _parse_date(raw_meta.get("reviewed_at"), issues)
 

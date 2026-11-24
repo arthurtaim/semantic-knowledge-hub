@@ -258,6 +258,7 @@ def test_openapi_contract_lists_documented_endpoints(client: TestClient) -> None
         ("/api/documents/{document_id}", "get"),
         ("/api/search", "get"),
         ("/api/assistant/ask", "post"),
+        ("/api/assistant/ask/stream", "post"),
         ("/api/integrations/status", "get"),
         ("/api/index/status", "get"),
         ("/api/index/sync", "post"),

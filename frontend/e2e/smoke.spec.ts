@@ -16,12 +16,16 @@ test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ p
   await expect(page.getByRole("note")).toContainText("Демо-данные.");
   await expect(page.getByRole("heading", { name: "Разделы" })).toBeVisible();
 
-  await page.getByLabel("Поиск по базе знаний").fill("ARIS");
-  await page.getByRole("button", { name: "Найти" }).click();
+  // The hero is «Спросить или найти»: switch it to search, then search.
+  await page.getByRole("button", { name: "Найти в документах" }).click();
+  await page.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ARIS");
+  await page.getByRole("button", { name: "Найти", exact: true }).click();
   const result = page.getByRole("link", { name: "ARIS integration — questions for discovery" });
   await expect(result).toBeVisible();
-  await expect(page.locator(".result").first()).toContainText("Черновик");
-  await expect(page.locator(".result").first()).toContainText("Локальный workspace");
+  // 83-document demo base: other ARIS documents may rank first, so check the row of this document.
+  const row = page.locator(".result", { has: result });
+  await expect(row).toContainText("Черновик");
+  await expect(row).toContainText("Локальный workspace");
 
   await result.click();
   const passport = page.getByRole("complementary", { name: "Паспорт документа" });
@@ -41,8 +45,8 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
   await page.getByLabel("Оба").check({ force: true });
   await expect(page.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeVisible();
-  await page.getByRole("button", { name: "Спросить" }).click();
-  await expect(page.getByText("Подтверждено источником")).toBeVisible();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await expect(page.getByText("Подтверждено источниками")).toBeVisible();
   await expect(page.locator(".scope-status")).toContainText("Не подключено");
 
   const citation = page.locator(".citation").first();
@@ -53,7 +57,7 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
 
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Какой SLA у интеграции с ЦФТ?");
-  await page.getByRole("button", { name: "Спросить" }).click();
+  await page.getByRole("button", { name: "Спросить", exact: true }).click();
   await expect(page.locator(".confidence")).toHaveText("Недостаточно данных");
   await expect(page.locator(".citations")).toHaveCount(0);
   expect(problems).toEqual([]);

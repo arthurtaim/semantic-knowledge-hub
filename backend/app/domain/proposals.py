@@ -56,7 +56,10 @@ OPEN_STATUSES = frozenset(
 )
 
 
-ProposalOrigin = Literal["manual", "ai_suggestion"]
+# external_page: a curation proposal built from an external (Confluence) page — like an AI draft it can never
+# be approved by its author; it is a draft that goes through the normal review.
+# import: Markdown brought in by a user (with or without YAML) — staged, reviewed like any new document.
+ProposalOrigin = Literal["manual", "ai_suggestion", "external_page", "import"]
 
 
 class DiffLine(BaseModel):
@@ -96,10 +99,12 @@ class NewDocumentMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1, max_length=128)
+    # Empty: the backend allocates the next free ID of the template's prefix (exactly once, at creation).
+    id: str = Field(default="", max_length=128)
     title: str = Field(min_length=1, max_length=300)
     status: DocStatus = DocStatus.draft
-    owner: str = Field(min_length=1, max_length=100)
+    # Empty: unknown owner, stored as `unassigned` (never invented).
+    owner: str = Field(default="", max_length=100)
     tags: list[str] = Field(default_factory=list, max_length=30)
     related_ids: list[str] = Field(default_factory=list, max_length=50)
     source_refs: list[str] = Field(default_factory=list, max_length=50)
@@ -117,6 +122,8 @@ class NewDocumentDraftCreate(BaseModel):
     path: str | None = Field(default=None, max_length=400)
     reason: str = Field(min_length=3, max_length=2000)
     origin: ProposalOrigin = "manual"
+    # Idempotency: a repeated request with the same key (same author) returns the draft already created.
+    client_request_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
 
 
 class DraftUpdate(BaseModel):
@@ -145,6 +152,8 @@ class AuthoringCheckRequest(BaseModel):
     path: str | None = Field(default=None, max_length=400)
     origin: ProposalOrigin = "manual"
     exclude_proposal_id: str | None = Field(default=None, max_length=64)
+    # An existing draft is checked against the template version it was created with.
+    template_version: int | None = Field(default=None, ge=1, le=1000)
 
 
 class AuthoringCheckResponse(BaseModel):
@@ -169,6 +178,10 @@ class DocumentTemplateInfo(BaseModel):
     skeleton: str
     suggested_id: str
     suggested_path: str
+    version: int = 1
+    # False: not offered for new documents (still resolvable for its existing drafts, `include_hidden`).
+    listed: bool = True
+    previous_versions: list[int] = Field(default_factory=list)
 
 
 class AiDraftRequest(BaseModel):
@@ -310,6 +323,9 @@ class ProposalDetail(ProposalSummary):
     merge_request: MergeRequestInfo | None
     submission: SubmissionInfo
     template_id: str | None = None
+    # Template version the draft was created with, and the registry's current version (for the UI hint).
+    template_version: int | None = None
+    template_current_version: int | None = None
     edit_version: int = 1
     can_edit: bool = False
     can_delete: bool = False

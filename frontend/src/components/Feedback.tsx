@@ -14,12 +14,23 @@ interface ErrorStateProps {
   onRetry?: () => void;
   retryLabel?: string;
   title?: string;
+  /** The error replaces the whole page: its title is the page's H1 (WCAG 1.3.1, 2.4.6). */
+  page?: boolean;
 }
 
-export function ErrorState({ error, onRetry, retryLabel = "Повторить", title }: ErrorStateProps) {
+/** Title of a feedback block: the page H1 when the block is the whole page, a paragraph otherwise. */
+function FeedbackTitle({ page, children }: { page?: boolean; children: ReactNode }) {
+  return page ? (
+    <h1 className="feedback__title feedback__title--page">{children}</h1>
+  ) : (
+    <p className="feedback__title">{children}</p>
+  );
+}
+
+export function ErrorState({ error, onRetry, retryLabel = "Повторить", title, page }: ErrorStateProps) {
   return (
     <div className="feedback feedback--error" role="alert">
-      <p className="feedback__title">{title ?? errorTitle(error)}</p>
+      <FeedbackTitle page={page}>{title ?? errorTitle(error)}</FeedbackTitle>
       <p>{error.message}</p>
       {error.requestId ? <p className="feedback__meta">Код запроса: <code>{error.requestId}</code></p> : null}
       {onRetry ? (
@@ -41,10 +52,10 @@ function errorTitle(error: ApiError): string {
   return "Не удалось выполнить запрос";
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+export function EmptyState({ title, children, page }: { title: string; children?: ReactNode; page?: boolean }) {
   return (
     <div className="feedback feedback--empty">
-      <p className="feedback__title">{title}</p>
+      <FeedbackTitle page={page}>{title}</FeedbackTitle>
       {children}
     </div>
   );

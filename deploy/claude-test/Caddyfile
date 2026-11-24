@@ -1,0 +1,22 @@
+# OPEN public link for the PERSONAL TEST stack (docker-compose.claude-public.yml) — no login, by the owner's
+# decision. The app itself stays bound to loopback; this gateway forwards to the frontend container with
+# `Host: 127.0.0.1`, so the backend's host guard and start-up checks are unchanged.
+# A variant with a login is deploy/claude-test/Caddyfile.login (SKH_PUBLIC_CADDYFILE=Caddyfile.login).
+#
+#   http://{$SKH_PUBLIC_IP}       — plain HTTP by IP
+#   https://{$SKH_PUBLIC_HOST}    — HTTPS with an automatic Let's Encrypt certificate (e.g. <ip-with-dashes>.sslip.io)
+
+(app) {
+	reverse_proxy frontend:8080 {
+		header_up Host 127.0.0.1
+		flush_interval -1
+	}
+}
+
+http://{$SKH_PUBLIC_IP} {
+	import app
+}
+
+{$SKH_PUBLIC_HOST} {
+	import app
+}

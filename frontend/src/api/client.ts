@@ -1,8 +1,12 @@
 import type {
   AiDraftRequest,
   AiDraftResponse,
+  AiMode,
+  AiProposal,
+  AiProposalRequest,
   AskRequest,
   AskResponse,
+  AskStreamEvent,
   AuthoringCheckRequest,
   AuthoringCheckResponse,
   ChangeDraftUpdate,
@@ -13,8 +17,22 @@ import type {
   DocumentPublicationStatus,
   DocumentSort,
   DocumentTemplateInfo,
+  DocumentLinks,
+  DocumentTypeInfo,
+  DiscoveryFeedbackResponse,
+  DiscoveryPurgeResponse,
+  DiscoveryStats,
+  DiscoveryVerdict,
   DraftCreate,
+  GraphDiagnostics,
+  GraphLegend,
+  GraphPath,
+  ImportCreateRequest,
+  ImportPreview,
+  ImportPreviewRequest,
   IntegrationsResponse,
+  LinkDiagnostic,
+  LinkSuggestion,
   LoadIssue,
   NewDocumentDraftCreate,
   NewDocumentDraftUpdate,
@@ -24,11 +42,22 @@ import type {
   PublicationJobDetail,
   PublicationJobList,
   SessionResponse,
+  StagingItem,
+  Subgraph,
   SuggestResponse,
   SyncStatus,
+  TemplateComparison,
+  TemplateDetail,
+  TemplateSummary,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
+/** An AI draft may take minutes with the Claude Code CLI provider (the backend bounds it as well). */
+const AI_DRAFT_TIMEOUT_MS = 300_000;
+/** The answer stream has no total timeout: it is aborted only when no data arrives for this long. */
+const STREAM_IDLE_TIMEOUT_MS = 330_000;
+/** A single NDJSON line larger than this is treated as a broken stream (bounded memory). */
+const STREAM_MAX_LINE_CHARS = 2_000_000;
 
 /** Structured error from the API: `{code, message, request_id}` (docs/API_CONTRACTS.md §5). */
 export class ApiError extends Error {
@@ -47,52 +76,244 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** The user cancelled the request (an aborted caller signal). */
+export function cancelledError(): ApiError {
+  return new ApiError(0, "cancelled", "Запрос отменён.", null);
+}
+
+export function isCancelled(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "cancelled";
+}
+
+interface RequestOptions extends Omit<RequestInit, "signal" | "headers"> {
+  headers?: Record<string, string>;
+  /** Aborts the request when the whole response has not arrived in time (default 30 s). */
+  timeoutMs?: number;
+  /** Caller cancellation (e.g. an «Отменить» button): rejects with ApiError `cancelled`. */
+  signal?: AbortSignal;
+}
+
+/**
+ * An internal AbortController that fires on the caller's signal or on a timer.
+ * `timedOut` tells a timeout apart from a user cancellation.
+ */
+function linkedAbort(signal: AbortSignal | undefined, timeoutMs: number) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const state = { timedOut: false };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      state.timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+  };
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort);
+  arm();
+  return {
+    signal: controller.signal,
+    state,
+    /** Restarts the timer (idle timeout between stream chunks). */
+    arm,
+    dispose: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    },
+  };
+}
+
+function parseJson(text: string): unknown {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function httpError(response: Response, body: unknown): ApiError {
+  const err = (body ?? {}) as { code?: string; message?: string; request_id?: string; details?: object };
+  return new ApiError(
+    response.status,
+    err.code ?? "http_error",
+    err.message ?? `Ошибка сервера (HTTP ${response.status}).`,
+    err.request_id ?? response.headers.get("X-Request-ID"),
+    err.details ?? {},
+  );
+}
+
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { timeoutMs = TIMEOUT_MS, signal, headers: extraHeaders, ...init } = options;
+  if (signal?.aborted) throw cancelledError();
+  const abort = linkedAbort(signal, timeoutMs);
   const headers: Record<string, string> = { Accept: "application/json", "X-SKH-Client": "web" };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   let response: Response;
+  let text: string;
   try {
     response = await fetch(`/api${path}`, {
       ...init,
-      headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
-      signal: init.signal ?? controller.signal,
+      headers: { ...headers, ...extraHeaders },
+      signal: abort.signal,
       credentials: "same-origin",
     });
-  } catch (error) {
-    const aborted = error instanceof DOMException && error.name === "AbortError";
+    text = await response.text();
+  } catch {
+    if (signal?.aborted) throw cancelledError();
     throw new ApiError(
       0,
-      aborted ? "timeout" : "network_error",
-      aborted
+      abort.state.timedOut ? "timeout" : "network_error",
+      abort.state.timedOut
         ? "Сервер не ответил вовремя. Повторите попытку."
         : "Нет связи с сервером приложения. Проверьте, что backend запущен.",
       null,
     );
   } finally {
-    clearTimeout(timer);
+    abort.dispose();
   }
-  const text = await response.text();
-  let body: unknown = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = null;
-    }
-  }
-  if (!response.ok) {
-    const err = (body ?? {}) as { code?: string; message?: string; request_id?: string; details?: object };
-    throw new ApiError(
-      response.status,
-      err.code ?? "http_error",
-      err.message ?? `Ошибка сервера (HTTP ${response.status}).`,
-      err.request_id ?? response.headers.get("X-Request-ID"),
-      err.details ?? {},
-    );
-  }
+  const body = parseJson(text);
+  if (!response.ok) throw httpError(response, body);
   return body as T;
+}
+
+export interface AskStreamOptions {
+  /** Aborting it cancels the generation on the server; the promise rejects with ApiError `cancelled`. */
+  signal?: AbortSignal;
+  /** Called for every event in order, including the terminal `final`/`error` event. */
+  onEvent?: (event: AskStreamEvent) => void;
+  /** Abort when no data arrives for this long (default 330 s). */
+  idleTimeoutMs?: number;
+}
+
+function invalidStream(requestId: string | null): ApiError {
+  return new ApiError(502, "invalid_stream", "Сервер прислал повреждённый ответ. Повторите запрос.", requestId);
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Parses one NDJSON line; unknown event types are skipped (null) for forward compatibility. */
+function parseStreamEvent(line: string, requestId: string | null): AskStreamEvent | null {
+  const value = parseJson(line);
+  if (!isRecord(value) || typeof value.type !== "string") throw invalidStream(requestId);
+  switch (value.type) {
+    case "status":
+      if (value.stage !== "retrieving" && value.stage !== "generating" && value.stage !== "validating") return null;
+      return {
+        type: "status",
+        stage: value.stage,
+        passages: typeof value.passages === "number" ? value.passages : undefined,
+        provider: typeof value.provider === "string" ? (value.provider as AiMode) : undefined,
+      };
+    case "delta":
+      if (typeof value.text !== "string") throw invalidStream(requestId);
+      return { type: "delta", text: value.text };
+    case "final": {
+      const response = value.response;
+      if (!isRecord(response) || typeof response.answer !== "string" || !Array.isArray(response.citations)) {
+        throw invalidStream(requestId);
+      }
+      return { type: "final", response: response as unknown as AskResponse };
+    }
+    case "error":
+      return {
+        type: "error",
+        code: typeof value.code === "string" ? value.code : "ai_upstream_error",
+        message: typeof value.message === "string" ? value.message : "Не удалось получить ответ ассистента.",
+        status: typeof value.status === "number" ? value.status : 502,
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * POST /api/assistant/ask/stream: reads NDJSON events (status → delta… → final | error) and resolves with the
+ * validated AskResponse. Throws ApiError for an HTTP error before the stream, an `error` event, a broken or
+ * incomplete stream, a network failure, an idle timeout, or a cancellation (`cancelled`).
+ */
+async function askStream(payload: AskRequest, options: AskStreamOptions = {}): Promise<AskResponse> {
+  const { signal, onEvent, idleTimeoutMs = STREAM_IDLE_TIMEOUT_MS } = options;
+  if (signal?.aborted) throw cancelledError();
+  const abort = linkedAbort(signal, idleTimeoutMs);
+  let requestId: string | null = null;
+  const failure = (error: unknown, connecting: boolean): ApiError => {
+    if (signal?.aborted) return cancelledError();
+    if (error instanceof ApiError) return error;
+    if (abort.state.timedOut) {
+      return new ApiError(0, "timeout", "Сервер слишком долго не присылал данные — ответ прерван. Повторите запрос.", requestId);
+    }
+    return new ApiError(
+      0,
+      "network_error",
+      connecting
+        ? "Нет связи с сервером приложения. Проверьте, что backend запущен."
+        : "Соединение с сервером прервалось до завершения ответа. Повторите запрос.",
+      requestId,
+    );
+  };
+  try {
+    let response: Response;
+    try {
+      response = await fetch("/api/assistant/ask/stream", {
+        method: "POST",
+        headers: { Accept: "application/x-ndjson", "Content-Type": "application/json", "X-SKH-Client": "web" },
+        body: json(payload),
+        signal: abort.signal,
+        credentials: "same-origin",
+      });
+      requestId = response.headers.get("X-Request-ID");
+      if (!response.ok) throw httpError(response, parseJson(await response.text()));
+    } catch (error) {
+      throw failure(error, true);
+    }
+    if (!response.body) throw invalidStream(requestId);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let final: AskResponse | null = null;
+    /** Handles one line; returns the validated answer of the terminal `final` event, throws on `error`. */
+    const handle = (line: string): AskResponse | null => {
+      if (!line.trim()) return null;
+      const event = parseStreamEvent(line, requestId);
+      if (!event) return null;
+      onEvent?.(event);
+      if (event.type === "error") throw new ApiError(event.status, event.code, event.message, requestId);
+      return event.type === "final" ? event.response : null;
+    };
+    try {
+      while (final === null) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          final = handle(buffer);
+          break;
+        }
+        abort.arm();
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf("\n");
+        while (newline >= 0 && final === null) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          final = handle(line);
+          newline = buffer.indexOf("\n");
+        }
+        if (buffer.length > STREAM_MAX_LINE_CHARS) throw invalidStream(requestId);
+      }
+    } catch (error) {
+      throw failure(error, false);
+    } finally {
+      // Releases the connection after a terminal event or a failure; a no-op on a finished stream.
+      reader.cancel().catch(() => undefined);
+    }
+    if (final === null) {
+      throw new ApiError(0, "stream_incomplete", "Ответ сервера оборвался до завершения. Повторите запрос.", requestId);
+    }
+    return final;
+  } finally {
+    abort.dispose();
+  }
 }
 
 function query(params: Record<string, string | number | undefined | null>): string {
@@ -118,6 +339,33 @@ export interface DocumentListParams {
   size?: number;
 }
 
+export interface TemplateCatalogueParams {
+  q?: string;
+  status?: string;
+  type?: string;
+  category?: string;
+  label?: string;
+}
+
+export interface GraphOverviewParams {
+  limit?: number;
+  /** Comma-separated values (the backend accepts CSV); empty means "all". */
+  kind?: string;
+  relation?: string;
+  status?: string;
+  type?: string;
+  q?: string;
+  deprecated?: boolean;
+}
+
+export interface GraphNeighbourParams {
+  depth?: 1 | 2;
+  direction?: "both" | "out" | "in";
+  relation?: string;
+  limit?: number;
+  cursor?: number;
+}
+
 export const api = {
   session: () => request<SessionResponse>("/session"),
   integrations: () => request<IntegrationsResponse>("/integrations/status"),
@@ -128,6 +376,8 @@ export const api = {
   syncIndex: () => request<SyncStatus>("/index/sync", { method: "POST" }),
   issues: () => request<LoadIssue[]>("/knowledge/issues"),
   ask: (payload: AskRequest) => request<AskResponse>("/assistant/ask", { method: "POST", body: json(payload) }),
+  /** Streaming variant of `ask` (NDJSON); works with every provider — mock sends only status + final. */
+  askStream,
   corporatePage: (id: string) => request<CorporatePage>(`/corporate/pages/${encodeURIComponent(id)}`),
   drafts: (params: { status?: ProposalStatus; document_id?: string } = {}) =>
     request<ProposalList>(`/drafts${query({ ...params })}`),
@@ -152,13 +402,23 @@ export const api = {
   deleteDraft: (id: string) => request<null>(`/drafts/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   // --- authoring of new documents ---
-  templates: () => request<DocumentTemplateInfo[]>("/authoring/templates"),
+  /** Templates for new documents; `includeHidden` also returns unlisted ones (to reopen their drafts). */
+  templates: (includeHidden = false) =>
+    request<DocumentTemplateInfo[]>(`/authoring/templates${includeHidden ? "?include_hidden=true" : ""}`),
   /** Stateless validation + safe preview of a new document; stores nothing. */
   checkNewDocument: (payload: AuthoringCheckRequest) =>
     request<AuthoringCheckResponse>("/authoring/check", { method: "POST", body: json(payload) }),
-  /** A text suggestion only (503 `ai_authoring_unavailable` when AI is off). */
-  aiDraft: (payload: AiDraftRequest) =>
-    request<AiDraftResponse>("/authoring/ai-draft", { method: "POST", body: json(payload) }),
+  /**
+   * A text suggestion only (503 `ai_authoring_unavailable` when AI is off). Long timeout: a Claude Code CLI run
+   * may take minutes; `signal` lets the user cancel (ApiError `cancelled`).
+   */
+  aiDraft: (payload: AiDraftRequest, options: { signal?: AbortSignal } = {}) =>
+    request<AiDraftResponse>("/authoring/ai-draft", {
+      method: "POST",
+      body: json(payload),
+      timeoutMs: AI_DRAFT_TIMEOUT_MS,
+      signal: options.signal,
+    }),
   /** Persists a draft of a NEW document (proposal with operation=create). 409 when the ID/path is taken. */
   createNewDocumentDraft: (payload: NewDocumentDraftCreate) =>
     request<ProposalDetail>("/authoring/drafts", { method: "POST", body: json(payload) }),
@@ -191,4 +451,77 @@ export const api = {
     request<PublicationJobDetail>(`/publications/jobs/${encodeURIComponent(id)}/release-missing-page`, {
       method: "POST",
     }),
+
+  // --- knowledge graph (M5.6, read-only and bounded by the server) ---
+  graphLegend: () => request<GraphLegend>("/graph/legend"),
+  graphOverview: (params: GraphOverviewParams = {}) =>
+    request<Subgraph>(
+      `/graph/overview${query({ ...params, deprecated: params.deprecated === undefined ? undefined : String(params.deprecated) })}`,
+    ),
+  /** 404 `graph_node_not_found` for an unknown or not visible node. */
+  graphNeighbours: (nodeId: string, params: GraphNeighbourParams = {}) =>
+    request<Subgraph>(`/graph/nodes/${encodeURIComponent(nodeId)}/neighbors${query({ ...params })}`),
+  graphPath: (source: string, target: string, maxDepth?: number) =>
+    request<GraphPath>(`/graph/path${query({ source, target, max_depth: maxDepth })}`),
+  /** Evidence graph of one answer; 404 `trace_not_found` once the trace expired or was erased. */
+  graphQuery: (traceId: string) => request<Subgraph>(`/graph/query/${encodeURIComponent(traceId)}`),
+  graphDiagnostics: () => request<GraphDiagnostics>("/graph/diagnostics"),
+
+  // --- discovery memory: optional relevance feedback, erase, operator stats ---
+  discoveryFeedback: (payload: { trace_id: string; source_id: string; verdict: DiscoveryVerdict }) =>
+    request<DiscoveryFeedbackResponse>("/discovery/feedback", { method: "POST", body: json(payload) }),
+  /** A DRAFT of a new curated document quoting the external page (never an import, never approved). */
+  discoveryPropose: (payload: { trace_id: string; source_id: string }) =>
+    request<ProposalDetail>("/discovery/propose", { method: "POST", body: json(payload) }),
+  discoveryPurge: () => request<DiscoveryPurgeResponse>("/discovery", { method: "DELETE" }),
+  discoveryStats: () => request<DiscoveryStats>("/discovery/stats"),
+
+  // --- M5.6.3: Template Hub (the same versioned registry the AI reads) ---
+  templateCatalogue: (params: TemplateCatalogueParams = {}) =>
+    request<TemplateSummary[]>(`/templates${query({ ...params })}`),
+  /** The current version; 404 `template_not_found`. */
+  templateDetail: (id: string) => request<TemplateDetail>(`/templates/${encodeURIComponent(id)}`),
+  /** An exact version (also older ones that drafts are pinned to); 404 `template_version_not_found`. */
+  templateVersion: (id: string, version: number) =>
+    request<TemplateDetail>(`/templates/${encodeURIComponent(id)}/versions/${version}`),
+  templateCompare: (id: string, from: number, to: number) =>
+    request<TemplateComparison>(`/templates/${encodeURIComponent(id)}/compare${query({ from, to })}`),
+
+  // --- M5.6.3: links (WikiLinks, backlinks, `[[` autocomplete) ---
+  documentLinks: (id: string) => request<DocumentLinks>(`/documents/${encodeURIComponent(id)}/links`),
+  /** `[[` autocomplete over visible IDs, titles and aliases; never picks a target by itself. */
+  linkSuggest: (q: string, limit = 8, options: { signal?: AbortSignal } = {}) =>
+    request<LinkSuggestion[]>(`/links/suggest${query({ q, limit })}`, { signal: options.signal }),
+  linkDiagnostics: () => request<LinkDiagnostic[]>("/links/diagnostics"),
+
+  // --- M5.6.3: metadata without YAML and import ---
+  documentTypes: () => request<DocumentTypeInfo[]>("/document-types"),
+  /** Files of the knowledge root without valid YAML: not indexed, not cited. */
+  importStaging: () => request<StagingItem[]>("/documents/import/staging"),
+  /** What an import would create; writes nothing. */
+  importPreview: (payload: ImportPreviewRequest) =>
+    request<ImportPreview>("/documents/import/preview", { method: "POST", body: json(payload) }),
+  /** Creates a DRAFT (origin `import`); approved only through the usual review and merge. */
+  importDocument: (payload: ImportCreateRequest) =>
+    request<ProposalDetail>("/documents/import", { method: "POST", body: json(payload) }),
+
+  // --- M5.6.3: AI proposals (evidence + explicit Accept/Reject; nothing is applied without Accept) ---
+  /** Long timeout: a Claude Code CLI provider may take minutes; `signal` cancels. */
+  aiPropose: (payload: AiProposalRequest, options: { signal?: AbortSignal } = {}) =>
+    request<AiProposal>("/ai/proposals", {
+      method: "POST",
+      body: json(payload),
+      timeoutMs: AI_DRAFT_TIMEOUT_MS,
+      signal: options.signal,
+    }),
+  aiProposal: (id: string) => request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}`),
+  aiProposals: (params: { draft_id?: string; document_id?: string } = {}) =>
+    request<AiProposal[]>(`/ai/proposals${query({ ...params })}`),
+  /** Applies the chosen items to a draft; 409 `ai_proposal_stale` (base changed → invalidated) or `ai_proposal_closed`. */
+  aiAccept: (id: string, itemIds: string[], reason?: string) =>
+    request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}/accept`, {
+      method: "POST",
+      body: json({ item_ids: itemIds, ...(reason ? { reason } : {}) }),
+    }),
+  aiReject: (id: string) => request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}/reject`, { method: "POST" }),
 };

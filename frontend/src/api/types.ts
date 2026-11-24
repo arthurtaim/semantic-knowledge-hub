@@ -3,17 +3,25 @@
 export type DocType =
   | "overview"
   | "architecture"
+  | "source"
   | "domain"
+  | "dataset"
   | "integration"
   | "process"
   | "decision"
   | "standard"
+  | "guide"
   | "glossary";
 export type DocStatus = "draft" | "in_review" | "approved" | "deprecated";
 export type SourceType = "local" | "gitlab" | "confluence";
 export type IntegrationState = "connected" | "disabled" | "mock" | "error";
 export type Confidence = "supported" | "partial" | "insufficient_evidence";
 export type SearchScope = "team" | "corporate";
+/**
+ * The AI provider behind assistant answers and AI drafts. `claude_cli` is EXPERIMENTAL (Claude Code CLI through an
+ * isolated worker, personal test only); its answers pass the same citation validation as every other provider.
+ */
+export type AiMode = "mock" | "internal_api" | "claude_cli" | "disabled";
 export type ReviewState = "ok" | "stale" | "never_reviewed" | "not_required";
 export type SyncState = "fresh" | "stale" | "error" | "never_synced";
 /** "stale": the last sync could not refresh this document; it is shown with its last known revision. */
@@ -49,7 +57,11 @@ export type SourceDocumentState =
   | "merged_pending_sync";
 /** `create`: a new file in the knowledge base; `update`: a change of an existing document. */
 export type ProposalOperation = "create" | "update";
-export type ProposalOrigin = "manual" | "ai_suggestion";
+/**
+ * `external_page`: a draft proposed from a Confluence page cited in an answer («Предложить в базу»);
+ * `import`: Markdown brought in by a user (with or without YAML) — a draft like any other.
+ */
+export type ProposalOrigin = "manual" | "ai_suggestion" | "external_page" | "import";
 /** Statuses a NEW document may have; `deprecated` is invalid for a new document. */
 export type NewDocumentStatus = Exclude<DocStatus, "deprecated">;
 
@@ -78,6 +90,11 @@ export interface DocumentSummary {
   web_url: string | null;
   index_state: IndexState;
   highlights?: HighlightSegment[] | null;
+  /** Why the document matched the query (with a query only), e.g. «Точное совпадение идентификатора». */
+  match_reasons?: string[] | null;
+  /** Found through a declared relation of this document ID (graph expansion), not by its own text. */
+  related_via?: string | null;
+  version?: string | null;
 }
 
 export interface Section {
@@ -112,6 +129,11 @@ export interface DocumentDetail extends DocumentSummary {
   sections: Section[];
   warnings: ValidationIssue[];
   extra_metadata: Record<string, string>;
+  /** Template the document was created with and its pinned version (M5.6.3); null for older documents. */
+  template_id?: string | null;
+  template_version?: number | null;
+  /** Number of inline WikiLinks (`[[ID|Title]]`) in the body. */
+  wikilink_count?: number;
 }
 
 export interface DocumentPage {
@@ -119,6 +141,8 @@ export interface DocumentPage {
   total: number;
   page: number;
   size: number;
+  /** Notes about the query itself, e.g. an ambiguous abbreviation. */
+  notes?: string[];
 }
 
 export interface FacetCount {
@@ -148,6 +172,10 @@ export interface ScopeStatus {
   message: string;
 }
 
+export type CitationSourceKind = "local_markdown" | "gitlab_approved" | "confluence_mcp";
+/** Status of a Confluence page as the page itself declares it; never the same as an approved team document. */
+export type ExternalStatus = "approved" | "draft" | "unknown";
+
 export interface Citation {
   ref: number;
   source_type: SourceType;
@@ -162,6 +190,12 @@ export interface Citation {
   retrieved_at: string;
   is_demo: boolean;
   app_path: string | null;
+  source_kind?: CitationSourceKind;
+  /** Stable source key, e.g. "confluence:demo-wiki:200101:3" (page 200101, version 3) or "local:DEMO-INT-013". */
+  source_id?: string;
+  external_status?: ExternalStatus | null;
+  fragment_id?: string | null;
+  content_hash?: string | null;
 }
 
 export interface ExcludedSource {
@@ -171,23 +205,97 @@ export interface ExcludedSource {
   reason: string;
 }
 
+/** An earlier turn of the same conversation (context for the model only — never evidence, never stored). */
+export interface ConversationTurn {
+  /** 1..2000 characters. */
+  question: string;
+  /** The validated answer of that turn, at most 4000 characters. */
+  answer: string;
+}
+
 export interface AskRequest {
   question: string;
   sources: SearchScope[];
   include_drafts: boolean;
   include_deprecated: boolean;
+  /** Earlier completed turns, oldest first, at most 6. */
+  history?: ConversationTurn[];
+  /** Ask the server to consult Confluence even when the team documents look sufficient. */
+  search_external?: boolean;
+}
+
+/** Why the server consulted the external source (AskResponse.external.trigger). */
+export type ExternalTrigger =
+  | "no_local_passages"
+  | "unmatched_entities"
+  | "low_term_coverage"
+  | "external_scope_selected"
+  | "explicit_request";
+
+/** How the external source (Confluence through MCP) took part in one answer. */
+export interface ExternalRetrievalSummary {
+  called: boolean;
+  trigger: ExternalTrigger | string | null;
+  candidates: number;
+  fetched: number;
+  cache_hits: number;
+  mcp_calls: number;
+  fragments: number;
+  rejected: { page_id: string; version: string | number | null; reason: string }[];
+  degraded: boolean;
+  elapsed_ms: number;
+  policy_version: string;
 }
 
 export interface AskResponse {
   answer: string;
-  mode: "mock" | "internal_api" | "disabled";
+  mode: AiMode;
   confidence: Confidence;
   citations: Citation[];
   warnings: string[];
   excluded_sources: ExcludedSource[];
   scopes: ScopeStatus[];
   unmatched_terms: string[];
+  /** Key of the evidence graph of this answer (GET /api/graph/query/{id}); expires after the retention period. */
+  retrieval_trace_id?: string | null;
+  index_generation?: string | null;
+  instructions_version?: string | null;
+  external?: ExternalRetrievalSummary | null;
 }
+
+// --- POST /api/assistant/ask/stream: NDJSON events, one JSON object per line ---
+
+export type AskStreamStage = "retrieving" | "generating" | "validating";
+
+/** `generating` carries the number of retrieved passages and the provider; absent when nothing was found. */
+export interface AskStreamStatusEvent {
+  type: "status";
+  stage: AskStreamStage;
+  passages?: number;
+  provider?: AiMode;
+}
+
+/** PRELIMINARY model text: NOT validated, may contain raw markers like [C1]. Only streaming providers send it. */
+export interface AskStreamDeltaEvent {
+  type: "delta";
+  text: string;
+}
+
+/** Terminal event: the validated answer, the same shape as the POST /api/assistant/ask response. */
+export interface AskStreamFinalEvent {
+  type: "final";
+  response: AskResponse;
+}
+
+/** Terminal event: the generation failed; `message` is a safe Russian text, `status` the HTTP-equivalent code. */
+export interface AskStreamErrorEvent {
+  type: "error";
+  code: string;
+  message: string;
+  status: number;
+}
+
+export type AskStreamEvent = AskStreamStatusEvent | AskStreamDeltaEvent | AskStreamFinalEvent | AskStreamErrorEvent;
 
 /**
  * Where an integration points: `none` not configured · `local` built into this app (fixtures, demo) ·
@@ -230,6 +338,27 @@ export interface SyncStatus {
   indexed_documents: number;
   indexed_version: string | null;
   indexed_at: string | null;
+  /** Monotonic number of the applied index generation. */
+  generation?: number | string | null;
+  last_sync?: LastSync | null;
+  search_dictionary?: string | null;
+  template_registry?: string | null;
+}
+
+/** What the last incremental sync (or full rebuild) changed; lists hold document IDs. */
+export interface LastSync {
+  generation: number | string;
+  applied: boolean;
+  added: string[] | number;
+  updated: string[] | number;
+  renamed: unknown[] | number;
+  deleted: string[] | number;
+  unchanged: number | unknown[];
+  rejected: { path: string; code: string; document_id: string | null }[];
+  checksum: string;
+  elapsed_ms: number;
+  full_rebuild: boolean;
+  finished_at: string | null;
 }
 
 export interface SessionResponse {
@@ -238,7 +367,7 @@ export interface SessionResponse {
   demo_content: boolean;
   knowledge_backend: string; // "local" | "gitlab"
   features: {
-    ai_mode: "mock" | "internal_api" | "disabled";
+    ai_mode: AiMode;
     ai_edit_suggestions: boolean;
     /** AI-assisted authoring of new documents (POST /api/authoring/ai-draft) is available. */
     ai_authoring: boolean;
@@ -337,6 +466,10 @@ export interface ProposalDetail extends ProposalSummary {
   merge_request: MergeRequestInfo | null;
   submission: SubmissionInfo;
   template_id: string | null;
+  /** Template version the draft was created with (it is validated against this version). */
+  template_version?: number | null;
+  /** Current version of the same template in the registry. */
+  template_current_version?: number | null;
   /** Optimistic-locking version for PUT /api/drafts/{id} (`expected_version`). */
   edit_version: number;
   can_edit: boolean;
@@ -399,12 +532,19 @@ export interface DocumentTemplateInfo {
   skeleton: string;
   suggested_id: string;
   suggested_path: string;
+  /** Current version of the template (1 for a template that never changed). */
+  version?: number;
+  /** false: not offered for new documents (e.g. external_import); returned only with includeHidden. */
+  listed?: boolean;
+  previous_versions?: number[];
 }
 
 export interface NewDocumentMetadata {
+  /** Empty: the server allocates the next free ID of the template prefix, once, at creation (immutable after). */
   id: string;
   title: string;
   status: NewDocumentStatus;
+  /** Empty: unknown owner, stored as `unassigned` (never invented). */
   owner: string;
   tags: string[];
   related_ids: string[];
@@ -420,6 +560,8 @@ export interface AuthoringCheckRequest {
   origin: ProposalOrigin;
   /** The draft being edited, so that it does not collide with itself. */
   exclude_proposal_id?: string | null;
+  /** Template version of the draft being edited (an older draft is checked against its own version). */
+  template_version?: number | null;
 }
 
 export interface AuthoringCheckResponse {
@@ -462,7 +604,7 @@ export interface AuthoringCitation {
 
 /** A text suggestion only: not stored, never a proposal by itself. */
 export interface AiDraftResponse {
-  mode: "mock" | "internal_api" | "disabled";
+  mode: AiMode;
   /** Markdown body including the `# title` heading. */
   body: string;
   references: AuthoringReference[];
@@ -481,6 +623,8 @@ export interface NewDocumentDraftCreate {
   path?: string | null;
   reason: string;
   origin: ProposalOrigin;
+  /** Idempotency key (`^[A-Za-z0-9_-]{8,64}$`): a repeated request returns the draft already created. */
+  client_request_id?: string;
 }
 
 /** PUT /api/drafts/{id} for a `create` draft. */
@@ -633,4 +777,473 @@ export interface DocumentPublicationStatus {
   mapping: PublicationMapping | null;
   latest_job: PublicationJobSummary | null;
   can_prepare: boolean;
+}
+
+// --- M5.6: knowledge graph (backend/app/api/graph.py) ---
+
+export type GraphNodeKind =
+  | "document"
+  | "source_system"
+  | "integration"
+  | "semantic_entity"
+  | "dataset"
+  | "template"
+  | "external_page"
+  | "query_context";
+export type GraphSourceKind = "local_markdown" | "gitlab_approved" | "template_registry" | "confluence_mcp" | "query_trace";
+export type GraphRelation =
+  | "references"
+  | "depends_on"
+  | "consumes"
+  | "produces"
+  | "maps_to"
+  | "derived_from"
+  | "describes"
+  | "constrains"
+  | "supersedes"
+  | "uses_template"
+  | "retrieved_for"
+  | "cited_in";
+/** Where an edge comes from; only `canonical_metadata` and `verified_registry` are confirmed knowledge. */
+export type GraphOrigin = "canonical_metadata" | "verified_registry" | "external_discovery" | "query_trace" | "ai_suggestion";
+export type GraphFeedback = "relevant" | "irrelevant" | "unsure" | "unrated";
+
+export interface GraphNode {
+  /** "doc:DEMO-INT-002" | "template:integration" | "ext:confluence:demo-wiki:200101:3" | "query:TRACE-…" */
+  id: string;
+  kind: GraphNodeKind;
+  label: string;
+  document_id: string | null;
+  doc_type: string | null;
+  /** A document status; for an external page the status the page declares ("unknown" when it declares none). */
+  status: string | null;
+  owner: string | null;
+  source_kind: GraphSourceKind;
+  revision: string | null;
+  version: string | null;
+  /** In-app path (/documents/…, /corporate/…), never an external URL. */
+  url: string | null;
+  synthetic: boolean;
+  /** Temporary nodes (external pages, query context) disappear after this moment. */
+  expires_at: string | null;
+  degree: number;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: GraphRelation;
+  origin: GraphOrigin;
+  verified: boolean;
+  /** "Why linked": the document that declares the edge, its field, file path and revision. */
+  declared_in: string | null;
+  field: string | null;
+  path: string | null;
+  revision: string | null;
+  status: "active" | "dangling";
+  expires_at: string | null;
+  feedback: GraphFeedback | null;
+  /** Every place that declares this edge: "related_ids", "body:12" (WikiLink on line 12), "relations.depends_on". */
+  provenance?: string[];
+}
+
+export interface GraphLimits {
+  overview_default: number;
+  overview_max: number;
+  neighbours_max: number;
+  depth_max: number;
+  path_depth_max: number;
+}
+
+export interface Subgraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  total_nodes: number;
+  total_edges: number;
+  /** Not every matching node is included (a limit or a page of neighbours). */
+  partial: boolean;
+  generation: string;
+  /** Next page of neighbours (GET …/neighbors?cursor=); null when everything is loaded. */
+  next_cursor: number | null;
+  focus: string | null;
+  limits: GraphLimits;
+}
+
+export interface GraphLegend {
+  kinds: Record<string, string>;
+  relations: Record<string, string>;
+  origins: Record<string, string>;
+  limits: GraphLimits;
+}
+
+export interface GraphPath {
+  found: boolean;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  generation: string;
+}
+
+export interface GraphDiagnostics {
+  generation: string;
+  nodes: number;
+  edges: number;
+  edges_by_type: Record<string, number>;
+  dangling: GraphEdge[];
+  orphans: string[];
+}
+
+// --- M5.6: discovery memory (backend/app/api/discovery.py) ---
+
+export type DiscoveryVerdict = "relevant" | "irrelevant" | "unsure";
+
+export interface DiscoveryFeedbackResponse {
+  recorded: boolean;
+  note: string;
+}
+
+export interface DiscoveryPurgeResponse {
+  removed_records: number;
+  removed_cache_pages: number;
+}
+
+export interface DiscoveryMemoryStats {
+  traces: number;
+  links_by_feedback: Record<string, number>;
+  invalidated_sources: number;
+  retention_hours: number;
+  stores_query_text: boolean;
+  policy_version: string;
+}
+
+export interface ExternalSourceStats {
+  requests: number;
+  mcp_calls: number;
+  cache_hits: number;
+  cache_misses: number;
+  timeouts: number;
+  errors: number;
+  rejected: number;
+  revoked_or_deleted: number;
+  evicted: number;
+  cache_pages: number;
+  cache_limit: number;
+  cache_ttl_seconds: number;
+  /** Circuit breaker of the external source: "closed" (normal), "open" (calls paused), "half_open". */
+  breaker: string;
+  max_concurrent_seen: number;
+  concurrency_limit: number;
+  latency_p50_ms: number | null;
+  latency_p95_ms: number | null;
+  limits: Record<string, number>;
+}
+
+export interface DiscoveryStats {
+  discovery: DiscoveryMemoryStats | { enabled: false };
+  external: ExternalSourceStats | { enabled: false };
+}
+
+// --- M5.6.3: Template Hub (backend/app/services/template_hub.py) ---
+
+export type TemplateStatus = "draft" | "active" | "deprecated" | "archived";
+
+export interface TemplateSummary {
+  id: string;
+  title: string;
+  description: string;
+  doc_type: DocType;
+  category: string;
+  owner: string;
+  labels: string[];
+  status: TemplateStatus | string;
+  version: number;
+  versions: number[];
+  updated: string;
+  listed: boolean;
+  required_sections: number;
+  optional_sections: number;
+  /** Visible documents created with this template (any version). */
+  documents: number;
+}
+
+export interface TemplateSection {
+  title: string;
+  required: boolean;
+  hint: string;
+}
+
+export interface TemplateVersionRow {
+  version: number;
+  status: string;
+  active: boolean;
+  first_seen: string;
+  changes: string;
+  breaking: boolean;
+}
+
+export interface TemplateUsage {
+  document_id: string;
+  title: string;
+  status: DocStatus;
+  template_version: number | null;
+}
+
+export interface TemplateDetail extends TemplateSummary {
+  id_prefix: string;
+  default_tags: string[];
+  sections: TemplateSection[];
+  required_metadata: string[];
+  optional_metadata: string[];
+  validation: string[];
+  instructions: string;
+  ai_guidance: string;
+  example: string;
+  /** Sanitized HTML of the synthetic example; render only through <SafeHtml>. */
+  example_html: string;
+  skeleton: string;
+  changes: string;
+  breaking: boolean;
+  migration: string;
+  history: TemplateVersionRow[];
+  used_by: TemplateUsage[];
+  /** "v<N>" → number of the reader's open drafts pinned to that version. */
+  my_open_drafts: Record<string, number>;
+}
+
+export interface TemplateComparison {
+  template_id: string;
+  from_version: number;
+  to_version: number;
+  sections_added: string[];
+  sections_removed: string[];
+  became_required: string[];
+  became_optional: string[];
+  metadata_required_added: string[];
+  metadata_required_removed: string[];
+  validation_added: string[];
+  validation_removed: string[];
+  status_change: string | null;
+  breaking: boolean;
+  migration: string;
+  changes: string;
+}
+
+// --- M5.6.3: links of documents (backend/app/services/links.py) ---
+
+/** How a link is declared: an inline WikiLink, a `related_ids` entry or a typed relation. */
+export type LinkVia = "inline" | "related_ids" | "typed";
+
+export interface LinkedDocument {
+  document_id: string;
+  title: string;
+  status: DocStatus;
+  type: DocType;
+}
+
+export interface OutgoingLink {
+  target: LinkedDocument;
+  relation: string;
+  via: LinkVia[];
+  labels: string[];
+  lines: number[];
+}
+
+export interface Backlink {
+  source: LinkedDocument;
+  relation: string;
+  via: LinkVia[];
+  lines: number[];
+  /** The linking line(s) of the source body (inline links only). */
+  excerpts: string[];
+}
+
+export type UnresolvedReason = "missing" | "title_link" | "ambiguous_title" | "self";
+
+export interface UnresolvedLink {
+  raw_target: string;
+  label: string;
+  line: number;
+  excerpt: string;
+  reason: UnresolvedReason;
+  /** Visible documents whose title/alias matches (repair chooser). */
+  candidates: LinkedDocument[];
+}
+
+export interface DocumentLinks {
+  document_id: string;
+  generation: string;
+  outgoing: OutgoingLink[];
+  backlinks: Backlink[];
+  unresolved: UnresolvedLink[];
+}
+
+export interface LinkSuggestion {
+  document_id: string;
+  title: string;
+  status: DocStatus;
+  type: DocType;
+  matched: "id" | "title" | "alias";
+  alias: string | null;
+  /** What the editor inserts: `[[ID|Title]]`. */
+  insert: string;
+}
+
+export interface LinkDiagnostic {
+  document_id: string;
+  problem: UnresolvedLink;
+}
+
+// --- M5.6.3: metadata without YAML, import (backend/app/services/metadata.py, api/metadata.py) ---
+
+export interface DocumentTypeInfo {
+  type: DocType;
+  templates: string[];
+  required_fields: string[];
+  system_fields: string[];
+  human_fields: string[];
+}
+
+export interface StagingItem {
+  path: string;
+  code: string;
+  message: string;
+  /** The backend can read it for a preview; otherwise paste the content. */
+  readable: boolean;
+}
+
+/** system: set by the server · parsed: from the text · existing: from the file's YAML · suggested · missing. */
+export type FieldOrigin = "system" | "parsed" | "existing" | "suggested" | "missing";
+
+export interface MetadataField {
+  field: string;
+  value: unknown;
+  origin: FieldOrigin;
+  note: string;
+  /** Document IDs / headings that support a suggestion. */
+  evidence: string[];
+}
+
+export interface TemplateSuggestion {
+  template_id: string;
+  version: number;
+  title: string;
+  score: number;
+  reasons: string[];
+}
+
+export type ImportState = "ready" | "needs_metadata_review" | "invalid_metadata" | "conflict";
+
+export interface ImportPreviewRequest {
+  content?: string;
+  /** A staged file of the knowledge root. */
+  path?: string;
+  filename?: string;
+}
+
+export interface ImportPreview {
+  state: ImportState;
+  has_frontmatter: boolean;
+  /** Kept from valid YAML, or the ID the backend would allocate. */
+  document_id: string;
+  title: string;
+  fields: MetadataField[];
+  missing: string[];
+  templates: TemplateSuggestion[];
+  issues: ValidationIssue[];
+  body: string;
+  /** Sanitized HTML; render only through <SafeHtml>. */
+  preview_html: string;
+  /** The original text (for the create call). */
+  content: string;
+  source_path: string | null;
+  keeps_original_metadata: boolean;
+}
+
+export interface ImportCreateRequest {
+  content: string;
+  keep_original_metadata: boolean;
+  template_id?: string | null;
+  metadata?: NewDocumentMetadata | null;
+  reason: string;
+  client_request_id?: string;
+}
+
+// --- M5.6.3: AI-first workflows (backend/app/services/ai_workflows.py) ---
+
+export type AiProposalKind =
+  | "draft_from_prompt"
+  | "suggest_metadata"
+  | "improve_section"
+  | "summarize"
+  | "explain"
+  | "check_completeness"
+  | "find_related"
+  | "explain_relation"
+  | "impact_analysis";
+export type AiProposalStatus = "suggested" | "applied" | "partially_applied" | "rejected" | "invalidated" | "answered";
+export type AiItemKind = "metadata" | "section" | "link" | "template" | "draft" | "task" | "note";
+
+export interface AiEvidence {
+  document_id: string;
+  title: string;
+  revision: string;
+  status: string;
+  quote: string;
+  reason: string;
+}
+
+export interface AiProposalItem {
+  id: string;
+  kind: AiItemKind;
+  field: string | null;
+  section: string | null;
+  target_id: string | null;
+  current: unknown;
+  proposed: unknown;
+  reason: string;
+  evidence: AiEvidence[];
+  /** false: information or a plan item, never applied. */
+  applicable: boolean;
+}
+
+export interface AiProposalBase {
+  draft_id: string | null;
+  edit_version: number | null;
+  document_id: string | null;
+  revision: string | null;
+  template_id: string | null;
+  template_version: number | null;
+  index_generation: string;
+}
+
+export interface AiProposal {
+  id: string;
+  kind: AiProposalKind;
+  status: AiProposalStatus;
+  created_at: string;
+  decided_at: string | null;
+  mode: string;
+  base: AiProposalBase;
+  summary: string;
+  items: AiProposalItem[];
+  warnings: string[];
+  insufficient: boolean;
+  /** In-app link to the Local Graph of the explained documents. */
+  graph_link: string | null;
+  applied_items: string[];
+  /** The draft the accepted items went into (the same draft, a new update draft or a new document draft). */
+  result_draft_id: string | null;
+}
+
+export interface AiProposalRequest {
+  kind: AiProposalKind;
+  draft_id?: string;
+  document_id?: string;
+  target_id?: string;
+  section?: string;
+  selection?: string;
+  prompt?: string;
+  title?: string;
+  template_id?: string;
+  goal?: string;
 }

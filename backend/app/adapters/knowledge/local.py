@@ -9,7 +9,7 @@ import os
 import shutil
 import time
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from stat import S_ISREG
 
 from app.adapters.knowledge.base import (
@@ -244,6 +244,25 @@ class LocalKnowledgeRepository:
         except (DocumentNotFoundError, DuplicateDocumentIdError):
             return False
         return True
+
+    async def read_text(self, path: str) -> str | None:
+        """UTF-8 text of a file inside the knowledge root (staged files without metadata). Relative paths
+        only; symlinks, escapes, non-files and oversized files are refused (None)."""
+
+        def read() -> str | None:
+            if not path or PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
+                return None
+            candidate = self._root / path
+            try:
+                if candidate.is_symlink() or not _is_within(candidate.resolve(), self._root):
+                    return None
+                if not candidate.is_file() or candidate.stat().st_size > self._max_bytes:
+                    return None
+                return candidate.read_bytes().decode("utf-8")
+            except (OSError, UnicodeDecodeError):
+                return None
+
+        return await asyncio.to_thread(read)
 
     async def file_exists(self, path: str) -> bool:
         candidate = self._root / path

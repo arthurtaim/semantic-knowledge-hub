@@ -4,13 +4,25 @@ the AssistantService validates against those passages."""
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from app.domain.models import Confidence, DocStatus, DocType, IntegrationStatus, SourceType
 from app.domain.text import QueryTerm
 
-AIMode = Literal["mock", "internal_api", "disabled"]
+# claude_cli: EXPERIMENTAL personal-test provider (Claude Code CLI through an isolated worker,
+# docs/CLAUDE_CODE_CLI_INTEGRATION.md). It is not the corporate target runtime (GigaCode).
+AIMode = Literal["mock", "internal_api", "claude_cli", "disabled"]
+
+
+@dataclass(frozen=True)
+class ConversationTurn:
+    """A previous question and the server-validated answer shown to the user. Sent back by the
+    client with a follow-up question; treated as untrusted DATA, never as instructions."""
+
+    question: str
+    answer: str
 
 
 @dataclass(frozen=True)
@@ -29,6 +41,12 @@ class ContextPassage:
     text: str
     is_demo: bool
     suspicious: bool = False  # contains text that looks like instructions to an AI
+    # External (Confluence MCP) evidence: namespaced source id, authority as the SOURCE states it
+    # ("approved" | "draft" | "unknown"), fragment within the retrieved snapshot.
+    source_key: str | None = None
+    external_status: str | None = None
+    fragment_id: str | None = None
+    content_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +54,9 @@ class AnswerOptions:
     terms: list[QueryTerm]
     unmatched_terms: list[QueryTerm] = field(default_factory=list)
     language: str = "ru"
+    # Earlier turns of the same conversation (oldest first). Providers that do not support
+    # conversations ignore it; the server never stores it.
+    history: tuple[ConversationTurn, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -77,6 +98,9 @@ class AuthoringRequest:
     sections: tuple[tuple[str, str], ...]  # template sections: (heading, placeholder hint)
     references: tuple[AuthoringReference, ...]
     access_scope: str  # e.g. "team": the only scope the references were retrieved from
+    # M5.6.3: guidance of the PINNED template version from the registry (data, not a system instruction).
+    guidance: str = ""
+    template_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -96,11 +120,57 @@ class AuthoringDraft:
     insufficient_data: bool
 
 
+AssistTask = Literal["improve", "summarize"]
+
+
+@dataclass(frozen=True)
+class AssistRequest:
+    """A contextual text task on a document (M5.6.3 AI-first workflows). `text` is the selection or the
+    section the user chose; references are authorized, injection-redacted excerpts; `guidance` comes from the
+    template registry (pinned version). Everything here is DATA for the model, never instructions."""
+
+    task: AssistTask
+    text: str
+    title: str
+    references: tuple[AuthoringReference, ...] = ()
+    guidance: str = ""
+    goal: str = ""  # optional wish of the user ("короче", "для аналитика")
+
+
+@dataclass
+class AssistResult:
+    text: str  # proposed Markdown (a section or a summary), shown as a diff; applied only on Accept
+    citations: list[AuthoringCitation]
+    warnings: list[str]
+    insufficient_data: bool
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+# The provider cannot serve right now (configuration, reachability, authorization, limits): 503.
+AI_UNAVAILABLE_CODES = frozenset(
+    {
+        "assistant_disabled",
+        "ai_misconfigured",
+        "ai_unreachable",
+        "ai_timeout",
+        "ai_rate_limited",
+        "ai_auth_failed",
+        "ai_cli_unavailable",
+    }
+)
+
+
+def ai_error_status(code: str) -> int:
+    """HTTP status for an AIProviderError code: 429 busy, 503 unavailable, 502 bad answer/upstream error."""
+    if code == "ai_busy":
+        return 429
+    return 503 if code in AI_UNAVAILABLE_CODES else 502
 
 
 class AIProvider(Protocol):
@@ -121,4 +191,36 @@ class AIProvider(Protocol):
         if unsupported."""
         ...
 
+    async def assist(self, request: AssistRequest) -> AssistResult:
+        """Improve or summarize a selection. Returns a PROPOSAL; raises AIProviderError (invalid answer,
+        unavailable). Never stores or applies anything."""
+        ...
+
     async def status(self) -> IntegrationStatus: ...
+
+
+@dataclass(frozen=True)
+class AnswerDelta:
+    """A fragment of the model's PRELIMINARY answer text (not validated yet)."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class AnswerComplete:
+    """The complete provider answer; AssistantService validates it before anyone relies on it."""
+
+    answer: ProviderAnswer
+
+
+AnswerStreamEvent = AnswerDelta | AnswerComplete
+
+
+class StreamingAIProvider(Protocol):
+    """Optional capability on top of AIProvider: stream preliminary text while the answer is generated.
+    The last event is always AnswerComplete; errors are raised as AIProviderError. Cancelling the
+    iteration must stop the underlying generation."""
+
+    def stream_answer(
+        self, question: str, passages: list[ContextPassage], options: AnswerOptions
+    ) -> AsyncGenerator[AnswerStreamEvent, None]: ...

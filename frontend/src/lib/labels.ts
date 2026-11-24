@@ -1,15 +1,21 @@
 import type {
+  AiProposalKind,
+  AiProposalStatus,
   Confidence,
   DocStatus,
   DocType,
   DocumentPublicationState,
   DocumentSort,
+  FieldOrigin,
+  ImportState,
   IntegrationAccess,
   IntegrationState,
   IntegrationTarget,
+  LinkVia,
   MergeRequestState,
   NewDocumentStatus,
   ProposalOperation,
+  ProposalOrigin,
   ProposalStatus,
   PublicationAction,
   PublicationJobState,
@@ -17,28 +23,35 @@ import type {
   ReviewState,
   SourceType,
   SyncState,
+  UnresolvedReason,
 } from "../api/types";
 
 /** Navigation order of knowledge sections (docs/UX.md: Product, Architecture, Domain, …). */
 export const TYPE_ORDER: DocType[] = [
   "overview",
   "architecture",
+  "source",
   "domain",
+  "dataset",
   "integration",
   "process",
   "decision",
   "standard",
+  "guide",
   "glossary",
 ];
 
 export const TYPE_LABEL: Record<DocType, string> = {
   overview: "Продукт",
   architecture: "Архитектура",
+  source: "Системы-источники",
   domain: "Домен",
+  dataset: "Датасеты",
   integration: "Интеграции",
   process: "Процессы",
   decision: "Решения",
   standard: "Стандарты",
+  guide: "Руководства",
   glossary: "Глоссарий",
 };
 
@@ -71,9 +84,10 @@ export const INTEGRATION_STATE_LABEL: Record<IntegrationState, string> = {
   error: "Ошибка",
 };
 
+/** Support level of an answer: categorical, never a percentage (phase 4 copy). */
 export const CONFIDENCE_LABEL: Record<Confidence, string> = {
-  supported: "Подтверждено источником",
-  partial: "Подтверждено частично",
+  supported: "Подтверждено источниками",
+  partial: "Частично подтверждено",
   insufficient_evidence: "Недостаточно данных",
 };
 
@@ -131,6 +145,14 @@ export const OPERATION_LABEL: Record<ProposalOperation, string> = {
 /** Statuses selectable for a new document, in lifecycle order (`deprecated` is invalid for new documents). */
 export const NEW_DOCUMENT_STATUSES: NewDocumentStatus[] = ["draft", "in_review", "approved"];
 
+/** Where a draft came from (shown read-only: the server records it). */
+export const ORIGIN_LABEL: Record<ProposalOrigin, string> = {
+  manual: "создан вручную в редакторе",
+  ai_suggestion: "предложение ИИ, проверено автором",
+  external_page: "по странице Confluence",
+  import: "импорт Markdown",
+};
+
 /** Titles for errors of the authoring endpoints and of draft save/delete. */
 export const AUTHORING_ERROR_TITLE: Record<string, string> = {
   document_id_taken: "ID уже занят",
@@ -143,7 +165,29 @@ export const AUTHORING_ERROR_TITLE: Record<string, string> = {
   validation_failed: "Документ не прошёл проверку",
   invalid_request: "Некорректные данные формы",
   template_not_found: "Шаблон документа не найден",
+  template_not_active: "Шаблон не используется для новых документов",
+  document_id_immutable: "ID документа не меняется",
   invalid_transition: "Действие недоступно в текущем статусе",
+  import_invalid: "YAML документа некорректен",
+  staged_file_not_found: "Файл не найден среди файлов без метаданных",
+  staged_file_unreadable: "Файл нельзя прочитать с сервера",
+};
+
+/** Titles for AI provider errors (assistant answers and AI drafts); the server message is shown below the title. */
+export const AI_ERROR_TITLE: Record<string, string> = {
+  ai_busy: "Ассистент занят другим запросом",
+  ai_auth_failed: "Нет доступа к языковой модели",
+  ai_cli_unavailable: "Claude Code CLI недоступен",
+  ai_unreachable: "Языковая модель недоступна",
+  ai_timeout: "Модель не ответила вовремя",
+  ai_rate_limited: "Превышен лимит запросов к модели",
+  ai_misconfigured: "AI-провайдер настроен неверно",
+  ai_invalid_response: "Модель вернула некорректный ответ",
+  ai_upstream_error: "Ошибка на стороне языковой модели",
+  ai_tool_use_blocked: "Ответ модели отклонён",
+  invalid_stream: "Ответ сервера повреждён",
+  stream_incomplete: "Ответ прервался",
+  timeout: "Сервер не ответил вовремя",
 };
 
 export const MR_STATE_LABEL: Record<MergeRequestState, string> = {
@@ -352,6 +396,57 @@ export function formatDateTime(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : dateTimeFormat.format(date);
 }
 
+const shortDateFormat = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+const fullDateTimeFormat = new Intl.DateTimeFormat("ru-RU", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const clockFormat = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" });
+
+export interface When {
+  /** What the row shows: relative for today and yesterday, otherwise a short date. */
+  text: string;
+  /** The full date (and time) for the tooltip and screen readers. */
+  full: string;
+  /** `text` is relative («сегодня», «5 мин. назад»): screen readers also get `full`. */
+  relative: boolean;
+}
+
+/**
+ * The one date format of lists and tables (phase 4): «только что», «N мин. назад», «сегодня, 15:50»,
+ * «вчера, 15:50», otherwise «22 нояб. 2026 г.»; `full` is the complete date and time. A date without a time
+ * (`YYYY-MM-DD`) is shown as «сегодня», «вчера» or the short date. Future moments get the short date.
+ */
+export function formatWhen(value: string | null | undefined, now: Date = new Date()): When {
+  if (!value) return { text: "—", full: "", relative: false };
+  const dateOnly = value.length === 10;
+  const date = new Date(dateOnly ? `${value}T00:00:00` : value);
+  if (Number.isNaN(date.getTime())) return { text: value, full: value, relative: false };
+  const full = dateOnly ? dateFormat.format(date) : fullDateTimeFormat.format(date);
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  const time = date.getTime();
+  const elapsed = now.getTime() - time;
+  const absolute = shortDateFormat.format(date);
+  let text = absolute;
+  if (dateOnly) {
+    if (time >= startOfToday && time < startOfToday + day) text = "сегодня";
+    else if (time >= startOfToday - day && time < startOfToday) text = "вчера";
+  } else if (elapsed >= 0 && elapsed < 60_000) {
+    text = "только что";
+  } else if (elapsed >= 0 && elapsed < 60 * 60_000) {
+    text = `${Math.floor(elapsed / 60_000)} мин. назад`;
+  } else if (time >= startOfToday && time <= now.getTime()) {
+    text = `сегодня, ${clockFormat.format(date)}`;
+  } else if (time >= startOfToday - day && time < startOfToday) {
+    text = `вчера, ${clockFormat.format(date)}`;
+  }
+  return { text, full, relative: text !== absolute };
+}
+
 /** Short form of a revision for display: `sha256:` + 8 hex characters, or the first 8 characters of a commit. */
 export function shortRevision(revision: string | null | undefined): string {
   if (!revision) return "—";
@@ -375,4 +470,116 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
   if (mod10 === 1 && mod100 !== 11) return one;
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
+}
+
+// --- M5.6.3: Template Hub, links, import, AI proposals ---
+
+export const TEMPLATE_STATUS_LABEL: Record<string, string> = {
+  active: "Активен",
+  deprecated: "Устарел",
+  draft: "Черновик шаблона",
+  archived: "В архиве",
+};
+
+/** Origin of an import metadata field: who set the value. */
+export const FIELD_ORIGIN_LABEL: Record<FieldOrigin, string> = {
+  system: "системное",
+  parsed: "из текста",
+  existing: "из YAML",
+  suggested: "предложено",
+  missing: "не указано",
+};
+
+export const IMPORT_STATE_LABEL: Record<ImportState, string> = {
+  ready: "Метаданные в порядке",
+  needs_metadata_review: "Нужна проверка метаданных",
+  invalid_metadata: "YAML некорректен",
+  conflict: "Документ уже есть в базе",
+};
+
+/** How a link is declared (links panel badges). */
+export const LINK_VIA_LABEL: Record<LinkVia, string> = {
+  inline: "в тексте",
+  related_ids: "related_ids",
+  typed: "типизированная",
+};
+
+export const UNRESOLVED_REASON_LABEL: Record<UnresolvedReason, string> = {
+  missing: "Документ с таким ID не найден (или недоступен)",
+  title_link: "Ссылка по названию: выберите документ, чтобы закрепить ID",
+  ambiguous_title: "Название подходит нескольким документам: выберите нужный",
+  self: "Ссылка на этот же документ",
+};
+
+/** Relation names in the links panel (graph legend has the same words). */
+export const RELATION_LABEL: Record<string, string> = {
+  references: "ссылается на",
+  depends_on: "зависит от",
+  consumes: "потребляет",
+  produces: "производит",
+  maps_to: "отображается в",
+  derived_from: "получен из",
+  describes: "описывает",
+  constrains: "ограничивает",
+  supersedes: "заменяет",
+  uses_template: "по шаблону",
+};
+
+export const AI_PROPOSAL_STATUS_LABEL: Record<AiProposalStatus, string> = {
+  suggested: "Предложение",
+  applied: "Применено",
+  partially_applied: "Частично применено",
+  rejected: "Отклонено",
+  invalidated: "Устарело",
+  answered: "Ответ",
+};
+
+export const AI_PROPOSAL_KIND_LABEL: Record<AiProposalKind, string> = {
+  draft_from_prompt: "Черновик по запросу",
+  suggest_metadata: "Метаданные",
+  improve_section: "Улучшение раздела",
+  summarize: "Пересказ",
+  explain: "Объяснение",
+  check_completeness: "Проверка полноты",
+  find_related: "Связанные документы",
+  explain_relation: "Объяснение связи",
+  impact_analysis: "Анализ влияния",
+};
+
+/** Metadata field names in AI proposals and the metadata panel. */
+export const METADATA_FIELD_LABEL: Record<string, string> = {
+  id: "ID",
+  title: "Название",
+  type: "Раздел каталога",
+  status: "Статус",
+  owner: "Владелец",
+  tags: "Теги",
+  related_ids: "Связанные документы",
+  source_refs: "Источники",
+  summary: "Описание",
+  template: "Шаблон",
+  template_version: "Версия шаблона",
+  aliases: "Синонимы",
+  created_at: "Создан",
+  updated_at: "Обновлён",
+  origin: "Происхождение",
+};
+
+/** Titles of AI proposal errors (the server message is shown below). */
+export const AI_PROPOSAL_ERROR_TITLE: Record<string, string> = {
+  ai_proposal_stale: "Предложение устарело",
+  ai_proposal_closed: "Решение по предложению уже принято",
+  ai_proposal_not_found: "Предложение не найдено",
+  template_not_active: "Шаблон не используется для новых документов",
+  no_active_template: "Нет активного шаблона",
+};
+
+/** Edge provenance in words: "body:12" → «в тексте, строка 12». */
+export function provenanceText(value: string): string {
+  const line = /^body:(\d+)$/.exec(value);
+  if (line) return `в тексте, строка ${line[1]}`;
+  if (value === "body") return "в тексте";
+  if (value === "related_ids") return "related_ids";
+  if (value.startsWith("relations.")) return `типизированная (${value})`;
+  return value;
 }

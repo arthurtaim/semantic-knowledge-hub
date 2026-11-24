@@ -1,0 +1,163 @@
+# Gold evaluation cases — group B: semantics (DEMO-SEM-001…012).
+# Synthetic only (docs/MOCK_KNOWLEDGE_BASE.md §6). facts_required strings appear verbatim in an expected document.
+
+- case_id: KE-SEM-001
+  category: exact_id
+  question: "DEMO-SEM-007"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-007]
+  k: 1
+  facts_required: ["PRC-000417", "MAP_ARIS_PROCESS"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id of the Process ID contract; must not be confused with DEMO-SEM-002 or DEMO-INT-002, which also mention process_id."
+
+- case_id: KE-SEM-002
+  category: exact_id
+  question: "DEMO-SEM-012"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-012]
+  k: 1
+  facts_required: ["q_entity_ambiguous", "AMB-"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id of the in_review document on ambiguous entities."
+
+- case_id: KE-SEM-003
+  category: synonym
+  question: "Что означает термин «происхождение данных» и какие у него синонимы?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-001]
+  k: 3
+  facts_required: ["линейдж", "data lineage"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Russian synonym of data lineage; the glossary entry lists линейдж / lineage / происхождение данных and the lineage_ref attribute."
+
+- case_id: KE-SEM-004
+  category: synonym
+  question: "Which physical column stores the logical attribute owner_role, and how is its value looked up?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-006]
+  k: 3
+  facts_required: ["owner_role_code", "DICT_OWNER_ROLE"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "English question about a Russian document: the logical-to-physical mapping row LPM-005 (owner_role → owner_role_code via DICT_OWNER_ROLE). DEMO-GUIDE-005 (English) may rank close; DEMO-SEM-006 must still be in the top 3."
+
+- case_id: KE-SEM-005
+  category: abbreviation
+  question: "Что значит «MDM-модель» в текстах ARIS — это мастер-данные?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-001]
+  k: 3
+  facts_required: ["Master Data Management", "модель метаданных"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "MDM has two competing meanings: Master Data Management (SYS-MDM) vs «MDM-модель» = metadata model in ARIS texts. The glossary states both and how to disambiguate by context."
+
+- case_id: KE-SEM-006
+  category: metadata_filter
+  question: "Покажи все датасеты семантической команды"
+  method: catalog
+  filters: {owner: demo-semantic-team, type: dataset}
+  expected_doc_ids: [DEMO-SEM-009, DEMO-SEM-010, DEMO-SEM-011]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: Process Overview (DS-001), Dependency Graph (DS-002), Source Coverage (DS-003)."
+
+- case_id: KE-SEM-007
+  category: metadata_filter
+  question: "Какие документы семантической команды ещё на ревью?"
+  method: catalog
+  filters: {owner: demo-semantic-team, status: in_review}
+  expected_doc_ids: [DEMO-SEM-012]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: only the ambiguity rules are in_review; the other eleven semantics documents are approved."
+
+- case_id: KE-SEM-008
+  category: relation
+  question: "Какие модели ограничивает контракт идентификатора процесса?"
+  method: graph_neighbors
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-002, DEMO-SEM-005]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  start: DEMO-SEM-007
+  relation: constrains
+  direction: out
+  max_depth: 1
+  notes: "Typed outgoing constrains edges declared in DEMO-SEM-007: the logical model and the physical table (check ck_process_id_format)."
+
+- case_id: KE-SEM-009
+  category: relation
+  question: "Что выведено из логической модели бизнес-процесса?"
+  method: graph_neighbors
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-005, DEMO-SEM-009]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  start: DEMO-SEM-002
+  relation: derived_from
+  direction: in
+  max_depth: 1
+  notes: "Incoming derived_from edges: the physical table sl_process_metadata and the Process Overview dataset both declare derived_from DEMO-SEM-002."
+
+- case_id: KE-SEM-010
+  category: relation
+  question: "Через какой документ датасет покрытия источников связан с физической таблицей метаданных процессов?"
+  method: graph_path
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-011, DEMO-SEM-006, DEMO-SEM-005]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  start: DEMO-SEM-011
+  direction: out
+  expected_path: [DEMO-SEM-011, DEMO-SEM-006, DEMO-SEM-005]
+  max_depth: 2
+  notes: "Two outgoing hops: DEMO-SEM-011 —derived_from→ DEMO-SEM-006 —maps_to→ DEMO-SEM-005."
+
+- case_id: KE-SEM-011
+  category: synthesis
+  question: "Процесс согласования заявки переименовали и перенесли в другую ветку модели ARIS. Изменится ли его идентификатор, и можно ли выдать номер устаревшего процесса новому?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-007]
+  facts_required: ["PRC-000417", "mapping_state = retired"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Grounded answer: Process ID is immutable on rename/move (PRC-000417 stays) and never reused — the MAP_ARIS_PROCESS row becomes retired."
+
+- case_id: KE-SEM-012
+  category: synthesis
+  question: "Чем логический атрибут owner_role отличается от физической колонки owner_role_code и что будет, если роли нет в справочнике?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-SEM-006]
+  facts_required: ["owner_role_code", "ROLE-014", "E-MAP-001"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "One fact on two model levels: owner_role = process-owner-requests-demo (logical) → owner_role_code = ROLE-014 via DICT_OWNER_ROLE (rule LPM-005); a missing role gives E-MAP-001 and no default value."

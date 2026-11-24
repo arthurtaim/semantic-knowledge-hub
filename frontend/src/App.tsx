@@ -9,19 +9,27 @@ import { CorporatePage } from "./pages/CorporatePage";
 import { DocumentCreatePage } from "./pages/DocumentCreatePage";
 import { DocumentPage } from "./pages/DocumentPage";
 import { ExplorerPage } from "./pages/ExplorerPage";
+import { GraphPage } from "./pages/GraphPage";
 import { HomePage } from "./pages/HomePage";
+import { ImportPage } from "./pages/ImportPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProposalDetailPage } from "./pages/ProposalDetailPage";
 import { ProposalEditorPage } from "./pages/ProposalEditorPage";
 import { ProposalsPage } from "./pages/ProposalsPage";
 import { PublicationJobPage } from "./pages/PublicationJobPage";
+import { TemplateDetailPage } from "./pages/TemplateDetailPage";
+import { TemplatesPage } from "./pages/TemplatesPage";
 
 const TITLES: [RegExp, string][] = [
   [/^\/$/, "Главная"],
   [/^\/documents\/new$/, "Новый документ"],
+  [/^\/documents\/import$/, "Импорт Markdown"],
   [/^\/documents\/[^/]+/, "Документ"],
   [/^\/documents/, "База знаний"],
+  [/^\/graph/, "Граф знаний"],
+  [/^\/templates\/.+/, "Шаблон"],
+  [/^\/templates/, "Шаблоны"],
   [/^\/ask/, "Спросить"],
   [/^\/proposals\/new/, "Новое предложение"],
   [/^\/proposals\/.+/, "Предложение"],
@@ -53,7 +61,11 @@ export function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/documents" element={<ExplorerPage />} />
           <Route path="/documents/new" element={<DocumentCreatePage />} />
+          <Route path="/documents/import" element={<ImportPage />} />
           <Route path="/documents/:id" element={<DocumentPage />} />
+          <Route path="/graph" element={<GraphPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/templates/:id" element={<TemplateDetailPage />} />
           <Route path="/ask" element={<AskPage />} />
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalEditorPage />} />

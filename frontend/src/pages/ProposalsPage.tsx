@@ -3,8 +3,9 @@ import { api } from "../api/client";
 import type { ProposalStatus } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../components/ProposalState";
-import { formatDateTime, PROPOSAL_STATUS_LABEL, PROPOSAL_STATUS_ORDER } from "../lib/labels";
+import { PROPOSAL_STATUS_LABEL, PROPOSAL_STATUS_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 const FILTERS: { value: ProposalStatus | ""; label: string }[] = [
   { value: "", label: "Все" },
@@ -143,7 +144,9 @@ export function ProposalsPage() {
                       <span>Пройдена</span>
                     )}
                   </td>
-                  <td>{formatDateTime(p.created_at)}</td>
+                  <td>
+                    <When value={p.created_at} />
+                  </td>
                 </tr>
               ))}
             </tbody>

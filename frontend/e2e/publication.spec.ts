@@ -8,6 +8,8 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 const GITLAB = "http://127.0.0.1:8929";
 const CONFLUENCE = "http://127.0.0.1:8931";
 const API_HEADERS = { "X-SKH-Client": "e2e" };
+// Titles carry the time in base36: a 13-digit Date.now() sometimes passes the Luhn check and is (rightly)
+// rejected by the server as a payment card number, which made these scenarios flaky.
 
 interface ConfluenceState {
   pages: { id: string; title: string; version: number; parent: string | null; properties: Record<string, { document_id: string }> }[];
@@ -77,7 +79,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 test("@gitlab E2E-23/24/25/26/27 merged document → dry-run without writes → page created → updated → repeat is a no-op", async ({ page, request }) => {
-  const title = `Публикация E2E ${Date.now()}`;
+  const title = `Публикация E2E ${Date.now().toString(36)}`;
   const id = await mergedDocument(page, request, title);
   await page.goto(`/documents/${id}`);
   await expect(page.locator("#publication")).toContainText("Предпросмотр готов");
@@ -120,7 +122,7 @@ test("@gitlab E2E-23/24/25/26/27 merged document → dry-run without writes → 
 });
 
 test("@gitlab E2E-28 manual edit in Confluence → conflict, the page is not overwritten", async ({ page, request }) => {
-  const title = `Ручная правка E2E ${Date.now()}`;
+  const title = `Ручная правка E2E ${Date.now().toString(36)}`;
   const id = await mergedDocument(page, request, title);
   await openPreview(page, id);
   await page.getByRole("button", { name: "Опубликовать в Confluence" }).click();
@@ -139,7 +141,7 @@ test("@gitlab E2E-28 manual edit in Confluence → conflict, the page is not ove
 });
 
 test("@gitlab E2E-31 lost answer after a successful create is reconciled without a duplicate", async ({ page, request }) => {
-  const title = `Потерянный ответ E2E ${Date.now()}`;
+  const title = `Потерянный ответ E2E ${Date.now().toString(36)}`;
   const id = await mergedDocument(page, request, title);
   await openPreview(page, id);
   await request.post(`${CONFLUENCE}/__mock__/faults`, {

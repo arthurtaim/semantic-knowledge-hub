@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { ProposalSummary } from "../api/types";
+import { Composer, askHref, type AskScope } from "../components/Composer";
 import { EmptyState, ErrorState, Loading } from "../components/Feedback";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { OperationBadge, ProposalStateLabel } from "../components/ProposalState";
@@ -9,15 +10,17 @@ import { StaleMark } from "../components/StaleMark";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
 import {
-  formatDate,
-  formatDateTime,
   PROPOSAL_NEEDS_ACTION,
   REVIEW_LABEL,
   SOURCE_LABEL,
   TYPE_LABEL,
   TYPE_ORDER,
 } from "../lib/labels";
+import { canAsk } from "../lib/aiMode";
+import { clearRecentQuestions, readRecentQuestions } from "../lib/recentQuestions";
+import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
+import { When } from "../components/When";
 
 const RECENT_LIMIT = 5;
 const PROPOSALS_LIMIT = 5;
@@ -41,7 +44,7 @@ function RecentlyUpdated() {
   // The server puts documents without a date last; they are not "recent", so they are not listed here.
   const items = (recent.data?.items ?? []).filter((d) => d.updated_at);
   return (
-    <section aria-labelledby="recent-title" className="panel">
+    <section aria-labelledby="recent-title" className="home-section">
       <h2 id="recent-title">Недавно обновлённые</h2>
       {recent.loading && !recent.data ? <Loading /> : null}
       {recent.error ? <ErrorState error={recent.error} onRetry={recent.reload} /> : null}
@@ -63,7 +66,7 @@ function RecentlyUpdated() {
                 <span className="doc-row__meta">
                   <code className="doc-id">{doc.id}</code>
                   <span>
-                    обновлён <time dateTime={doc.updated_at ?? undefined}>{formatDate(doc.updated_at)}</time>
+                    обновлён <When value={doc.updated_at} />
                   </span>
                   <span>{SOURCE_LABEL[doc.source]}</span>
                   {doc.index_state === "stale" ? <StaleMark /> : null}
@@ -84,7 +87,7 @@ function ProposalsNeedingAction() {
   const drafts = useAsync(() => api.drafts(), "home-proposals");
   const items = (drafts.data?.items ?? []).filter((p) => NEEDS_ACTION.has(p.status)).sort(byUpdatedDesc);
   return (
-    <section aria-labelledby="proposals-title" className="panel">
+    <section aria-labelledby="proposals-title" className="home-section">
       <h2 id="proposals-title">Предложения, требующие действия</h2>
       {drafts.loading && !drafts.data ? <Loading /> : null}
       {drafts.error ? <ErrorState error={drafts.error} onRetry={drafts.reload} /> : null}
@@ -108,7 +111,9 @@ function ProposalsNeedingAction() {
                   <OperationBadge operation={p.operation} />
                   <ProposalStateLabel status={p.status} />
                   <span>{p.reason}</span>
-                  <span>обновлено {formatDateTime(p.updated_at)}</span>
+                  <span>
+                    обновлено <When value={p.updated_at} />
+                  </span>
                 </span>
               </li>
             ))}
@@ -131,59 +136,113 @@ function HomeIndexStatus() {
   return index.data ? <IndexStatusNotice status={index.data} /> : null;
 }
 
-export function HomePage() {
-  const navigate = useNavigate();
-  const [query, setQuery] = useState("");
-  const { data, error, loading, reload } = useAsync(loadHome, "home");
+const SCOPES: { value: AskScope; label: string }[] = [
+  { value: "team", label: "Команда" },
+  { value: "corporate", label: "Корпоративные" },
+  { value: "both", label: "Оба" },
+];
 
-  function onSearch(event: FormEvent) {
-    event.preventDefault();
-    const q = query.trim();
-    navigate(q ? `/documents?query=${encodeURIComponent(q)}` : "/documents");
-  }
+/** The user's recent questions (this browser only); each opens its answer again. */
+function RecentQuestions() {
+  const session = useSession();
+  const userId = session?.user.user_id;
+  const [items, setItems] = useState(() => readRecentQuestions(userId));
+  useEffect(() => setItems(readRecentQuestions(userId)), [userId]);
+  if (items.length === 0) return null;
+  return (
+    <section className="recent-questions" aria-labelledby="recent-questions-title">
+      <h2 id="recent-questions-title">Недавние вопросы</h2>
+      <ul>
+        {items.map((question) => (
+          <li key={question}>
+            <Link to={askHref(question)} className="recent-questions__link">
+              {question}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <p className="recent-questions__note muted">
+        Хранятся только в этом браузере.{" "}
+        <button
+          type="button"
+          className="button button--quiet"
+          onClick={() => {
+            clearRecentQuestions(userId);
+            setItems([]);
+          }}
+        >
+          Очистить
+        </button>
+      </p>
+    </section>
+  );
+}
+
+export function HomePage() {
+  const session = useSession();
+  const [scope, setScope] = useState<AskScope>("team");
+  const { data, error, loading, reload } = useAsync(loadHome, "home");
+  const ask = canAsk(session?.features.ai_mode);
+  const corporateState = session?.features.corporate_search;
 
   const typeCounts = new Map(data?.facets.types.map((f) => [f.value, f.count]) ?? []);
   const attention = (data?.documents ?? []).filter(
     (d) => d.owner_missing || d.review_state === "stale" || d.review_state === "never_reviewed",
   );
-  const askHref = query.trim() ? `/ask?q=${encodeURIComponent(query.trim())}` : "/ask";
 
   return (
     <div className="home">
       <section className="home__intro" aria-labelledby="home-title">
         <h1 id="home-title">База знаний семантического слоя</h1>
         <p className="lead">
-          Ищите документы команды, задавайте вопросы с проверяемыми ссылками на источники и предлагайте правки через
-          ревью.
+          {ask
+            ? "Спросите или найдите: ответ строится только по документам и начинается с цитат, а правки проходят ревью."
+            : "Ищите документы команды и предлагайте правки через ревью. ИИ в этой установке отключён — поиск работает полностью."}
         </p>
+        <Composer
+          variant="hero"
+          inputId="home-composer-input"
+          scope={scope}
+          renderExtra={(mode) =>
+            mode === "ask" ? (
+              <>
+                <fieldset className="segmented composer__scope">
+                  <legend>Где искать</legend>
+                  {SCOPES.map((option) => (
+                    <label key={option.value} className="segmented__option">
+                      <input
+                        type="radio"
+                        name="home-scope"
+                        value={option.value}
+                        checked={scope === option.value}
+                        onChange={() => setScope(option.value)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </fieldset>
+                {scope !== "team" && corporateState === "disabled" ? (
+                  <p className="field-hint">
+                    Корпоративные источники (Confluence Data Center) не подключены — ответ будет только по документам
+                    команды.
+                  </p>
+                ) : null}
+                {scope !== "team" && corporateState === "mock" ? (
+                  <p className="field-hint">Корпоративные источники — mock-коннектор с синтетическими страницами.</p>
+                ) : null}
+              </>
+            ) : null
+          }
+        />
         <div className="home__actions">
-          <form className="search-box" role="search" onSubmit={onSearch}>
-            <label htmlFor="home-search" className="visually-hidden">
-              Поиск по базе знаний
-            </label>
-            <input
-              id="home-search"
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Например: ARIS, ревизия, FTS5"
-              maxLength={200}
-              autoComplete="off"
-            />
-            <button type="submit" className="button button--primary">
-              Найти
-            </button>
-          </form>
-          <Link to={askHref} className="button button--ask">
-            Спросить ассистента
-          </Link>
-          <Link to="/documents/new" className="button button--secondary home__create">
+          <Link to="/documents/new" className="button button--quiet home__create">
             Создать документ
           </Link>
+          <Link to="/documents" className="button button--quiet">
+            Открыть каталог
+          </Link>
         </div>
-        <p className="home__hint muted">
-          Ассистент отвечает только по найденным документам и показывает ссылки на источники.
-        </p>
+        {ask ? <RecentQuestions /> : null}
       </section>
 
       <HomeIndexStatus />
@@ -192,72 +251,77 @@ export function HomePage() {
       {error ? <ErrorState error={error} onRetry={reload} /> : null}
 
       <div className="home__grid">
-        {data ? (
-          <section aria-labelledby="sections-title" className="panel">
-            <h2 id="sections-title">Разделы</h2>
-            <ul className="index-list">
-              {TYPE_ORDER.map((type) => {
-                const count = typeCounts.get(type) ?? 0;
-                return (
-                  <li key={type}>
-                    <Link to={`/documents?type=${type}`} className="index-list__link">
-                      <span>{TYPE_LABEL[type]}</span>
-                      <span className="index-list__count" aria-label={`документов: ${count}`}>
-                        {count}
+        <div className="home__main">
+          <RecentlyUpdated />
+
+          {data ? (
+            <section aria-labelledby="attention-title" className="home-section">
+              <h2 id="attention-title">Требуют внимания</h2>
+              {attention.length === 0 ? (
+                <p className="muted">У всех документов есть владелец и актуальная проверка.</p>
+              ) : (
+                <ul className="doc-rows">
+                  {attention.map((doc) => (
+                    <li key={doc.id} className="doc-row">
+                      <Link to={`/documents/${doc.id}`} className="doc-row__title">
+                        {doc.title}
+                      </Link>
+                      <span className="doc-row__meta">
+                        <StatusStamp status={doc.status} />
+                        {doc.owner_missing ? <span className="flag">Владелец не назначен</span> : null}
+                        {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
+                          <span className="flag">{REVIEW_LABEL[doc.review_state]}</span>
+                        ) : null}
                       </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
 
-        <RecentlyUpdated />
-        <ProposalsNeedingAction />
+          <ProposalsNeedingAction />
+        </div>
 
-        {data ? (
-          <section aria-labelledby="attention-title" className="panel">
-            <h2 id="attention-title">Требуют внимания</h2>
-            {attention.length === 0 ? (
-              <p className="muted">У всех документов есть владелец и актуальная проверка.</p>
-            ) : (
-              <ul className="doc-rows">
-                {attention.map((doc) => (
-                  <li key={doc.id} className="doc-row">
-                    <Link to={`/documents/${doc.id}`} className="doc-row__title">
-                      {doc.title}
-                    </Link>
-                    <span className="doc-row__meta">
-                      <StatusStamp status={doc.status} />
-                      {doc.owner_missing ? <span className="flag">Владелец не назначен</span> : null}
-                      {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-                        <span className="flag">{REVIEW_LABEL[doc.review_state]}</span>
-                      ) : null}
-                    </span>
+        <div className="home__side">
+          {data ? (
+            <section aria-labelledby="sections-title" className="home-section">
+              <h2 id="sections-title">Разделы</h2>
+              <ul className="index-list">
+                {TYPE_ORDER.map((type) => {
+                  const count = typeCounts.get(type) ?? 0;
+                  return (
+                    <li key={type}>
+                      <Link to={`/documents?type=${type}`} className="index-list__link">
+                        <span>{TYPE_LABEL[type]}</span>
+                        <span className="index-list__count" aria-label={`документов: ${count}`}>
+                          {count}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
+
+          {data ? (
+            <section aria-labelledby="integrations-title" className="home-section">
+              <h2 id="integrations-title">Источники и интеграции</h2>
+              <ul className="integration-mini">
+                {data.integrations.map((item) => (
+                  <li key={item.name}>
+                    <span>{item.title}</span>
+                    <StateBadge state={item.state} />
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
-        ) : null}
-
-        {data ? (
-          <section aria-labelledby="integrations-title" className="panel">
-            <h2 id="integrations-title">Источники и интеграции</h2>
-            <ul className="integration-mini">
-              {data.integrations.map((item) => (
-                <li key={item.name}>
-                  <span>{item.title}</span>
-                  <StateBadge state={item.state} />
-                </li>
-              ))}
-            </ul>
-            <Link to="/integrations" className="text-link">
-              Подробнее о подключениях
-            </Link>
-          </section>
-        ) : null}
+              <Link to="/integrations" className="text-link">
+                Подробнее о подключениях
+              </Link>
+            </section>
+          ) : null}
+        </div>
       </div>
     </div>
   );

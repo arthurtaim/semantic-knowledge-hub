@@ -1,0 +1,135 @@
+# Gold evaluation cases — group F: decisions (DEMO-ADR-002…005) and guides (DEMO-GUIDE-001…005).
+# Synthetic only (docs/MOCK_KNOWLEDGE_BASE.md §6). facts_required strings appear verbatim in an expected document.
+
+- case_id: KE-ADR-001
+  category: exact_id
+  question: "DEMO-ADR-003"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-ADR-003]
+  k: 1
+  facts_required: ["local:DEMO-INT-002", "confluence:<instance>:<page-id>:<version>"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact document id must resolve to the ADR on deterministic source IDs."
+
+- case_id: KE-ADR-002
+  category: abbreviation
+  question: "ADR: почему authority определяется статусом, а не score?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-ADR-002]
+  k: 3
+  facts_required: ["Architecture Decision Record"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "ADR here means Architecture Decision Record, not the DQ Monitor metric Average Daily Rows (DEMO-SRC-011); DEMO-ADR-002 names both meanings."
+
+- case_id: KE-ADR-003
+  category: metadata_filter
+  question: "Покажи все архитектурные решения архитектурного совета"
+  method: catalog
+  filters: {type: decision, owner: demo-architecture-board}
+  expected_doc_ids: [DEMO-ADR-002, DEMO-ADR-003, DEMO-ADR-004, DEMO-ADR-005]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set. SEM-DEC-001 is also type decision but owned by demo-team, so the owner filter excludes it."
+
+- case_id: KE-ADR-004
+  category: relation
+  question: "Как решение об authority по статусу связано с регламентом управления ревизиями?"
+  method: graph_path
+  filters: {}
+  expected_doc_ids: [DEMO-ADR-002, DEMO-GOV-001, DEMO-GOV-009]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  start: DEMO-ADR-002
+  direction: out
+  expected_path: [DEMO-ADR-002, DEMO-GOV-001, DEMO-GOV-009]
+  max_depth: 2
+  notes: "Two hops: DEMO-ADR-002 —references→ DEMO-GOV-001 —depends_on→ DEMO-GOV-009 (catalog edges)."
+
+- case_id: KE-ADR-005
+  category: synthesis
+  question: "Моя правка основана на старой ревизии документа, а рядом лежит более свежий черновик. Как разобрать конфликт и может ли свежий черновик считаться авторитетным?"
+  method: assistant
+  filters: {}
+  expected_doc_ids: [DEMO-GUIDE-004, DEMO-ADR-002]
+  facts_required: ["revision_conflict", "base_revision", "Черновик (draft) никогда не авторитетен"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Grounded answer must cite both: the conflict procedure (no overwrite, rebase on the current revision) from DEMO-GUIDE-004 and the status-over-recency rule from DEMO-ADR-002."
+
+- case_id: KE-GUIDE-001
+  category: exact_id
+  question: "DEMO-GUIDE-004"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GUIDE-004]
+  k: 1
+  facts_required: ["revision_conflict", "base_revision"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact document id must resolve to the revision-conflict guide."
+
+- case_id: KE-GUIDE-002
+  category: synonym
+  question: "чем логическая модель отличается от физической"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GUIDE-005]
+  k: 5
+  facts_required: ["owner_role_code", "ProcessMetadataTable"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Russian question, English guide (logical model / логическая модель, physical model / физическая модель). DEMO-SEM-002/005/006 may rank alongside."
+
+- case_id: KE-GUIDE-003
+  category: synonym
+  question: "как восстановить происхождение данных датасета"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-GUIDE-002]
+  k: 5
+  facts_required: ["lineage_ref"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "происхождение данных = data lineage = линейдж; the guide title uses the English word lineage."
+
+- case_id: KE-GUIDE-004
+  category: metadata_filter
+  question: "Список утверждённых пошаговых руководств"
+  method: catalog
+  filters: {type: guide, status: approved}
+  expected_doc_ids: [DEMO-GUIDE-001, DEMO-GUIDE-002, DEMO-GUIDE-003, DEMO-GUIDE-004, DEMO-GUIDE-005]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set: the only documents of type guide in the base."
+
+- case_id: KE-GUIDE-005
+  category: relation
+  question: "На какие документы опирается руководство по восстановлению lineage датасета?"
+  method: graph_neighbors
+  filters: {}
+  expected_doc_ids: [DEMO-INT-014, DEMO-SEM-009, DEMO-SRC-002, DEMO-INT-001, DEMO-INT-002, DEMO-SEM-002, DEMO-INT-018]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  start: DEMO-GUIDE-002
+  relation: references
+  direction: out
+  max_depth: 1
+  notes: "Outgoing related_ids of DEMO-GUIDE-002: the catalog pair INT-014, SEM-009 plus the walked chain SRC-002 → INT-001 → INT-002 → SEM-002 and the deprecated INT-018 named as a pitfall."

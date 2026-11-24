@@ -6,14 +6,13 @@ import type {
   AuthoringCheckRequest,
   AuthoringCheckResponse,
   DocumentTemplateInfo,
-  NewDocumentStatus,
   ProposalDetail,
   ValidationIssue,
 } from "../api/types";
 import {
-  autoPath,
   directoryOf,
   fieldsFromProposal,
+  followingPath,
   retitleBody,
   toMetadata,
   type EditorFields,
@@ -21,16 +20,22 @@ import {
 import {
   AUTHORING_ERROR_TITLE,
   formatSavedAt,
-  NEW_DOCUMENT_STATUSES,
+  ORIGIN_LABEL,
   PROPOSAL_ERROR_TITLE,
   PROPOSAL_STATUS_LABEL,
-  STATUS_LABEL,
   TYPE_LABEL,
 } from "../lib/labels";
+import { newRequestId } from "../lib/requestId";
+import { useSession } from "../lib/session";
+import { sectionHeadings } from "../lib/wikilink";
+import { AiAssistPanel, useAiProposal, type AiAction } from "./AiProposal";
 import { AiSourcesPanel } from "./AiSourcesPanel";
 import { ErrorState, Notice } from "./Feedback";
 import { MarkdownToolbar } from "./MarkdownToolbar";
 import { SafeHtml } from "./SafeHtml";
+import { StatusStamp } from "./StatusStamp";
+import { TemplateVersionNotice } from "./TemplateVersionNotice";
+import { WikiLinkTextarea } from "./WikiLinkTextarea";
 
 const CHECK_DELAY_MS = 500;
 
@@ -209,11 +214,16 @@ export interface DocumentEditorProps {
  */
 export function DocumentEditor({ template, initial, draft, aiResult = null, notice, onCreated }: DocumentEditorProps) {
   const navigate = useNavigate();
+  const session = useSession();
   const [fields, setFields] = useState<EditorFields>(initial);
+  // One idempotency key per form: a double click or a retried POST returns the draft already created.
+  const [requestId] = useState(newRequestId);
   const [saved, setSaved] = useState<SavedDraft | null>(draft ? savedFrom(draft) : null);
   // An AI suggestion is unsaved work from the start; a pristine template or a loaded draft is not.
   const [baseline, setBaseline] = useState<string | null>(() => (aiResult ? null : saveSnapshot(initial)));
-  const [autoDir] = useState(() => directoryOf(initial.pathEdited ? template.suggested_path : initial.path));
+  const [autoDir] = useState(() =>
+    directoryOf(initial.pathEdited || !initial.path ? template.suggested_path : initial.path),
+  );
   const [check, setCheck] = useState<{ key: string; result: AuthoringCheckResponse } | null>(null);
   const [checkError, setCheckError] = useState<ApiError | null>(null);
   const [checking, setChecking] = useState(false);
@@ -239,14 +249,17 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
   const metadata = toMetadata(fields);
   const snapshot = saveSnapshot(fields);
   const dirty = snapshot !== baseline;
+  // The ID is allocated by the server at the first save; it is required only when the author sets it by hand.
+  const idEditable = !saved && fields.manualId;
   const missing = {
-    id: !metadata.id,
+    id: idEditable && !metadata.id,
     title: !metadata.title,
-    owner: !metadata.owner,
     body: !fields.body.trim(),
   };
-  const missingAny = missing.id || missing.title || missing.owner || missing.body;
+  const missingAny = missing.id || missing.title || missing.body;
   const reasonInvalid = fields.reason.trim().length < 3;
+  // An existing draft is checked against the template version it was created with (not the current one).
+  const draftTemplateVersion = draft?.template_version ?? null;
 
   const checkRequest: AuthoringCheckRequest | null = missingAny
     ? null
@@ -257,6 +270,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         path: fields.path.trim() || null,
         origin: fields.origin,
         exclude_proposal_id: saved?.id ?? null,
+        ...(draftTemplateVersion ? { template_version: draftTemplateVersion } : {}),
       };
   const checkKey = checkRequest ? JSON.stringify(checkRequest) : "";
   const requestRef = useRef(checkRequest);
@@ -317,7 +331,13 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
   const clearTaken = () => setActionError((e) => (e && TAKEN_CODES.has(e.code) ? null : e));
   const setId = (value: string) => {
     clearTaken();
-    setFields((f) => ({ ...f, id: value, path: f.pathEdited ? f.path : autoPath(autoDir, value) }));
+    setFields((f) => ({ ...f, id: value, path: f.pathEdited ? f.path : followingPath(autoDir, value) }));
+  };
+  const setManualId = (manual: boolean) => {
+    clearTaken();
+    const id = manual ? template.suggested_id : "";
+    setFields((f) => ({ ...f, manualId: manual, id, path: f.pathEdited ? f.path : followingPath(autoDir, id) }));
+    if (manual) focusLater(idRef);
   };
   const setTitle = (value: string) =>
     setFields((f) => ({ ...f, title: value, body: retitleBody(f.body, f.title, value) }));
@@ -325,7 +345,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
     clearTaken();
     setFields((f) => ({ ...f, path: value, pathEdited: true }));
   };
-  const followId = () => setFields((f) => ({ ...f, path: autoPath(autoDir, f.id), pathEdited: false }));
+  const followId = () => setFields((f) => ({ ...f, path: followingPath(autoDir, f.id), pathEdited: false }));
 
   function focusLater(ref: { current: HTMLElement | null }) {
     requestAnimationFrame(() => ref.current?.focus());
@@ -334,7 +354,6 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
   function focusFirstMissing(requireReason: boolean) {
     if (missing.title) focusLater(titleRef);
     else if (missing.id) focusLater(idRef);
-    else if (missing.owner) focusLater(ownerRef);
     else if (requireReason && reasonInvalid) focusLater(reasonRef);
     else if (missing.body) {
       setView("source");
@@ -366,6 +385,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
       setAdvancedOpen(true);
       focusLater(pathRef);
     } else {
+      if (fields.manualId) setAdvancedOpen(true);
       focusLater(idRef);
     }
   }
@@ -379,6 +399,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
 
   /** Saves the draft (POST the first time, then PUT with the last known version). Never drops the text. */
   async function persist(): Promise<SavedDraft | null> {
+    const sentFields = fields;
     const sentSnapshot = snapshot;
     const payload = {
       metadata,
@@ -390,10 +411,22 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
     try {
       const detail = saved
         ? await api.saveDraft(saved.id, { expected_version: saved.version, ...payload })
-        : await api.createNewDocumentDraft({ template_id: template.id, ...payload });
+        : await api.createNewDocumentDraft({ template_id: template.id, ...payload, client_request_id: requestId });
       const next = savedFrom(detail);
       setSaved(next);
-      setBaseline(sentSnapshot);
+      if (!saved) {
+        // The server allocated the ID (and the path that follows it) exactly once: show and keep them.
+        const allocated = (f: EditorFields): EditorFields => ({
+          ...f,
+          id: detail.document_id,
+          manualId: false,
+          path: f.pathEdited ? f.path : detail.document_path,
+        });
+        setFields(allocated);
+        setBaseline(saveSnapshot(allocated(sentFields)));
+      } else {
+        setBaseline(sentSnapshot);
+      }
       setActionError(null);
       if (!saved) {
         onCreated?.(detail.id);
@@ -495,6 +528,21 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
     });
   };
 
+  /** After an accepted AI proposal saved the draft on the server: load that version (a new edit_version). */
+  async function reloadSaved(): Promise<void> {
+    if (!saved) return;
+    try {
+      const latest = await api.draft(saved.id);
+      const next = latest.operation === "create" && latest.can_edit ? fieldsFromProposal(latest) : null;
+      if (!next) return;
+      setFields(next);
+      setSaved(savedFrom(latest));
+      setBaseline(saveSnapshot(next));
+    } catch (err) {
+      setActionError(toApiError(err));
+    }
+  }
+
   const onCancel = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!dirty) return;
     event.preventDefault();
@@ -511,23 +559,27 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
     if (!fresh || checking) return checkingText;
     return available ? freeText : null;
   };
+  const previewId = !saved && !idEditable && fresh && check?.result.path ? check.result.path.split("/").pop()?.replace(/\.md$/, "") : null;
   const idMessages: FieldMessages = {
-    hint: "Латиница, цифры, «-», «_» или «.». Предложен следующий свободный номер.",
-    status: availability(check?.result.id_available, "Проверяем, свободен ли ID…", "ID свободен"),
+    hint: saved
+      ? "Выделен при создании черновика и больше не меняется."
+      : idEditable
+        ? "Задан вручную: латиница, цифры, «-», «_» или «.». Сервер проверит, что ID свободен."
+        : `ID выделит сервер при первом сохранении — один раз и навсегда.${previewId ? ` Сейчас свободен ${previewId}.` : ""}`,
+    status: idEditable ? availability(check?.result.id_available, "Проверяем, свободен ли ID…", "ID свободен") : null,
     issues: issuesFor("id"),
     required: required(missing.id, "Укажите ID документа."),
   };
   const titleMessages: FieldMessages = { issues: issuesFor("title"), required: required(missing.title, "Укажите название.") };
   const ownerMessages: FieldMessages = {
-    hint: "Команда или сотрудник, отвечающий за актуальность документа.",
+    hint: "Команда или сотрудник, отвечающий за актуальность. Не указан — сохранится как «unassigned», владельца назначат на ревью.",
     issues: issuesFor("owner"),
-    required: required(missing.owner, "Укажите владельца."),
   };
   const statusMessages: FieldMessages = {
     hint:
-      fields.origin === "ai_suggestion"
-        ? "Черновик от ИИ не может сразу получить статус «Утверждён»."
-        : "Статус «Утверждён» вступит в силу только после ревью и merge в GitLab.",
+      fields.status === "draft"
+        ? "Новый документ всегда начинается как черновик. Утверждённым он станет только после ревью и merge в GitLab — ни автор, ни ИИ статус не повышают."
+        : "Статус задан в сохранённом черновике и вступит в силу только после ревью и merge в GitLab.",
     issues: issuesFor("status"),
   };
   const tagsMessages: FieldMessages = { hint: "Через запятую.", issues: issuesFor("tags") };
@@ -541,17 +593,23 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
   const pathMessages: FieldMessages = {
     hint: fields.pathEdited
       ? "Путь задан вручную. Имя файла должно совпадать с ID."
-      : "Следует за ID документа, пока вы не измените путь.",
-    status: availability(check?.result.path_available, "Проверяем путь…", "Путь свободен"),
+      : fields.id.trim()
+        ? "Следует за ID документа, пока вы не измените путь."
+        : "Сервер выберет путь вместе с ID при первом сохранении.",
+    status: fields.path.trim() ? availability(check?.result.path_available, "Проверяем путь…", "Путь свободен") : null,
     issues: issuesFor("path"),
   };
   const sourcesMessages: FieldMessages = { hint: "Ссылки или ID источников через запятую.", issues: issuesFor("source_refs") };
-  const bodyMessages: FieldMessages = { issues: [], required: required(missing.body, "Текст документа не может быть пустым.") };
+  const bodyMessages: FieldMessages = {
+    hint: "Ссылка на другой документ: наберите [[ и начало ID или названия — появятся подсказки, вставится [[ID|Название]].",
+    issues: [],
+    required: required(missing.body, "Текст документа не может быть пустым."),
+  };
   const typeIssues = issuesFor("type");
 
   let submitBlocker: string | null = null;
   if (locked) submitBlocker = "Черновик больше нельзя редактировать.";
-  else if (missingAny) submitBlocker = "Заполните обязательные поля: название, ID, владельца и текст.";
+  else if (missingAny) submitBlocker = "Заполните обязательные поля: название и текст.";
   else if (reasonInvalid) submitBlocker = "Укажите причину или цель документа.";
   else if (errors.length > 0) submitBlocker = "Исправьте ошибки проверки, чтобы отправить документ на ревью.";
 
@@ -576,6 +634,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
       <AuthoringRoute states={routeStates} />
 
       {notice}
+      <TemplateVersionNotice proposal={draft} />
       {locked ? (
         <Notice tone="warning">
           <p>
@@ -597,6 +656,12 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
           </details>
         </Notice>
       ) : null}
+      {fields.origin === "import" ? (
+        <Notice tone="info">
+          Документ импортирован из Markdown. Метаданные, которые предложил сервер, нужно проверить: до ревью и merge
+          это черновик, ассистент его не цитирует.
+        </Notice>
+      ) : null}
       {fields.origin === "ai_suggestion" ? (
         <Notice tone="info">
           Текст подготовлен ИИ-помощником. Это предложение, а не утверждённый документ: проверьте факты и источники,
@@ -607,7 +672,8 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
       <section className="panel authoring__meta" aria-labelledby="meta-title">
         <h2 id="meta-title">Метаданные</h2>
         <p className="muted authoring__meta-note">
-          YAML-заголовок файла приложение сформирует само из этих полей. Поля со звёздочкой обязательны.
+          YAML-заголовок файла приложение сформирует само из этих полей. ID, статус, шаблон и происхождение выставляет
+          сервер. Поля со звёздочкой обязательны.
         </p>
         <div className="authoring__grid">
           <div className="field">
@@ -629,21 +695,34 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
           </div>
           <div className="field">
             <label htmlFor="doc-id">
-              ID документа <span aria-hidden="true">*</span>
+              ID документа{idEditable ? <span aria-hidden="true"> *</span> : null}
             </label>
-            <input
-              id="doc-id"
-              ref={idRef}
-              className="field__mono"
-              value={fields.id}
-              onChange={(e) => setId(e.target.value)}
-              maxLength={128}
-              required
-              spellCheck={false}
-              autoComplete="off"
-              aria-invalid={invalid(idMessages)}
-              aria-describedby={describedBy("doc-id", idMessages)}
-            />
+            {idEditable ? (
+              <input
+                id="doc-id"
+                ref={idRef}
+                className="field__mono"
+                value={fields.id}
+                onChange={(e) => setId(e.target.value)}
+                maxLength={128}
+                required
+                spellCheck={false}
+                autoComplete="off"
+                aria-invalid={invalid(idMessages)}
+                aria-describedby={describedBy("doc-id", idMessages)}
+              />
+            ) : (
+              <input
+                id="doc-id"
+                ref={idRef}
+                className="field__mono field__readonly"
+                value={fields.id}
+                readOnly
+                placeholder="выделит сервер"
+                aria-invalid={invalid(idMessages)}
+                aria-describedby={describedBy("doc-id", idMessages)}
+              />
+            )}
             <FieldNotes id="doc-id" messages={idMessages} />
           </div>
           <div className="field">
@@ -655,33 +734,33 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
             <FieldNotes id="doc-type" messages={{ issues: typeIssues }} />
           </div>
           <div className="field">
-            <label htmlFor="doc-status">Статус</label>
-            <select
-              id="doc-status"
-              value={fields.status}
-              onChange={(e) => update("status", e.target.value as NewDocumentStatus)}
-              aria-invalid={invalid(statusMessages)}
-              aria-describedby={describedBy("doc-status", statusMessages)}
-            >
-              {NEW_DOCUMENT_STATUSES.map((status) => (
-                <option key={status} value={status} disabled={status === "approved" && fields.origin === "ai_suggestion"}>
-                  {STATUS_LABEL[status]}
-                </option>
-              ))}
-            </select>
+            <span className="field__label" id="doc-status-label">
+              Статус
+            </span>
+            <p className="field__static" aria-labelledby="doc-status-label" aria-describedby={describedBy("doc-status", statusMessages)}>
+              <StatusStamp status={fields.status} />
+            </p>
             <FieldNotes id="doc-status" messages={statusMessages} />
           </div>
           <div className="field">
-            <label htmlFor="doc-owner">
-              Владелец <span aria-hidden="true">*</span>
-            </label>
+            <span className="field__label">Происхождение</span>
+            <p className="field__static">
+              {ORIGIN_LABEL[fields.origin] ?? fields.origin}
+              <span className="muted">
+                {" "}
+                · шаблон v{draft?.template_version ?? template.version ?? 1} закреплён
+              </span>
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor="doc-owner">Владелец</label>
             <input
               id="doc-owner"
               ref={ownerRef}
               value={fields.owner}
               onChange={(e) => update("owner", e.target.value)}
               maxLength={100}
-              required
+              placeholder="не указан — сохранится как unassigned"
               aria-invalid={invalid(ownerMessages)}
               aria-describedby={describedBy("doc-owner", ownerMessages)}
             />
@@ -753,6 +832,12 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
           onToggle={(e) => setAdvancedOpen((e.currentTarget as HTMLDetailsElement).open)}
         >
           <summary>Дополнительно</summary>
+          {!saved ? (
+            <label className="checkbox authoring__manual-id">
+              <input type="checkbox" checked={fields.manualId} onChange={(e) => setManualId(e.target.checked)} />
+              <span>Задать ID вручную (например, при переносе документа с уже известным ID)</span>
+            </label>
+          ) : null}
           <div className="authoring__grid">
             <div className="field field--wide">
               <label htmlFor="doc-path">Путь в репозитории</label>
@@ -813,12 +898,12 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
               Текст в формате Markdown <span aria-hidden="true">*</span>
             </label>
             <MarkdownToolbar textareaRef={bodyRef} value={fields.body} onChange={(value) => update("body", value)} />
-            <textarea
+            <WikiLinkTextarea
               id="doc-body"
-              ref={bodyRef}
+              textareaRef={bodyRef}
               className="editor__source authoring__textarea"
               value={fields.body}
-              onChange={(e) => update("body", e.target.value)}
+              onValueChange={(value) => update("body", value)}
               spellCheck={false}
               rows={24}
               aria-invalid={invalid(bodyMessages)}
@@ -836,7 +921,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
             ) : (
               <p className="muted authoring__preview-empty">
                 {missingAny
-                  ? "Предпросмотр и проверка появятся, когда заполнены название, ID, владелец и текст."
+                  ? "Предпросмотр и проверка появятся, когда заполнены название и текст."
                   : "Готовим предпросмотр…"}
               </p>
             )}
@@ -860,6 +945,18 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         </details>
       </section>
 
+      {/* Without an AI provider the panel is not shown: the editor itself is the manual path. */}
+      {session?.features.ai_mode === "disabled" ? null : (
+        <DraftAiPanel
+          draftId={saved?.id ?? null}
+          dirty={dirty}
+          locked={locked !== null}
+          body={fields.body}
+          bodyRef={bodyRef}
+          onApplied={reloadSaved}
+        />
+      )}
+
       <section className="authoring__check" aria-labelledby="check-title">
         <h2 id="check-title">Проверка</h2>
         {checkError ? (
@@ -868,7 +965,7 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         <div role="status" aria-live="polite" className="authoring__summary">
           {showSummary ? (
             missingAny ? (
-              <p className="flag">Заполните обязательные поля: название, ID, владельца и текст.</p>
+              <p className="flag">Заполните обязательные поля: название и текст.</p>
             ) : pending === "check" || (checking && !fresh) ? (
               <p className="muted">Проверяем документ…</p>
             ) : check ? (
@@ -919,7 +1016,11 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         <h2 id="authoring-actions-title" className="visually-hidden">
           Действия с черновиком
         </h2>
-        <p className={`save-state${dirty && !locked ? " save-state--dirty" : ""}`} role="status" aria-live="polite">
+        <p
+          className={`save-state${dirty && !locked ? " save-state--dirty" : ""}${saved && !dirty && !locked && pending !== "save" ? " save-state--saved" : ""}`}
+          role="status"
+          aria-live="polite"
+        >
           {saveState}
         </p>
         {actionError ? (
@@ -1000,5 +1101,99 @@ export function DocumentEditor({ template, initial, draft, aiResult = null, noti
         ) : null}
       </section>
     </div>
+  );
+}
+
+// --- AI actions on the draft ------------------------------------------------------------------------
+
+interface DraftAiPanelProps {
+  draftId: string | null;
+  dirty: boolean;
+  locked: boolean;
+  body: string;
+  bodyRef: { current: HTMLTextAreaElement | null };
+  onApplied: () => Promise<void>;
+}
+
+/**
+ * Contextual AI on a SAVED draft: metadata, related documents, completeness, improve a section, summarize,
+ * explain the selection. Proposals refer to the saved version; an accepted proposal saves the draft on the
+ * server (new version), after which the editor reloads it.
+ */
+function DraftAiPanel({ draftId, dirty, locked, body, bodyRef, onApplied }: DraftAiPanelProps) {
+  const state = useAiProposal((p) => {
+    if (p.result_draft_id && p.result_draft_id === draftId) void onApplied();
+  });
+  const headings = sectionHeadings(body);
+  const [section, setSection] = useState("");
+  const chosen = headings.includes(section) ? section : (headings[0] ?? "");
+  const id = draftId ?? "";
+  const selection = () => {
+    const el = bodyRef.current;
+    return el ? el.value.slice(el.selectionStart, el.selectionEnd).trim() : "";
+  };
+  const actions: AiAction[] = [
+    { key: "meta", label: "Предложить метаданные", build: () => ({ kind: "suggest_metadata", draft_id: id }) },
+    { key: "related", label: "Найти связанные", build: () => ({ kind: "find_related", draft_id: id }) },
+    { key: "complete", label: "Проверить полноту", build: () => ({ kind: "check_completeness", draft_id: id }) },
+    {
+      key: "improve",
+      label: "Улучшить раздел",
+      disabled: !chosen,
+      hint: "В тексте нет разделов (## Заголовок).",
+      build: () => (chosen ? { kind: "improve_section", draft_id: id, section: chosen } : null),
+    },
+    { key: "summarize", label: "Пересказать", build: () => ({ kind: "summarize", draft_id: id }) },
+    {
+      key: "explain",
+      label: "Объяснить выделенное",
+      hint: "Выделите фрагмент текста в редакторе, затем нажмите «Объяснить выделенное».",
+      build: () => {
+        const text = selection();
+        return text.length >= 3 ? { kind: "explain", draft_id: id, selection: text.slice(0, 8000) } : null;
+      },
+    },
+  ];
+  let blocked: ReactNode = null;
+  if (locked) blocked = "Черновик больше нельзя редактировать — предложения ИИ к нему не применяются.";
+  else if (!draftId || dirty) {
+    blocked = draftId
+      ? "Есть несохранённые изменения. ИИ предлагает правки к сохранённой версии черновика — нажмите «Сохранить черновик»."
+      : "ИИ работает с сохранённым черновиком: сначала нажмите «Сохранить черновик».";
+  }
+  return (
+    <AiAssistPanel
+      id="draft-ai"
+      title="ИИ-помощник по черновику"
+      state={state}
+      actions={actions}
+      blocked={blocked}
+      intro={
+        <p className="muted">
+          Предложения с основаниями из утверждённых документов. Принимайте пункты по отдельности: принятые сохраняются в
+          черновик (не в базу знаний), отклонённые ничего не меняют.
+        </p>
+      }
+      controls={
+        headings.length > 0 ? (
+          <div className="field ai-assist__section">
+            <label htmlFor="ai-section">Раздел для «Улучшить раздел»</label>
+            <select id="ai-section" value={chosen} onChange={(e) => setSection(e.target.value)}>
+              {headings.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null
+      }
+      appliedNote={() => (
+        <Notice tone="success">
+          Принятые пункты сохранены в черновик — редактор загрузил обновлённую версию. Отклонённые пункты ничего не
+          изменили.
+        </Notice>
+      )}
+    />
   );
 }

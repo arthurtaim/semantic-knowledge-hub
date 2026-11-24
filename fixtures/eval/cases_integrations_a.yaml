@@ -1,0 +1,168 @@
+# Gold evaluation cases — group C1: integrations (DEMO-INT-001…009).
+# Synthetic only (docs/MOCK_KNOWLEDGE_BASE.md §6). facts_required strings appear verbatim in an expected document.
+
+- case_id: KE-INTA-001
+  category: exact_id
+  question: "DEMO-INT-002"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-002]
+  k: 1
+  facts_required: ["MAP_ARIS_PROCESS"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Near miss: DEMO-INT-003 mentions DEMO-INT-002 in its text and constrains it; the exact id must rank first."
+
+- case_id: KE-INTA-002
+  category: exact_id
+  question: "DEMO-INT-008"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-008]
+  k: 1
+  facts_required: ["rpt_unresolved_refs"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact id of the catalog → dataset reference resolution flow."
+
+- case_id: KE-INTA-003
+  category: synonym
+  question: "Как устроено сопоставление полей ARIS с атрибутами каталога?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-002]
+  k: 3
+  facts_required: ["aris_object_guid", "process_id"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "«сопоставление полей» is a synonym of mapping / маппинг; the document title says «маппинг полей»."
+
+- case_id: KE-INTA-004
+  category: synonym
+  question: "How are source schema version changes propagated to downstream datasets?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-009]
+  k: 3
+  facts_required: ["version_changed", "MAJOR.MINOR"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "English question against a Russian document (aliases: version propagation)."
+
+- case_id: KE-INTA-005
+  category: abbreviation
+  question: "CDC из CRM в MDM: через какой топик идут события и какая задержка ожидается?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-006]
+  k: 3
+  facts_required: ["demo.metadata.changes.v1", "до 15 минут"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "CDC = Change Data Capture, MDM = Master Data Management. Source profiles DEMO-SRC-004/008 also match; the flow itself must be in the top 3."
+
+- case_id: KE-INTA-006
+  category: abbreviation
+  question: "E-VAL-002 в пакете ARIS — куда попадает пакет, если проверку прошло слишком мало записей?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-003]
+  k: 3
+  facts_required: ["q_aris_rejected"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "Error code E-VAL-002 is defined in DEMO-INT-011; the ARIS-specific quarantine rule lives in DEMO-INT-003."
+
+- case_id: KE-INTA-007
+  category: metadata_filter
+  question: "Какие интеграции интеграционной команды связаны со сборками изделий?"
+  method: catalog
+  filters: {owner: demo-integration-team, tag: assembly}
+  expected_doc_ids: [DEMO-INT-004, DEMO-INT-005]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set. Tag `assembly` is carried only by the CATIA flow and its mapping; DEMO-INT-013 has tag catia but not assembly."
+
+- case_id: KE-INTA-008
+  category: metadata_filter
+  question: "Утверждённые документы потока ARIS → Catalog"
+  method: catalog
+  filters: {owner: demo-integration-team, status: approved, tag: aris-catalog}
+  expected_doc_ids: [DEMO-INT-001, DEMO-INT-002, DEMO-INT-003]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Exact set. DEMO-INT-014/017/018 carry tag aris but not aris-catalog; DEMO-INT-018 is deprecated anyway."
+
+- case_id: KE-INTA-009
+  category: relation
+  question: "Какие документы накладывают ограничения на маппинг ARIS → Catalog?"
+  method: graph_neighbors
+  start: DEMO-INT-002
+  relation: constrains
+  direction: in
+  max_depth: 1
+  expected_doc_ids: [DEMO-INT-003, DEMO-GOV-006]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Incoming `constrains` edges: validation constraints (DEMO-INT-003) and referential integrity (DEMO-GOV-006)."
+
+- case_id: KE-INTA-010
+  category: relation
+  question: "Как стандарт полноты связан с маппингом полей ARIS?"
+  method: graph_path
+  start: DEMO-GOV-003
+  expected_path: [DEMO-GOV-003, DEMO-INT-003, DEMO-INT-002]
+  max_depth: 3
+  expected_doc_ids: [DEMO-GOV-003, DEMO-INT-003, DEMO-INT-002]
+  facts_required: []
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Unique shortest path: DEMO-INT-003 depends_on DEMO-GOV-003 and constrains DEMO-INT-002."
+
+- case_id: KE-INTA-011
+  category: relation
+  question: "Какой поток наполняет данными ERP маппинг, по которому считается покрытие источников?"
+  method: search
+  filters: {}
+  expected_doc_ids: [DEMO-INT-007, DEMO-SEM-006]
+  k: 5
+  facts_required: ["MAP_LOGICAL_PHYSICAL", "MAP_ERP_ATTRIBUTE"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: true
+  notes: "Multi-hop: Source Coverage (DEMO-SEM-011) is derived_from DEMO-SEM-006, which DEMO-INT-007 maps_to."
+
+- case_id: KE-INTA-012
+  category: synthesis
+  question: "Как запись о процессе попадает из ARIS в каталог: как часто запускается поток, какими порциями и откуда берётся идентификатор процесса?"
+  method: assistant
+  expected_doc_ids: [DEMO-INT-001, DEMO-INT-002]
+  facts_required: ["каждые 6 часов", "500 записей", "MAP_ARIS_PROCESS"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Schedule and batch size from the flow overview, id lookup from the mapping. Baseline 2026-11-23 (mock retriever) cites DEMO-SRC-002 instead of DEMO-INT-002 for the id lookup: known synthesis gap, not a wrong case."
+
+- case_id: KE-INTA-013
+  category: synthesis
+  question: "Пакет ARIS прошёл валидацию с долей 96 %. Достаточно ли этого для требований к полноте датасета Process Overview?"
+  method: assistant
+  expected_doc_ids: [DEMO-INT-003]
+  facts_required: ["95 %", "98 %"]
+  facts_forbidden: []
+  expected_no_answer: false
+  holdout: false
+  notes: "Batch gate 95 % (GOV-003 default) vs scope-specific 98 % for process_id, process_name, owner_role in DEMO-SEM-009: a scope difference, not a contradiction."

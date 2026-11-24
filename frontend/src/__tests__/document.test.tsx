@@ -30,6 +30,18 @@ describe("Document detail", () => {
     );
   });
 
+  it("links the document's neighbourhood on the knowledge graph", async () => {
+    mockApi([
+      { path: "/api/documents/SEM-INT-ARIS-001", body: arisDetail },
+      { path: "/api/drafts?document_id=SEM-INT-ARIS-001", body: drafts },
+    ]);
+    renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    expect(await screen.findByRole("link", { name: "Связи на графе" })).toHaveAttribute(
+      "href",
+      "/graph?focus=SEM-INT-ARIS-001",
+    );
+  });
+
   it("sanitizes hostile HTML before rendering", async () => {
     mockApi([
       { path: "/api/documents/SEM-INT-ARIS-001", body: arisDetail },

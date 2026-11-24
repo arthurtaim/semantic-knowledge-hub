@@ -64,9 +64,25 @@ def make_doc(
     )
 
 
+# Unit tests run against the 9 CORE documents (top level of fixtures/knowledge) so that they check the
+# application's behaviour, not the content of the large synthetic base. The full base (83 documents in
+# sub-folders, docs/MOCK_KNOWLEDGE_BASE.md) is covered by `full_workspace`, test_knowledge_base.py and
+# the deterministic evaluation (app.evaluation.knowledge_eval).
+CORE_FIXTURES = sorted(FIXTURES_DIR.glob("*.md"))
+
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     knowledge = tmp_path / "workspace" / "knowledge"
+    knowledge.mkdir(parents=True)
+    for path in CORE_FIXTURES:
+        shutil.copyfile(path, knowledge / path.name)
+    return knowledge
+
+
+@pytest.fixture
+def full_workspace(tmp_path: Path) -> Path:
+    knowledge = tmp_path / "full-workspace" / "knowledge"
     shutil.copytree(FIXTURES_DIR, knowledge)
     return knowledge
 

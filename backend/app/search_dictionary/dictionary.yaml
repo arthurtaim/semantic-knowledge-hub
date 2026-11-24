@@ -1,0 +1,89 @@
+# Versioned domain search dictionary (M5.6.2 §B1). Synonym groups and abbreviations used to EXPAND a
+# query term into equivalent spellings (RU/EN). Groups are deliberately narrow: a word that is common in
+# ordinary text (e.g. «проверка», «обновление», «данные») is NOT a synonym of a domain term.
+# Changing this file changes retrieval: bump `version` and re-run `make knowledge-eval`.
+version: 1
+groups:
+  - id: lineage
+    terms: ["lineage", "data lineage", "линейдж", "происхождение данных", "родословная данных"]
+  - id: mapping
+    terms: ["mapping", "field mapping", "маппинг", "сопоставление полей", "сопоставление атрибутов"]
+  - id: logical_model
+    terms: ["logical model", "логическая модель"]
+  - id: physical_model
+    terms: ["physical model", "физическая модель", "physical table", "физическая таблица"]
+  - id: data_quality
+    terms: ["data quality", "качество данных", "качество метаданных"]
+  - id: completeness
+    terms: ["completeness", "полнота", "заполненность"]
+  - id: consistency
+    terms: ["consistency", "согласованность"]
+  - id: freshness
+    terms: ["freshness", "актуальность", "свежесть данных"]
+  - id: schedule
+    terms: ["schedule", "расписание", "график обновления"]
+  - id: retry
+    terms: ["retry", "повторные попытки", "повторная попытка"]
+  - id: dead_letter
+    terms: ["dead-letter", "dead letter queue", "очередь недоставленных сообщений"]
+  - id: idempotency
+    terms: ["idempotency", "идемпотентность"]
+  - id: deduplication
+    terms: ["deduplication", "дедупликация"]
+  - id: owner
+    terms: ["owner", "владелец"]
+  - id: steward
+    terms: ["steward", "стюард", "data steward"]
+  - id: reviewer
+    terms: ["reviewer", "ревьюер", "рецензент"]
+  - id: template
+    terms: ["template", "шаблон"]
+  - id: dataset
+    terms: ["dataset", "датасет", "набор данных"]
+  - id: source_system
+    terms: ["source system", "система-источник", "система источник"]
+  - id: glossary
+    terms: ["glossary", "глоссарий", "словарь терминов"]
+  - id: revision
+    terms: ["revision", "ревизия"]
+  - id: breaking_change
+    terms: ["breaking change", "несовместимое изменение", "ломающее изменение"]
+  - id: deprecated
+    terms: ["deprecated", "устаревший", "superseded"]
+  - id: approval
+    terms: ["approval", "согласование", "утверждение"]
+  - id: business_process
+    terms: ["business process", "бизнес-процесс"]
+  - id: data_catalog
+    terms: ["data catalog", "каталог данных", "каталог метаданных"]
+  - id: event_hub
+    terms: ["event hub", "шина событий"]
+  - id: validation
+    terms: ["validation", "валидация", "валидационные ограничения"]
+  - id: referential_integrity
+    terms: ["referential integrity", "ссылочная целостность"]
+  - id: archiving
+    terms: ["archiving", "архивирование", "архивация"]
+  - id: provenance
+    terms: ["provenance", "происхождение сведений", "audit trail", "аудиторский след"]
+  - id: contradiction
+    terms: ["conflict", "конфликт", "противоречие"]
+  - id: full_refresh
+    terms: ["full refresh", "полная перезагрузка", "полная выгрузка"]
+abbreviations:
+  - abbr: MDM
+    meanings: ["master data management", "мастер-данные"]
+    # In some ARIS texts «MDM-модель» means a metadata model: the abbreviation is ambiguous.
+    ambiguous_with: ["модель метаданных"]
+  - abbr: CDC
+    meanings: ["change data capture"]
+  - abbr: ADR
+    meanings: ["architecture decision record", "архитектурное решение"]
+    # In the Data Quality Monitor ADR is the metric «Average Daily Rows».
+    ambiguous_with: ["average daily rows"]
+  - abbr: FTS
+    meanings: ["full-text search", "полнотекстовый поиск"]
+  - abbr: DQ
+    meanings: ["data quality", "качество данных"]
+  - abbr: DLQ
+    meanings: ["dead-letter queue", "dead letter queue"]

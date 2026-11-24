@@ -30,6 +30,14 @@ class CorporatePage:
     version: str
     updated_at: datetime | None
     is_mock: bool
+    # M5.6.2: what the source says about authority ("approved" | "draft" | "unknown" — never guessed),
+    # the instance the page id belongs to, the raw storage format (bounded) when the source returns it,
+    # labels, and — only for synthetic fixtures — the curated document a page duplicates.
+    status: str = "unknown"
+    instance: str = ""
+    storage: str | None = None
+    labels: tuple[str, ...] = ()
+    canonical_document_id: str | None = None
 
 
 class CorporateKnowledgeConnector(Protocol):

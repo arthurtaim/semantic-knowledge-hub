@@ -11,7 +11,7 @@ export function CorporatePage() {
   if (error) {
     return (
       <div className="stack">
-        <ErrorState error={error} title={error.status === 404 ? "Страница не найдена или недоступна" : undefined} />
+        <ErrorState error={error} title={error.status === 404 ? "Страница не найдена или недоступна" : undefined} page />
         <Link to="/ask" className="text-link">
           Вернуться к вопросу
         </Link>

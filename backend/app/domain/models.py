@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,12 +12,34 @@ from pydantic import BaseModel, ConfigDict, Field
 class DocType(StrEnum):
     overview = "overview"
     architecture = "architecture"
-    domain = "domain"
+    source = "source"  # a source system profile
+    domain = "domain"  # semantic entities, logical/physical models, mappings
+    dataset = "dataset"
     integration = "integration"
     process = "process"
     decision = "decision"
     standard = "standard"
+    guide = "guide"
     glossary = "glossary"
+
+
+class RelationType(StrEnum):
+    """Typed, directed relation declared by a document (`relations:` in the frontmatter).
+
+    The edge goes FROM the declaring document TO each listed target (see docs/MOCK_KNOWLEDGE_BASE.md).
+    `references` is the implicit type of plain `related_ids`.
+    """
+
+    references = "references"
+    depends_on = "depends_on"
+    consumes = "consumes"
+    produces = "produces"
+    maps_to = "maps_to"
+    derived_from = "derived_from"
+    describes = "describes"
+    constrains = "constrains"
+    supersedes = "supersedes"
+    uses_template = "uses_template"
 
 
 class DocStatus(StrEnum):
@@ -60,6 +82,30 @@ class ValidationIssue(BaseModel):
     field: str | None = None
 
 
+class DeclaredRelation(BaseModel):
+    """One typed edge as written in a document's frontmatter (provenance: the declaring file + field)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    type: RelationType
+    target: str
+    field: str  # `relations.<type>`, `related_ids`, or `body` (an inline WikiLink)
+    line: int | None = None  # body line of a WikiLink
+
+
+class WikiLinkRef(BaseModel):
+    """An inline `[[target#anchor|label]]` of a document body (source location kept for diagnostics)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target: str
+    anchor: str = ""
+    label: str = ""
+    line: int
+    excerpt: str
+    id_like: bool
+
+
 class DocumentRecord(BaseModel):
     """A parsed knowledge document as returned by a KnowledgeRepository adapter."""
 
@@ -72,6 +118,13 @@ class DocumentRecord(BaseModel):
     owner: str
     tags: tuple[str, ...]
     related_ids: tuple[str, ...] = ()
+    relations: tuple[DeclaredRelation, ...] = ()
+    wikilinks: tuple[WikiLinkRef, ...] = ()
+    aliases: tuple[str, ...] = ()
+    version: str | None = None  # human document version (e.g. "1.2"); `revision` is the content revision
+    synthetic: bool = False
+    template_id: str | None = None
+    template_version: int | None = None
     source_refs: tuple[str, ...] = ()
     reviewed_at: date | None = None
     summary: str | None = None
@@ -123,6 +176,9 @@ class DocumentSummary(BaseModel):
     # "stale": the last sync could not refresh this document; it is shown with its last known revision.
     index_state: IndexState = "current"
     highlights: list[HighlightSegment] | None = None  # present when listed via a text query
+    match_reasons: list[str] | None = None  # "why matched" (text query only)
+    related_via: str | None = None  # found through a declared relation of this document (graph expansion)
+    version: str | None = None
 
 
 class RelatedLink(BaseModel):
@@ -143,6 +199,10 @@ class DocumentDetail(DocumentSummary):
     sections: list[Section]
     warnings: list[ValidationIssue]
     extra_metadata: dict[str, str]
+    # M5.6.3 metadata panel: pinned template and the inline links found in the body.
+    template_id: str | None = None
+    template_version: int | None = None
+    wikilink_count: int = 0
 
 
 class DocumentPage(BaseModel):
@@ -150,6 +210,7 @@ class DocumentPage(BaseModel):
     total: int
     page: int
     size: int
+    notes: list[str] = Field(default_factory=list)  # e.g. an ambiguous abbreviation in the query
 
 
 class FacetCount(BaseModel):
@@ -182,6 +243,9 @@ class SearchResult(BaseModel):
     section_anchor: str | None = None
     score: float
     is_demo: bool
+    match_reasons: list[str] = Field(default_factory=list)
+    matched_fields: list[str] = Field(default_factory=list)
+    related_via: str | None = None
 
 
 class ScopeStatus(BaseModel):
@@ -214,6 +278,14 @@ class Citation(BaseModel):
     retrieved_at: datetime
     is_demo: bool
     app_path: str | None  # in-app link; only for documents the app can open itself
+    # M5.6.2 provenance: kind and namespaced id of the source (local:ID / gitlab:ID /
+    # confluence:<instance>:<page>:<version>), authority as an EXTERNAL source states it
+    # (approved | draft | unknown), the fragment of the retrieved snapshot and its hash.
+    source_kind: Literal["local_markdown", "gitlab_approved", "confluence_mcp"] | None = None
+    source_id: str | None = None
+    external_status: str | None = None
+    fragment_id: str | None = None
+    content_hash: str | None = None
 
 
 class ExcludedSource(BaseModel):
@@ -227,6 +299,15 @@ def _default_scopes() -> list[SearchScope]:
     return ["team"]
 
 
+class ConversationTurnIn(BaseModel):
+    """A previous turn of the same conversation, sent back by the client (the server keeps no chat state)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=2000)
+    answer: str = Field(max_length=4000)
+
+
 class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -234,17 +315,26 @@ class AskRequest(BaseModel):
     sources: list[SearchScope] = Field(default_factory=_default_scopes, min_length=1, max_length=2)
     include_drafts: bool = False
     include_deprecated: bool = False
+    # Force the external (Confluence) search even when the team documents look sufficient.
+    search_external: bool = False
+    # Earlier turns (oldest first). Context for the model only — never evidence, never stored.
+    history: list[ConversationTurnIn] = Field(default_factory=list, max_length=6)
 
 
 class AskResponse(BaseModel):
     answer: str
-    mode: Literal["mock", "internal_api", "disabled"]
+    mode: Literal["mock", "internal_api", "claude_cli", "disabled"]
     confidence: Confidence
     citations: list[Citation]
     warnings: list[str]
     excluded_sources: list[ExcludedSource] = Field(default_factory=list)
     scopes: list[ScopeStatus] = Field(default_factory=list)
     unmatched_terms: list[str] = Field(default_factory=list)
+    # M5.6.2: what produced this answer — reproducible from the trace (no answer text is stored).
+    retrieval_trace_id: str | None = None
+    index_generation: str | None = None
+    instructions_version: str | None = None
+    external: dict[str, Any] | None = None  # external retrieval summary (called, trigger, calls, cache…)
 
 
 IntegrationTarget = Literal["none", "local", "mock", "real"]
@@ -283,6 +373,11 @@ class SyncStatus(BaseModel):
     indexed_documents: int
     indexed_version: str | None
     indexed_at: datetime | None
+    # M5.6.2: generation of the served index (monotonic), the last structured sync outcome, dictionaries.
+    generation: int = 0
+    last_sync: dict[str, Any] | None = None
+    search_dictionary: str | None = None
+    template_registry: str | None = None
 
 
 class IntegrationsResponse(BaseModel):

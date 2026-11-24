@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.adapters.ai.base import AIProvider
+from app.adapters.ai.claude_cli import ClaudeCodeCLIProvider
 from app.adapters.ai.mock import DisabledAIProvider, MockAIProvider
 from app.adapters.ai.openai_compatible import OpenAICompatibleAIProvider
 from app.adapters.confluence_rest.client import ConfluenceDCClient
@@ -28,15 +29,24 @@ from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
 from app.authz import AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
 from app.config import Settings, tls_verify
+from app.domain.instructions import DEFAULT_INSTRUCTIONS_DIR, RuntimeInstructions, load_instructions
 from app.domain.models import UserContext
-from app.domain.templates import DEFAULT_TEMPLATES_DIR, load_templates
+from app.domain.template_registry import TemplateRegistry
+from app.domain.templates import DEFAULT_TEMPLATES_DIR
+from app.services.ai_workflows import AiProposalStore, AiWorkflowService
 from app.services.assistant import AssistantService
 from app.services.authoring import AuthoringService
+from app.services.discovery import DiscoveryStore
+from app.services.external import ExternalEvidenceService, ExternalLimits
+from app.services.graph import GraphService
 from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
+from app.services.links import LinkService
+from app.services.metadata import MetadataService
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
 from app.services.search import SearchService
+from app.services.template_hub import TemplateHubService
 
 logger = logging.getLogger("skh.container")
 
@@ -65,6 +75,14 @@ class Container:
     policy: AuthorizationPolicy
     publication_store: PublicationStore
     publications: PublicationService
+    graph: GraphService
+    links: LinkService
+    metadata: MetadataService
+    template_hub: TemplateHubService
+    ai_workflows: AiWorkflowService
+    discovery: DiscoveryStore | None = None
+    external: ExternalEvidenceService | None = None
+    instructions: RuntimeInstructions | None = None
 
     def demo_user(self) -> UserContext:
         return UserContext(
@@ -122,11 +140,19 @@ def build_repository(settings: Settings) -> KnowledgeRepository:
     )
 
 
-def build_ai(settings: Settings) -> AIProvider:
+def build_ai(settings: Settings, instructions: RuntimeInstructions | None = None) -> AIProvider:
     if settings.ai_provider == "mock":
         return MockAIProvider()
     if settings.ai_provider == "disabled":
         return DisabledAIProvider()
+    if settings.ai_provider == "claude_cli":
+        return ClaudeCodeCLIProvider(
+            worker_url=settings.claude_cli_worker_url,
+            timeout_seconds=settings.claude_cli_timeout_seconds,
+            draft_timeout_seconds=settings.claude_cli_draft_timeout_seconds,
+            max_context_chars=settings.ai_max_context_chars,
+            instructions=instructions,
+        )
     return OpenAICompatibleAIProvider(
         base_url=settings.ai_base_url,
         model=settings.ai_model,
@@ -137,6 +163,7 @@ def build_ai(settings: Settings) -> AIProvider:
         max_context_chars=settings.ai_max_context_chars,
         max_response_bytes=settings.ai_max_response_bytes,
         verify=_verify(settings, settings.ai_ca_bundle),
+        instructions=instructions,
     )
 
 
@@ -151,7 +178,11 @@ def build_corporate(settings: Settings) -> CorporateKnowledgeConnector:
     if settings.confluence_connector == "disabled":
         return DisabledCorporateConnector()
     if settings.confluence_connector == "mock":
-        return MockCorporateConnector(settings.confluence_space_list or None)
+        return MockCorporateConnector(
+            settings.confluence_space_list or None,
+            corpus_path=settings.confluence_mock_pages_file,
+            state_path=settings.confluence_mock_state_file,
+        )
     result_map = parse_result_map(settings.confluence_mcp_result_map)
     return ConfluenceMCPConnector(
         McpClient(
@@ -213,12 +244,52 @@ def build_policy(settings: Settings) -> AuthorizationPolicy:
 def build_container(settings: Settings) -> Container:
     repository = build_repository(settings)
     search_provider = SqliteFtsSearchProvider(settings.search_index_file)
-    ai = build_ai(settings)
+    instructions = load_instructions(
+        settings.resolve_path(Path(settings.assistant_instructions_dir))
+        if settings.assistant_instructions_dir
+        else DEFAULT_INSTRUCTIONS_DIR
+    )
+    ai = build_ai(settings, instructions)
     corporate = build_corporate(settings)
     proposal_publisher = build_proposal_publisher(settings, repository)
     confluence_publisher = build_confluence_publisher(settings)
     tasks = DisabledTaskSystem()
     store = ProposalStore(settings.app_state_file)
+    discovery = (
+        DiscoveryStore(
+            settings.app_state_file,
+            retention_hours=settings.discovery_retention_hours,
+            store_query_text=settings.discovery_store_query_text,
+            key_file=(
+                settings.resolve_path(Path(settings.discovery_hmac_key_file))
+                if settings.discovery_hmac_key_file
+                else settings.app_state_file.parent / "discovery.key"
+            ),
+        )
+        if settings.discovery_enabled
+        else None
+    )
+    external = (
+        ExternalEvidenceService(
+            corporate,
+            discovery,
+            ExternalLimits(
+                candidates=settings.external_candidates,
+                fetches=settings.external_fetches,
+                fragments=settings.external_fragments,
+                context_chars=settings.external_context_chars,
+                cache_pages=settings.external_cache_pages,
+                cache_ttl_seconds=settings.external_cache_ttl_seconds,
+                concurrency=settings.external_concurrency,
+                timeout_seconds=settings.external_timeout_seconds,
+                deadline_seconds=settings.external_deadline_seconds,
+                breaker_failures=settings.external_breaker_failures,
+                breaker_reset_seconds=settings.external_breaker_reset_seconds,
+            ),
+        )
+        if corporate.enabled
+        else None
+    )
     knowledge = KnowledgeService(repository, search_provider, review_stale_days=settings.review_stale_days)
     knowledge_prefix = settings.gitlab_knowledge_path if settings.knowledge_backend == "gitlab" else ""
     templates_dir = (
@@ -239,14 +310,52 @@ def build_container(settings: Settings) -> Container:
         publish_statuses=settings.confluence_publish_status_list,
     )
     publications.recover()
+    templates = TemplateRegistry(templates_dir, settings.app_state_file)
+    knowledge.on_refresh(lambda: templates.reload())
+    knowledge.template_registry_label = lambda: templates.label
     authoring = AuthoringService(
-        templates=load_templates(templates_dir),
+        templates=templates,
         repository=repository,
         knowledge=knowledge,
         store=store,
         ai=ai,
         knowledge_prefix=knowledge_prefix,
         max_document_bytes=settings.max_document_bytes,
+    )
+    assistant_service = AssistantService(
+        knowledge,
+        corporate,
+        ai,
+        max_context_chars=settings.ai_max_context_chars,
+        external=external,
+        discovery=discovery,
+        instructions_version=lambda: instructions.version,
+    )
+    proposal_service = ProposalService(
+        store,
+        repository,
+        proposal_publisher,
+        ai,
+        max_document_bytes=settings.max_document_bytes,
+        knowledge_prefix=knowledge_prefix,
+        app_public_url=settings.app_public_url,
+        on_merged=lambda: knowledge.refresh(),
+        authoring=authoring,
+        after_sync=publications.on_document_merged,
+    )
+    graph_service = GraphService(knowledge, templates.graph_entries)
+    link_service = LinkService(knowledge)
+    metadata_service = MetadataService(knowledge, authoring, repository)
+    ai_workflows = AiWorkflowService(
+        store=AiProposalStore(settings.app_state_file),
+        ai=ai,
+        knowledge=knowledge,
+        authoring=authoring,
+        proposals=proposal_service,
+        metadata=metadata_service,
+        links=link_service,
+        graph=graph_service,
+        assistant=assistant_service,
     )
     return Container(
         settings=settings,
@@ -260,19 +369,8 @@ def build_container(settings: Settings) -> Container:
         proposal_store=store,
         knowledge=knowledge,
         search=SearchService(knowledge, corporate),
-        assistant=AssistantService(knowledge, corporate, ai, max_context_chars=settings.ai_max_context_chars),
-        proposals=ProposalService(
-            store,
-            repository,
-            proposal_publisher,
-            ai,
-            max_document_bytes=settings.max_document_bytes,
-            knowledge_prefix=knowledge_prefix,
-            app_public_url=settings.app_public_url,
-            on_merged=lambda: knowledge.refresh(),
-            authoring=authoring,
-            after_sync=publications.on_document_merged,
-        ),
+        assistant=assistant_service,
+        proposals=proposal_service,
         authoring=authoring,
         publication_store=publication_store,
         publications=publications,
@@ -287,4 +385,12 @@ def build_container(settings: Settings) -> Container:
             tasks=tasks,
         ),
         policy=build_policy(settings),
+        graph=graph_service,
+        links=link_service,
+        metadata=metadata_service,
+        ai_workflows=ai_workflows,
+        template_hub=TemplateHubService(authoring, knowledge),
+        discovery=discovery,
+        external=external,
+        instructions=instructions,
     )

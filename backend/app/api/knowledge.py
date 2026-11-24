@@ -120,7 +120,7 @@ async def search(
     if "corporate" in ordered_scopes:
         ensure_allowed(container.policy, user, Action.read_corporate)
     filters = _filters(type, status, owner, None, tag)
-    await container.knowledge.snapshot(user)
+    # The search service takes the (synced) snapshot itself — one refresh check per request.
     return await container.search.search(user, q, ordered_scopes, limit, filters)
 
 

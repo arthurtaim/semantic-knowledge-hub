@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
+from collections.abc import AsyncGenerator, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 
-from app.adapters.ai.base import AIProvider, AIProviderError, AnswerOptions, ContextPassage, ProviderAnswer
+from app.adapters.ai.base import (
+    AIProvider,
+    AIProviderError,
+    AnswerComplete,
+    AnswerDelta,
+    AnswerOptions,
+    ContextPassage,
+    ConversationTurn,
+    ProviderAnswer,
+    StreamingAIProvider,
+    ai_error_status,
+)
 from app.adapters.corporate.base import CorporateKnowledgeConnector
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.adapters.search.base import SearchFilters
@@ -21,7 +36,9 @@ from app.domain.models import (
     UserContext,
 )
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
-from app.domain.text import QueryTerm, analyze_query, term_matches_text, tokenize
+from app.domain.text import QueryTerm, term_matches_text, tokenize
+from app.services.discovery import DiscoveryStore, SourceLink, acl_scope_key
+from app.services.external import ExternalEvidenceService, ExternalRetrieval
 from app.services.knowledge import KnowledgeService
 from app.services.search import corporate_scope
 
@@ -56,6 +73,45 @@ def prepare_passage_text(text: str) -> tuple[str, bool]:
     return redact_prompt_injection(neutralize_citation_markers(text))
 
 
+@dataclass
+class _Prepared:
+    terms: list[QueryTerm]
+    unmatched: list[QueryTerm]
+    passages: list[ContextPassage]
+    warnings: list[str]
+    excluded: list[ExcludedSource]
+    scopes: list[ScopeStatus]
+    options: AnswerOptions
+    normalized_query: str = ""
+    mode: str = "local_only"
+    external: ExternalRetrieval | None = None
+    index_generation: str = ""
+
+
+def local_insufficiency(
+    passages: list[ContextPassage], terms: list[QueryTerm], matched: set[str]
+) -> str | None:
+    """Why the team documents alone do not look sufficient (policy LOCAL_SUFFICIENCY v1), or None.
+    Deterministic and explainable: it decides whether the external source is consulted at all."""
+    if not terms:
+        return None
+    if not passages:
+        return "no_local_passages"
+    unmatched = [t for t in terms if t.stem not in matched]
+    if any(t.is_entity_like for t in unmatched):
+        return "unmatched_entities"
+    if len(unmatched) * 3 > len(terms):
+        return "low_term_coverage"
+    # Words scattered over several documents are not an answer: one passage must cover ≥ 2/3 of the question.
+    best = max(
+        sum(1 for t in terms if term_matches_text(t, tokenize(f"{p.title} {p.section or ''} {p.text}")))
+        for p in passages
+    )
+    if best * 3 < len(terms) * 2:
+        return "no_single_local_passage"
+    return None
+
+
 def _allowed_statuses(req: AskRequest) -> set[DocStatus]:
     allowed = {DocStatus.approved}
     if req.include_drafts:
@@ -73,25 +129,96 @@ class AssistantService:
         provider: AIProvider,
         *,
         max_context_chars: int = 12000,
+        external: ExternalEvidenceService | None = None,
+        discovery: DiscoveryStore | None = None,
+        instructions_version: Callable[[], str] = lambda: "-",
     ) -> None:
         self._knowledge = knowledge
         self._connector = connector
         self._provider = provider
         self._max_context_chars = max_context_chars
+        self._external = external
+        self._discovery = discovery
+        self._instructions_version = instructions_version
 
     @property
     def provider(self) -> AIProvider:
         return self._provider
 
     async def ask(self, user: UserContext, req: AskRequest) -> AskResponse:
+        prepared = await self._prepare(user, req)
+        if prepared.passages:
+            result = await self._provider.answer(req.question, prepared.passages, prepared.options)
+        else:
+            result = self._no_passages_result(prepared)
+        return self._record(user, req, prepared, self._finish(req, prepared, result))
+
+    async def ask_stream(self, user: UserContext, req: AskRequest) -> AsyncGenerator[dict[str, Any], None]:
+        """Same pipeline as `ask`, as events: status stages, PRELIMINARY text deltas (only from providers
+        that stream; never validated, the UI labels them as such) and one `final` validated AskResponse.
+        Provider errors become an `error` event. Closing the iterator cancels the generation."""
+        yield {"type": "status", "stage": "retrieving"}
+        try:
+            prepared = await self._prepare(user, req)
+            if not prepared.passages:
+                result = self._no_passages_result(prepared)
+            else:
+                yield {
+                    "type": "status",
+                    "stage": "generating",
+                    "passages": len(prepared.passages),
+                    "provider": self._provider.mode,
+                }
+                stream = getattr(self._provider, "stream_answer", None)
+                if stream is None:
+                    result = await self._provider.answer(req.question, prepared.passages, prepared.options)
+                else:
+                    final: ProviderAnswer | None = None
+                    async with contextlib.aclosing(
+                        cast(StreamingAIProvider, self._provider).stream_answer(
+                            req.question, prepared.passages, prepared.options
+                        )
+                    ) as events:
+                        async for event in events:
+                            if isinstance(event, AnswerDelta):
+                                yield {"type": "delta", "text": event.text}
+                            elif isinstance(event, AnswerComplete):
+                                final = event.answer
+                    if final is None:
+                        raise AIProviderError("ai_invalid_response", "Провайдер не вернул ответ.")
+                    result = final
+                yield {"type": "status", "stage": "validating"}
+            response = self._record(user, req, prepared, self._finish(req, prepared, result))
+        except AIProviderError as exc:
+            logger.info("ask_stream failed mode=%s code=%s", self._provider.mode, exc.code)
+            yield {
+                "type": "error",
+                "code": exc.code,
+                "message": exc.message,
+                "status": ai_error_status(exc.code),
+            }
+            return
+        yield {"type": "final", "response": response.model_dump(mode="json")}
+
+    def _no_passages_result(self, prepared: _Prepared) -> ProviderAnswer:
+        return ProviderAnswer(
+            answer=self._no_passages_message(prepared.terms, prepared.unmatched),
+            confidence="insufficient_evidence",
+            evidence=[],
+        )
+
+    async def _prepare(self, user: UserContext, req: AskRequest) -> _Prepared:
         if self._provider.mode == "disabled":
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
             )
-        terms = analyze_query(req.question)
+        # A follow-up ("а какие у неё ограничения?") is retrieved together with the previous question.
+        retrieval_text = req.question if not req.history else f"{req.question} {req.history[-1].question}"
+        analysis = self._knowledge.retrieval.analyze(retrieval_text)
+        terms = analysis.terms
         allowed = _allowed_statuses(req)
         excluded_statuses = set(DocStatus) - allowed
-        warnings: list[str] = []
+        warnings: list[str] = [*analysis.notes]
         scopes: list[ScopeStatus] = []
         passages: list[ContextPassage] = []
         excluded: list[ExcludedSource] = []
@@ -106,21 +233,26 @@ class AssistantService:
             search = self._knowledge.search_provider
             team_filters = SearchFilters(statuses=frozenset(s.value for s in allowed))
             seen: set[tuple[str, str]] = set()
-            for chunk in search.search_chunks(terms, team_filters, MAX_PASSAGES * 2):
-                doc = snapshot.get(chunk.document_id)
-                key = (chunk.document_id, chunk.section_anchor)
-                if doc is None or key in seen or len(passages) >= MAX_PASSAGES or budget <= 0:
+            selected, _ranked = self._knowledge.retrieval.passages(
+                snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
+            )
+            for passage in selected:
+                doc = passage.document
+                key = (doc.id, passage.section_anchor or "")
+                if key in seen or len(passages) >= MAX_PASSAGES or budget <= 0:
                     continue
                 seen.add(key)
-                text, suspicious = prepare_passage_text(truncate(chunk.text, min(MAX_PASSAGE_CHARS, budget)))
+                text, suspicious = prepare_passage_text(
+                    truncate(passage.text, min(MAX_PASSAGE_CHARS, budget))
+                )
                 budget -= len(text)
                 passages.append(
                     ContextPassage(
                         cid=next_cid(),
                         document_id=doc.id,
                         title=doc.title,
-                        section=chunk.section if chunk.section_anchor else None,
-                        section_anchor=chunk.section_anchor or None,
+                        section=passage.section if passage.section_anchor else None,
+                        section_anchor=passage.section_anchor or None,
                         status=doc.status,
                         source_type=doc.source,
                         source_uri=doc.source_uri,
@@ -140,7 +272,79 @@ class AssistantService:
                 )
             )
 
-        if "corporate" in req.sources:
+        mode = "local_only"
+        external_result: ExternalRetrieval | None = None
+        if "corporate" in req.sources and self._external is not None and self._external.enabled:
+            connector_status = await self._connector.status()
+            mode = "external" if "team" not in req.sources else "local_then_external"
+            reason = (
+                "external_scope_selected"
+                if mode == "external"
+                else "explicit_request"
+                if req.search_external
+                else local_insufficiency(passages, terms, matched_terms)
+            )
+            if reason is None:
+                scopes.append(
+                    ScopeStatus(
+                        scope="corporate",
+                        state=connector_status.state,
+                        message="Не понадобились: в документах команды найдено достаточно подтверждений.",
+                    )
+                )
+            else:
+                snapshot_for_dedup = await self._knowledge.snapshot(user)
+                external_result = await self._external.retrieve(
+                    user, req.question, terms, snapshot_for_dedup, trigger=reason
+                )
+                warnings.extend(external_result.warnings)
+                scopes.append(
+                    ScopeStatus(
+                        scope="corporate",
+                        state="error" if external_result.degraded else connector_status.state,
+                        message=(
+                            "Корпоративный источник недоступен — использованы только документы команды."
+                            if external_result.degraded
+                            else "Mock-коннектор: синтетические страницы, не настоящий Confluence."
+                            if connector_status.state == "mock"
+                            else "Корпоративные источники подключены."
+                        ),
+                    )
+                )
+                ext_budget = max(budget, 0) if mode == "local_then_external" else self._max_context_chars
+                ext_budget = min(
+                    ext_budget or self._external.limits.context_chars, self._external.limits.context_chars
+                )
+                for fragment in external_result.fragments:
+                    if ext_budget <= 0:
+                        break
+                    text, suspicious = prepare_passage_text(
+                        truncate(fragment.text, min(MAX_PASSAGE_CHARS, ext_budget))
+                    )
+                    ext_budget -= len(text)
+                    words = tokenize(f"{fragment.title} {fragment.heading or ''} {fragment.text}")
+                    matched_terms |= {t.stem for t in terms if term_matches_text(t, words)}
+                    passages.append(
+                        ContextPassage(
+                            cid=next_cid(),
+                            document_id=fragment.page_id,
+                            title=fragment.title,
+                            section=fragment.heading,
+                            section_anchor=fragment.anchor,
+                            status=None,
+                            source_type="confluence",
+                            source_uri=fragment.uri,
+                            revision=fragment.version,
+                            text=text,
+                            is_demo=fragment.is_mock,
+                            suspicious=suspicious,
+                            source_key=fragment.source_id,
+                            external_status=fragment.status,
+                            fragment_id=fragment.fragment_id,
+                            content_hash=fragment.content_hash,
+                        )
+                    )
+        elif "corporate" in req.sources:
             pages, status = await corporate_scope(self._connector, req.question, user, limit=3)
             scopes.append(status)
             if status.state in ("disabled", "error"):
@@ -170,29 +374,90 @@ class AssistantService:
                 )
 
         unmatched = [t for t in terms if t.stem not in matched_terms]
-        if passages:
-            result = await self._provider.answer(
-                req.question, passages, AnswerOptions(terms=terms, unmatched_terms=unmatched)
+        history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
+        return _Prepared(
+            terms=terms,
+            unmatched=unmatched,
+            passages=passages,
+            warnings=warnings,
+            excluded=excluded,
+            scopes=scopes,
+            options=AnswerOptions(terms=terms, unmatched_terms=unmatched, history=history),
+            normalized_query=analysis.normalized,
+            mode=mode,
+            external=external_result,
+            index_generation=f"g{self._knowledge.generation}",
+        )
+
+    def _record(
+        self, user: UserContext, req: AskRequest, prepared: _Prepared, response: AskResponse
+    ) -> AskResponse:
+        """Attach provenance (generation, instructions) and, when allowed, store the retrieval trace:
+        which fragments were in context and which were cited — never the answer text."""
+        response.index_generation = prepared.index_generation
+        response.instructions_version = self._instructions_version()
+        response.external = prepared.external.summary() if prepared.external else None
+        if self._discovery is None:
+            return response
+        cited = {c.source_id for c in response.citations if c.source_id}
+        links: dict[str, SourceLink] = {}
+        for passage in prepared.passages:
+            if passage.source_type == "confluence":
+                key = passage.source_key or f"confluence:-:{passage.document_id}:{passage.revision}"
+                kind = "confluence_mcp"
+            else:
+                key = f"{passage.source_type}:{passage.document_id}"
+                kind = "gitlab_approved" if passage.source_type == "gitlab" else "local_markdown"
+            link = links.setdefault(
+                key,
+                SourceLink(
+                    source_kind=kind,
+                    source_id=key,
+                    version=passage.revision,
+                    title=passage.title,
+                    page_id=passage.document_id if kind == "confluence_mcp" else None,
+                    status=passage.external_status
+                    if kind == "confluence_mcp"
+                    else (passage.status.value if passage.status else None),
+                    uri=passage.source_uri,
+                ),
             )
-        else:
-            result = ProviderAnswer(
-                answer=self._no_passages_message(terms, unmatched),
-                confidence="insufficient_evidence",
-                evidence=[],
+            link.fragment_ids.append(passage.fragment_id or passage.section_anchor or passage.cid)
+            link.cited = link.cited or key in cited
+        try:
+            response.retrieval_trace_id = self._discovery.record(
+                acl_scope=acl_scope_key(user),
+                normalized_query=prepared.normalized_query,
+                intent=[t.stem for t in prepared.terms],
+                query_text=req.question,
+                mode=prepared.mode,
+                trigger=prepared.external.trigger if prepared.external else "-",
+                confidence=response.confidence,
+                index_generation=prepared.index_generation,
+                instructions_version=response.instructions_version or "-",
+                external=response.external or {},
+                sources=list(links.values()),
             )
-        warnings.extend(result.warnings)
+        except Exception:
+            logger.exception("retrieval trace not recorded")
+        return response
+
+    def _finish(self, req: AskRequest, prepared: _Prepared, result: ProviderAnswer) -> AskResponse:
+        passages = prepared.passages
+        warnings = [*prepared.warnings, *result.warnings]
         # Server-composed text (no passages, or the extractive mock) may be shown even when insufficient.
         trusted_text = not passages or self._provider.mode == "mock"
         response = self._validated_response(
-            result, passages, warnings, excluded, scopes, unmatched, trusted_text
+            result, passages, warnings, prepared.excluded, prepared.scopes, prepared.unmatched, trusted_text
         )
         logger.info(
-            "ask mode=%s scopes=%s passages=%d citations=%d confidence=%s",
+            "ask mode=%s scopes=%s passages=%d citations=%d confidence=%s history=%d",
             self._provider.mode,
             ",".join(req.sources),
             len(passages),
             len(response.citations),
             response.confidence,
+            len(req.history),
         )
         return response
 
@@ -283,6 +548,7 @@ class AssistantService:
                 )
             elif passage.is_demo:
                 app_path = f"/corporate/{passage.document_id}"
+            external = passage.source_type == "confluence"
             citations.append(
                 Citation(
                     ref=ref,
@@ -298,6 +564,17 @@ class AssistantService:
                     retrieved_at=retrieved_at,
                     is_demo=passage.is_demo,
                     app_path=app_path,
+                    source_kind="confluence_mcp"
+                    if external
+                    else "gitlab_approved"
+                    if passage.source_type == "gitlab"
+                    else "local_markdown",
+                    source_id=(passage.source_key or f"confluence:-:{passage.document_id}:{passage.revision}")
+                    if external
+                    else f"{passage.source_type}:{passage.document_id}",
+                    external_status=(passage.external_status or "unknown") if external else None,
+                    fragment_id=passage.fragment_id or passage.section_anchor,
+                    content_hash=passage.content_hash,
                 )
             )
 
@@ -341,6 +618,18 @@ class AssistantService:
             warnings.append("Среди цитируемых источников есть неутверждённые документы (draft / in_review).")
         if any(c.status == DocStatus.deprecated for c in citations):
             warnings.append("Среди цитируемых источников есть устаревшие документы (deprecated).")
+        unconfirmed = sorted(
+            {
+                c.title
+                for c in citations
+                if c.source_kind == "confluence_mcp" and c.external_status != "approved"
+            }
+        )
+        if unconfirmed:
+            warnings.append(
+                "Сведения со страниц Confluence, статус которых не подтверждён (это не утверждённые документы "
+                "команды): " + "; ".join(unconfirmed) + "."
+            )
         if any(p.suspicious for p in passages):
             warnings.append(
                 "В найденном источнике есть текст, похожий на инструкции для ИИ. Он обработан как данные и не "

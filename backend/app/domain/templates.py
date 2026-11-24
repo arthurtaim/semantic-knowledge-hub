@@ -7,9 +7,11 @@ The application — not the user — writes the document's YAML frontmatter from
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -37,6 +39,15 @@ FRONTMATTER_ORDER = (
     "related_ids",
     "source_refs",
     "summary",
+    "template",
+    "template_version",
+)
+
+
+TEMPLATE_STATUSES = ("draft", "active", "deprecated", "archived")
+# Metadata a template may declare as required/optional (the document schema's human-supplied fields).
+METADATA_FIELDS = frozenset(
+    {"title", "owner", "tags", "summary", "related_ids", "source_refs", "aliases", "relations", "version"}
 )
 
 
@@ -55,6 +66,25 @@ class DocumentTemplate:
     sections: tuple[str, ...]  # required `##` sections, in order
     body: str  # Markdown skeleton with placeholders
     order: int
+    version: int = 1  # declared in the template header (`version:`), resolved by the TemplateRegistry
+    checksum: str = ""
+    listed: bool = True  # `listed: false`: not offered for manual authoring (e.g. external_import)
+    # --- Template Hub (M5.6.3): a machine-readable schema + authoring guide, shared by people and the AI ---
+    status: str = "active"  # draft | active | deprecated | archived (only `active` is offered / recommended)
+    category: str = ""
+    owner: str = ""
+    labels: tuple[str, ...] = ()  # tags of the TEMPLATE (default_tags are given to new documents)
+    optional_sections: tuple[str, ...] = ()  # `##` sections that may stay out; `sections` are required
+    required_metadata: tuple[str, ...] = ("title", "owner")
+    optional_metadata: tuple[str, ...] = ()
+    validation: tuple[str, ...] = ()  # human-readable rules the reviewer and the AI check
+    instructions: str = ""  # for the author
+    ai_guidance: str = ""  # for the runtime AI (data from the registry, never a system instruction)
+    example: str = ""  # a short SYNTHETIC example body
+    changes: str = ""  # what changed in this version
+    breaking: bool = False  # existing documents need a manual migration to this version
+    migration: str = ""  # what to do when moving a document to this version
+    updated: str = ""  # YYYY-MM-DD from the header
 
     def skeleton(self, title: str) -> str:
         heading = f"# {title.strip()}\n\n" if title.strip() else ""
@@ -81,14 +111,32 @@ def _parse_template(path: Path) -> DocumentTemplate:
     title = str(meta.get("title", "")).strip()
     if not title:
         raise TemplateError("не задан title")
-    sections = tuple(m.group(1) for m in _HEADING_RE.finditer(body))
-    if not sections:
+    headings = tuple(m.group(1) for m in _HEADING_RE.finditer(body))
+    if not headings:
         raise TemplateError("в шаблоне нет ни одного раздела `## …`")
+    optional = _str_tuple(meta, "optional_sections")
+    unknown_optional = [s for s in optional if s not in headings]
+    if unknown_optional:
+        raise TemplateError(f"optional_sections не найдены в тексте шаблона: {', '.join(unknown_optional)}")
+    sections = tuple(h for h in headings if h not in optional)
+    if not sections:
+        raise TemplateError("нужен хотя бы один обязательный раздел")
+    status = str(meta.get("status", "active"))
+    if status not in TEMPLATE_STATUSES:
+        raise TemplateError(f"status должен быть одним из: {', '.join(TEMPLATE_STATUSES)}")
+    required_metadata = _str_tuple(meta, "required_metadata") or ("title", "owner")
+    optional_metadata = _str_tuple(meta, "optional_metadata")
+    unknown_fields = [f for f in (*required_metadata, *optional_metadata) if f not in METADATA_FIELDS]
+    if unknown_fields:
+        raise TemplateError(f"неизвестные поля метаданных: {', '.join(unknown_fields)}")
     tags = meta.get("default_tags") or []
     if not isinstance(tags, list) or not all(isinstance(t, str) for t in tags):
         raise TemplateError("default_tags должен быть списком строк")
     order = meta.get("order", 100)
-    return DocumentTemplate(
+    version = meta.get("version", 1)
+    if isinstance(version, bool) or not isinstance(version, int) or not 1 <= version <= 1000:
+        raise TemplateError("version должен быть целым числом от 1")
+    template = DocumentTemplate(
         id=template_id,
         title=title,
         description=str(meta.get("description", "")).strip(),
@@ -98,7 +146,63 @@ def _parse_template(path: Path) -> DocumentTemplate:
         sections=sections,
         body=body.strip() + "\n",
         order=order if isinstance(order, int) else 100,
+        version=version,
+        listed=meta.get("listed", True) is not False,
+        status=status,
+        category=str(meta.get("category", "")).strip(),
+        owner=str(meta.get("owner", "")).strip(),
+        labels=tuple(x.lower() for x in _str_tuple(meta, "labels")),
+        optional_sections=optional,
+        required_metadata=required_metadata,
+        optional_metadata=optional_metadata,
+        validation=_str_tuple(meta, "validation"),
+        instructions=str(meta.get("instructions", "")).strip(),
+        ai_guidance=str(meta.get("ai_guidance", "")).strip(),
+        example=str(meta.get("example", "")).strip(),
+        changes=str(meta.get("changes", "")).strip(),
+        breaking=meta.get("breaking", False) is True,
+        migration=str(meta.get("migration", "")).strip(),
+        updated=str(meta.get("updated", "") or "").strip(),
     )
+    return replace(template, checksum=schema_checksum(template))
+
+
+# What a template VERSION is: the structure documents are created and validated against. Catalogue text
+# (title, description, category, owner, labels, instructions, AI guidance, example, change notes) may be
+# corrected without a new version; any change below is a new version (declared, or auto-bumped).
+SCHEMA_FIELDS = (
+    "doc_type",
+    "id_prefix",
+    "default_tags",
+    "sections",
+    "optional_sections",
+    "body",
+    "required_metadata",
+    "optional_metadata",
+    "validation",
+    "status",
+    "breaking",
+    "migration",
+    "listed",
+)
+
+
+def schema_checksum(template: DocumentTemplate) -> str:
+    data = {name: getattr(template, name) for name in SCHEMA_FIELDS}
+    data["doc_type"] = template.doc_type.value
+    canonical = json.dumps(data, ensure_ascii=False, sort_keys=True, default=list)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def _str_tuple(meta: dict[str, Any], key: str) -> tuple[str, ...]:
+    value = meta.get(key) or []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise TemplateError(f"{key} должен быть списком строк")
+    return tuple(v.strip() for v in value if v.strip())
+
+
+def parse_template_file(path: Path) -> DocumentTemplate:
+    return _parse_template(path)
 
 
 def load_templates(directory: Path) -> dict[str, DocumentTemplate]:
@@ -141,6 +245,9 @@ def compose_document(metadata: dict[str, Any], body: str) -> str:
                 data[key] = " ".join(str(value).split())
         elif isinstance(value, DocStatus | DocType):
             data[key] = value.value
+        elif key == "template_version":
+            if isinstance(value, int) and value >= 1:
+                data[key] = value
         elif value is not None:
             data[key] = str(value).strip()
     data["reviewed_at"] = None

@@ -163,6 +163,24 @@ cd frontend && SKH_BACKEND_URL=http://127.0.0.1:8011 FRONTEND_PORT=5175 npx vite
 
 Merge в дубле: `curl -X POST http://127.0.0.1:8929/__mock__/merge-requests/<iid>/merge`.
 
+## Личный тест с Claude Code CLI (экспериментально)
+
+Временный AI-провайдер `AI_PROVIDER=claude_cli`: ответы с цитатами, потоковый вывод, диалог и AI-черновики через
+**Claude Code CLI с подпиской владельца**. CLI работает в изолированном контейнере-воркере без инструментов, MCP и
+доступа к данным приложения. Это только личный тест: один оператор, синтетические данные, доступ через
+SSH-туннель. Не корпоративный контур и не замена GigaCode.
+
+```bash
+cp deploy/claude-test/claude-test.env.example deploy/claude-test/claude-test.env   # без секретов
+make claude-test-up                     # отдельный compose-проект semantic-kb-claude-test, UI на 127.0.0.1:5180
+deploy/claude-test/install-token.sh root@<host>   # официальный `claude setup-token` → файл токена на сервере
+ssh -N -L 5180:127.0.0.1:5180 root@<host>          # открыть http://127.0.0.1:5180
+```
+
+Публичная ссылка вместо туннеля — `SKH_PUBLIC_ACCESS=true` в `claude-test.env`: шлюз Caddy на 80/443
+(`http://<ip>/`, `https://<ip>.sslip.io/`), открытая ссылка без логина. Возврат к Mock AI — `SKH_AI_PROVIDER=mock` в `claude-test.env`. Подробно (архитектура, безопасность, ошибки,
+обновление и откат) — [docs/CLAUDE_CODE_CLI_INTEGRATION.md](docs/CLAUDE_CODE_CLI_INTEGRATION.md).
+
 ## Тесты и проверки
 
 ```bash
@@ -267,7 +285,7 @@ docs/                  документация (см. ниже)
 
 Все пути начинаются с `/api`; схема — `GET /api/openapi.json`. Основные группы:
 - **база знаний и поиск:** `/documents`, `/search`;
-- **ассистент:** `/assistant/ask`;
+- **ассистент:** `/assistant/ask`, `/assistant/ask/stream` (NDJSON: этапы, предварительный текст, проверенный ответ);
 - **предложения:** `/drafts…`;
 - **создание документов:** `/authoring…`;
 - **публикация:** `/documents/{id}/publication…`, `/publications/jobs…`;
@@ -299,6 +317,7 @@ docs/                  документация (см. ниже)
 |---|---|
 | [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) | **Что реализовано, как проверено и что осталось** — начните отсюда |
 | [docs/PRODUCT.md](docs/PRODUCT.md), [docs/UX.md](docs/UX.md) | Требования к продукту и интерфейсу |
+| [docs/CLAUDE_CODE_CLI_INTEGRATION.md](docs/CLAUDE_CODE_CLI_INTEGRATION.md) | Экспериментальный провайдер Claude Code CLI для личного теста |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/DECISIONS.md](docs/DECISIONS.md) | Архитектура и решения (ADR) |
 | [docs/DOCUMENT_CREATION_WORKFLOW.md](docs/DOCUMENT_CREATION_WORKFLOW.md), [docs/DOCUMENT_TEMPLATES.md](docs/DOCUMENT_TEMPLATES.md), [docs/AI_AUTHORING_CONTRACT.md](docs/AI_AUTHORING_CONTRACT.md) | Создание документов, шаблоны, AI-черновики |
 | [docs/GITLAB_KNOWLEDGE_WORKFLOW.md](docs/GITLAB_KNOWLEDGE_WORKFLOW.md) | База знаний в GitLab, MR и синхронизация |

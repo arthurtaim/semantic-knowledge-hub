@@ -1,72 +1,90 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useSession } from "../lib/session";
+import { ComposerPalette, ComposerTrigger, isEditable } from "./ComposerPalette";
+import { AiModeChip, DemoPill } from "./HeaderStatus";
 
 const NAV = [
   { to: "/", label: "Главная", end: true },
   { to: "/documents", label: "База знаний", end: false },
+  { to: "/graph", label: "Граф", end: false },
+  { to: "/templates", label: "Шаблоны", end: false },
   { to: "/ask", label: "Спросить", end: false },
   { to: "/proposals", label: "Предложения", end: false },
   { to: "/integrations", label: "Интеграции", end: false },
 ];
 
-function demoFacts(session: ReturnType<typeof useSession>): string[] {
-  if (!session) return ["Документы синтетические и не описывают банк."];
-  const facts: string[] = [];
-  if (session.demo_content) facts.push("Документы синтетические и не описывают банк.");
-  if (session.knowledge_backend === "local") facts.push("GitLab не подключён.");
-  if (session.features.corporate_search === "disabled") facts.push("Confluence не подключён.");
-  if (session.features.corporate_search === "mock") facts.push("Confluence заменён mock-коннектором.");
-  if (session.features.ai_mode === "mock") facts.push("Ассистент отвечает дословными выдержками, без языковой модели.");
-  return facts;
-}
-
-function DemoBand() {
-  const facts = demoFacts(useSession());
-  if (facts.length === 0) return null;
-  return (
-    <div className="demo-band" role="note">
-      <strong>Демо-данные.</strong> <span>{facts.join(" ")}</span>
-    </div>
-  );
+function modeLabel(mode: string): string {
+  return mode === "local_demo" ? "локальное демо" : mode;
 }
 
 export function Layout({ children }: { children: ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuToggle = useRef<HTMLButtonElement>(null);
   const location = useLocation();
   const session = useSession();
 
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const onHome = location.pathname === "/";
+
   useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // ⌘K / Ctrl+K anywhere, «/» outside text fields: the home page focuses its own field, other pages open
+  // the palette.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const commandK = (event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k";
+      const slash = event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !isEditable(event.target);
+      if (!commandK && !slash) return;
+      event.preventDefault();
+      const hero = onHome ? document.getElementById("home-composer-input") : null;
+      if (hero) hero.focus();
+      else setPaletteOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onHome]);
+
+  // Esc closes the open mobile menu and returns focus to «Меню» (focus is not lost inside a hidden list).
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      menuToggle.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
 
   return (
     <div className="shell">
       <a className="skip-link" href="#main">
         Перейти к содержимому
       </a>
-      <header className="sidebar">
-        {/* The header stretches to the full page height (dark column); its content stays in view while scrolling. */}
-        <div className="sidebar__inner">
-          <div className="sidebar__top">
-            <NavLink to="/" className="brand" aria-label="Semantic Knowledge Hub — на главную">
-              <span className="brand__mark" aria-hidden="true" />
-              <span className="brand__text">
-                <span className="brand__name">Semantic Knowledge Hub</span>
-                <span className="brand__team">команда семантического слоя</span>
-              </span>
-            </NavLink>
-            <button
-              type="button"
-              className="menu-toggle"
-              aria-expanded={menuOpen}
-              aria-controls="primary-nav"
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              {menuOpen ? "Закрыть" : "Меню"}
-            </button>
-          </div>
+      <header className="topbar">
+        <div className="topbar__inner">
+          <NavLink to="/" className="brand" aria-label="Semantic Knowledge Hub — на главную">
+            <span className="brand__mark" aria-hidden="true" />
+            <span className="brand__text">
+              <span className="brand__name">Semantic Knowledge Hub</span>
+              <span className="brand__team">команда семантического слоя</span>
+            </span>
+          </NavLink>
+          <button
+            ref={menuToggle}
+            type="button"
+            className="menu-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="primary-nav"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? "Закрыть" : "Меню"}
+          </button>
           <nav id="primary-nav" className={`nav${menuOpen ? " nav--open" : ""}`} aria-label="Основная навигация">
             <ul>
-              {NAV.map((item) => (
+              {NAV.filter((item) => item.to !== "/ask" || session?.features.ai_mode !== "disabled").map((item) => (
                 <li key={item.to}>
                   <NavLink to={item.to} end={item.end} className="nav__link">
                     {item.label}
@@ -75,21 +93,30 @@ export function Layout({ children }: { children: ReactNode }) {
               ))}
             </ul>
             {session ? (
-              <p className="nav__identity">
-                {session.user.display_name}
-                <br />
-                Режим: {session.auth_mode === "local_demo" ? "локальное демо" : session.auth_mode}
+              <p className="nav__identity" title={`Режим: ${modeLabel(session.auth_mode)}`}>
+                <span className="nav__user">{session.user.display_name}</span>
+                <span className="nav__mode">{modeLabel(session.auth_mode)}</span>
               </p>
             ) : null}
           </nav>
         </div>
       </header>
-      <div className="workspace">
-        <DemoBand />
-        <main id="main" className="content" tabIndex={-1}>
-          {children}
-        </main>
+      {/* The tool row under the bar: «Спросить или найти», the AI mode and the demo status (it replaces the
+          full-width demo band). */}
+      <div className="toolbar">
+        <div className="toolbar__inner">
+          {/* The home page's hero is the same field, so the trigger is not repeated there. */}
+          {onHome ? null : <ComposerTrigger buttonRef={trigger} onOpen={() => setPaletteOpen(true)} />}
+          <div className="toolbar__status">
+            <AiModeChip />
+            <DemoPill />
+          </div>
+        </div>
       </div>
+      <main id="main" className="content" tabIndex={-1}>
+        {children}
+      </main>
+      {paletteOpen ? <ComposerPalette onClose={() => setPaletteOpen(false)} /> : null}
     </div>
   );
 }

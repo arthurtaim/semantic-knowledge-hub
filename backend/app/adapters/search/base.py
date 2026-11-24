@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.domain.models import HighlightSegment, IntegrationStatus
@@ -40,13 +40,30 @@ class ChunkHit:
 
 
 class SearchProvider(Protocol):
-    def sync(self, snapshot: KnowledgeSnapshot) -> None:
-        """Rebuild the index if the snapshot version differs from the indexed one."""
+    def sync(self, snapshot: KnowledgeSnapshot, *, full: bool = False) -> Any:
+        """Apply the snapshot (incremental by fingerprint, or a full rebuild); returns a sync result."""
+        ...
+
+    @property
+    def generation(self) -> int:
+        """Monotonic number of the index generation currently served."""
         ...
 
     def search_documents(
-        self, terms: list[QueryTerm], filters: SearchFilters, limit: int, *, mode: str = "and"
-    ) -> list[DocumentHit]: ...
+        self,
+        terms: list[QueryTerm],
+        filters: SearchFilters,
+        limit: int,
+        *,
+        mode: str = "and",
+        snippets: bool = True,
+    ) -> list[DocumentHit]:
+        """Ranked documents; `snippets=False` returns scores only (see `document_snippets`)."""
+        ...
+
+    def document_snippets(self, terms: list[QueryTerm], document_ids: list[str]) -> dict[str, DocumentHit]:
+        """Best matching section + highlighted snippet for each document that has one (score 0)."""
+        ...
 
     def search_chunks(self, terms: list[QueryTerm], filters: SearchFilters, limit: int) -> list[ChunkHit]: ...
 

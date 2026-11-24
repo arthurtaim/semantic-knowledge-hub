@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api } from "../api/client";
 import { autoPath, fieldsFromProposal, retitleBody, splitList, toMetadata } from "../lib/authoring";
 import { applyMarkdown } from "../lib/markdownEdit";
 import { DocumentCreatePage } from "../pages/DocumentCreatePage";
@@ -20,7 +21,7 @@ import {
   submittedProposal,
   templates,
 } from "./fixtures";
-import { mockApi, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
+import { mockApi, pendingUntilAborted, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 const CREATE = { "/documents/new": <DocumentCreatePage /> };
 const location = () => screen.getByTestId("location").textContent;
@@ -28,7 +29,7 @@ const location = () => screen.getByTestId("location").textContent;
 function authoringRoutes(extra: MockRoute[] = []): MockRoute[] {
   return [
     ...extra,
-    { path: "/api/authoring/templates", body: templates },
+    { path: /^\/api\/authoring\/templates(\?include_hidden=true)?$/, body: templates },
     { method: "POST", path: "/api/authoring/check", body: checkResponse() },
   ];
 }
@@ -57,11 +58,17 @@ describe("Creating a document: type and mode", () => {
     expect(screen.getByRole("button", { name: "Открыть редактор" })).toBeDisabled();
 
     await openManualEditor();
-    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue("SEM-ARCH-002");
+    // M5.6.3: the server allocates the ID at the first save; ID, status and origin are read-only.
+    const id = screen.getByRole("textbox", { name: /^ID документа/ });
+    expect(id).toHaveValue("");
+    expect(id).toHaveAttribute("readonly");
+    expect(screen.getByText(/ID выделит сервер при первом сохранении/)).toBeInTheDocument();
     expect(screen.getByText("Раздел каталога").parentElement).toHaveTextContent("Архитектура");
+    expect(screen.getByText("Происхождение").parentElement).toHaveTextContent("создан вручную в редакторе");
     expect(screen.getByRole("textbox", { name: /^Владелец/ })).toHaveValue("local-demo-user");
+    expect(screen.getByRole("textbox", { name: /^Владелец/ })).not.toBeRequired();
     expect(screen.getByRole("textbox", { name: /^Теги/ })).toHaveValue("architecture");
-    expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("docs/SEM-ARCH-002.md");
+    expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("");
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value.startsWith("# Название документа\n\n## Назначение")).toBe(true);
     expect(screen.getByText("Черновик ещё не сохранён")).toBeInTheDocument();
@@ -82,7 +89,10 @@ describe("Creating a document: type and mode", () => {
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value.startsWith("# Витрина метрик\n")).toBe(true);
 
+    // An explicit opt-in sets the ID by hand (migrating a document with a known ID).
+    await userEvent.click(screen.getByRole("checkbox", { name: /Задать ID вручную/ }));
     const id = screen.getByRole("textbox", { name: /^ID документа/ });
+    expect(id).toHaveValue("SEM-ARCH-002");
     await userEvent.clear(id);
     await userEvent.type(id, "SEM-ARCH-777");
     expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("docs/SEM-ARCH-777.md");
@@ -121,7 +131,7 @@ describe("Creating a document: manual flow", () => {
     expect(post[0]?.body).toMatchObject({
       template_id: "architecture",
       metadata: {
-        id: "SEM-ARCH-002",
+        id: "",
         title: "Витрина метрик",
         status: "draft",
         owner: "local-demo-user",
@@ -129,20 +139,24 @@ describe("Creating a document: manual flow", () => {
         related_ids: [],
         summary: null,
       },
-      path: "docs/SEM-ARCH-002.md",
+      path: null,
       reason: "Описать витрину",
       origin: "manual",
+      client_request_id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/),
     });
+    // The allocated ID is shown read-only from now on.
+    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue(created.document_id);
     expect((post[0]?.body as { body: string }).body).toContain("# Витрина метрик");
     // The editor stays mounted on the new URL: the typed text is still there.
     expect(screen.getByRole("textbox", { name: /^Название/ })).toHaveValue("Витрина метрик");
 
     const body = screen.getByRole("textbox", { name: /Markdown/ });
     await userEvent.type(body, "Новый абзац.");
-    expect(screen.getByText("Есть несохранённые изменения")).toBeInTheDocument();
+    expect(screen.getByText("Есть несохранённые изменения")).toHaveClass("save-state--dirty");
     await userEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     await waitFor(() => expect(calls.filter((c) => c.method === "PUT")).toHaveLength(1));
-    expect(await screen.findByText(/Черновик сохранён в/)).toBeInTheDocument();
+    // saved state: its own class (tick), not the "unsaved" ring or dot
+    expect(await screen.findByText(/Черновик сохранён в/)).toHaveClass("save-state--saved");
 
     await userEvent.type(body, " Ещё.");
     await userEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
@@ -213,7 +227,7 @@ describe("Creating a document: manual flow", () => {
 
   it("blocks review while validation reports errors and shows them next to the field", async () => {
     mockApi([
-      { path: "/api/authoring/templates", body: templates },
+      { path: /^\/api\/authoring\/templates(\?include_hidden=true)?$/, body: templates },
       {
         method: "POST",
         path: "/api/authoring/check",
@@ -283,7 +297,8 @@ describe("Creating a document with the AI helper", () => {
     const body = screen.getByRole("textbox", { name: /Markdown/ }) as HTMLTextAreaElement;
     expect(body.value).toBe(aiDraft.body);
     expect(screen.getByRole("textbox", { name: /^Связанные документы/ })).toHaveValue("SEM-INT-ARIS-001, SEM-ARCH-001");
-    expect(screen.getByRole("option", { name: "Утверждён" })).toBeDisabled();
+    expect(screen.queryByRole("option", { name: "Утверждён" })).toBeNull();
+    expect(screen.getByText("Происхождение").parentElement).toHaveTextContent("предложение ИИ");
     expect(screen.getByText(/Текст подготовлен ИИ-помощником/)).toBeInTheDocument();
     expect(screen.getByText("Черновик ещё не сохранён")).toHaveClass("save-state--dirty");
 
@@ -325,6 +340,75 @@ describe("Creating a document with the AI helper", () => {
   });
 });
 
+describe("AI draft with a long-running provider", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const claudeSession = { ...session, features: { ...session.features, ai_mode: "claude_cli" as const } };
+
+  it("explains that Claude Code may take minutes and cancels the request on demand", async () => {
+    const state = { aborted: false };
+    const calls = mockApi(
+      authoringRoutes([{ method: "POST", path: "/api/authoring/ai-draft", respond: pendingUntilAborted(state) }]),
+    );
+    renderRoutes("/documents/new", CREATE, claudeSession);
+    await userEvent.click(await screen.findByRole("radio", { name: "С помощью AI" }));
+    expect(screen.getByText(/подготовка может занять несколько минут/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("radio", { name: /Архитектура/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Далее: запрос помощнику" }));
+
+    expect(screen.getByText("Claude Code CLI (личный тест)")).toHaveClass("ai-mode--claude_cli");
+    await userEvent.type(screen.getByRole("textbox", { name: /^Название/ }), "Витрина метрик");
+    const request = screen.getByRole("textbox", { name: /Что должно быть в документе/ });
+    await userEvent.type(request, "Описать витрину метрик");
+    expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Подготовить черновик" }));
+
+    expect(await screen.findByText("Готовим черновик… с Claude Code это может занять несколько минут")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Подготовить черновик" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Заполнить вручную" })).toBeDisabled();
+    expect(posts(calls, "/api/authoring/ai-draft")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Отменить" }));
+    expect(await screen.findByText(/Подготовка черновика отменена/)).toBeInTheDocument();
+    expect(state.aborted).toBe(true);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(/Готовим черновик/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
+    expect(request).toHaveValue("Описать витрину метрик");
+    expect(screen.getByRole("button", { name: "Подготовить черновик" })).toBeEnabled();
+    expect(screen.queryByRole("heading", { name: "Источники и выдержки" })).toBeNull(); // still the request step
+  });
+
+  it("keeps a provider-neutral waiting text for other providers", async () => {
+    mockApi(authoringRoutes([{ method: "POST", path: "/api/authoring/ai-draft", respond: pendingUntilAborted() }]));
+    renderRoutes("/documents/new", CREATE);
+    await userEvent.click(await screen.findByRole("radio", { name: "С помощью AI" }));
+    await userEvent.click(screen.getByRole("radio", { name: /Архитектура/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Далее: запрос помощнику" }));
+    await userEvent.type(screen.getByRole("textbox", { name: /^Название/ }), "Витрина метрик");
+    await userEvent.type(screen.getByRole("textbox", { name: /Что должно быть в документе/ }), "Описать витрину");
+    await userEvent.click(screen.getByRole("button", { name: "Подготовить черновик" }));
+    expect(await screen.findByText("Готовим черновик…")).toBeInTheDocument();
+    expect(screen.queryByText(/Claude Code/)).toBeNull();
+  });
+
+  it("waits up to five minutes for an AI draft instead of the default 30 seconds", async () => {
+    vi.useFakeTimers();
+    const state = { aborted: false };
+    mockApi([{ method: "POST", path: "/api/authoring/ai-draft", respond: pendingUntilAborted(state) }]);
+    const settled = api
+      .aiDraft({ template_id: "architecture", title: "Витрина", request: "Описать витрину", related_ids: [] })
+      .catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(state.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(state.aborted).toBe(true);
+    expect(await settled).toMatchObject({ status: 0, code: "timeout" });
+  });
+});
+
 describe("Resuming a stored draft", () => {
   const draftRoutes = (draft = newDocumentProposal(), extra: MockRoute[] = []) =>
     authoringRoutes([{ path: `/api/drafts/${NEW_DOC_ID}`, body: draft }, ...extra]);
@@ -338,6 +422,8 @@ describe("Resuming a stored draft", () => {
     expect(screen.getByRole("textbox", { name: /Причина \/ цель/ })).toHaveValue("Описать витрину клиентских метрик");
     expect(screen.getByRole("textbox", { name: /Markdown/ })).toHaveValue(NEW_DOC_BODY);
     expect(screen.getByText(/Черновик сохранён в/)).toBeInTheDocument();
+    // A draft's template is resolved among ALL templates (an unlisted one such as external_import too).
+    expect(calls.some((c) => c.method === "GET" && c.url === "/api/authoring/templates?include_hidden=true")).toBe(true);
 
     await userEvent.click(screen.getByRole("button", { name: "Удалить черновик" }));
     expect(calls.some((c) => c.method === "DELETE")).toBe(false);
@@ -517,8 +603,8 @@ describe("Proposal of a new document", () => {
     );
     renderRoutes(`/documents/new?from=${NEW_DOC_ID}`, CREATE);
     expect(await screen.findByRole("textbox", { name: /Markdown/ })).toHaveValue(NEW_DOC_BODY);
-    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue("SEM-ARCH-002");
-    expect(screen.getByText(/уже занят, поэтому предложен свободный ID/)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /^ID документа/ })).toHaveValue("");
+    expect(screen.getByText(/уже занят, поэтому сервер выделит новый свободный ID/)).toBeInTheDocument();
   });
 });
 
@@ -608,5 +694,58 @@ describe("Authoring helpers", () => {
     const code = applyMarkdown("code", "", 0, 0);
     expect(code.text).toBe("```\nкод\n```\n");
     expect(code.text.slice(code.selectionStart, code.selectionEnd)).toBe("код");
+  });
+});
+
+describe("Template versions", () => {
+  it("marks templates that have a newer version in the picker", async () => {
+    mockApi([
+      { path: /^\/api\/authoring\/templates(\?include_hidden=true)?$/, body: [{ ...templates[0], version: 2, previous_versions: [1] }, templates[1]] },
+      { method: "POST", path: "/api/authoring/check", body: checkResponse() },
+    ]);
+    renderRoutes("/documents/new", CREATE);
+    const card = (await screen.findByRole("radio", { name: "Архитектура" })).closest("label") as HTMLElement;
+    expect(within(card).getByText("v2", { exact: false })).toHaveTextContent("версия шаблона v2");
+    const adr = screen.getByRole("radio", { name: "ADR" }).closest("label") as HTMLElement;
+    expect(within(adr).queryByText(/версия шаблона/)).toBeNull();
+  });
+
+  it("checks an older draft against its own template version and says that a newer one exists", async () => {
+    const calls = mockApi(
+      authoringRoutes([
+        {
+          path: `/api/drafts/${NEW_DOC_ID}`,
+          body: newDocumentProposal({ template_version: 1, template_current_version: 2 }),
+        },
+      ]),
+    );
+    renderRoutes(`/documents/new?draft=${NEW_DOC_ID}`, CREATE);
+    await screen.findByRole("textbox", { name: /^Название/ });
+    expect(
+      screen.getByText(
+        "Черновик создан по шаблону v1; актуальная версия — v2. Черновик проверяется по v1; переход на новую версию — отдельное действие автора.",
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(posts(calls, "/api/authoring/check").length).toBeGreaterThan(0));
+    for (const check of posts(calls, "/api/authoring/check")) {
+      expect((check.body as { template_version?: number }).template_version).toBe(1);
+    }
+  });
+
+  it("shows no notice for a draft on the current template version", async () => {
+    mockApi(
+      authoringRoutes([
+        { path: `/api/drafts/${NEW_DOC_ID}`, body: newDocumentProposal({ template_version: 2, template_current_version: 2 }) },
+      ]),
+    );
+    renderRoutes(`/documents/new?draft=${NEW_DOC_ID}`, CREATE);
+    await screen.findByRole("textbox", { name: /^Название/ });
+    expect(screen.queryByText(/Черновик создан по шаблону/)).toBeNull();
+  });
+
+  it("repeats the notice on the proposal page of the new document", async () => {
+    mockApi([{ path: `/api/drafts/${NEW_DOC_ID}`, body: newDocumentProposal({ template_version: 1, template_current_version: 3 }) }]);
+    renderRoutes(`/proposals/${NEW_DOC_ID}`, { "/proposals/:id": <ProposalDetailPage /> });
+    expect(await screen.findByText(/Черновик создан по шаблону v1; актуальная версия — v3\./)).toBeInTheDocument();
   });
 });

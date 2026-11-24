@@ -18,6 +18,7 @@ knowledge base is re-synced and the merged revision is recorded; publication is 
 
 from __future__ import annotations
 
+import asyncio
 import difflib
 import json
 import logging
@@ -30,7 +31,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from app.adapters.ai.base import AIProvider, AIProviderError
+from app.adapters.ai.base import AIProvider, AIProviderError, ai_error_status
 from app.adapters.knowledge.base import (
     DocumentNotFoundError,
     DuplicateDocumentIdError,
@@ -66,6 +67,7 @@ from app.domain.proposals import (
     SuggestResponse,
 )
 from app.domain.schema import FrontmatterError, is_valid_document_id, parse_document
+from app.domain.templates import suggest_path
 from app.errors import ApiError
 
 if TYPE_CHECKING:
@@ -179,7 +181,7 @@ def validate_proposal(
     new_status = parsed.metadata.get("status")
     if new_status is not None and new_status != doc.status:
         if new_status == DocStatus.approved:
-            if origin == "ai_suggestion":
+            if origin in ("ai_suggestion", "external_page"):
                 issues.append(
                     ValidationIssue(
                         severity="error",
@@ -224,11 +226,15 @@ _NEW_COLUMNS = {
     "uncertain": "INTEGER NOT NULL DEFAULT 0",
     "operation": "TEXT NOT NULL DEFAULT 'update'",
     "template_id": "TEXT",
+    "template_version": "INTEGER",
     "edit_version": "INTEGER NOT NULL DEFAULT 1",
     "merged_revision": "TEXT",
     "synced_at": "TEXT",
+    "client_request_id": "TEXT",
 }
-_UPDATABLE = frozenset(_NEW_COLUMNS) - {"operation", "template_id", "edit_version"} | {"review_comment"}
+_UPDATABLE = frozenset(_NEW_COLUMNS) - {"operation", "template_id", "template_version", "edit_version"} | {
+    "review_comment"
+}
 # Fields a draft save may change (only while the proposal is still a `draft`).
 _DRAFT_FIELDS = frozenset(
     {
@@ -387,6 +393,14 @@ class ProposalStore:
                 ).fetchall()
             )
 
+    def find_client_request(self, author: str, client_request_id: str) -> sqlite3.Row | None:
+        with self._lock:
+            row: sqlite3.Row | None = self._conn.execute(
+                "SELECT * FROM proposals WHERE author = ? AND client_request_id = ?",
+                (author, client_request_id),
+            ).fetchone()
+            return row
+
     def open_create_ids(self) -> set[str]:
         placeholders = ", ".join("?" for _ in _OPEN)
         with self._lock:
@@ -460,6 +474,7 @@ class ProposalService:
         self._on_merged = on_merged
         self._authoring = authoring
         self._after_sync = after_sync
+        self._create_lock = asyncio.Lock()
 
     @property
     def authoring(self) -> AuthoringService:
@@ -468,6 +483,12 @@ class ProposalService:
         return self._authoring
 
     # --- helpers ---------------------------------------------------------------------------------
+    def _current_template_version(self, template_id: str | None) -> int | None:
+        if not template_id or self._authoring is None:
+            return None
+        current = self._authoring.registry.get(template_id)
+        return current.version if current else None
+
     async def _document(self, document_id: str, user: UserContext) -> DocumentRecord:
         if not is_valid_document_id(document_id):
             raise ApiError(400, "invalid_document_id", "Некорректный идентификатор документа.")
@@ -634,6 +655,8 @@ class ProposalService:
                 uncertain=uncertain,
             ),
             template_id=row["template_id"],
+            template_version=row["template_version"],
+            template_current_version=self._current_template_version(row["template_id"]),
             edit_version=row["edit_version"] or 1,
             can_edit=status == S.draft,
             can_delete=status == S.draft
@@ -750,28 +773,67 @@ class ProposalService:
         """Persist a draft of a NEW document. Nothing is written to the knowledge base or GitLab."""
         authoring = self.authoring
         template = authoring.template(payload.template_id)
-        check = await authoring.check_new_document(
-            user, template.id, payload.metadata, payload.body, payload.path, payload.origin
-        )
-        self._raise_taken(check)
-        document_id = payload.metadata.id.strip()
+        if payload.client_request_id:
+            existing = self._store.find_client_request(user.user_id, payload.client_request_id)
+            if existing is not None:  # a retried request: the same draft, never a second one
+                return await self._detail(existing, user)
+        async with self._create_lock:  # ID allocation + insert are one step: no two drafts get the same ID
+            metadata = payload.metadata
+            if not metadata.id.strip():
+                metadata = metadata.model_copy(update={"id": await authoring.allocate_id(user, template)})
+            check = await authoring.check_new_document(
+                user, template.id, metadata, payload.body, payload.path, payload.origin
+            )
+            self._raise_taken(check)
+            document_id = metadata.id.strip()
+            proposal_id = uuid.uuid4().hex
+            self._insert_create(
+                user,
+                proposal_id,
+                template_id=template.id,
+                template_version=template.version,
+                document_id=document_id,
+                title=metadata.title.strip(),
+                check=check,
+                reason=payload.reason,
+                origin=payload.origin,
+                client_request_id=payload.client_request_id,
+            )
+        self._store.audit(user.user_id, "created_new_document", proposal_id, document_id, None, S.draft.value)
+        logger.info("new-document draft created id=%s errors=%d", proposal_id, len(check.errors))
+        return await self._detail(self._row(proposal_id), user)
+
+    def _insert_create(
+        self,
+        user: UserContext,
+        proposal_id: str,
+        *,
+        template_id: str | None,
+        template_version: int | None,
+        document_id: str,
+        title: str,
+        check: Any,
+        reason: str,
+        origin: str,
+        client_request_id: str | None,
+    ) -> None:
         diff = compute_diff("", check.content, check.path)
-        proposal_id = uuid.uuid4().hex
         now = _now().isoformat()
         self._store.insert(
             {
                 "id": proposal_id,
                 "operation": "create",
-                "template_id": template.id,
+                "template_id": template_id,
+                "template_version": template_version,
                 "document_id": document_id,
-                "document_title": payload.metadata.title.strip(),
+                "document_title": title,
                 "document_path": check.path,
                 "source": self._repository.source,
                 "base_revision": "",
                 "base_content": "",
                 "proposed_content": check.content,
-                "reason": payload.reason.strip(),
-                "origin": payload.origin,
+                "reason": reason.strip(),
+                "origin": origin,
                 "author": user.user_id,
                 "status": S.draft.value,
                 "validation_json": json.dumps([i.model_dump() for i in check.issues], ensure_ascii=False),
@@ -781,10 +843,61 @@ class ProposalService:
                 "created_at": now,
                 "updated_at": now,
                 "branch_name": self._publisher.branch_for(proposal_id, document_id),
+                "client_request_id": client_request_id,
             }
         )
-        self._store.audit(user.user_id, "created_new_document", proposal_id, document_id, None, S.draft.value)
-        logger.info("new-document draft created id=%s errors=%d", proposal_id, len(check.errors))
+
+    async def create_imported(
+        self,
+        user: UserContext,
+        content: str,
+        *,
+        reason: str,
+        client_request_id: str | None,
+    ) -> ProposalDetail:
+        """Import Markdown that already has VALID YAML: the original metadata and stable ID are kept
+        verbatim; it is still only a draft proposal (approved only through review + merge)."""
+        if client_request_id:
+            existing = self._store.find_client_request(user.user_id, client_request_id)
+            if existing is not None:
+                return await self._detail(existing, user)
+        parsed = parse_document(content)
+        if not parsed.is_valid:
+            raise ApiError(
+                422,
+                "import_invalid",
+                "YAML документа некорректен: сначала примите сгенерированные метаданные.",
+            )
+        document_id = str(parsed.metadata["id"])
+        template_id = parsed.metadata.get("template")
+        template = self.authoring.registry.get(str(template_id)) if template_id else None
+        version = parsed.metadata.get("template_version")
+        if template is not None and isinstance(version, int):
+            template = self.authoring.registry.get(template.id, version) or template
+        async with self._create_lock:
+            check = await self.authoring.check_content(
+                user,
+                template,
+                _normalize_newlines(content),
+                suggest_path(document_id, self._prefix),
+                "import",
+                document_id,
+            )
+            self._raise_taken(check)
+            proposal_id = uuid.uuid4().hex
+            self._insert_create(
+                user,
+                proposal_id,
+                template_id=template.id if template else None,
+                template_version=template.version if template else None,
+                document_id=document_id,
+                title=str(parsed.metadata["title"]),
+                check=check,
+                reason=reason,
+                origin="import",
+                client_request_id=client_request_id,
+            )
+        self._store.audit(user.user_id, "imported_document", proposal_id, document_id, None, S.draft.value)
         return await self._detail(self._row(proposal_id), user)
 
     async def save_draft(self, user: UserContext, proposal_id: str, payload: DraftUpdate) -> ProposalDetail:
@@ -807,21 +920,32 @@ class ProposalService:
         if (row["operation"] or "update") == "create":
             if payload.metadata is None or payload.body is None:
                 raise ApiError(422, "validation_failed", "Для нового документа нужны поля metadata и body.")
+            metadata = payload.metadata
+            if not metadata.id.strip():
+                metadata = metadata.model_copy(update={"id": row["document_id"]})
+            elif metadata.id.strip() != row["document_id"]:
+                raise ApiError(
+                    422,
+                    "document_id_immutable",
+                    f"ID документа выделен при создании черновика и не меняется: {row['document_id']}.",
+                    {"field": "id"},
+                )
             check = await self.authoring.check_new_document(
                 user,
                 row["template_id"],
-                payload.metadata,
+                metadata,
                 payload.body,
                 payload.path,
                 origin,
                 exclude_proposal_id=proposal_id,
+                template_version=row["template_version"],
             )
             self._raise_taken(check)
-            document_id = payload.metadata.id.strip()
+            document_id = metadata.id.strip()
             diff = compute_diff("", check.content, check.path)
             fields.update(
                 document_id=document_id,
-                document_title=payload.metadata.title.strip(),
+                document_title=metadata.title.strip(),
                 document_path=check.path,
                 proposed_content=check.content,
                 validation_json=json.dumps([i.model_dump() for i in check.issues], ensure_ascii=False),
@@ -878,7 +1002,9 @@ class ProposalService:
 
     async def _fresh_new_document_check(self, user: UserContext, row: Any) -> NewDocumentCheck:
         authoring = self.authoring
-        template = authoring.template(row["template_id"]) if row["template_id"] else None
+        template = (
+            authoring.template(row["template_id"], row["template_version"]) if row["template_id"] else None
+        )
         return await authoring.check_content(
             user,
             template,
@@ -1231,9 +1357,7 @@ class ProposalService:
         try:
             proposed = await self._ai.suggest_edit(payload.instruction, doc.raw)
         except AIProviderError as exc:
-            status = (
-                503 if exc.code in ("ai_edit_unsupported", "assistant_disabled", "ai_misconfigured") else 502
-            )
+            status = 503 if exc.code == "ai_edit_unsupported" else ai_error_status(exc.code)
             raise ApiError(status, exc.code, exc.message) from exc
         warnings = ["Черновик сгенерирован ИИ: проверьте каждое изменение перед созданием предложения."]
         return SuggestResponse(

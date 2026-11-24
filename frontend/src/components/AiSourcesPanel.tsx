@@ -7,6 +7,7 @@ import { StatusStamp } from "./StatusStamp";
 export const AI_MODE_LABEL: Record<string, string> = {
   mock: "Демо-режим: без языковой модели",
   internal_api: "Внутренняя языковая модель",
+  claude_cli: "Claude Code CLI (личный тест)",
   disabled: "ИИ отключён",
 };
 
