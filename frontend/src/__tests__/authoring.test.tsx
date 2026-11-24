@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
+import { CHECK_DELAY_MS } from "../components/DocumentEditor";
 import { autoPath, fieldsFromProposal, retitleBody, splitList, toMetadata } from "../lib/authoring";
 import { applyMarkdown } from "../lib/markdownEdit";
 import { DocumentCreatePage } from "../pages/DocumentCreatePage";
@@ -25,6 +26,12 @@ import { mockApi, pendingUntilAborted, renderRoutes, type MockRoute, type Record
 
 const CREATE = { "/documents/new": <DocumentCreatePage /> };
 const location = () => screen.getByTestId("location").textContent;
+/**
+ * A wait for the result of the live check after typing: the editor debounces it by CHECK_DELAY_MS, so the wait is
+ * that delay plus Testing Library's default 1 s — the default alone left half a second for the request and the
+ * render, which a busy machine (the whole suite in parallel) sometimes needed.
+ */
+const AFTER_CHECK = { timeout: CHECK_DELAY_MS + 1000 };
 
 function authoringRoutes(extra: MockRoute[] = []): MockRoute[] {
   return [
@@ -97,8 +104,8 @@ describe("Creating a document: type and mode", () => {
     await userEvent.type(id, "SEM-ARCH-777");
     expect(screen.getByRole("textbox", { name: /Путь в репозитории/ })).toHaveValue("docs/SEM-ARCH-777.md");
     // Live preview from the server (sanitized HTML) and the generated file.
-    expect(await screen.findByText("Предпросмотр документа")).toBeInTheDocument();
-    expect(await screen.findByText("ID свободен")).toBeInTheDocument();
+    expect(await screen.findByText("Предпросмотр документа", {}, AFTER_CHECK)).toBeInTheDocument();
+    expect(await screen.findByText("ID свободен", {}, AFTER_CHECK)).toBeInTheDocument();
   });
 });
 
@@ -125,7 +132,8 @@ describe("Creating a document: manual flow", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
     expect(await screen.findByText(/Черновик сохранён в/)).toBeInTheDocument();
-    expect(location()).toBe(`/documents/new?draft=${NEW_DOC_ID}`);
+    // React Router applies navigate() in a transition: the saved state can render a moment before the URL changes.
+    await waitFor(() => expect(location()).toBe(`/documents/new?draft=${NEW_DOC_ID}`));
     const post = posts(calls, "/api/authoring/drafts");
     expect(post).toHaveLength(1);
     expect(post[0]?.body).toMatchObject({
@@ -166,12 +174,14 @@ describe("Creating a document: manual flow", () => {
     expect(String(puts[1]?.body)).toContain("Новый абзац. Ещё.");
     expect(posts(calls, "/api/authoring/drafts")).toHaveLength(1);
     // Later checks exclude the draft itself from the ID/path uniqueness check.
-    await waitFor(() =>
-      expect(
-        posts(calls, "/api/authoring/check").some(
-          (c) => (c.body as { exclude_proposal_id?: string }).exclude_proposal_id === NEW_DOC_ID,
-        ),
-      ).toBe(true),
+    await waitFor(
+      () =>
+        expect(
+          posts(calls, "/api/authoring/check").some(
+            (c) => (c.body as { exclude_proposal_id?: string }).exclude_proposal_id === NEW_DOC_ID,
+          ),
+        ).toBe(true),
+      AFTER_CHECK,
     );
   });
 
@@ -245,7 +255,7 @@ describe("Creating a document: manual flow", () => {
     const title = await openManualEditor();
     await userEvent.type(title, "Витрина");
     await userEvent.type(screen.getByRole("textbox", { name: /Причина \/ цель/ }), "Описать витрину");
-    expect(await screen.findByText("Поле `id` должно содержать латиницу.")).toBeInTheDocument();
+    expect(await screen.findByText("Поле `id` должно содержать латиницу.", {}, AFTER_CHECK)).toBeInTheDocument();
     expect(screen.getByText("Нет разделов шаблона: Контекст.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Отправить на ревью" })).toBeDisabled();
     expect(screen.getByText("Исправьте ошибки проверки, чтобы отправить документ на ревью.")).toBeInTheDocument();

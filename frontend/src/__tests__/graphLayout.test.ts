@@ -110,14 +110,30 @@ function neighbourhood(focus: string, depth: number) {
   };
 }
 
-/** The machine's load per core (≥ 1): tests run in Node, whose `os` module is loaded without typings here. */
-async function loadPerCore(): Promise<number> {
-  try {
-    const os = (await import(/* @vite-ignore */ ["node", "os"].join(":"))) as { loadavg(): number[]; cpus(): unknown[] };
-    return Math.max(1, (os.loadavg()[0] ?? 0) / Math.max(1, os.cpus().length));
-  } catch {
-    return 1;
-  }
+interface CpuUsage {
+  user: number;
+  system: number;
+}
+
+interface NodeProcess {
+  threadCpuUsage?: () => CpuUsage;
+  cpuUsage?: () => CpuUsage;
+}
+
+/**
+ * A clock for the layout's own work: CPU time (µs → ms) of this thread (`process.threadCpuUsage`, Node ≥ 23.9), else
+ * of this test process (`process.cpuUsage`: Vitest runs each file in its own worker process). Unlike wall time it does
+ * not grow when other processes — the rest of the suite running in parallel, a busy laptop — take the CPU, so the
+ * 300 ms budget is measured on the layout, not on the machine's load. Wall time only outside Node.
+ */
+function workClock(): () => number {
+  const proc = (globalThis as { process?: NodeProcess }).process;
+  const usage = proc?.threadCpuUsage?.bind(proc) ?? proc?.cpuUsage?.bind(proc);
+  if (!usage) return () => performance.now();
+  return () => {
+    const { user, system } = usage();
+    return (user + system) / 1000;
+  };
 }
 
 function synthetic(count: number, edgeCount: number) {
@@ -242,19 +258,20 @@ describe("Knowledge map layout", () => {
     expect(merged.has("doc:GONE")).toBe(false);
   });
 
-  it("lays out 200 nodes and 600 edges in well under 300 ms, without overlaps", async () => {
+  it("lays out 200 nodes and 600 edges in well under 300 ms, without overlaps", () => {
     const { nodes, edges } = synthetic(200, 600);
-    layoutGraph(nodes.slice(0, 30), edges.slice(0, 40), null); // warm-up
-    // The best of three runs: the test suite runs files in parallel, a single run measures the machine's load.
+    layoutGraph(nodes.slice(0, 30), edges.slice(0, 40), null); // warm-up (JIT)
+    // 300 ms on an ordinary laptop (the spec), measured as the layout's own CPU time (workClock): the best of three
+    // runs, so a garbage collection in one run does not count against the layout.
+    const now = workClock();
     let best = Infinity;
     let layout: Layout | null = null;
     for (let run = 0; run < 3; run += 1) {
-      const started = performance.now();
+      const started = now();
       layout = layoutGraph(nodes, edges, null);
-      best = Math.min(best, performance.now() - started);
+      best = Math.min(best, now() - started);
     }
-    // 300 ms on an idle laptop (the spec); on a busy machine the budget grows with the load per core.
-    expect(best).toBeLessThan(300 * (await loadPerCore()));
+    expect(best).toBeLessThan(300);
     expect(overlaps(layout as Layout)).toEqual([]);
   });
 });
