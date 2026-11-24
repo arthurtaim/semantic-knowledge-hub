@@ -47,6 +47,9 @@ export function isReviewList(pathname: string, search: string): boolean {
  */
 export const PUBLICATIONS_HREF = "/integrations#integration-confluence_publisher";
 
+/** The Confluence publisher's row on the integrations page (its state, target and the server's message). */
+export const PUBLISHER_INTEGRATION_HREF = "/integrations#integration-confluence_publisher";
+
 export function navGroups(askAvailable: boolean): NavGroup[] {
   return [
     {
@@ -93,7 +96,7 @@ export function activeNav(pathname: string, search: string): NavId | null {
   if (pathname.startsWith("/documents")) return "documents";
   if (pathname.startsWith("/graph")) return "map";
   if (pathname.startsWith("/templates")) return "templates";
-  if (pathname.startsWith("/publications/")) return "publications";
+  if (pathname === "/publications" || pathname.startsWith("/publications/")) return "publications";
   if (pathname.startsWith("/integrations")) return "integrations";
   return null;
 }
@@ -123,6 +126,7 @@ export function defaultCrumbs(pathname: string, askAvailable: boolean): Crumb[] 
   if (pathname === "/proposals") return [{ label: "Предложения" }];
   if (pathname === "/proposals/new") return [{ label: "Предложения", to: "/proposals" }, { label: "Новое предложение" }];
   if (pathname.startsWith("/proposals/")) return [{ label: "Предложения", to: "/proposals" }, { label: "Предложение" }];
+  if (pathname === "/publications") return [{ label: "Публикации" }];
   if (pathname.startsWith("/publications/")) return [{ label: "Публикации", to: PUBLICATIONS_HREF }, { label: "Публикация" }];
   if (pathname === "/integrations") return [{ label: "Интеграции" }];
   if (pathname.startsWith("/corporate/")) return [{ label: "Корпоративная страница" }];
@@ -145,7 +149,15 @@ function isDocumentPage(pathname: string): boolean {
  * full width of the work area, the dialog a text column (≤ 780 px), everything else a centred column up to 80 rem.
  */
 export function contentWidth(pathname: string): "wide" | "text" | "default" {
-  if (pathname === "/graph" || pathname === "/documents" || pathname === "/proposals" || isDocumentPage(pathname)) return "wide";
+  if (
+    pathname === "/graph" ||
+    pathname === "/documents" ||
+    pathname === "/proposals" ||
+    pathname === "/publications" ||
+    isDocumentPage(pathname)
+  ) {
+    return "wide";
+  }
   if (pathname === "/ask") return "text";
   return "default";
 }

@@ -4073,7 +4073,8 @@ h1 a:hover {
 /* ── Other pages in the new system (UI v2 phase D): proposals list, corporate page, 404 ── */
 
 /* Proposals: a ruled table edge to edge, like the catalog — not a boxed grid. */
-.proposals .table-wrap {
+.proposals .table-wrap,
+.publications .table-wrap {
   margin: 0 calc(-1 * var(--space-6)) var(--space-5);
   border: 0;
   border-radius: 0;
@@ -4081,29 +4082,41 @@ h1 a:hover {
 }
 
 .proposals .data-table th,
-.proposals .data-table td {
+.proposals .data-table td,
+.publications .data-table th,
+.publications .data-table td {
   padding-block: var(--space-2);
   vertical-align: middle;
 }
 
 .proposals .data-table th:first-child,
-.proposals .data-table td:first-child {
+.proposals .data-table td:first-child,
+.publications .data-table th:first-child,
+.publications .data-table td:first-child {
   min-width: 15rem;
   padding-left: var(--space-6);
 }
 
-.proposals .data-table th {
+.proposals .data-table th,
+.publications .data-table th {
   height: 2.25rem;
   background: transparent;
   font-weight: 400;
 }
 
-.proposals .data-table tr:last-child td {
+.proposals .data-table tr:last-child td,
+.publications .data-table tr:last-child td {
   border-bottom: 1px solid var(--line);
 }
 
-.proposals .data-table tbody tr:hover {
+.proposals .data-table tbody tr:hover,
+.publications .data-table tbody tr:hover {
   background: var(--bg-hover);
+}
+
+/* Publications: the whole row opens the job (the title link is the keyboard path). */
+.publications .data-table tbody tr {
+  cursor: pointer;
 }
 
 .proposals .data-table td:first-child a {
@@ -4117,15 +4130,44 @@ h1 a:hover {
   text-decoration: underline;
 }
 
+/* A publication's document: the title opens the job, the ID under it opens the document. */
+.publications__title {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.publications__title:hover,
+.publications__doc:hover .doc-id {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.publications__doc {
+  text-decoration: none;
+}
+
+.publications__doc--block {
+  display: block;
+  width: fit-content;
+}
+
+.publications__server {
+  overflow-wrap: anywhere;
+}
+
 /* Phones: each proposal is a card row, like the catalog — no table scrolling sideways in its own box. */
-.proposal-cards {
+.proposal-cards,
+.publication-cards {
   margin: 0 0 var(--space-5);
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--line);
 }
 
-.proposal-card {
+.proposal-card,
+.publication-card {
   display: grid;
   gap: var(--space-1);
   padding: var(--space-3) 0;
@@ -4133,7 +4175,8 @@ h1 a:hover {
   cursor: pointer;
 }
 
-.proposal-card__title {
+.proposal-card__title,
+.publication-card__title {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -4153,7 +4196,8 @@ h1 a:hover {
   text-decoration: underline;
 }
 
-.proposal-card__meta {
+.proposal-card__meta,
+.publication-card__meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -4169,12 +4213,15 @@ h1 a:hover {
 }
 
 @media (max-width: 959.98px) {
-  .proposals .table-wrap {
+  .proposals .table-wrap,
+  .publications .table-wrap {
     margin-inline: calc(-1 * var(--space-4));
   }
 
   .proposals .data-table th:first-child,
-  .proposals .data-table td:first-child {
+  .proposals .data-table td:first-child,
+  .publications .data-table th:first-child,
+  .publications .data-table td:first-child {
     padding-left: var(--space-4);
   }
 }
