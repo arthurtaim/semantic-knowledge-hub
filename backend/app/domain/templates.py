@@ -94,8 +94,15 @@ class DocumentTemplate:
 def _parse_template(path: Path) -> DocumentTemplate:
     if path.stat().st_size > MAX_TEMPLATE_BYTES:
         raise TemplateError("файл шаблона слишком большой")
+    return parse_template_text(path.read_text(encoding="utf-8"))
+
+
+def parse_template_text(text: str) -> DocumentTemplate:
+    """The one parser of a template's source (a shipped file or a Template Studio version): same rules for both."""
+    if len(text.encode("utf-8")) > MAX_TEMPLATE_BYTES:
+        raise TemplateError("файл шаблона слишком большой")
     try:
-        yaml_text, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        yaml_text, body = split_frontmatter(text)
         meta = load_frontmatter(yaml_text)
     except FrontmatterError as exc:
         raise TemplateError(exc.message) from exc
