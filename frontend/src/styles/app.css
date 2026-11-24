@@ -2470,80 +2470,45 @@ label {
 
 /* ---------- explorer ---------- */
 
-.explorer .page-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: var(--space-4);
-}
-
-.explorer .page-head h1 {
-  margin: 0;
-}
-
-.explorer .search-box {
-  flex: 1 1 24rem;
-}
-
-.explorer__body {
-  display: grid;
-  grid-template-columns: 14rem minmax(0, 1fr);
-  gap: var(--space-6);
-  align-items: start;
-}
-
-.filters {
-  position: sticky;
-  top: calc(var(--toolbar-height) + var(--space-4));
-}
-
-.filter-group {
-  margin-bottom: var(--space-5);
-}
-
-.filter-group summary {
-  font-size: var(--fs-caption);
-  color: var(--text-secondary);
-  font-weight: 500;
-  margin-bottom: var(--space-2);
-  cursor: pointer;
-}
-
-.filter-group__active {
-  color: var(--accent-text);
-}
-
-.filter-group ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .filter-option {
   display: flex;
-  justify-content: space-between;
-  width: 100%;
+  align-items: center;
   gap: var(--space-2);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-control);
+  width: 100%;
+  min-height: var(--control-height-sm);
   padding: var(--space-1) var(--space-2);
-  margin: 0 calc(-1 * var(--space-2));
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
-  width: calc(100% + 2 * var(--space-2));
 }
 
 .filter-option:hover {
   background: var(--bg-hover);
 }
 
-/* Selected = the grey selection surface + weight, as in the sidebar; never the primary green fill. */
+.filter-option__check {
+  visibility: hidden;
+  color: var(--accent-text);
+}
+
+.filter-option__label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Selected = the grey selection surface + weight + a tick, as in the sidebar; never the primary green fill. */
 .filter-option[aria-pressed="true"] {
   background: var(--bg-selected);
-  color: var(--text);
   font-weight: 500;
+}
+
+.filter-option[aria-pressed="true"] .filter-option__check {
+  visibility: visible;
 }
 
 .filter-option__count {
@@ -2578,18 +2543,6 @@ label {
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
-}
-
-.sort-control {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.sort-control label {
-  margin: 0;
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
 }
 
 .result__badges {
@@ -2865,6 +2818,391 @@ h1 a:hover {
   background: var(--bg-hover);
   color: var(--text);
   text-decoration: none;
+}
+
+/* ── Catalog (UI v2 phase D, design-05): view switch, «Найти в списке», filter chips, grouped table ── */
+
+.page-toolbar__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: var(--space-2);
+  flex: none;
+}
+
+.page-toolbar__count {
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* Список / Таблица / Карта: a segmented look; «Карта» is a link to the map with the same filters. */
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--bg-hover);
+}
+
+.view-switch__item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.625rem;
+  padding: 0 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.view-switch__item:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.view-switch__item[aria-pressed="true"] {
+  background: var(--bg-surface);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.catalog-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: min(22.5rem, 100%);
+}
+
+.catalog-search__icon {
+  position: absolute;
+  left: 0.625rem;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.catalog-search input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding-left: 2rem;
+  font-size: var(--fs-ui);
+}
+
+/* Below 1280 px the switch and the search field sit at the top of the content. */
+.catalog__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* The filter row: active filters as chips, «+ Фильтр», then grouping and «Вид» on the right. */
+.catalog-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 calc(-1 * var(--space-6));
+  padding: var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Right under the toolbar when the switch and the search are in it (design-05). */
+.catalog-bar--flush {
+  margin-top: calc(-1 * var(--space-6));
+}
+
+.catalog-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-bar__chips .chip {
+  min-height: var(--control-height-sm);
+}
+
+.catalog-bar__add {
+  border-style: dashed;
+}
+
+.catalog-bar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.catalog-bar__menu {
+  color: var(--text);
+}
+
+.catalog-bar__menu .icon {
+  color: var(--text-secondary);
+}
+
+.facet-popover {
+  width: min(20rem, calc(100vw - 2 * var(--space-4)));
+  max-height: min(32rem, 70vh);
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.facet-groups {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.facet-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facet-group__title {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.catalog .results {
+  margin-top: var(--space-4);
+}
+
+.catalog .results__bar {
+  margin-bottom: var(--space-2);
+}
+
+/* Browsing the table: the summary is for screen readers only, the table starts right under the filter row. */
+.catalog .results--quiet {
+  margin-top: 0;
+}
+
+.catalog .results--quiet .results__bar {
+  margin: 0;
+}
+
+/* The table runs edge to edge of the work area, like design-05. */
+.catalog-table-wrap {
+  margin: 0 calc(-1 * var(--space-6)) var(--space-5);
+  overflow-x: auto;
+}
+
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+}
+
+.catalog-table__col-status {
+  width: 11rem;
+}
+
+.catalog-table__col-owner {
+  width: 14rem;
+}
+
+.catalog-table__col-updated {
+  width: 8.5rem;
+}
+
+.catalog-table th,
+.catalog-table td {
+  padding: 0 var(--space-4);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.catalog-table th:first-child,
+.catalog-table td:first-child {
+  padding-left: var(--space-6);
+}
+
+.catalog-table thead th {
+  height: 2.25rem;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.catalog-group th {
+  height: var(--group-row-height);
+  padding: 0 var(--space-4) 0 var(--space-5);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--line);
+}
+
+.catalog-group__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.catalog-group__toggle:hover {
+  background: var(--bg-hover);
+}
+
+.catalog-group__chevron {
+  color: var(--text-secondary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.catalog-group__toggle[aria-expanded="false"] .catalog-group__chevron {
+  transform: rotate(-90deg);
+}
+
+.catalog-group__count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.catalog-row {
+  height: var(--row-height);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.catalog-row:hover {
+  background: var(--bg-hover);
+}
+
+.catalog-row__name {
+  padding-block: var(--space-2);
+}
+
+.catalog__title {
+  margin-right: var(--space-2);
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.catalog__title:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.catalog__id {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-right: var(--space-2);
+  font-size: var(--fs-small);
+}
+
+.catalog__source {
+  color: var(--text-tertiary);
+}
+
+.catalog-row__status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.catalog-row .when {
+  color: var(--text-secondary);
+}
+
+/* Phones: each document is a card row; groups stay, with the same counts and collapse. */
+.catalog-cards {
+  margin: 0 0 var(--space-5);
+}
+
+.catalog-group--card {
+  margin: 0;
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-subtle);
+}
+
+.catalog-cards__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.catalog-card .catalog__id {
+  margin: 0;
+}
+
+.catalog-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 959.98px) {
+  .catalog-bar {
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+  }
+
+  .catalog-table-wrap {
+    margin-inline: calc(-1 * var(--space-4));
+  }
+
+  .catalog-table th:first-child,
+  .catalog-table td:first-child {
+    padding-left: var(--space-4);
+  }
+}
+
+@media (max-width: 719.98px) {
+  .catalog-bar {
+    margin-top: 0;
+  }
+
+  .catalog__top .view-switch {
+    flex: none;
+  }
+
+  .catalog-search {
+    width: 100%;
+  }
+
+  .catalog-group--card .catalog-group__toggle {
+    margin-left: calc(-1 * var(--space-1));
+  }
 }
 
 /* ── Document page (UI v2 phase D, design-04): status line, title, properties grid, segments, right panel ── */
@@ -3219,8 +3557,9 @@ h1 a:hover {
   }
 }
 
-/* A toolbar action that keeps only its icon on a phone (the label stays its accessible name). */
-.button--collapsible > .icon {
+/* A toolbar action that keeps only its icon on a phone (the label stays its accessible name); on wider screens
+   the icon shows only with `button--with-icon` («+ Создать документ»). */
+.button--collapsible:not(.button--with-icon) > .icon {
   display: none;
 }
 
@@ -3231,7 +3570,8 @@ h1 a:hover {
     padding: 0;
   }
 
-  .button--collapsible > .icon {
+  .button--collapsible > .icon,
+  .button--collapsible:not(.button--with-icon) > .icon {
     display: inline-block;
   }
 
@@ -6234,42 +6574,8 @@ h1 a:hover {
     padding: var(--space-5) var(--gutter) var(--space-6);
   }
 
-  .explorer__body {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
-  }
-
   .integration {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .filters {
-    position: static;
-  }
-
-  .filters-disclosure > summary {
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .filters-disclosure[open] > summary {
-    border-bottom-color: transparent;
-  }
-
-  .filters-disclosure__body {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-    padding: var(--space-2) 0 var(--space-4);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .filter-group {
-    flex: 1 1 12rem;
-    margin-bottom: 0;
   }
 
   .prose {

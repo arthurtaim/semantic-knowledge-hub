@@ -54,12 +54,23 @@ interface PageToolbarProps {
   title?: string;
   /** Buttons for the right side; at most one primary. */
   actions?: ReactNode;
+  /** Shown right after the title or path: a count, a view switch (the catalog: «Документы 83 · Список / Таблица»). */
+  meta?: ReactNode;
 }
 
-export function PageToolbar({ crumbs, title, actions }: PageToolbarProps) {
+export function PageToolbar({ crumbs, title, actions, meta }: PageToolbarProps) {
   const slots = useContext(ToolbarSlotsContext);
   const register = slots?.register;
-  const path = crumbs ? <ToolbarPath crumbs={crumbs} /> : title ? <ToolbarPath crumbs={[{ label: title }]} /> : null;
+  const named = crumbs ? <ToolbarPath crumbs={crumbs} /> : title ? <ToolbarPath crumbs={[{ label: title }]} /> : null;
+  const path =
+    named && meta ? (
+      <>
+        {named}
+        <div className="page-toolbar__meta">{meta}</div>
+      </>
+    ) : (
+      named
+    );
   const hasPath = path !== null;
   // Only a page that names itself replaces the default path (actions alone leave it).
   useLayoutEffect(() => (hasPath ? register?.() : undefined), [register, hasPath]);

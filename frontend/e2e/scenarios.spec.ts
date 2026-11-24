@@ -38,10 +38,12 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   await expect(page).toHaveURL(/\/documents\?query=/);
   await expect(page.locator(".result").first()).toBeVisible();
 
+  // UI v2: browsing opens the catalog table; the sort is in the «Вид» menu.
   await page.goto("/documents");
-  await page.getByLabel("Сортировка").selectOption({ label: "Сначала новые" });
+  await page.getByRole("button", { name: "Вид" }).click();
+  await page.getByRole("menuitemradio", { name: "Сначала новые" }).click();
   await expect(page).toHaveURL(/sort=updated/);
-  await expect(page.locator(".result").first()).toContainText("Обновлён");
+  await expect(page.getByRole("table")).toContainText("Обновлён");
   await page.goto("/documents?query=квазизвездный");
   await expect(page.getByText("По запросу «квазизвездный» ничего не найдено")).toBeVisible();
   expect(problems).toEqual([]);
@@ -127,7 +129,9 @@ test("@mobile E2E-12 phone: home, menu, document and proposal pages fit the scre
   await page.goto("/");
   await page.getByRole("button", { name: "Меню" }).click();
   await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Документы" }).click();
-  await expect(page.getByRole("heading", { name: "База знаний", level: 1 })).toBeVisible();
+  // UI v2: the catalog is «Документы», as in the sidebar; the toolbar shows the name, the H1 keeps the outline.
+  await expect(page.getByRole("heading", { name: "Документы", level: 1 })).toBeAttached();
+  await expect(page.locator(".page-toolbar")).toContainText("Документы");
 });
 
 test("E2E-13 AI-first entry: Ctrl+K → question → evidence first → the marker opens the cited section", async ({ page }) => {
