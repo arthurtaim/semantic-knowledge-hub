@@ -73,9 +73,15 @@ describe("Other pages in the new system", () => {
     await screen.findByRole("heading", { level: 1, name: /Интеграция/ });
     const bar = toolbar(container);
     expect(within(bar).getByRole("link", { name: "Использовать шаблон" })).toHaveAttribute("href", "/documents/new?template=integration");
-    expect(within(bar).getByRole("button", { name: "Создать с ИИ" })).toBeInTheDocument();
+    const ai = within(bar).getByRole("button", { name: "Создать с ИИ" });
     expect(within(bar).getByRole("link", { name: "Сравнить версии" })).toHaveAttribute("href", "#compare");
     expect(container.querySelectorAll(".button--primary")).toHaveLength(1);
+    // UI v2 phase F: it names the panel it controls only while that panel exists (no dangling aria-controls).
+    expect(ai).toHaveAttribute("aria-expanded", "false");
+    expect(ai).not.toHaveAttribute("aria-controls");
+    await userEvent.click(ai);
+    expect(ai).toHaveAttribute("aria-controls", "template-ai");
+    expect(document.getElementById("template-ai")).not.toBeNull();
   });
 
   it("шаблон in the shell: the actions sit in the toolbar, and at the top of the content on a phone", async () => {

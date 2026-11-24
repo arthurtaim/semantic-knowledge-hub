@@ -327,7 +327,7 @@ export function TemplateDetailPage() {
                 className={buttonClass("secondary")}
                 disabled={!usable || !aiAvailable}
                 aria-expanded={aiOpen}
-                aria-controls="template-ai"
+                aria-controls={aiOpen ? "template-ai" : undefined}
                 aria-describedby={!usable ? "template-unusable" : !aiAvailable ? "template-ai-off" : undefined}
                 onClick={() => setAiOpen((open) => !open)}
               >

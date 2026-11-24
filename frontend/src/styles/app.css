@@ -1742,11 +1742,12 @@ kbd {
   white-space: nowrap;
 }
 
+/* Above the sticky sidebar and page toolbar: focused, it must be seen (it used to be hidden under them). */
 .skip-link {
   position: absolute;
   left: var(--space-4);
   top: -3rem;
-  z-index: 10;
+  z-index: 100;
   background: var(--text);
   color: var(--text-inverse);
   padding: var(--space-2) var(--space-4);
@@ -5242,6 +5243,7 @@ dd a.button {
 .source__title {
   flex: 1;
   min-width: 0;
+  padding-block: 2px; /* a 24 px target (WCAG 2.5.8) */
   color: var(--text);
   font-weight: 500;
   overflow-wrap: anywhere;
@@ -5317,7 +5319,7 @@ a.source__title:hover {
 }
 
 .excluded__toggle {
-  padding: 0;
+  padding: 2px 0; /* a 24 px target (WCAG 2.5.8) */
   border: 0;
   background: transparent;
   color: var(--accent-text);
@@ -7259,8 +7261,10 @@ a.source__title:hover {
   opacity: 0.45;
 }
 
+/* The ring is also the node's hit area: a click or drag anywhere inside it takes the node, not the background
+   (a larger target, WCAG 2.5.8; the list view «Списком» is the equivalent with full-size rows). */
 .graph-node__ring {
-  fill: none;
+  fill: transparent;
   stroke: transparent;
   stroke-width: 4;
 }
@@ -7586,7 +7590,7 @@ a.source__title:hover {
 }
 
 .graph-why__node {
-  padding: 0;
+  padding: 2px 0; /* a 24 px target (WCAG 2.5.8) */
   border: 0;
   background: none;
   color: var(--accent-text);
@@ -8461,6 +8465,11 @@ a.source__title:hover {
   background: var(--bg-selected);
   border-radius: var(--radius-control);
   padding-left: var(--space-3);
+}
+
+/* Tertiary text is 4.2:1 on the selected surface; secondary keeps 4.5:1 (tokens.test.ts). */
+.template-history li.is-current .muted {
+  color: var(--text-secondary);
 }
 
 .template-history p {
