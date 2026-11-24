@@ -245,6 +245,7 @@ export function Composer({
         documents: draft.documents.length,
         selection: draft.selection !== null,
         attachments: draft.files.filter((file) => file.status === "ready").length,
+        question: text,
       });
   const hasText = text.trim().length > 0;
   const canSend = searchMode

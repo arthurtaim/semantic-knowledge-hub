@@ -105,17 +105,23 @@ export const SKILL_ACCESS_LABEL: Record<AssistantSkill["access"], string> = {
   draft: "создаёт черновик",
 };
 
-export type SkillInput = "document" | "selection" | "attachment";
+export type SkillInput = "document" | "selection" | "attachment" | "document_or_question";
 
-/** What a chosen skill still needs before it can run (the registry's `requires`). */
+/** A question shorter than this is no question (the server's rule for `ask` and «документ или вопрос»). */
+export const MIN_QUESTION_CHARS = 3;
+
+/** What a chosen skill still needs before it can run (the registry's `requires`, as the server checks it). */
 export function missingInput(
   skill: AssistantSkill | null,
-  context: { documents: number; selection: boolean; attachments: number },
+  context: { documents: number; selection: boolean; attachments: number; question?: string },
 ): SkillInput | null {
   if (!skill) return null;
+  const document = context.documents > 0 || context.selection;
   if (skill.requires.selection && !context.selection) return "selection";
-  if (skill.requires.document && context.documents === 0 && !context.selection) return "document";
+  if (skill.requires.document && !document) return "document";
   if (skill.requires.attachment && context.attachments === 0) return "attachment";
+  const question = (context.question ?? "").trim().length >= MIN_QUESTION_CHARS;
+  if (skill.requires.document_or_question && !document && !question) return "document_or_question";
   return null;
 }
 
@@ -123,6 +129,7 @@ export const MISSING_INPUT_HINT: Record<SkillInput, string> = {
   document: "нужен документ: кнопка «Документ» или @ в тексте",
   selection: "нужен выделенный фрагмент документа",
   attachment: "нужен файл: кнопка «Файл» или перетащите его в поле",
+  document_or_question: "нужен документ или вопрос: кнопка «Документ», @ в тексте или напишите вопрос",
 };
 
 /** Titles of the ask errors (v0.3 provider errors plus the v0.4 skill and attachment checks). */

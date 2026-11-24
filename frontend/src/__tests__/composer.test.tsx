@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AiMode, AssistantAttachment, SearchResponse, SessionResponse } from "../api/types";
 import { Composer, type ComposerVariant } from "../components/Composer";
+import { missingInput } from "../lib/assistant";
 import { useComposer, type ComposerMessage } from "../lib/useComposer";
 import type { SkillsState } from "../lib/useSkills";
 import { attachmentReady, session, skills } from "./fixtures";
@@ -192,12 +193,36 @@ describe("Composer: skills («Навык» and «/»)", () => {
     expect(screen.getByText(/Навыку «Что перепроверить» нужен документ/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Отправить" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "Убрать навык «Что перепроверить»" }));
+    // «Найти связи» needs a document OR a question (requires.document_or_question): an empty field no longer
+    // sends a request the server would refuse with skill_input_missing.
     await userEvent.type(field, "/связи{Enter}");
     expect(field).toHaveAttribute("placeholder", expect.stringContaining("оставьте поле пустым"));
+    const hint = "Навыку «Найти связи» нужен документ или вопрос: кнопка «Документ», @ в тексте или напишите вопрос.";
+    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Отправить" })).toBeDisabled();
+    await userEvent.keyboard("{Enter}");
+    expect(onSend).not.toHaveBeenCalled();
+    await userEvent.type(field, "ар");
+    expect(screen.getByRole("button", { name: "Отправить" })).toBeDisabled(); // under 3 characters is no question
+    await userEvent.type(field, "хив");
+    expect(screen.queryByText(hint)).toBeNull();
     expect(screen.getByRole("button", { name: "Отправить" })).toBeEnabled();
     await userEvent.keyboard("{Enter}");
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(onSend.mock.calls[0]?.[0]).toMatchObject({ question: "", skill: byId("find_related") });
+    expect(onSend.mock.calls[0]?.[0]).toMatchObject({ question: "архив", skill: byId("find_related") });
+  });
+
+  it("«документ или вопрос»: a chosen document is enough, the field may stay empty", () => {
+    const related = { ...byId("find_related")!, requires: { ...byId("find_related")!.requires } };
+    const context = { documents: 0, selection: false, attachments: 0 };
+    expect(missingInput(related, { ...context, question: "" })).toBe("document_or_question");
+    expect(missingInput(related, { ...context, documents: 1, question: "" })).toBeNull();
+    expect(missingInput(related, { ...context, selection: true })).toBeNull();
+    expect(missingInput(related, { ...context, question: "  ab  " })).toBe("document_or_question");
+    expect(missingInput(related, { ...context, question: "abc" })).toBeNull();
+    // A registry without the new key (an older server) keeps the old behaviour.
+    const older = { ...related, requires: { document: false, selection: false, attachment: false } };
+    expect(missingInput(older, { ...context, question: "" })).toBeNull();
   });
 
   it("keeps the send button off for a skill that needs a question until one is typed", async () => {

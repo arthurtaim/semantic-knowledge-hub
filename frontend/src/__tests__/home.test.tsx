@@ -105,12 +105,16 @@ describe("Home page: the assistant", () => {
     expect(handed?.conversationId).toBe(handed?.message.conversationId);
   });
 
-  it("sends a skill without a question to the dialog with its chip", async () => {
+  it("sends a skill to the dialog with its chip once it has what it needs («Найти связи»: a document or a question)", async () => {
     mockApi(homeRoutes());
     renderRoutes("/", routes);
     await userEvent.click(await screen.findByRole("button", { name: "Найти связи" }));
+    // requires.document_or_question: an empty field does not send (the server would refuse it).
     await userEvent.keyboard("{Enter}");
-    expect(screen.getByTestId("location")).toHaveTextContent(/^\/ask$/);
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
+    expect(screen.getByText(/Навыку «Найти связи» нужен документ или вопрос/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Вопрос"), "Выгрузка регионов{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent(askHref("Выгрузка регионов"));
     const handed = peekHandOff<HomeHandOff>();
     expect(handed?.message.skill?.id).toBe("find_related");
     expect(handed?.draft.skill?.id).toBe("find_related");

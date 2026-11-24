@@ -581,7 +581,7 @@ export const skills: AssistantSkill[] = [
   skill("explain", "Объяснить", "Объяснит выделенный фрагмент или документ по утверждённым источникам", "read", { document: true }),
   skill("summarize", "Кратко пересказать", "Коротко перескажет документ или выделенный фрагмент", "read", { document: true }),
   skill("check_freshness", "Что перепроверить", "Покажет связанные документы, которые могли устареть", "read", { document: true }),
-  skill("find_related", "Найти связи", "Покажет связанные документы и путь на карте знаний", "read"),
+  skill("find_related", "Найти связи", "Покажет связанные документы и путь на карте знаний", "read", { document_or_question: true }),
   skill("compare_with_file", "Сравнить с файлом", "Сверит вложение с утверждёнными документами", "read", { attachment: true }),
   skill("draft_document", "Черновик документа", "Подберёт шаблон и подготовит черновик на ревью", "draft", {}, { prompt_optional: false }),
   skill(

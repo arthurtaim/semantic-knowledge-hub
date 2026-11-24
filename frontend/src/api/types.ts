@@ -354,6 +354,8 @@ export interface SkillRequires {
   document: boolean;
   selection: boolean;
   attachment: boolean;
+  /** «One of»: a chosen document / selection OR a question of at least 3 characters (API v0.4; absent = false). */
+  document_or_question?: boolean;
 }
 
 /** GET /api/assistant/skills — the registry, with availability in the current AI mode. */
