@@ -280,6 +280,46 @@ def test_boilerplate_is_not_handed_to_the_model_as_evidence(full_tool_client: Ca
             )
 
 
+def test_broad_question_gets_a_scope_aware_overview(full_tool_client: Callable[..., Any]) -> None:
+    client, recorder = full_tool_client()
+    answer = ask(client, "Какая у нас модель данных?")
+    steps = [(s["tool"], s["operation"], s["outcome"]) for s in answer["tool_steps"]]
+    assert ("catalog_query", "list", "ok") in steps and ("knowledge_search", "search", "ok") in steps
+    assert answer["confidence"] == "supported"
+    assert len({c["document_id"] for c in answer["citations"]}) >= 2  # an overview, not the first passage
+    assert "в доступных вам документах" in answer["answer"].casefold()
+    assert provenance_warnings(answer) == []
+    assert answer["provenance"]["overall"] == "synthetic" and answer["provenance"]["by_kind"]["team"] >= 2
+    system, first = (" ".join(text.split()) for text in recorder.calls[0])
+    # the policy tells the model what the pre-retrieved passages are and how to answer a broad question
+    assert "выборка" in first and "не весь каталог" in first
+    assert "Обзорный вопрос" in system and "в просмотренных источниках не найдено" in system
+    listed = json.loads(
+        re.search(r"<<<TOOL RESULT T1>>>\n(.*?)\n<<<END T1>>>", recorder.calls[1][1], re.S).group(1)
+    )
+    assert all("synthetic" in row for row in listed["items"])  # provenance as catalog metadata
+
+
+def test_follow_up_continues_the_referent_without_a_disclaimer(full_tool_client: Callable[..., Any]) -> None:
+    client, _recorder = full_tool_client()
+    first = ask(client, "Какая у нас модель данных?")
+    history = [
+        {
+            "question": "Какая у нас модель данных?",
+            "answer": first["answer"][:4000],
+            "context": first["conversation_context"],
+        }
+    ]
+    answer = ask(client, "нам интересны демо-файлы", history=history)
+    assert answer["confidence"] == "supported" and answer["citations"]
+    search = next(s for s in answer["tool_steps"] if s["tool"] == "knowledge_search")
+    assert search["outcome"] == "ok"
+    assert provenance_warnings(answer) == []
+    assert answer["provenance"]["overall"] == "synthetic"
+    # words of the PREVIOUS question are not reported as «not found» for this turn
+    assert not {"нас", "модель", "данных"} & {t.casefold() for t in answer["unmatched_terms"]}
+
+
 @pytest.mark.parametrize(
     ("previous", "question"),
     [
@@ -304,6 +344,18 @@ def test_follow_up_retrieval_keeps_both_readings(
     combined = prepared({"question": f"{question} {previous}"})
     follow_up = prepared({"question": question, "history": [{"question": previous, "answer": ""}]})
     assert alone[0] in follow_up and combined[0] in follow_up, (alone[:3], combined[:3], follow_up)
+
+
+def test_real_data_question_gets_an_explicit_disclosure(full_tool_client: Callable[..., Any]) -> None:
+    client, _ = full_tool_client()
+    answer = ask(client, "Это реальные данные банка?")
+    fact = answer["system_facts"][0]
+    total = sum(
+        1 for _ in FIXTURES_DIR.rglob("*.md")
+    )  # every fixture document is synthetic (oracle: the files)
+    assert fact["breakdown"]["provenance"] == {"synthetic": total}
+    assert "синтетические" in answer["answer"] and f"[{fact['ref']}]" in answer["answer"]
+    assert provenance_warnings(answer) == []  # the disclosure is the answer itself, backed by the fact
 
 
 def test_a_word_missing_from_an_earlier_question_never_blocks_a_new_subject(client: TestClient) -> None:
