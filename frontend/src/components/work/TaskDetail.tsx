@@ -15,6 +15,7 @@ import type {
 import { toApiError, type UpdateResult } from "../../lib/useWorkspace";
 import {
   ACTIVITY_LABEL,
+  actorName,
   addDays,
   countWorkdays,
   FIELD_LABEL,
@@ -211,7 +212,8 @@ export function TaskDetail(props: TaskDetailProps) {
       <TaskHistory task={task} capabilities={capabilities} assignees={assignees} planRevision={props.planRevision} keyOf={keyOf} />
 
       <p className="task-detail__meta muted">
-        Создана: {task.created_by} · <When value={task.created_at} />. Изменена: {task.updated_by} · <When value={task.updated_at} />. Версия {task.version}.
+        Создана: {actorName(task.created_by, capabilities?.identity, assignees)} · <When value={task.created_at} />. Изменена:{" "}
+        {actorName(task.updated_by, capabilities?.identity, assignees)} · <When value={task.updated_at} />. Версия {task.version}.
         {task.is_demo ? " Демо-данные (синтетические)." : ""}
       </p>
 

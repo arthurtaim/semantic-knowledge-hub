@@ -82,7 +82,15 @@ export const FIELD_LABEL: Record<string, string> = {
   archived_at: "Архив",
   predecessor: "Предшественник",
   successor: "Последователь",
+  seed: "Синтетические демо-данные",
 };
+
+/** Server actor ids in words: the operator, a demo role, the demo seed; an unknown id is shown as it is. */
+export function actorName(id: string, identity: { user_id: string; display_name: string } | null | undefined, assignees: { id: string; display_name: string }[]): string {
+  if (identity && id === identity.user_id) return identity.display_name;
+  if (id === "system:demo-seed") return "Демо-данные (синтетические)";
+  return assignees.find((a) => a.id === id)?.display_name ?? id;
+}
 
 /** Server conflicts of a schedule preview, in words. */
 export const CONFLICT_LABEL: Record<string, string> = {
@@ -488,7 +496,11 @@ export function scaleCells(range: GanttRange, zoom: GanttZoom, dayWidth: number)
     const next =
       zoom === "month" ? Math.round(Date.UTC(y + 1, 0, 1) / DAY_MS) : Math.round(Date.UTC(y, m, 1) / DAY_MS);
     const stop = Math.min(next, range.end);
-    top.push({ x: x(cursor), width: (stop - cursor) * dayWidth, label: zoom === "month" ? String(y) : monthTitle(iso), title: zoom === "month" ? String(y) : monthTitle(iso) });
+    const width = (stop - cursor) * dayWidth;
+    const full = zoom === "month" ? String(y) : monthTitle(iso);
+    // A partial month at an edge is narrow: a short name, or nothing, so labels never run into each other.
+    const label = width >= 104 || zoom === "month" ? full : width >= 40 ? (MONTHS_SHORT[m - 1] ?? "") : "";
+    top.push({ x: x(cursor), width, label, title: full });
     cursor = stop;
   }
   if (zoom === "day") {

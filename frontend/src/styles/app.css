@@ -13908,3 +13908,8 @@ a.fact-item__title:hover {
 .schedule-preview__mode {
   align-self: flex-start;
 }
+
+.task-deps__add > .button,
+.task-dates__form .button-row {
+  align-self: flex-start;
+}

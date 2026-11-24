@@ -225,6 +225,7 @@ describe("Task detail", () => {
     renderRoutes("/tasks/ARIS-5", ROUTES);
     expect(await screen.findByRole("heading", { level: 1, name: /Загрузчик/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "На диаграмме Ганта" })).toHaveAttribute("href", "/projects/ARIS?view=gantt&task=ARIS-5");
-    expect(screen.getByRole("link", { name: "ARIS-4 Маппинг метаданных" })).toHaveAttribute("href", "/tasks/ARIS-4");
+    // Dependencies arrive after the task (their own request).
+    expect(await screen.findByRole("link", { name: "ARIS-4 Маппинг метаданных" })).toHaveAttribute("href", "/tasks/ARIS-4");
   });
 });
