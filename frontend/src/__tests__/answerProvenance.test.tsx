@@ -164,7 +164,7 @@ describe("Answer: provenance as metadata, not a warning", () => {
   it("the extractive answer (no model) shows the same line next to its mode — two different things", async () => {
     const answer = await askWith(supportedAnswer);
     expect(line(answer)).toHaveTextContent("Источники: синтетические (учебные)");
-    expect(within(answer).getByText(/без языковой модели/, { selector: ".answer__mode" })).toBeInTheDocument();
+    expect(within(answer).getByText("Без языковой модели: дословные выдержки", { selector: ".answer__mode" })).toBeInTheDocument();
     expect(marks(answer)).toHaveLength(0);
   });
 

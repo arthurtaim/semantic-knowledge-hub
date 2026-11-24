@@ -78,7 +78,10 @@ test("E2E-04 assistant answer with a verified citation (demo mode)", async ({ pa
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
   await page.getByLabel("Вопрос").press("Control+Enter");
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
-  await expect(page.getByText(/Демо-режим/).first()).toBeVisible();
+  await expect(page.locator(".answer .answer__mode")).toHaveText("Без языковой модели: дословные выдержки");
+  // Synthetic fixtures: their origin is one quiet line of the answer, not a warning on every answer.
+  await expect(page.locator(".answer .answer__provenance")).toHaveText("Источники: синтетические (учебные)");
+  await expect(page.locator(".answer .notice--warning")).toHaveCount(0);
   const citation = page.locator(".source").first();
   await expect(citation).toContainText("Каноническая база знаний команды хранится в отдельном репозитории GitLab");
   await expect(citation).toContainText("Утверждён");
@@ -154,7 +157,7 @@ test("E2E-13 AI-first entry: Ctrl+K → question → the answer with its sources
 
   await expect(page).toHaveURL(/\/ask\?q=/);
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
-  await expect(page.locator(".answer .answer__mode")).toHaveText("Демо-режим: выдержки без языковой модели");
+  await expect(page.locator(".answer .answer__mode")).toHaveText("Без языковой модели: дословные выдержки");
   // UI v2: the quotes are in «Источники» (team documents in their own group), not repeated in the text.
   const sources = page.getByRole("region", { name: "Источники" });
   await expect(sources.getByRole("region", { name: "Документы команды" }).locator(".source").first()).toContainText("Утверждён");

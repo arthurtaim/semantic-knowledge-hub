@@ -109,7 +109,7 @@ export function AskProposal({ reference, mode, primary, compact = false, anchorI
   return (
     <section id={anchorId} tabIndex={anchorId ? -1 : undefined} className="ask-proposal" aria-labelledby={titleId} data-status={status}>
       <div className="ask-proposal__head">
-        <span className={generated ? "ai-label" : "demo-tag"}>{generated ? "ИИ" : "Демо"}</span>
+        <span className={generated ? "ai-label" : "mode-tag"}>{generated ? "ИИ" : "Без модели"}</span>
         <Heading id={titleId}>Предложение ИИ: {AI_PROPOSAL_KIND_LABEL[kind] ?? kind}</Heading>
         <span className={`ai-status ai-status--${status}`}>{AI_PROPOSAL_STATUS_LABEL[status] ?? status}</span>
       </div>

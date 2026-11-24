@@ -124,7 +124,7 @@ function externalSummary(ext: ExternalRetrievalSummary): string {
 }
 
 const MODE_LABEL: Record<AskResponse["mode"], string> = {
-  mock: "Демо-режим: выдержки без языковой модели",
+  mock: "Без языковой модели: дословные выдержки",
   disabled: "Языковая модель отключена — только выдержки из источников",
   internal_api: "Внутренняя модель, цитаты сверены с источниками",
   claude_cli: "Claude Code CLI (личный тест), цитаты сверены с источниками",
@@ -194,7 +194,8 @@ interface AnswerViewProps {
  * The assistant's answer: who answers and how well it is supported (a category, never a percentage), where its
  * sources come from (one quiet line, lib/provenance.ts — metadata, not a warning), the text with citation markers,
  * terms without support, the proposal of a skill (nothing applied), what to do next and one list of sources — team,
- * corporate and attachments apart. Generated text is labelled «ИИ», demo «Демо».
+ * corporate and attachments apart. Generated text is labelled «ИИ», the extractive mode «без языковой модели» (a
+ * mode, not the content: synthetic sources are said by the provenance line).
  */
 export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, compact = false }: AnswerViewProps) {
   const session = useSession();
@@ -215,7 +216,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
   const { text, notFound } = splitServerNotes(answer);
   const unsupported = notFound ?? (answer.unmatched_terms.length > 0 ? answer.unmatched_terms.map((term) => `«${term}»`).join(", ") : null);
   const Heading = compact ? "h3" : "h2";
-  const modeLabel = answer.mode === "mock" && answer.proposal ? "Демо-режим: предложение по правилам, без языковой модели" : (MODE_LABEL[answer.mode] ?? answer.mode);
+  const modeLabel = answer.mode === "mock" && answer.proposal ? "Без языковой модели: предложение по правилам" : (MODE_LABEL[answer.mode] ?? answer.mode);
   return (
     <section
       className={`answer${insufficient ? " answer--insufficient" : ""}${compact ? " answer--compact" : ""}`}
@@ -237,8 +238,8 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
           </span>
         ) : null}
         {compact && answer.mode === "mock" ? (
-          <span className="demo-tag" title={modeLabel}>
-            Демо
+          <span className="mode-tag" title={modeLabel}>
+            Без модели
           </span>
         ) : (
           <span className="answer__mode">{modeLabel}</span>

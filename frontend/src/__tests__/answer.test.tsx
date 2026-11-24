@@ -120,7 +120,7 @@ describe("Answer: support, text and markers", () => {
     await ask();
     expect(screen.getByText("Частично подтверждено")).toHaveClass("confidence--partial");
     expect(screen.queryByText(/%/)).toBeNull();
-    expect(screen.getByText("Демо-режим: выдержки без языковой модели")).toBeInTheDocument();
+    expect(screen.getByText("Без языковой модели: дословные выдержки")).toBeInTheDocument();
     expect(screen.queryByText("ИИ", { selector: ".ai-label" })).toBeNull(); // not generated text
     // Each quote is shown once — under «Источники»; the text only points to it.
     expect(visible(teamCitation.excerpt)).toHaveLength(1);
@@ -327,7 +327,7 @@ describe("Answer: a skill's proposal", () => {
     renderAt("/ask", "/ask", <AskPage />);
     await ask("Черновик интеграции с внешним реестром");
     const card = screen.getByRole("region", { name: "Предложение ИИ: Черновик по запросу" });
-    expect(within(card).getByText("Демо")).toBeInTheDocument();
+    expect(within(card).getByText("Без модели", { selector: ".mode-tag" })).toBeInTheDocument();
     expect(within(card).getByText(/Ничего не применено/)).toBeInTheDocument();
     const open = within(card).getByRole("button", { name: "Открыть предложение" });
     expect(open).toHaveClass("button--primary"); // the answer's main action

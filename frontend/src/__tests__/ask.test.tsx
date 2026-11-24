@@ -80,7 +80,7 @@ describe("Ask the knowledge base", () => {
     await userEvent.click(sendButton());
 
     expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
-    expect(screen.getByText("Демо-режим: выдержки без языковой модели")).toBeInTheDocument();
+    expect(screen.getByText("Без языковой модели: дословные выдержки")).toBeInTheDocument();
     // The marker opens the cited document at the cited section (evidence first: the quote is listed above).
     const marker = screen.getByRole("link", { name: "Источник 1" });
     expect(marker).toHaveAttribute("href", "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture");

@@ -208,7 +208,7 @@ function QuickActions({ doc, assistant, actions, label, registryNote = false }: 
   );
 }
 
-/** «Демо» or «ИИ» on a listed proposal follows the mode it was made in (the panel's mode if unknown). */
+/** «Без модели» or «ИИ» on a listed proposal follows the mode it was made in (the panel's mode if unknown). */
 function proposalMode(proposal: AiProposal, fallback: AiMode): AiMode {
   const known: AiMode[] = ["mock", "internal_api", "claude_cli"];
   return known.find((mode) => mode === proposal.mode) ?? fallback;

@@ -210,7 +210,7 @@ describe("Page toolbar", () => {
     const bar = screen.getByRole("banner");
     expect(within(bar).getByText("Интеграции")).toHaveClass("page-toolbar__title");
     expect(within(bar).getByRole("button", { name: "Демо-данные" })).toBeInTheDocument();
-    expect(within(bar).getByRole("button", { name: "ИИ: демо" })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: "ИИ: без модели" })).toBeInTheDocument();
   });
 
   it("takes a page's own path and actions instead of the default", () => {

@@ -195,7 +195,7 @@ export const integrations: IntegrationsResponse = {
     { name: "local_knowledge", title: "Локальная база знаний", kind: "knowledge_repository", state: "connected", capabilities: ["read"], human_readable_message: "Локальный workspace", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
     { name: "gitlab_knowledge", title: "GitLab (каноническая база знаний)", kind: "knowledge_repository", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
     { name: "confluence_mcp", title: "Confluence Data Center (MCP, только чтение)", kind: "corporate_knowledge", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
-    { name: "ai_provider", title: "AI-провайдер", kind: "ai", state: "mock", capabilities: ["extractive_answers"], human_readable_message: "Демо-режим", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
+    { name: "ai_provider", title: "AI-провайдер", kind: "ai", state: "mock", capabilities: ["extractive_answers"], human_readable_message: "Режим без языковой модели (mock)", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
     { name: "confluence_publisher", title: "Confluence Data Center (REST, публикация)", kind: "confluence_publisher", state: "disabled", capabilities: [], human_readable_message: "Не настроено (CONFLUENCE_REST_URL не задан).", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
   ],
 };

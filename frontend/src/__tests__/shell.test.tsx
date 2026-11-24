@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import { App } from "../App";
+import { StateBadge } from "../components/StateBadge";
 import { IntegrationsPage } from "../pages/IntegrationsPage";
 import { documentPage, facets, freshSync, integrations, session, staleSync } from "./fixtures";
 import { mockApi, renderAt } from "./helpers";
@@ -78,7 +79,19 @@ describe("Integrations page", () => {
     expect(within(confluence).getByText("Не подключено", { selector: ".state" })).toBeInTheDocument();
     expect(screen.queryAllByText("Подключено", { selector: ".state" })).toHaveLength(1); // only local knowledge
     const ai = screen.getByRole("heading", { name: "AI-провайдер" }).closest("li") as HTMLElement;
-    expect(within(ai).getByText("Демо (mock)")).toBeInTheDocument();
+    // The AI provider's mock is a mode (no language model), not demo content.
+    expect(within(ai).getByText("Без модели (mock)", { selector: ".state" })).toBeInTheDocument();
+    expect(within(ai).queryByText("Демо (mock)")).toBeNull();
+  });
+
+  it("a mock CONNECTOR (synthetic pages) keeps «Демо (mock)»; only the AI provider's mock is «Без модели»", () => {
+    render(
+      <>
+        <StateBadge state="mock" kind="corporate_knowledge" />
+        <StateBadge state="mock" kind="ai" />
+      </>,
+    );
+    expect(Array.from(document.querySelectorAll(".state")).map((el) => el.textContent)).toEqual(["Демо (mock)", "Без модели (mock)"]);
   });
 
   it("shows the sync state and re-syncs on demand", async () => {

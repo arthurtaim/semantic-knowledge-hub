@@ -151,7 +151,7 @@ describe("Document assistant panel", () => {
     await userEvent.click(toggle());
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
     expect(within(panel()).getByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
-    expect(within(panel()).getByText("ИИ: демо")).toBeInTheDocument();
+    expect(within(panel()).getByText("ИИ: без модели")).toBeInTheDocument();
     const field = within(panel()).getByRole("textbox", { name: "Вопрос по документу" });
     expect(field).toHaveAttribute("placeholder", "Спросите про этот документ");
     expect(field).toHaveFocus();
@@ -279,7 +279,9 @@ describe("Document assistant panel", () => {
     expect(within(conversation).getByText("Что перепроверить", { selector: ".turn__bubble" })).toBeInTheDocument();
     const answer = await within(conversation).findByRole("region", { name: "Ассистент" });
     expect(within(answer).getByText("Подтверждено источниками")).toBeInTheDocument();
-    expect(within(answer).getByText("Демо")).toBeInTheDocument();
+    // The mode (no language model) — not the content: the synthetic sources are the provenance line.
+    expect(within(answer).getByText("Без модели", { selector: ".mode-tag" })).toBeInTheDocument();
+    expect(within(answer).getByText("Источники: синтетические (учебные)")).toBeInTheDocument();
     expect(within(answer).getByRole("link", { name: "Источник 1" })).toHaveAttribute(
       "href",
       `/documents/${DOC_ID}#semantic-layer-demonstration-architecture`,
