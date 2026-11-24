@@ -944,3 +944,40 @@ Checks: `vitest` 504 → 519 (15 new in `answerMarkdown.test.tsx`; no existing t
 `tests/test_answer_markdown_scripted.py` (the server keeps the Markdown and the verified markers, openai and claude
 transports); Playwright `e2e/answerMarkdown.spec.ts` on the scripted projects (desktop and phone; scripted-model
 scenario «оформи»).
+
+### Происхождение источников и режим ИИ (2026-11-24)
+
+The server no longer appends «Используются только демо-документы…» to every answer; it sends the origin of the
+validated evidence as metadata (`docs/API_CONTRACTS.md` «Answer provenance»). The UI shows it quietly and once
+(`lib/provenance.ts`, `components/Provenance.tsx`):
+
+- **One line per answer**, in the answer's head (dialog and document panel), `--text-secondary`, caption size — not a
+  notice: «Источники: синтетические (учебные)» (with the amber dot of «Демо-данные»), «Источники: не помечены как
+  синтетические», «Источники: смешанные — 2 синтетических, 1 без пометки, 1 без указания происхождения»,
+  «Происхождение источников не указано». Nothing for `overall: none` (insufficient evidence, general knowledge, a bare
+  registry number) and nothing from an older server without the field.
+- **Per source only when the sources differ** (`overall: mixed`): a quiet mark in the source's meta row under
+  «Источники», in the citation card and on documents listed by a system fact — «синтетический», «не помечен как
+  синтетический», «происхождение не указано» (screen readers hear «Происхождение: …»). When all sources share one
+  origin, the line covers them; `unknown` (attachments only) is also one line, not a mark per file. The former «демо»
+  per source row and card is gone. Never «реальный»: «без пометки» is the absence of a mark, and an attachment's
+  `is_demo: false` says nothing. The server's `MIXED_PROVENANCE_WARNING` and every other material warning stay
+  notices as before.
+- **Catalog facets**: `breakdown.provenance` is «По происхождению — синтетические 83 · без пометки 2 · не указано 1».
+- **Copy**: «Копировать с источниками» ends with «Происхождение источников: …» and, when mixed, each source line
+  with its origin — copied text leaves the app, where the line is not visible.
+
+**Mode is not content.** `AI_PROVIDER=mock` is a mode — no language model, verbatim excerpts — and is named so: the chip
+«ИИ: без модели» (popover «Без языковой модели (mock)»), the answer's mode «Без языковой модели: дословные выдержки»
+(«…: предложение по правилам» for a rule-based proposal), the panel's and a proposal card's tag «Без модели»
+(`.mode-tag`: dashed outline like the chip, never amber), the AI provider's state «Без модели (mock)» on
+«Интеграции» (a mock connector of Confluence keeps «Демо (mock)»: its pages are synthetic). The server's own texts say
+the same («Без языковой модели: ниже приведены дословные выдержки…»; the UI drops that first line from the extractive
+text — also an older «Демо-режим:»). Amber (`--demo-*`) is reserved for synthetic content: the toolbar's «Демо-данные»
+badge, unchanged, and the provenance dot.
+
+Checks: `vitest` 519 → 542 (`answerProvenance.test.tsx` 19 new; a facets, a mode-vs-corpus, a `StateBadge` and a
+mode-line filter test; tests that pinned «ИИ: демо», «Демо-режим: …» or «Демо (mock)» updated with the labels);
+Playwright `e2e/answerProvenance.spec.ts` on the scripted projects («Какая у нас модель данных?» → «нам интересны
+демо-файлы», «Это реальные данные банка?», phone); E2E-04 and the document panel check the line and the absence of a
+warning notice on the mock stack.

@@ -550,5 +550,6 @@ document was demo — also on non-demo deployments). Provenance is now typed met
   sources; attachment-only evidence; drafts / in_review / deprecated cited; unconfirmed Confluence pages; dropped
   citations or facts; injection-like text; index generations mixed.
 - UI contract: show `provenance` as one quiet indicator per answer (e.g. «Источники: синтетические (учебные)»), a
-  per-source badge from `Citation.provenance`, and nothing when `overall` is `none`. The mode label (`mode: mock` —
-  «без языковой модели») is a separate concept from synthetic content.
+  per-source badge from `Citation.provenance` when the sources differ (`mixed`; otherwise the indicator covers
+  them), and nothing when `overall` is `none`. The mode label (`mode: mock` — «без языковой модели») is a separate
+  concept from synthetic content. Implemented in `docs/UI_REDESIGN.md` «Происхождение источников и режим ИИ».

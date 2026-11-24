@@ -224,7 +224,8 @@ as the documents tree), «Какие документы требуют вним�
 «Неизвестный инструмент: …», «Бесконечный цикл: …», «Упади …», «Оформи сводку по ARIS в Markdown» (a Markdown answer
 with markers in a list and a table; `e2e/answerMarkdown.spec.ts`); answer quality: «Какая у нас модель данных?» (catalog list +
 search → a scoped overview), then «нам интересны демо-файлы» (searches the previous question's subject), «Это реальные
-данные банка?» (`facets` → `breakdown.provenance`).
+данные банка?» (`facets` → `breakdown.provenance`); their presentation — one provenance line, «По происхождению» — is
+`e2e/answerProvenance.spec.ts`.
 
 ## Limitations
 
