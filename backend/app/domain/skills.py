@@ -129,7 +129,7 @@ SKILLS: tuple[SkillDefinition, ...] = (
         requires_document=True,
         requires_selection=True,
         prompt_optional=True,
-        mock_unavailable_reason="В демо-режиме нет языковой модели: переписать раздел нельзя.",
+        mock_unavailable_reason="Нет языковой модели (режим mock): переписать раздел нельзя.",
     ),
     SkillDefinition(
         id="suggest_metadata",

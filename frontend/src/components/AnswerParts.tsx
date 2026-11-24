@@ -210,6 +210,8 @@ export function AnswerText({ text, ...props }: TextProps & { text: string }) {
 }
 
 const DEMO_FILES_HEADER = /^Вложения этого диалога/;
+/** The mock provider's first line names its mode (backend `MOCK_PREFIX`; «Демо-режим:» from an older server). */
+const MODE_NOTE = /^(?:Без языковой модели|Демо-режим):/;
 const EXCLUDED_NOTE = /\n*^Исключены из доказательной базы по статусу: .*$/m;
 const NOT_FOUND_NOTE = /\n*^В процитированных фрагментах не встречаются: (.*?)\.?$/m;
 
@@ -229,7 +231,7 @@ export function splitServerNotes(answer: AskResponse): { text: string; notFound:
 /**
  * What remains of a demo answer once its verbatim excerpts are shown under «Источники»: the demo provider's text
  * is a list of those same quotes, so repeating them here would duplicate every quote. Kept: lines that are not
- * a numbered quote of a verified citation, the demo prefix or the attachments header (e.g. «Недостаточно данных»
+ * a numbered quote of a verified citation, the mode line or the attachments header (e.g. «Недостаточно данных»
  * about the team documents next to quotes from a file).
  */
 export function demoRemainder(answer: AskResponse): string[] {
@@ -238,7 +240,7 @@ export function demoRemainder(answer: AskResponse): string[] {
     .text.split("\n")
     .map((line) => line.trim())
     .filter((line) => {
-      if (!line || line.startsWith("Демо-режим:") || DEMO_FILES_HEADER.test(line)) return false;
+      if (!line || MODE_NOTE.test(line) || DEMO_FILES_HEADER.test(line)) return false;
       const refs = [...line.matchAll(/\[(\d{1,3})\]/g)].map((m) => Number(m[1]));
       const quote = /^\d+\.\s*«/.test(line) && refs.length > 0 && refs.every((ref) => known.has(ref));
       return !quote;

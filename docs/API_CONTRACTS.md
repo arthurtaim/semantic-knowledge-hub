@@ -421,7 +421,7 @@ Search terms, coverage counting and answer decisions are unchanged (function wor
 named).
 
 **Skills and AI modes.** `internal_api`, `claude_cli`: all available. `mock`: all except `improve_section`
-(`unavailable_reason`: «В демо-режиме нет языковой модели: переписать раздел нельзя.» — the mock can only normalize
+(`unavailable_reason`: «Нет языковой модели (режим mock): переписать раздел нельзя.» — the mock can only normalize
 layout). `disabled`: none available, reason «ИИ отключён». `draft_document` additionally needs a provider with
 `supports_authoring`.
 

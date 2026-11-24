@@ -459,7 +459,7 @@ function confluenceCitation(ref: number, page: string, version: string, status: 
 
 const externalAnswer: AskResponse = {
   ...supportedAnswer,
-  answer: "Демо-режим.\n\n1. «Выдержка 1» [1]\n2. «Выдержка 2» [2]\n3. «Выдержка 3» [3]",
+  answer: "Без языковой модели: дословные выдержки.\n\n1. «Выдержка 1» [1]\n2. «Выдержка 2» [2]\n3. «Выдержка 3» [3]",
   citations: [
     confluenceCitation(1, "200101", "3", "unknown"),
     confluenceCitation(2, "200101", "3", "unknown"),

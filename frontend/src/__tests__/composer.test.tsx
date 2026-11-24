@@ -143,7 +143,7 @@ describe("Composer: skills («Навык» and «/»)", () => {
     expect(within(list).getByRole("option", { name: /Найти связи/ })).toHaveTextContent("чтение");
     const unavailable = within(list).getByRole("option", { name: /Улучшить раздел/ });
     expect(unavailable).toHaveAttribute("aria-disabled", "true");
-    expect(unavailable).toHaveTextContent("В демо-режиме нет языковой модели: переписать раздел нельзя.");
+    expect(unavailable).toHaveTextContent("Нет языковой модели (режим mock): переписать раздел нельзя.");
 
     await userEvent.type(field, "черн");
     expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringContaining("Черновик документа")]);

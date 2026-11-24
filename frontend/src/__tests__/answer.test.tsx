@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { Link } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AiProposal, AskResponse, AskStreamEvent, Citation } from "../api/types";
+import { demoRemainder } from "../components/AnswerParts";
 import { handOff } from "../lib/conversation";
 import { EMPTY_DRAFT, type ComposerMessage } from "../lib/useComposer";
 import { AskPage } from "../pages/AskPage";
@@ -82,7 +83,7 @@ const demoWithFile: AskResponse = {
   ...supportedAnswer,
   confidence: "partial",
   answer: [
-    "Демо-режим: ответ сформирован без языковой модели — ниже приведены дословные выдержки из найденных документов.",
+    "Без языковой модели: ниже приведены дословные выдержки из найденных документов. Делайте выводы только после проверки источников.",
     "",
     `1. «${teamCitation.excerpt}» [1]`,
     "",
@@ -131,6 +132,22 @@ describe("Answer: support, text and markers", () => {
     // Server notes go where they belong: not-found words in amber, excluded documents under «Источники».
     expect(screen.getByText("Не найдено в документах:").parentElement).toHaveTextContent("«aris_comment»");
     expect(text).not.toHaveTextContent("Исключены из доказательной базы");
+    // The provider's mode line is the mode label in the head, not a line of the text.
+    expect(text).not.toHaveTextContent("Делайте выводы только после проверки источников");
+  });
+
+  it("drops the extractive provider's mode line from its text — today's «Без языковой модели:» and an older «Демо-режим:»", () => {
+    const quote = `1. «${teamCitation.excerpt}» [1]`;
+    for (const mode of [
+      "Без языковой модели: ниже приведены дословные выдержки из найденных документов. Делайте выводы только после проверки источников.",
+      "Демо-режим: ответ сформирован без языковой модели — ниже приведены дословные выдержки из найденных документов.",
+    ]) {
+      expect(demoRemainder({ ...supportedAnswer, answer: `${mode}\n\n${quote}` })).toEqual([]);
+    }
+    // Anything else the server said stays (here: «Недостаточно данных» about the team documents).
+    expect(demoRemainder({ ...supportedAnswer, answer: `Без языковой модели: …\n\nНедостаточно данных в документах команды.\n\n${quote}` })).toEqual([
+      "Недостаточно данных в документах команды.",
+    ]);
   });
 
   it("labels generated text «ИИ» and numbers markers per group: 1 team, К1 corporate, Ф1 attachment", async () => {

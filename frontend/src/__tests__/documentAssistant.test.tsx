@@ -384,7 +384,7 @@ describe("Document assistant panel", () => {
     const manual = await within(actions).findByRole("link", { name: "Предложить правку" });
     expect(manual).toHaveAttribute("href", `/proposals/new?document=${DOC_ID}`);
     expect(manual).toHaveAccessibleDescription(
-      "В демо-режиме нет языковой модели: переписать раздел нельзя. Откроется ручное предложение изменения.",
+      "Нет языковой модели (режим mock): переписать раздел нельзя. Откроется ручное предложение изменения.",
     );
     const freshness = within(actions).getByRole("button", { name: "Что перепроверить" });
     expect(freshness).toBeDisabled();

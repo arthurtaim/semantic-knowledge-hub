@@ -136,7 +136,8 @@ export const staleSync: SyncStatus = {
 };
 
 export const supportedAnswer: AskResponse = {
-  answer: "Демо-режим: дословные выдержки.\n\n1. «This local demonstration models a knowledge base with four layers» [1]",
+  answer:
+    "Без языковой модели: ниже приведены дословные выдержки из найденных документов.\n\n1. «This local demonstration models a knowledge base with four layers» [1]",
   mode: "mock",
   confidence: "supported",
   citations: [
@@ -595,7 +596,7 @@ export const skills: AssistantSkill[] = [
     "Предложит новую формулировку раздела; применяется только после вашего решения",
     "draft",
     { document: true, selection: true },
-    { available: false, unavailable_reason: "В демо-режиме нет языковой модели: переписать раздел нельзя." },
+    { available: false, unavailable_reason: "Нет языковой модели (режим mock): переписать раздел нельзя." },
   ),
 ];
 

@@ -28,9 +28,11 @@ MAX_QUOTES_PER_PASSAGE = 2
 MAX_CHARS_PER_PASSAGE = 700
 SUPPORTED_COVERAGE = 0.75
 
+# The MODE of this provider: no language model. It says nothing about the documents (synthetic or not) — that is the
+# provenance of the cited sources (docs/API_CONTRACTS.md «Answer provenance»). The UI keys the line on this prefix.
 MOCK_PREFIX = (
-    "Демо-режим: ответ сформирован без языковой модели — ниже приведены дословные выдержки из найденных "
-    "документов. Делайте выводы только после проверки источников."
+    "Без языковой модели: ниже приведены дословные выдержки из найденных документов. "
+    "Делайте выводы только после проверки источников."
 )
 
 
@@ -117,8 +119,8 @@ def _attachment_quotes(
 
 
 PLACEHOLDER = "Требует уточнения"
-AUTHORING_DEMO_WARNING = (
-    "Демо-режим: черновик собран без языковой модели — это структура шаблона, ссылки на найденные "
+AUTHORING_NO_MODEL_WARNING = (
+    "Без языковой модели: черновик — это структура шаблона, ссылки на найденные "
     "утверждённые документы и их дословные выдержки. Все разделы требуют заполнения автором."
 )
 _REFERENCE_SECTIONS = ("связанные документы", "связи", "источники")
@@ -359,7 +361,7 @@ class MockAIProvider:
         `improve` only normalizes the layout (spaces, list markers, sentence ends). An injected instruction
         in the fragment is data: it is not followed, only reported."""
         text = request.text.strip()
-        warnings = ["Демо-режим: без языковой модели — предложение построено по правилам, проверьте его."]
+        warnings = ["Без языковой модели: предложение построено по правилам, проверьте его."]
         if looks_like_prompt_injection(text):
             warnings.append("Во фрагменте есть текст, похожий на инструкцию для ИИ: он не выполнялся.")
         if not text:
@@ -396,7 +398,7 @@ class MockAIProvider:
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         raise AIProviderError(
             "ai_edit_unsupported",
-            "В демо-режиме ИИ не генерирует правки. Отредактируйте текст вручную — изменения пройдут ту же проверку.",
+            "Без языковой модели правки не генерируются. Отредактируйте текст вручную — изменения пройдут ту же проверку.",
         )
 
     async def draft_document(self, request: AuthoringRequest) -> AuthoringDraft:
@@ -430,7 +432,7 @@ class MockAIProvider:
                     f"> «{sentence}»",
                 ]
             lines.append("")
-        warnings = [AUTHORING_DEMO_WARNING]
+        warnings = [AUTHORING_NO_MODEL_WARNING]
         insufficient_data = not request.references
         if insufficient_data:
             warnings.append(
@@ -458,8 +460,8 @@ class MockAIProvider:
             state="mock",
             capabilities=["extractive_answers", "template_drafts"],
             human_readable_message=(
-                "Демо-режим (mock): детерминированные дословные выдержки из документов, "
-                "без языковой модели и без сетевых запросов."
+                "Режим без языковой модели (mock): детерминированные дословные выдержки из документов, "
+                "без сетевых запросов."
             ),
             details={"provider": "mock"},
         )
