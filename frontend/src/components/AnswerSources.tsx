@@ -182,7 +182,8 @@ export function excludedSummary(excluded: ExcludedSource[]): string {
   const kinds = (["draft", "in_review", "deprecated", "approved"] as DocStatus[])
     .map((status) => {
       const count = excluded.filter((item) => item.status === status).length;
-      return count === 0 ? null : EXCLUDED_KIND[status][count === 1 ? 0 : 1];
+      // A category word: singular only when it is the one excluded document.
+      return count === 0 ? null : EXCLUDED_KIND[status][n === 1 ? 0 : 1];
     })
     .filter((kind): kind is string => kind !== null);
   const verb = n % 10 === 1 && n % 100 !== 11 ? "не использован" : "не использованы";

@@ -212,7 +212,7 @@ describe("Answer: sources", () => {
     renderAt("/ask", "/ask", <AskPage />);
     await ask();
     const sources = screen.getByRole("region", { name: "Источники" });
-    expect(within(sources).getByText("2 документа не использованы: черновик и устаревший.")).toBeInTheDocument();
+    expect(within(sources).getByText("2 документа не использованы: черновики и устаревшие.")).toBeInTheDocument();
     const show = within(sources).getByRole("button", { name: "Показать" });
     const list = document.getElementById(show.getAttribute("aria-controls") ?? "") as HTMLElement;
     expect(list).toHaveAttribute("aria-label", "Не использованы как доказательство");
