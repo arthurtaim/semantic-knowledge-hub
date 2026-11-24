@@ -177,8 +177,10 @@ test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and 
   const target = page.getByRole("button", { name: /^ARIS → Catalog: обзор потока \(демо\)\./ });
   await target.focus();
   await page.keyboard.press("Enter");
+  await expect(modes.getByRole("radio", { name: "Вокруг узла" })).toBeEnabled();
   await modes.getByRole("radio", { name: "Вокруг узла" }).click({ force: true });
   await expect(page).toHaveURL(/\/graph\?focus=DEMO-INT-001$/);
+  await expect(modes.getByRole("radio", { name: "Вокруг узла" })).toBeChecked();
   await expect(graphNode(page, "doc:DEMO-INT-001")).toHaveAttribute("transform", "translate(0.0,0.0)");
 
   // The answer links to its own graph: the question in the centre, the cited sources around it.
@@ -191,11 +193,16 @@ test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and 
   await expect(details(page)).toContainText("процитирована в ответе");
   await expect(page.locator(".graph-canvas__svg .graph-edge--unconfirmed").first()).toBeAttached();
 
-  // Back to the whole base and to the same answer through the segments.
+  // Back to the whole base and to the same answer through the segments. A navigation is a transition: the URL
+  // changes before the page shows the new mode, so wait for the segment before the next click.
+  const answerUrl = page.url();
   await page.getByRole("radio", { name: "Вся база" }).click({ force: true });
   await expect(page).toHaveURL(/\/graph$/);
+  await expect(page.getByRole("radio", { name: "Вся база" })).toBeChecked();
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
   await page.getByRole("radio", { name: "Граф ответа" }).click({ force: true });
-  await expect(page).toHaveURL(/\/graph\?trace=TRACE-[0-9a-f]{16}$/);
+  await expect(page).toHaveURL(answerUrl);
+  await expect(page.getByRole("radio", { name: "Граф ответа" })).toBeChecked();
   expect(problems).toEqual([]);
 });
 

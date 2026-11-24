@@ -296,7 +296,6 @@ export function GraphCanvas({
 }: GraphCanvasProps) {
   const uid = useId().replace(/:/g, "");
   const svgRef = useRef<SVGSVGElement>(null);
-  const viewportRef = useRef<SVGGElement>(null);
   const positions = useMemo(() => mergePositions(layout.positions, overrides), [layout, overrides]);
   const positionsRef = useRef(positions);
   positionsRef.current = positions;
@@ -892,7 +891,7 @@ export function GraphCanvas({
             <path d="M0,1L9,5L0,9Z" className="graph-arrow graph-arrow--lit" />
           </marker>
         </defs>
-        <g ref={viewportRef} className="graph-viewport" transform={viewTransform(view)}>
+        <g className="graph-viewport" transform={viewTransform(view)}>
           {edgeLayer}
           {edgeLabelLayer}
           {nodeLayer}
