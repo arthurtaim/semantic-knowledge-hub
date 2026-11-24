@@ -17,6 +17,12 @@
   --bg-selected: #E1E6E1;
   --bg-inverse: #1A1F1C;
   --text-inverse: #FFFFFF;
+  /* the chosen segment on a grey track: raised (white here, a lighter grey in the dark theme) */
+  --bg-raised: #FFFFFF;
+  /* the floating bar over a text selection: dark in both themes, with a frame in the dark one */
+  --bg-floating-bar: #1A1F1C;
+  --text-floating-bar: #FFFFFF;
+  --line-floating-bar: #1A1F1C;
   /* lines: dividers, button/card frames, form-field boundary (≥ 3:1, WCAG 1.4.11), floating layers */
   --line: #E3E7E3;
   --line-strong: #D7DCD8;
@@ -158,6 +164,10 @@
   --bg-selected: #2A312C;
   --bg-inverse: #E8ECE9;
   --text-inverse: #111412;
+  --bg-raised: #2E3531;
+  --bg-floating-bar: #2E3531;
+  --text-floating-bar: #E8ECE9;
+  --line-floating-bar: #4A534D;
   --line: #2A302C;
   --line-strong: #3A423D;
   --line-field: #6B746E;
@@ -225,6 +235,10 @@
     --bg-selected: #2A312C;
     --bg-inverse: #E8ECE9;
     --text-inverse: #111412;
+    --bg-raised: #2E3531;
+    --bg-floating-bar: #2E3531;
+    --text-floating-bar: #E8ECE9;
+    --line-floating-bar: #4A534D;
     --line: #2A302C;
     --line-strong: #3A423D;
     --line-field: #6B746E;
@@ -265,9 +279,6 @@
     --diff-add-bg: #183424;
     --diff-add-border: #2C5A3C;
     --diff-remove-bg: #3A1D1B;
-  --diff-add-bg: #183424;
-  --diff-add-border: #2C5A3C;
-  --diff-remove-bg: #3A1D1B;
     --graph-document: #7A8DA2;
     --graph-integration: #57A4D3;
     --graph-source-system: #E08B3E;
@@ -416,6 +427,31 @@ textarea {
 
 ::selection {
   background: var(--accent-wash-border);
+}
+
+/* The native «Выберите файл» button as a secondary button, in both themes. */
+input[type="file"] {
+  max-width: 100%;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--fs-ui);
+}
+
+input[type="file"]::file-selector-button {
+  min-height: var(--control-height);
+  margin-right: var(--space-3);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+input[type="file"]::file-selector-button:hover {
+  background: var(--bg-hover);
 }
 
 /* ---------- base components (components/ui): icon, buttons, segments, chips, status, floating layers ---------- */
@@ -610,7 +646,7 @@ textarea {
 }
 
 .segmented__option input:checked + span {
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border-color: var(--line-strong);
   color: var(--text);
 }
@@ -653,7 +689,7 @@ textarea {
 }
 
 .tabs button[aria-selected="true"] {
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border-color: var(--line-strong);
   color: var(--text);
 }
@@ -982,9 +1018,10 @@ button.chip__body {
   width: max-content;
   max-width: 16rem;
   padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line-floating-bar);
   border-radius: 6px;
-  background: var(--bg-inverse);
-  color: var(--text-inverse);
+  background: var(--bg-floating-bar);
+  color: var(--text-floating-bar);
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   font-weight: 500;
@@ -1078,7 +1115,7 @@ kbd {
 }
 
 .quick-find__mode[aria-pressed="true"] {
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border-color: var(--line-strong);
   color: var(--text);
 }
@@ -3310,7 +3347,7 @@ h1 a:hover {
 }
 
 .view-switch__item[aria-pressed="true"] {
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border-color: var(--line-strong);
   color: var(--text);
 }
@@ -4172,7 +4209,7 @@ h1 a:hover {
 }
 
 .lifecycle--compact .lifecycle__step--current {
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border-color: var(--line-strong);
 }
 
@@ -4546,9 +4583,10 @@ dd a.button {
   width: max-content;
   max-width: 100%;
   padding: var(--space-1);
+  border: 1px solid var(--line-floating-bar);
   border-radius: 10px;
-  background: var(--bg-inverse);
-  color: var(--text-inverse);
+  background: var(--bg-floating-bar);
+  color: var(--text-floating-bar);
   box-shadow: var(--shadow-popover);
   user-select: none;
   animation: layer-fade var(--duration-fast) var(--ease-out);
@@ -4566,7 +4604,7 @@ dd a.button {
   border: 0;
   border-radius: var(--radius-chip);
   background: transparent;
-  color: var(--text-inverse);
+  color: var(--text-floating-bar);
   font: inherit;
   font-size: 0.78125rem;
   line-height: 1rem;
@@ -4577,13 +4615,13 @@ dd a.button {
 }
 
 .selection-toolbar__item:hover {
-  background: color-mix(in srgb, var(--text-inverse) 16%, transparent);
-  color: var(--text-inverse);
+  background: color-mix(in srgb, var(--text-floating-bar) 16%, transparent);
+  color: var(--text-floating-bar);
   text-decoration: none;
 }
 
 .selection-toolbar__item:focus-visible {
-  outline: 2px solid var(--text-inverse);
+  outline: 2px solid var(--text-floating-bar);
   outline-offset: -2px;
 }
 
@@ -6411,7 +6449,7 @@ a.source__title:hover {
 }
 
 .view-toggle button[aria-pressed="true"] {
-  background: var(--bg-surface);
+  background: var(--bg-raised);
   border-color: var(--line-strong);
   color: var(--text);
 }
@@ -7470,9 +7508,10 @@ a.source__title:hover {
   z-index: 3;
   max-width: calc(100% - 2 * var(--space-4));
   padding: 0.375rem 0.625rem;
+  border: 1px solid var(--line-floating-bar);
   border-radius: var(--radius-control);
-  background: var(--bg-inverse);
-  color: var(--text-inverse);
+  background: var(--bg-floating-bar);
+  color: var(--text-floating-bar);
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   box-shadow: var(--shadow-popover);
