@@ -48,6 +48,13 @@ gone or restricted, the node is dropped and the trace invalidated.
 
 The UI is `/graph` (Global / Local / Query); every answer has a «Граф ответа» link.
 
+The map («Карта знаний», `docs/ui-v2/specs/04_KNOWLEDGE_GRAPH.md`) is drawn on the client from these
+responses without changing them: the whole base is a force layout, a neighbourhood and an answer graph are
+radial (focus or question in the centre, depth / cited sources on the first ring), unlinked nodes sit in a
+ring at the edge (`frontend/src/lib/graph.ts`, synchronous and deterministic). Nodes can be dragged; the
+manual positions are a per-view overlay kept in `sessionStorage` (`lib/graphPositions.ts`), never sent to the
+server, and «Сбросить расположение» drops them.
+
 ## Checks
 
 ```bash

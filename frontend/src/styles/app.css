@@ -81,6 +81,8 @@
   --graph-query-context: #8A6F1E;
   --graph-edge: #C9CFCA;
   --graph-edge-active: #59625C;
+  /* the ring around a node shape (white on the light canvas, the surface colour on the dark one) */
+  --graph-node-stroke: var(--bg-surface);
   /* layers */
   --scrim: rgb(16 24 20 / 0.32);
   --shadow-popover: 0 12px 32px rgb(16 24 20 / 0.14);
@@ -6542,76 +6544,147 @@ a.source__title:hover {
   margin: 0;
 }
 
-/* ---------- knowledge graph (M5.6; restyled in UI v2 phase E): canvas on --graph-canvas, edges in --graph-edge ---------- */
+/* ======================================================================================================
+   Knowledge map — UI v2 phase E (docs/ui-v2/specs/04_KNOWLEDGE_GRAPH.md). Everything of /graph lives in this
+   block: the page frame, the bar of modes and filter chips, the canvas (nodes filled by type, edges, labels
+   with a halo, highlight), the floating legend and controls, the details panel (a sheet on phones), the list.
+   ====================================================================================================== */
 
-.graph-toolbar {
+/* The map uses the whole work area: no content padding; on the map view the page fills the viewport. */
+.content:has(> .content__inner > .graph-page) {
+  padding: 0;
+}
+
+.graph-page {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--toolbar-height));
+}
+
+.graph-page--map {
+  height: calc(100vh - var(--toolbar-height));
+  height: calc(100dvh - var(--toolbar-height));
+}
+
+/* Bar: modes «Вся база / Вокруг узла / Граф ответа», depth, filter chips, search, «N узлов, M связей». */
+.graph-bar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-4) var(--space-6);
-  padding-bottom: var(--space-4);
-  margin-bottom: var(--space-4);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-5);
   border-bottom: 1px solid var(--line);
 }
 
-.graph-toolbar__search {
-  flex: 1 1 18rem;
-  max-width: 28rem;
-  min-width: 0;
+.graph-bar__modes,
+.graph-bar__depth {
+  flex: none;
 }
 
-.graph-toolbar__search-row {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.graph-toolbar__search-row input {
-  min-width: 0;
-}
-
-.graph-toolbar__filters {
+.graph-bar__filters {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3) var(--space-4);
-  min-width: 0;
-}
-
-.graph-toolbar__field {
-  min-width: 0;
-}
-
-.graph-toolbar__field label,
-.graph-toolbar__search label {
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
-}
-
-.graph-toolbar__field select {
-  max-width: 14rem;
-}
-
-.graph-toolbar__modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3) var(--space-5);
   align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
-.graph-toolbar .segmented legend {
+.graph-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-2) 0 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.graph-filter:hover,
+.graph-filter[aria-expanded="true"] {
+  background: var(--bg-hover);
+}
+
+.graph-filter .icon {
+  color: var(--text-secondary);
+}
+
+.graph-filter.is-active {
+  background: var(--accent-wash);
+  border-color: var(--accent-wash-border);
+  color: var(--accent-text);
+}
+
+.graph-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.graph-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* A small base size so that the count stays on the bar's line; it grows into free space up to 16 rem. */
+  flex: 1 1 10rem;
+  min-width: 9rem;
+  max-width: 16rem;
+  margin-left: auto;
+}
+
+.graph-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--control-height-sm);
+  padding-block: 0.1875rem;
+  padding-right: 2rem;
+  font-size: var(--fs-small);
+}
+
+/* The submit button sits inside the field, at its end. */
+.graph-search__submit {
+  position: absolute;
+  right: 2px;
+}
+
+.graph-bar__count {
+  margin: 0;
   font-size: var(--fs-small);
   color: var(--text-tertiary);
-  margin-bottom: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.graph-caption {
+  margin: 0;
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+.graph-caption code {
+  font-size: inherit;
+}
+
+.graph-caption__generation {
+  color: var(--text-tertiary);
 }
 
 .graph-search-status p {
-  margin: 0 0 var(--space-3);
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-2);
   font-size: var(--fs-small);
   color: var(--text-secondary);
 }
 
 .graph-remote {
-  margin: 0 0 var(--space-4);
+  margin: 0 var(--space-5) var(--space-3);
   padding-left: 1.2rem;
   font-size: var(--fs-small);
 }
@@ -6620,68 +6693,66 @@ a.source__title:hover {
   margin-top: var(--space-1);
 }
 
+.graph-message {
+  margin: 0 var(--space-5) var(--space-3);
+}
+
 .graph-partial .button {
   margin-top: var(--space-2);
 }
 
+/* Canvas on the left, «Сведения об узле» on the right (300–320 px). */
 .graph-layout {
+  flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-5) var(--space-6);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) var(--details-panel-width);
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+
+.graph-layout--map {
+  min-height: 26rem;
 }
 
 .graph-stage {
+  position: relative;
   min-width: 0;
+  min-height: 0;
 }
 
-.graph-canvas__bar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-4);
-  margin-bottom: var(--space-2);
+.graph-layout:not(.graph-layout--map) .graph-stage {
+  padding: var(--space-4) var(--space-5) var(--space-6);
 }
 
-.graph-canvas__count {
-  margin: 0;
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
-}
-
-.graph-canvas__zoom {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.graph-canvas__zoom .button {
-  min-height: 2rem;
-  font-size: var(--fs-small);
+.graph-canvas {
+  position: relative;
+  height: 100%;
+  min-height: 26rem;
+  overflow: hidden;
+  background: var(--graph-canvas);
 }
 
 .graph-canvas__svg {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: clamp(24rem, 64vh, 42rem);
-  background: var(--graph-canvas);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-block);
+  height: 100%;
   cursor: grab;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
 }
 
-.graph-canvas__svg:active {
+.graph-canvas__svg:active,
+.graph-canvas__svg.is-dragging,
+.graph-canvas__svg.is-dragging .graph-node {
   cursor: grabbing;
 }
 
-.graph-canvas__hint {
-  margin: var(--space-2) 0 0;
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
-  max-width: 72ch;
+.graph-canvas__svg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* Edges: solid = confirmed (metadata, template registry); dashed = temporary or unconfirmed (trace, discovery, AI). */
@@ -6689,14 +6760,15 @@ a.source__title:hover {
   fill: none;
   stroke: var(--graph-edge);
   stroke-width: 1.2;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
 .graph-edge--unconfirmed {
-  stroke: var(--text-tertiary);
-  stroke-dasharray: 5 4;
+  stroke-dasharray: 4 3;
 }
 
-.graph-edge.is-incident {
+.graph-edge.is-lit,
+.graph-edge--sample {
   stroke: var(--graph-edge-active);
   stroke-width: 1.6;
 }
@@ -6709,93 +6781,124 @@ a.source__title:hover {
   fill: var(--graph-edge);
 }
 
-.graph-icon--edge .graph-arrow,
-.graph-edge--unconfirmed + .graph-arrow {
-  fill: var(--text-tertiary);
-}
-
-.graph-arrow--on {
+.graph-arrow--lit {
   fill: var(--graph-edge-active);
 }
 
-/* Nodes: the kind is the shape, the status is the outline (solid / dotted / dashed / grey and struck). */
+.graph-edge-label,
+.graph-label {
+  stroke: var(--graph-canvas);
+  paint-order: stroke;
+  stroke-linejoin: round;
+  font-family: var(--font-ui);
+  pointer-events: none;
+}
+
+.graph-edge-label {
+  fill: var(--text-secondary);
+}
+
+/* Nodes: the kind is the shape and the fill; the status is the outline. */
 .graph-node {
+  --node-color: var(--graph-document);
   cursor: pointer;
   outline: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.graph-node--document {
+  --node-color: var(--graph-document);
+}
+
+.graph-node--integration {
+  --node-color: var(--graph-integration);
+}
+
+.graph-node--source_system {
+  --node-color: var(--graph-source-system);
+}
+
+.graph-node--dataset {
+  --node-color: var(--graph-dataset);
+}
+
+.graph-node--semantic_entity {
+  --node-color: var(--graph-semantic-entity);
+}
+
+.graph-node--template {
+  --node-color: var(--graph-template);
+}
+
+.graph-node--external_page {
+  --node-color: var(--graph-external-page);
+}
+
+.graph-node--query_context {
+  --node-color: var(--graph-query-context);
 }
 
 .graph-node__shape {
-  fill: var(--bg-surface);
-  stroke: var(--text-secondary);
+  fill: var(--node-color);
+  stroke: var(--graph-node-stroke);
   stroke-width: 1.5;
 }
 
-.graph-node--status-approved .graph-node__shape {
-  fill: var(--success-bg);
-  stroke: var(--success-text);
-}
-
-.graph-node--status-in_review .graph-node__shape {
-  fill: var(--status-review-bg);
-  stroke: var(--status-review-text);
-  stroke-dasharray: 1.5 2.5;
-  stroke-linecap: round;
-  stroke-width: 2;
-}
-
-.graph-node--status-draft .graph-node__shape {
-  fill: var(--status-draft-bg);
-  stroke: var(--status-draft-text);
-  stroke-dasharray: 4 3;
-}
-
-.graph-node--status-deprecated .graph-node__shape {
-  fill: var(--status-deprecated-bg);
-  stroke: var(--status-deprecated);
-}
-
-.graph-node--status-deprecated .graph-node__label {
-  text-decoration: line-through;
-  fill: var(--status-deprecated);
+/* Templates and Confluence pages are outlined (a white fill), a page with a dashed outline. */
+.graph-node--status-template .graph-node__shape,
+.graph-node--status-neutral .graph-node__shape {
+  fill: var(--bg-surface);
+  stroke: var(--node-color);
 }
 
 .graph-node--status-external .graph-node__shape {
   fill: var(--bg-surface);
-  stroke: var(--text-secondary);
+  stroke: var(--node-color);
   stroke-dasharray: 3 2;
 }
 
-.graph-node--status-query .graph-node__shape {
-  fill: var(--accent-wash);
-  stroke: var(--accent-text);
-  stroke-width: 2;
+.graph-node--status-draft .graph-node__shape,
+.graph-node--status-in_review .graph-node__shape {
+  fill: color-mix(in srgb, var(--node-color) 16%, var(--bg-surface));
+  stroke: var(--node-color);
 }
 
-.graph-node--status-template .graph-node__shape,
-.graph-node--status-neutral .graph-node__shape {
-  fill: var(--bg-surface);
-  stroke: var(--text-secondary);
+.graph-node--status-draft .graph-node__shape {
+  stroke-dasharray: 3.5 2.5;
+}
+
+.graph-node--status-in_review .graph-node__shape {
+  stroke-width: 2;
+  stroke-dasharray: 0.5 3;
+  stroke-linecap: round;
+}
+
+.graph-node--status-deprecated .graph-node__shape {
+  opacity: 0.45;
 }
 
 .graph-node__ring {
   fill: none;
   stroke: transparent;
-  stroke-width: 2.5;
+  stroke-width: 4;
+}
+
+.graph-node.is-selected .graph-node__ring {
+  stroke: var(--accent);
+  stroke-opacity: 0.3;
 }
 
 .graph-node.is-match .graph-node__ring {
   stroke: var(--accent);
+  stroke-opacity: 1;
+  stroke-width: 2;
   stroke-dasharray: 2 3;
-}
-
-.graph-node.is-selected .graph-node__ring {
-  stroke: var(--accent-text);
-  stroke-dasharray: none;
 }
 
 .graph-node:focus-visible .graph-node__ring {
   stroke: var(--accent);
-  stroke-width: 3.5;
+  stroke-opacity: 1;
+  stroke-width: 2.5;
   stroke-dasharray: none;
 }
 
@@ -6803,18 +6906,23 @@ a.source__title:hover {
   opacity: 0.2;
 }
 
-.graph-node__label {
+/* Labels: Inter 11.5 px, dark text on a halo of the canvas colour. */
+.graph-label {
   fill: var(--text);
-  stroke: var(--bg-surface);
-  paint-order: stroke;
-  stroke-linejoin: round;
-  font-family: var(--font-ui);
-  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
 }
 
-.graph-node.is-center .graph-node__label,
-.graph-node.is-selected .graph-node__label {
+.graph-label.is-strong {
   font-weight: 600;
+}
+
+.graph-label.is-faded {
+  opacity: 0.35;
+}
+
+.graph-label.is-deprecated {
+  fill: var(--status-deprecated);
+  text-decoration: line-through;
 }
 
 .graph-icon {
@@ -6823,25 +6931,201 @@ a.source__title:hover {
   overflow: visible;
 }
 
-/* Details panel: ruled, not boxed. */
-.graph-panel {
-  border-top: 1px solid var(--line);
-  padding-top: var(--space-3);
+/* Floating layers over the canvas: legend (bottom left), controls (bottom right), «Узел перемещён» (top right). */
+.graph-legend {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 2;
+  max-width: min(28rem, calc(100% - 2 * var(--space-4)));
+  background: var(--bg-surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-block);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+.graph-legend__title {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: 500;
+}
+
+.graph-legend__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-block);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.graph-legend__toggle:hover {
+  color: var(--text);
+}
+
+.graph-legend__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.graph-legend__chevron {
+  transform: rotate(-90deg);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.graph-legend.is-open .graph-legend__chevron {
+  transform: none;
+}
+
+.graph-legend__body {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 0 0.875rem var(--space-3);
+}
+
+.graph-legend__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 0.4375rem 1.125rem;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.graph-legend__list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
+  color: var(--text);
+}
+
+.graph-legend__note {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.graph-controls {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.graph-controls__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.graph-zoom {
+  display: flex;
+  overflow: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+}
+
+.graph-zoom__button {
+  min-width: 2rem;
+  min-height: var(--control-height-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.graph-zoom__button + .graph-zoom__button {
+  border-left: 1px solid var(--line);
+}
+
+.graph-zoom__button span {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.graph-zoom__button:hover {
+  background: var(--bg-hover);
+}
+
+.graph-zoom__button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.graph-toast {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  z-index: 3;
+  max-width: calc(100% - 2 * var(--space-4));
+  padding: 0.375rem 0.625rem;
+  border-radius: var(--radius-control);
+  background: var(--bg-inverse);
+  color: var(--text-inverse);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  box-shadow: var(--shadow-popover);
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.graph-toast:not(.is-visible) {
+  opacity: 0;
+}
+
+/* «Сведения об узле»: a quiet column with a left rule; it scrolls on its own next to the canvas. */
+.graph-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4) 1.125rem var(--space-5);
+  border-left: 1px solid var(--line);
+  background: var(--bg-surface);
+}
+
+.graph-layout:not(.graph-layout--map) .graph-panel {
+  position: sticky;
+  top: var(--toolbar-height);
+  align-self: start;
+  max-height: calc(100vh - var(--toolbar-height));
 }
 
 .graph-details__kind {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0 0 var(--space-1);
-  font-size: var(--fs-small);
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-caption);
   color: var(--text-secondary);
 }
 
 .graph-details__title {
+  margin: 0 0 var(--space-3);
   font-size: var(--fs-doc);
+  line-height: 1.375rem;
+  font-weight: 600;
   overflow-wrap: anywhere;
+}
+
+.graph-details__title.is-deprecated {
+  color: var(--status-deprecated);
+  text-decoration: line-through;
 }
 
 .graph-details__title:focus {
@@ -6849,14 +7133,17 @@ a.source__title:hover {
 }
 
 .graph-details__title:focus-visible {
-  outline: 3px solid var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .graph-details__facts {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-2);
   margin: 0 0 var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--line);
   font-size: var(--fs-small);
 }
 
@@ -6866,7 +7153,7 @@ a.source__title:hover {
 
 .graph-details__facts dt,
 .graph-why__facts dt {
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 }
 
 .graph-details__facts dd,
@@ -6875,61 +7162,53 @@ a.source__title:hover {
   overflow-wrap: anywhere;
 }
 
-/* "Why linked" is one compact run of facts: Указано в · Поле · Файл · Ревизия. */
-.graph-why__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-4);
-  margin: 0;
-  font-size: var(--fs-small);
-}
-
-.graph-why__facts div {
-  display: flex;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
 .graph-details__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--space-2);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.graph-details__actions .button {
+  white-space: normal;
 }
 
 .graph-panel__edges h3 {
-  font-size: var(--fs-ui);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 0;
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: 500;
+  color: var(--text-tertiary);
 }
 
 .graph-why-list {
-  list-style: none;
-  margin: 0 0 var(--space-5);
+  margin: 0 0 var(--space-4);
   padding: 0;
+  list-style: none;
 }
 
 .graph-why {
-  padding: var(--space-3) 0;
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
 }
 
 .graph-why__line {
-  margin: 0 0 var(--space-1);
+  margin: 0 0 0.125rem;
   overflow-wrap: anywhere;
 }
 
 .graph-why__rel {
   color: var(--text-secondary);
-  font-style: italic;
 }
 
 .graph-why__node {
-  background: none;
-  border: 0;
   padding: 0;
+  border: 0;
+  background: none;
   color: var(--accent-text);
+  font: inherit;
   text-align: left;
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
@@ -6947,8 +7226,8 @@ a.source__title:hover {
 }
 
 .graph-why__origin {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-small);
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-caption);
   color: var(--text-tertiary);
 }
 
@@ -6957,8 +7236,18 @@ a.source__title:hover {
   color: var(--text-secondary);
 }
 
-.graph-why .graph-why__facts {
-  margin-bottom: 0;
+/* "Why linked": Указано в · Поле · Где объявлено · Файл · Ревизия, one aligned row each. */
+.graph-why__facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.125rem var(--space-2);
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+.graph-why__facts div {
+  display: contents;
 }
 
 .graph-why__path {
@@ -6986,12 +7275,42 @@ a.source__title:hover {
   line-height: 1;
 }
 
+/* Phones: the details are a sheet from the bottom (docs/ui-v2/specs/03_SCREENS.md §6). */
+.graph-panel--sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  max-height: 70vh;
+  padding: var(--space-2) var(--space-4) var(--space-5);
+  border: 1px solid var(--line-popover);
+  border-bottom: 0;
+  border-radius: var(--radius-popover) var(--radius-popover) 0 0;
+  box-shadow: var(--shadow-popover);
+  animation: layer-in var(--duration-panel) var(--ease-out);
+}
+
+.graph-panel--sheet[hidden] {
+  display: none;
+}
+
+.graph-panel__sheet-bar {
+  position: sticky;
+  top: calc(-1 * var(--space-2));
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 calc(-1 * var(--space-2)) var(--space-1) 0;
+  background: var(--bg-surface);
+}
+
 /* List view: the accessible alternative (default on phones). */
 .graph-list h2 {
-  font-size: var(--fs-doc);
+  margin: 0;
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--line);
-  margin: 0;
+  font-size: var(--fs-ui);
 }
 
 .graph-list section + section {
@@ -6999,42 +7318,42 @@ a.source__title:hover {
 }
 
 .graph-list__items {
-  list-style: none;
   margin: 0;
   padding: 0;
+  list-style: none;
 }
 
 .graph-list__item {
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
   min-width: 0;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
 }
 
 .graph-list__node {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  background: none;
+  max-width: 100%;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
   border: 0;
   border-radius: var(--radius-control);
-  padding: var(--space-1) var(--space-2) var(--space-1) 0;
-  font-weight: 600;
+  background: none;
   color: var(--text);
+  font: inherit;
+  font-weight: 500;
   text-align: left;
-  cursor: pointer;
-  max-width: 100%;
   overflow-wrap: anywhere;
+  cursor: pointer;
 }
 
 .graph-list__node:hover span {
   color: var(--accent-text);
-  text-decoration: underline;
 }
 
 .graph-list__node[aria-pressed="true"] {
+  padding-left: var(--space-2);
   background: var(--accent-wash);
   color: var(--accent-text);
-  padding-left: var(--space-2);
 }
 
 .graph-list__meta {
@@ -7042,13 +7361,14 @@ a.source__title:hover {
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-4);
   margin: var(--space-1) 0 0;
-  font-size: var(--fs-small);
+  font-size: var(--fs-caption);
   color: var(--text-tertiary);
   overflow-wrap: anywhere;
 }
 
 .graph-list__edge {
   margin: 0;
+  font-size: var(--fs-small);
   overflow-wrap: anywhere;
 }
 
@@ -7057,9 +7377,9 @@ a.source__title:hover {
 }
 
 .graph-list__item.is-match {
+  padding-left: var(--space-3);
   background: var(--accent-wash);
   border-radius: var(--radius-control);
-  padding-left: var(--space-3);
 }
 
 .graph-list__found {
@@ -7067,81 +7387,72 @@ a.source__title:hover {
   color: var(--accent-text);
 }
 
-.graph-generation {
-  margin-top: var(--space-4);
-  font-size: var(--fs-small);
-}
-
-/* Legend: three ruled columns below the graph. */
-.graph-legend {
-  margin-top: var(--space-6);
-}
-
-.graph-legend > h2 {
-  font-size: var(--fs-doc);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line);
-}
-
-.graph-legend__cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: var(--space-4) var(--space-6);
-}
-
-.graph-legend h3 {
-  font-size: var(--fs-ui);
-}
-
-.graph-legend__list {
-  list-style: none;
-  margin: 0 0 var(--space-3);
-  padding: 0;
-  font-size: var(--fs-small);
-}
-
-.graph-legend__list li {
-  display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) 0;
-}
-
-.graph-legend__list .graph-icon {
-  justify-self: center;
-}
-
-.graph-legend__note {
-  font-size: var(--fs-small);
-  color: var(--text-secondary);
-  max-width: 60ch;
-}
-
-@media (min-width: 1200px) {
-  .graph-layout {
-    grid-template-columns: minmax(0, 1fr) 22rem;
-  }
-}
-
 @media (max-width: 860px) {
-  .graph-canvas__svg {
-    height: 24rem;
+  .graph-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .graph-toolbar {
-    align-items: stretch;
+  .graph-bar,
+  .graph-caption {
+    padding-inline: var(--space-4);
   }
 
-  .graph-toolbar__search {
-    max-width: none;
-    flex-basis: 100%;
+  .graph-search-status p {
+    padding-inline: var(--space-4);
   }
 
-  .graph-toolbar__field select {
-    max-width: 100%;
+  .graph-remote,
+  .graph-message {
+    margin-inline: var(--space-4);
+  }
+
+  .graph-search {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .graph-layout:not(.graph-layout--map) .graph-stage {
+    padding: var(--space-3) var(--space-4) var(--space-6);
+  }
+
+  .graph-canvas,
+  .graph-layout--map {
+    min-height: 22rem;
+  }
+
+  /* On a narrow canvas the legend goes to the top so that it never covers the controls. */
+  .graph-legend {
+    top: var(--space-3);
+    bottom: auto;
+    left: var(--space-3);
+    max-width: calc(100% - 2 * var(--space-3));
+  }
+
+  .graph-controls {
+    right: var(--space-3);
+    bottom: var(--space-3);
+  }
+
+  .graph-legend__list {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-node,
+  .graph-edge,
+  .graph-label,
+  .graph-legend__chevron,
+  .graph-toast {
+    transition: none;
+  }
+
+  .graph-panel--sheet {
+    animation: none;
+  }
+}
+
+/* ====================================== end of the knowledge map ====================================== */
 
 /* ---------- M5.6 additions to ask, explorer, integrations ---------- */
 
