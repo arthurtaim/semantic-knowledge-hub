@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.6"
 synthetic: true
 reviewed_at: 2025-12-10
+updated_at: 2025-12-10
 tags: [aris, устаревший, deprecated, полная-выгрузка, full-export, ночная-выгрузка, catalog, integration, интеграция]
 aliases: ["ночной экспорт ARIS", "nightly ARIS export", "полный экспорт ARIS"]
 summary: "УСТАРЕЛ: прежний поток ежедневной ночной полной выгрузки ARIS в каталог в 03:00. Заменён инкрементальным потоком DEMO-INT-001 и не должен использоваться."

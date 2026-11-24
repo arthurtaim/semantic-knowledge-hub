@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-03-02
+updated_at: 2026-03-02
 tags: [crm, sys-crm, карточки, cards, идентификаторы, identifiers, cdc, события, справочники]
 aliases: ["CRM source profile", "профиль CRM", "справочные карточки CRM", "crm card id"]
 summary: "Профиль условной системы SYS-CRM: справочные карточки (каналы, сегменты, типы обращений) с идентификатором crm_card_id; изменения уходят в MDM CDC-событиями через Event Hub с задержкой до 15 минут."

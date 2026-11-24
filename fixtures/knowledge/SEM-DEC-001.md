@@ -7,6 +7,7 @@ owner: demo-team
 tags: [adr, search, sqlite, demo]
 related_ids: [SEM-ARCH-001]
 reviewed_at: 2026-11-19
+updated_at: 2026-11-19
 ---
 
 # ADR-демо — локальный полнотекстовый поиск на SQLite FTS5

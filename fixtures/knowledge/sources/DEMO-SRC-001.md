@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "2.1"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [sources, источники, landscape, ландшафт, overview, обзор, system-codes, коды-систем]
 aliases: ["source landscape", "карта систем-источников", "source systems overview", "обзор систем-источников"]
 summary: "Карта десяти условных систем-источников демо-модели: коды SYS-*, назначение, основные сущности и режим обмена с семантическим слоем."

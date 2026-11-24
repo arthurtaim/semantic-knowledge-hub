@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-08-03
+updated_at: 2026-08-03
 tags: [governance, access, доступ, rbac, roles, роли, demo, демо, synthetic, синтетические-данные]
 aliases: ["демо-роли", "demo roles", "права доступа в демо", "demo-reader", "demo-editor", "demo-approver"]
 summary: "Три демо-роли — demo-reader, demo-editor и demo-approver — и что каждая может делать в учебной среде; в демо-среде допускаются только синтетические данные."

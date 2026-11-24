@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-10-02
+updated_at: 2026-10-02
 tags: [retry, повторные-попытки, dlq, dead-letter, ошибки, errors, backoff, integration, интеграция]
 aliases: ["повторные попытки", "политика повторов", "retry policy", "dead-letter queue", "очередь недоставленных сообщений", "DLQ"]
 summary: "Политика повторных попыток потоков метаданных: не более 5 повторов с экспоненциальной задержкой 30 с → 60 с → 2 мин → 4 мин → 8 мин, затем dead-letter queue dlq.metadata.v1; коды ошибок E-MAP-001, E-VAL-002, E-SRC-003."

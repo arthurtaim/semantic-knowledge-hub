@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.4"
 synthetic: true
 reviewed_at: 2026-08-27
+updated_at: 2026-08-27
 tags: [crm, mdm, cdc, event-hub, справочники, reference-data, синхронизация, sync, master-data, мастер-данные, integration, интеграция]
 aliases: ["CRM MDM sync", "синхронизация CRM и MDM", "CDC CRM", "CRM reference sync"]
 summary: "Синхронизация справочных карточек CRM (SYS-CRM) — каналов, сегментов и типов обращений — в MDM (SYS-MDM) почти в реальном времени: CDC-события через Event Hub в топике demo.metadata.changes.v1, задержка до 15 минут."

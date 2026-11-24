@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-08-25
+updated_at: 2026-08-25
 tags: [governance, data-quality, dq, consistency, согласованность, качество-данных, справочники, reference-data]
 aliases: ["согласованность метаданных", "metadata consistency", "консистентность", "единые названия процессов"]
 summary: "Правила согласованности метаданных: коды должны совпадать со справочниками (DEMO-SEM-008), а один process_id во всех системах и датасетах имеет одно нормализованное название. Расхождения фиксируются, а не исправляются автоматически."

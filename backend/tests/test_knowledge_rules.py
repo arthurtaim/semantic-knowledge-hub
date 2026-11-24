@@ -91,12 +91,19 @@ def _no_filters() -> Any:
             ),
         ),
         (
-            # The document's own front-matter date (the catalog's «Обновлён»), not the file/index time; the core
-            # fixtures carry none, so they stay in title order (tests/test_catalog_fields.py has dated documents).
+            # The document's own front-matter date (the catalog's «Обновлён»), not the file/index time: newest
+            # first, documents without a date last in title order (tests/test_catalog_fields.py covers the rules).
             "updated",
             lambda items: (
-                all(i["metadata_updated_at"] is None for i in items)
-                and [i["title"].lower() for i in items] == sorted(i["title"].lower() for i in items)
+                any(i["metadata_updated_at"] for i in items)
+                and [i["metadata_updated_at"] for i in items if i["metadata_updated_at"]]
+                == sorted((i["metadata_updated_at"] for i in items if i["metadata_updated_at"]), reverse=True)
+                and all(
+                    i["metadata_updated_at"] is None
+                    for i in items[[bool(i["metadata_updated_at"]) for i in items].count(True) :]
+                )
+                and [i["title"].lower() for i in items if not i["metadata_updated_at"]]
+                == sorted(i["title"].lower() for i in items if not i["metadata_updated_at"])
             ),
         ),
     ],

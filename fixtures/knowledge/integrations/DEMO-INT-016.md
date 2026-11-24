@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-06-30
+updated_at: 2026-06-30
 tags: [совместимость, compatibility, breaking-change, схема, schema, версионирование, versioning, integration, интеграция]
 aliases: ["несовместимые изменения", "обратная совместимость", "schema evolution", "эволюция схемы", "окно устаревания"]
 summary: "Правила совместимости схем интеграций и Consumer API: добавление поля — MINOR, удаление или переименование поля — breaking change и MAJOR, окно устаревания (deprecation window) — 2 релиза."

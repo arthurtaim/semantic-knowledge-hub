@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-08-27
+updated_at: 2026-08-27
 tags: [idempotency, идемпотентность, дедупликация, deduplication, дубликаты, duplicates, integration, интеграция]
 aliases: ["ключ идемпотентности", "idempotency key", "удаление дубликатов", "dedup", "повторная доставка"]
 summary: "Ключ идемпотентности потоков метаданных — source_system + source_object_id + source_changed_at; сообщение с уже обработанным ключом в течение 72 ч отбрасывается как дубликат."

@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "0.4"
 synthetic: true
 reviewed_at: 2026-11-10
+updated_at: 2026-11-10
 tags: [ambiguity, неоднозначность, homonyms, омонимы, synonyms, синонимы, entity-resolution, разрешение-сущностей, aris, catia, steward, стюард]
 aliases: ["Entity disambiguation rules", "Разрешение омонимов", "неоднозначные сущности", "одинаковые названия в ARIS и CATIA"]
 summary: "Проект правил (на ревью): как различать сущности с одинаковыми названиями — процесс ARIS и сборку CATIA, омонимы внутри одного источника, синонимы и аббревиатуры с двумя значениями; ключ идентичности, очередь стюарда q_entity_ambiguous, запрет автоматического слияния."

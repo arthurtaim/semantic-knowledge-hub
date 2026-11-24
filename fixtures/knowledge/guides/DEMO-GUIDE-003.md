@@ -7,6 +7,7 @@ owner: demo-enablement-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-09-30
+updated_at: 2026-09-30
 tags: [guide, руководство, how-to, constraints, ограничения, validation, валидация, completeness, полнота, aris, quarantine, карантин]
 aliases: ["проверка валидационных ограничений", "check integration constraints", "почему пачка ушла в карантин"]
 summary: "Пошаговое руководство: как проверить пачку ARIS → Catalog по ограничениям DEMO-INT-003 и порогу полноты DEMO-GOV-003 — обязательные поля, глубина иерархии не более 7, порог 95 % для пачки и 98 % для Process Overview."

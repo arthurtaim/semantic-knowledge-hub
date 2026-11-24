@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "2.0"
 synthetic: true
 reviewed_at: 2026-10-27
+updated_at: 2026-10-27
 tags: [data-catalog, каталог, catalog, sys-cat, поиск, search, assets, активы, metadata, метаданные]
 aliases: ["Data Catalog", "каталог метаданных", "catalog source profile", "каталог данных"]
 summary: "Профиль условной системы SYS-CAT: активы BusinessProcess, BusinessObject и SourceSystem с идентификатором catalog_asset_id, поиск с фильтрами, приём потоков ARIS и CATIA; уведомления о загрузках идут через Event Hub."

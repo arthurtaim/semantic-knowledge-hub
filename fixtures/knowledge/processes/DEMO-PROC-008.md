@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-07-15
+updated_at: 2026-07-15
 tags: [standard, стандарт, template, шаблон, source, источник, profile, профиль, system-code, код-системы]
 aliases: ["Source Profile template", "шаблон профиля источника", "профиль системы-источника"]
 summary: "Описание шаблона Source System Profile v1: восемь разделов профиля системы-источника, формат кода SYS-…, обязательный владелец и границы ответственности."

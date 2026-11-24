@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-10-05
+updated_at: 2026-10-05
 tags: [dataset, датасет, dependency-graph, граф-зависимостей, dependencies, зависимости, catia, assembly, сборка, businessobject]
 aliases: ["Dependency Graph", "DS-002", "граф зависимостей объектов", "граф сборок"]
 summary: "Датасет DS-002 Dependency Graph: рёбра «деталь входит в сборку» между объектами BusinessObject из CATIA — node_id, depends_on_node_id, dependency_type = assembly, source_system; запрет петель и циклов, ежедневная полная пересборка после загрузки CATIA."

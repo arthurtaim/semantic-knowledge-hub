@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [aris, validation, валидация, constraints, ограничения, data-quality, качество-данных, completeness, полнота, quarantine, карантин, aris-catalog]
 aliases: ["ARIS validation rules", "проверки ARIS", "карантин ARIS", "ARIS constraints"]
 summary: "Проверки записей и пакетов потока ARIS → Catalog: обязательные поля, ARIS_MAX_DEPTH = 7, отклонение obsolete, правило не менее 95 % прошедших записей на пакет, карантин q_aris_rejected и код E-VAL-002."

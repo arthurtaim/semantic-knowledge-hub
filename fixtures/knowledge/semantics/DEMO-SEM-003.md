@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-09-25
+updated_at: 2026-09-25
 tags: [logical-model, логическая-модель, businessobject, бизнес-объект, object, объект, entity, сущность, catia, erp, assembly, сборка]
 aliases: ["BusinessObject", "Бизнес-объект (логическая сущность)", "Logical model BusinessObject", "логическая модель объекта"]
 summary: "Логическая сущность BusinessObject для деталей и сборок CATIA и элементов справочников ERP: идентификатор object_id с префиксом системы (SYS-CATIA:CP-104233), атрибуты source_object_id, object_name, object_class, revision, material_class, parent_object_id, source_changed_at; основа датасета Dependency Graph."

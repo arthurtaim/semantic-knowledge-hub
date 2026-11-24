@@ -7,6 +7,7 @@ owner: demo-architecture-board
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-09-22
+updated_at: 2026-09-22
 tags: [adr, decision, решение, authority, авторитетность, approval, утверждение, status, статус, draft, черновик, ranking, ранжирование]
 aliases: ["approval governs authority", "авторитетность по статусу документа", "статус важнее score"]
 summary: "Архитектурное решение: авторитетность (authority) документа определяется только статусом approved, а не оценкой сходства (score) в поиске и не свежестью; черновики никогда не авторитетны."

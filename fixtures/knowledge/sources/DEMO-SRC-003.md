@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-09-28
+updated_at: 2026-09-28
 tags: [catia, sys-catia, изделия, parts, сборки, assemblies, bom, metadata, метаданные]
 aliases: ["CATIA source profile", "профиль CATIA", "метаданные изделий CATIA", "product structure metadata"]
 summary: "Профиль условной системы SYS-CATIA: детали и сборки, поля catia_part_number, assembly_ref, revision_letter, material_class; суточная дельта, ежедневно в 02:30."

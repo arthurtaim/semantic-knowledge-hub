@@ -7,6 +7,7 @@ owner: demo-team
 tags: [workflow, review, gitlab, demo]
 related_ids: []
 reviewed_at: 2026-11-20
+updated_at: 2026-11-20
 ---
 
 # Draft review workflow — sample

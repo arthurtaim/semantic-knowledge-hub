@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.6"
 synthetic: true
 reviewed_at: 2026-10-27
+updated_at: 2026-10-27
 tags: [dataset, датасет, process-overview, обзор-процессов, process, процесс, data-quality, качество-данных, completeness, полнота, freshness, актуальность, lineage, линейдж]
 aliases: ["Process Overview", "DS-001", "обзор процессов", "датасет обзора процессов"]
 summary: "Датасет DS-001 Process Overview: атрибуты process_id, process_name, owner_role, source_system, source_changed_at, completeness_score, lineage_ref; более строгие правила для своей области — полнота 98 % ключевых атрибутов (вместо 95 % по умолчанию) и актуальность 12 ч (вместо 24 ч)."

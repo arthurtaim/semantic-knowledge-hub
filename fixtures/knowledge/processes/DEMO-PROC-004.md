@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-10-27
+updated_at: 2026-10-27
 tags: [process, процесс, review, ревью, logical-model, логическая-модель, physical-model, физическая-модель, naming, именование, checklist, чек-лист]
 aliases: ["logical model review", "проверка логической модели", "чек-лист ЛМ"]
 summary: "Порядок ревью изменений логической модели через тестовый процесс согласования и чек-лист ЛМ-1…ЛМ-6, отделяющий логические имена от физических."

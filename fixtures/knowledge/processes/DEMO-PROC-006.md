@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "2.1"
 synthetic: true
 reviewed_at: 2026-10-14
+updated_at: 2026-10-14
 tags: [standard, стандарт, template, шаблон, integration, интеграция, specification, спецификация, data-quality, lineage]
 aliases: ["Integration Spec template", "шаблон спецификации интеграции", "описание шаблона интеграции"]
 summary: "Описание шаблона Integration Specification: восемь разделов v1, четыре раздела, добавленные в v2 (Data Quality Rules, Data Lineage, Update Frequency, Validation Constraints), и правило, что новые документы создаются по v2, а черновики v1 остаются на v1."

@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-09-18
+updated_at: 2026-09-18
 tags: [cdc, full-refresh, полная-перезагрузка, инкрементальная-загрузка, incremental, event-hub, сравнение, comparison, integration, интеграция]
 aliases: ["Change Data Capture", "захват изменений", "полная перезагрузка", "full reload", "CDC vs full refresh"]
 summary: "Сравнение способов доставки метаданных: CDC-события через Event Hub (топик demo.metadata.changes.v1), инкрементальная загрузка ARIS пакетами по 500 записей и полная перезагрузка (ERP, пакеты по 2 000 строк в 01:00), с критериями выбора."

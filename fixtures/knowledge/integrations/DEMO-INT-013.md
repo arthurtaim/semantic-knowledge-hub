@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.4"
 synthetic: true
 reviewed_at: 2026-11-03
+updated_at: 2026-11-03
 tags: [расписание, schedule, обновление, refresh, актуальность, freshness, aris, catia, crm, erp, integration, интеграция]
 aliases: ["график обновления", "refresh schedule", "частота обновления метаданных", "update frequency"]
 summary: "Утверждённое расписание потоков метаданных: ARIS → Catalog каждые 6 ч (00:00, 06:00, 12:00, 18:00), CATIA → Catalog ежедневно в 02:30, CRM → MDM через CDC с задержкой до 15 мин, ERP → Semantic Layer ночью в 01:00."

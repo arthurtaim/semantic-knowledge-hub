@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "2.1"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [governance, status, статусы, authority, авторитетность, lifecycle, жизненный-цикл, approval, утверждение]
 aliases: ["статус документа", "document status", "авторитетный источник", "authoritative source", "superseded"]
 summary: "Четыре статуса документа (draft, in_review, approved, deprecated) и вес каждого в поиске и ответах ассистента: доказательством служит только approved, черновики — только по явному запросу с пометкой, deprecated — никогда."

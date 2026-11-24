@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "2.0"
 synthetic: true
 reviewed_at: 2026-08-27
+updated_at: 2026-08-27
 tags: [process-id, идентификатор, identifier, contract, контракт, process, процесс, format, формат, map_aris_process]
 aliases: ["Process ID contract", "контракт process_id", "формат идентификатора процесса", "PRC-идентификатор"]
 summary: "Контракт идентификатора процесса process_id: формат PRC- и 6 цифр, неизменяемость, запрет повторного использования, резерв PRC-000000, выдача через таблицу соответствия MAP_ARIS_PROCESS и проверки в логической модели, физической таблице и интеграции."

@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "2.0"
 synthetic: true
 reviewed_at: 2026-11-05
+updated_at: 2026-11-05
 tags: [governance, versioning, версионирование, revision, ревизии, version, версия, supersedes, history]
 aliases: ["версионирование документов", "document versioning", "ревизия содержания", "content revision", "MAJOR.MINOR"]
 summary: "Версия документа (version MAJOR.MINOR) отличается от ревизии содержания (хэш локально, commit в GitLab); замена документа оформляется через deprecated и supersedes. Заменяет устаревшее правило даты в имени файла (DEMO-GOV-013)."

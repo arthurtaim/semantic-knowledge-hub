@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.4"
 synthetic: true
 reviewed_at: 2026-09-18
+updated_at: 2026-09-18
 tags: [logical-model, логическая-модель, businessprocess, бизнес-процесс, process, процесс, entity, сущность, aris, attributes, атрибуты]
 aliases: ["BusinessProcess", "Бизнес-процесс (логическая сущность)", "Logical model BusinessProcess", "логическая модель процесса"]
 summary: "Логическая сущность BusinessProcess: атрибуты process_id, process_name, process_path, owner_role, source_changed_at, lifecycle_state и source_system, их смысл, обязательность и происхождение из выгрузки ARIS; без типов колонок и ключей хранения."

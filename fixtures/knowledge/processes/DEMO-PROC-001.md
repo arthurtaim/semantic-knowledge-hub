@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-09-18
+updated_at: 2026-09-18
 tags: [process, процесс, integration, интеграция, onboarding, подключение, template, шаблон, review, ревью, mapping, маппинг]
 aliases: ["new integration process", "процесс подключения нового потока", "как завести новую интеграцию"]
 summary: "Порядок, по которому в базе знаний появляется описание новой интеграции: заявка, спецификация по шаблону Integration Specification v2, согласование маппинга со стюардом, ревью и утверждение."

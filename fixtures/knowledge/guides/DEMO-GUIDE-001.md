@@ -7,6 +7,7 @@ owner: demo-enablement-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [guide, руководство, how-to, source, источник, system-code, код-системы, catalog, каталог, поиск, search]
 aliases: ["найти профиль системы-источника", "find a source profile", "поиск по коду SYS"]
 summary: "Пошаговое руководство: как найти профиль системы-источника тремя способами — по коду системы SYS-…, через фильтр каталога по типу source и по графу от обзора ландшафта DEMO-SRC-001."

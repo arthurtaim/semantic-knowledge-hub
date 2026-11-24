@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-09-18
+updated_at: 2026-09-18
 tags: [catia, mapping, маппинг, сопоставление, catalog, dependency-graph, граф-зависимостей, assembly, сборка, integration]
 aliases: ["CATIA mapping", "CATIA field mapping", "сопоставление полей CATIA"]
 summary: "Сопоставление полей CATIA с атрибутами BusinessObject и рёбрами датасета Dependency Graph: SYS-CATIA: + catia_part_number → node_id, SYS-CATIA: + assembly_ref → depends_on_node_id, dependency_type = assembly."

@@ -7,6 +7,7 @@ owner: unassigned
 version: "0.9"
 synthetic: true
 reviewed_at: 2026-11-12
+updated_at: 2026-11-12
 tags: [archive-store, sys-arc, архив, archive, снимки, snapshots, history, история, retention, хранение]
 aliases: ["Archive Store", "архив снимков", "historical snapshots", "архивное хранилище"]
 summary: "Профиль условной системы SYS-ARC на ревью: ежемесячные неизменяемые снимки активов каталога и датасетов и архивные снимки документов; предлагаемые сроки хранения; владелец не назначен."

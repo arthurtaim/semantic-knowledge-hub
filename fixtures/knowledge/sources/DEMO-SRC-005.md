@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-08-19
+updated_at: 2026-08-19
 tags: [erp, sys-erp, справочники, reference-data, транзакции, transactions, full-refresh, полный-перегруз, колонки, columns]
 aliases: ["ERP source profile", "профиль ERP", "справочники ERP", "ERP reference data"]
 summary: "Профиль условной системы SYS-ERP: каталог колонок таблиц справочников и транзакций и позиции справочников; ночной full refresh в 01:00 пакетами по 2 000 строк, строки транзакций не выгружаются."

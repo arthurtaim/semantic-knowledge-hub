@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-08-21
+updated_at: 2026-08-21
 tags: [process, процесс, source, источник, request, заявка, ownership, владение, onboarding, подключение, profile, профиль]
 aliases: ["new source request", "подключение новой системы-источника", "регистрация источника"]
 summary: "Как зарегистрировать новую систему-источник: проверка на дубли, код системы SYS-…, назначение владельца по правилам границ ответственности и профиль по шаблону Source System Profile."

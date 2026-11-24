@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "2.0"
 synthetic: true
 reviewed_at: 2026-10-16
+updated_at: 2026-10-16
 tags: [aris, catalog, каталог, integration, интеграция, incremental, инкремент, metadata, метаданные, процессы, aris-catalog]
 aliases: ["ARIS catalog flow", "поток ARIS в каталог", "инкрементальная выгрузка ARIS"]
 summary: "Инкрементальный поток процессных метаданных из ARIS (SYS-ARIS) в Data Catalog (SYS-CAT): запуск каждые 6 часов, пакеты по 500 записей; заменяет устаревшую ночную полную выгрузку DEMO-INT-018."

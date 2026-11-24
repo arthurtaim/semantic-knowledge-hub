@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-10-28
+updated_at: 2026-10-28
 tags: [governance, data-quality, dq, freshness, актуальность, качество-данных, staleness, задержка, metadata]
 aliases: ["актуальность метаданных", "metadata freshness", "устаревание данных", "staleness", "задержка обновления"]
 summary: "Требования актуальности: метаданные каталога не старше 24 ч, датасет Process Overview — не старше 12 ч. Возраст изменения отсчитывается от source_changed_at до момента, когда изменение стало видно в каталоге."

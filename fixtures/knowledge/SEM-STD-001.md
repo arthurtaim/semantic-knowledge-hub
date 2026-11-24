@@ -7,6 +7,7 @@ owner: demo-team
 tags: [standard, metadata, demo]
 related_ids: [SEM-GLOSS-001]
 reviewed_at: 2025-01-15
+updated_at: 2025-01-15
 ---
 
 # Стандарт оформления документов базы знаний (демо)

@@ -7,6 +7,7 @@ owner: demo-architecture-board
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-08-14
+updated_at: 2026-08-14
 tags: [adr, decision, решение, source-id, идентификатор, provenance, citation, цитата, rename, переименование, deterministic, детерминированный]
 aliases: ["deterministic source IDs", "стабильные идентификаторы источников", "namespaced source id"]
 summary: "Архитектурное решение: каждый источник цитаты получает детерминированный source ID с пространством имён (local, gitlab, confluence), стабильный при переименовании и перемещении; заголовки документов в идентификаторы не входят."

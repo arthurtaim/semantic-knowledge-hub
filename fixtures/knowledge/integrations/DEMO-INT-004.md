@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-09-12
+updated_at: 2026-09-12
 tags: [catia, catalog, каталог, integration, интеграция, products, изделия, детали, assembly, сборка, metadata, метаданные]
 aliases: ["CATIA catalog flow", "поток CATIA в каталог", "загрузка изделий CATIA"]
 summary: "Ежедневный поток (02:30) метаданных изделий и сборок из CATIA (SYS-CATIA) в Data Catalog (SYS-CAT): суточная дельта, номера изделий, ссылки на сборки, буквы ревизий и классы материалов."

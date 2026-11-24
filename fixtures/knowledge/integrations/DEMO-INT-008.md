@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-11-05
+updated_at: 2026-11-05
 tags: [catalog, каталог, dataset, датасет, reference-resolution, разрешение-ссылок, references, ссылки, catalog-asset, integration, интеграция]
 aliases: ["catalog reference resolution", "разрешение каталожных ссылок", "catalog to dataset resolution"]
 summary: "Как активы Data Catalog (catalog_asset_id) разрешаются в строки датасетов по точному ключу source_key после события catalog_load_completed; неразрешённые ссылки попадают в отчёт rpt_unresolved_refs и никогда не угадываются."
