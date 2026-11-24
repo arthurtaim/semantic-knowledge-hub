@@ -76,8 +76,8 @@ test("V2-02 «Требуют внимания»: the server's count, the same do
   const api = await (await page.request.get("/api/documents/tree")).json();
   const flagged = Object.values(api.documents as Record<string, { attention: boolean }>).filter((d) => d.attention).length;
   expect(api.attention_total).toBe(flagged);
-  // 12 on the synthetic base while no other approved review is older than 180 days (until 7 Dec 2026)
-  if (Date.now() < Date.parse("2026-12-07")) expect(api.attention_total).toBe(12);
+  // No literal: the server counts with its current date (12 on the synthetic base until DEMO-PROC-009's review turns
+  // stale on 7 Dec 2026, 13 after) — the UI must say the API's number, whatever the day.
 
   await page.goto("/documents?view=list");
   const attention = page.getByRole("tree").getByRole("treeitem", { name: new RegExp(`^Требуют внимания, ${api.attention_total} `) });
@@ -87,7 +87,7 @@ test("V2-02 «Требуют внимания»: the server's count, the same do
   await expect(list.locator(".docs-row")).toHaveCount(api.attention_total);
   // deprecated first, struck through; only non-approved rows carry a status word
   await expect(list.locator(".docs-row").first()).toHaveClass(/docs-row--deprecated/);
-  await expect(list.locator(".docs-row .docs-row__status")).toHaveCount(10);
+  await expect(list.locator(".docs-row .docs-row__status")).toHaveCount(countOf(api, null, (d) => d.attention && d.status !== "approved"));
 });
 
 test("V2-03 the toolbar search lists results in the middle column; the tree stays", async ({ page }) => {
@@ -125,12 +125,10 @@ test("V2-05 «Обзор»: the API's totals; the cell «Интеграции / 
   await page.goto("/documents?view=overview");
   const overview = page.getByRole("region", { name: new RegExp(`^${api.total} документ.*, ${approved} утвержден`) });
   await expect(overview).toBeVisible();
-  // «Требуют внимания» = the API's attention_total (12 on the demo base until 7 Dec 2026)
+  // «Требуют внимания» = the API's attention_total (no literal: it depends on the server's date)
   await expect(overview.getByRole("link", { name: `${api.attention_total} требуют внимания` })).toBeVisible();
-  if (Date.now() < Date.parse("2026-12-07")) expect(api.attention_total).toBe(12);
 
   const drafts = countOf(api, "integration", (d) => d.status === "draft");
-  if (Date.now() < Date.parse("2026-12-07")) expect(drafts).toBe(2);
   const cell = overview.getByRole("link", { name: new RegExp(`^Интеграции: ${drafts} черновик`) });
   await expect(cell).toHaveText(String(drafts));
   await cell.click();
@@ -191,7 +189,7 @@ test("@mobile V2-04 phone: the tree, then the branch, then the document page", a
   const tree = page.getByRole("tree");
   await tree.getByRole("treeitem", { name: /^Системы-источники/ }).locator(".doc-tree__row").first().click();
   const list = page.getByRole("region", { name: "Системы-источники" });
-  await expect(list.locator(".docs-row")).toHaveCount(12);
+  await expect(list.locator(".docs-row")).toHaveCount(12); // the section's 12 documents (not date-dependent)
   await expect(page.getByRole("tree")).toHaveCount(0);
   await list.getByRole("link", { name: "CRM: карточки и идентификаторы" }).click();
   await expect(page).toHaveURL(/\/documents\/DEMO-SRC-004$/);

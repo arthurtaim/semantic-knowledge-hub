@@ -26,6 +26,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -184,6 +185,19 @@ describe("Обзор: the matrix", () => {
     const item = await screen.findByRole("treeitem", { name: /^Интеграции, 19 документов/ });
     expect(item).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("heading", { level: 2, name: "Интеграции" })).toBeInTheDocument();
+  });
+
+  it("the demo's numbers do not move with the machine's date: «Требуют внимания» is the API's, frozen in the fixture", async () => {
+    // Past 2026-12-07, when DEMO-PROC-009's review turns stale on a live server: the browser's clock changes nothing,
+    // the UI counts the server's `attention` (the server counts with its current date; tests pin it).
+    vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+    vi.setSystemTime(new Date("2027-06-01T12:00:00"));
+    renderOverview();
+    const overview = await screen.findByRole("region", { name: "83 документа, 73 утверждены" });
+    expect(within(overview).getByRole("link", { name: "12 требуют внимания" })).toBeInTheDocument();
+    expect(demoTree.attention_total).toBe(12);
+    expect(buildOverview(index).attention).toBe(12);
+    expect(buildOverview(index).total.counts.needs_review).toBe(6); // «Нужна проверка»: the API's review states, not re-dated
   });
 
   it("says when nothing needs attention", async () => {

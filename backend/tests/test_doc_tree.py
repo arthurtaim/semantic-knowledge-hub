@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,17 +44,15 @@ from app.domain.models import (
 )
 from app.services.knowledge import DocumentQuery, KnowledgeService
 from app.services.search import SearchService
-from tests.conftest import make_doc, write_doc
+from tests.conftest import TEST_TODAY, make_doc, write_doc
 
-TODAY = date(2026, 11, 24)
+TODAY = TEST_TODAY
 OWNER = UserContext(user_id="owner", display_name="o")
 GUEST = UserContext(user_id="guest", display_name="g")
 
 
 def _tree_client(client_factory: Callable[..., TestClient], root: Path) -> TestClient:
-    client = client_factory(local_knowledge_dir=root)
-    client.app.state.container.knowledge.today = lambda: TODAY  # type: ignore[attr-defined]
-    return client
+    return client_factory(local_knowledge_dir=root)  # «today» pinned to TEST_TODAY (conftest)
 
 
 @pytest.fixture
@@ -573,6 +571,17 @@ def test_attention_rule() -> None:
     assert needs_attention(DocStatus.approved, "stale", False) is True
     assert needs_attention(DocStatus.approved, "never_reviewed", False) is True
     assert needs_attention(DocStatus.approved, "ok", True) is True
+
+
+def test_tests_pin_today_and_the_product_follows_the_calendar(
+    client_factory: Callable[..., TestClient], full_workspace: Path
+) -> None:
+    client = client_factory(local_knowledge_dir=full_workspace)  # no date set here: the conftest pin
+    assert client.app.state.container.knowledge.today() == TEST_TODAY  # type: ignore[attr-defined]
+    assert client.get("/api/documents/tree").json()["attention_total"] == 12
+    # The product's own «today» is the calendar's (the UI counts with the current date).
+    product = KnowledgeService(_ScopedRepository({}), _NoIndex(), review_stale_days=180)  # type: ignore[arg-type]
+    assert product.today() == datetime.now(UTC).date()
 
 
 def test_attention_follows_the_date(client_factory: Callable[..., TestClient], full_workspace: Path) -> None:
