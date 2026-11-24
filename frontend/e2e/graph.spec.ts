@@ -38,6 +38,7 @@ test("M5.6 graph: navigation, global graph and its list view", async ({ page }) 
 test("M5.6 graph: neighbourhood of DEMO-INT-002 shows DEMO-SEM-002 and why they are linked", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/documents/DEMO-INT-002");
+  await page.getByRole("tab", { name: "Связи" }).click(); // UI v2: links are a segment of the document
   await page.getByRole("link", { name: "Связи на графе" }).click();
   await expect(page).toHaveURL(/\/graph\?focus=DEMO-INT-002$/);
 

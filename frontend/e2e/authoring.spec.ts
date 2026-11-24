@@ -155,5 +155,5 @@ test("@gitlab E2E-18/19/20 new document → branch + create commit → one MR �
   await page.goto(`/documents?query=${encodeURIComponent(marker)}`);
   await expect(page.locator(".result").first()).toContainText(id);
   await page.goto(`/documents/${id}`);
-  await expect(page.getByRole("complementary", { name: "Паспорт документа" })).toContainText("GitLab");
+  await expect(page.locator(".doc-props")).toContainText("GitLab"); // UI v2: «Источник» in the properties
 });

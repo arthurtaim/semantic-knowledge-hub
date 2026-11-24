@@ -1,215 +1,79 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
-import { api } from "../api/client";
-import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList } from "../api/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { api, type ApiError } from "../api/client";
+import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList, ProposalSummary } from "../api/types";
 import { AiAssistPanel, useAiProposal, type AiAction } from "../components/AiProposal";
+import { DocumentDetails, SourceLocation } from "../components/DocumentDetails";
 import { DocumentLinksPanel } from "../components/DocumentLinks";
-import { PublicationPassportRow, PublicationSection } from "../components/DocumentPublication";
+import { PublicationSection } from "../components/DocumentPublication";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
-import { MetadataPanel } from "../components/MetadataPanel";
 import { ProposalStateLabel } from "../components/ProposalState";
 import { SafeHtml } from "../components/SafeHtml";
 import { StaleMark } from "../components/StaleMark";
-import { StatusStamp } from "../components/StatusStamp";
+import { When } from "../components/When";
 import { WikiLinkPreviewArea } from "../components/WikiLinkPreview";
 import { PageToolbar } from "../components/shell/PageToolbar";
-import { formatDate, formatDateTime, REVIEW_LABEL, SOURCE_LABEL, TYPE_LABEL } from "../lib/labels";
+import { SidePanel, useSidePanelMode } from "../components/shell/SidePanel";
+import { buttonClass, IconButton } from "../components/ui/Button";
+import { Icon } from "../components/ui/Icon";
+import { Menu, type MenuItem } from "../components/ui/Popover";
+import { StatusMark } from "../components/ui/StatusMark";
+import {
+  formatDate,
+  formatDateTime,
+  OPERATION_LABEL,
+  pluralRu,
+  REVIEW_LABEL,
+  shortRevision,
+  SOURCE_LABEL,
+  TYPE_LABEL,
+} from "../lib/labels";
 import { useSession } from "../lib/session";
 import { onTabListKeyDown } from "../lib/tabs";
 import { useAsync } from "../lib/useAsync";
 
-const isHttpUrl = (value: string | null): value is string => Boolean(value && /^https?:\/\//i.test(value));
+/** The four segments of a document (docs/ui-v2/specs/03_SCREENS.md §3). */
+export type DocumentView = "text" | "links" | "history" | "raw";
 
-/** Where the document lives: a validated link to this exact revision, or an honest "local workspace" note. */
-function SourceLocation({ doc }: { doc: DocumentDetail }) {
-  if (isHttpUrl(doc.web_url)) {
-    return (
-      <a href={doc.web_url} className="passport__source-link" target="_blank" rel="noopener noreferrer">
-        {doc.source === "gitlab" ? "Открыть в GitLab" : "Открыть в источнике"}
-        <span aria-hidden="true"> ↗</span>
-      </a>
-    );
-  }
-  if (doc.source === "local") {
-    return <span className="passport__note">Документ хранится в локальном workspace — внешней ссылки нет.</span>;
-  }
-  return <span className="passport__note">Ссылка на ревизию в источнике не указана.</span>;
+const VIEWS: { value: DocumentView; label: string }[] = [
+  { value: "text", label: "Текст" },
+  { value: "links", label: "Связи" },
+  { value: "history", label: "История" },
+  { value: "raw", label: "Markdown" },
+];
+
+/** Anchors of blocks that live in a segment other than «Текст» (a link to them opens that segment). */
+const VIEW_BY_HASH: Record<string, DocumentView> = {
+  "doc-links": "links",
+  publication: "history",
+  "doc-history": "history",
+  "doc-raw": "raw",
+};
+
+function viewForHash(hash: string): DocumentView {
+  return VIEW_BY_HASH[decodeURIComponent(hash.replace(/^#/, ""))] ?? "text";
 }
+
+/**
+ * The right panel of the document. «Сведения» today; the document assistant (⌘J, a toolbar toggle) is the next
+ * step and takes the same place — one right panel at a time.
+ */
+export type DocumentPanel = "details";
 
 async function loadDocument(id: string): Promise<{ doc: DocumentDetail; proposals: ProposalList }> {
   const [doc, proposals] = await Promise.all([api.document(id), api.drafts({ document_id: id })]);
   return { doc, proposals };
 }
 
-interface PublicationInfo {
-  status: DocumentPublicationStatus | null;
-  failed: boolean;
-}
-
-/** One line in the passport: how many links the document has; the full lists are in «Связи документа». */
-function LinksPassportRow({ links }: { links: DocumentLinks | null }) {
-  if (!links) return null;
-  return (
-    <div>
-      <dt>Ссылки</dt>
-      <dd>
-        <a href="#doc-links">
-          исходящих {links.outgoing.length} · обратных {links.backlinks.length}
-        </a>
-        {links.unresolved.length > 0 ? <span className="flag flag--block">нерешённых: {links.unresolved.length}</span> : null}
-      </dd>
-    </div>
-  );
-}
-
-function Passport({ doc, publication, links }: { doc: DocumentDetail; publication: PublicationInfo; links: DocumentLinks | null }) {
-  return (
-    <aside className="passport" aria-labelledby="passport-title">
-      <h2 id="passport-title" className="passport__title">
-        Паспорт документа
-      </h2>
-      <StatusStamp status={doc.status} large />
-      <dl className="passport__fields">
-        {doc.is_demo ? (
-          // The only in-page demo notice: a fact about the document, next to the other trust facts.
-          <div className="passport__demo">
-            <dt>Демо-документ</dt>
-            <dd>
-              <strong>Демо-данные.</strong> Синтетический документ для проверки приложения — не источник фактов о
-              банке.
-            </dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>ID</dt>
-          <dd>
-            <code className="doc-id">{doc.id}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Раздел</dt>
-          <dd>
-            <Link to={`/documents?type=${doc.type}`}>{TYPE_LABEL[doc.type]}</Link>
-          </dd>
-        </div>
-        <div>
-          <dt>Владелец</dt>
-          <dd className={doc.owner_missing ? "flag" : undefined}>
-            {doc.owner_missing ? `не назначен (${doc.owner})` : doc.owner}
-          </dd>
-        </div>
-        <div>
-          <dt>Проверен</dt>
-          <dd>
-            {formatDate(doc.reviewed_at)}
-            {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-              <span className="flag flag--block">{REVIEW_LABEL[doc.review_state]}</span>
-            ) : null}
-          </dd>
-        </div>
-        <div>
-          <dt>Ревизия</dt>
-          <dd>
-            <code className="doc-id">{doc.revision}</code>
-            {doc.index_state === "stale" ? <StaleMark /> : null}
-          </dd>
-        </div>
-        <div>
-          <dt>Дата ревизии</dt>
-          <dd>
-            {doc.updated_at ? <time dateTime={doc.updated_at}>{formatDateTime(doc.updated_at)}</time> : "не указана"}
-          </dd>
-        </div>
-        <div>
-          <dt>Источник</dt>
-          <dd>
-            {SOURCE_LABEL[doc.source]}
-            <code className="passport__uri">{doc.source_uri}</code>
-            <SourceLocation doc={doc} />
-          </dd>
-        </div>
-        <div>
-          <dt>Файл</dt>
-          <dd>
-            <code className="passport__uri">{doc.path}</code>
-          </dd>
-        </div>
-        {doc.template_id ? (
-          <div>
-            <dt>Шаблон</dt>
-            <dd>
-              <Link to={`/templates/${encodeURIComponent(doc.template_id)}`}>{doc.template_id}</Link>{" "}
-              <span className="version-badge">v{doc.template_version ?? 1}</span>
-            </dd>
-          </div>
-        ) : null}
-        <LinksPassportRow links={links} />
-        <PublicationPassportRow status={publication.status} failed={publication.failed} />
-        {doc.tags.length > 0 ? (
-          <div>
-            <dt>Теги</dt>
-            <dd>
-              <ul className="tags">
-                {doc.tags.map((tag) => (
-                  <li key={tag}>
-                    <Link to={`/documents?tag=${encodeURIComponent(tag)}`} className="tag">
-                      {tag}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </dd>
-          </div>
-        ) : null}
-        {Object.entries(doc.extra_metadata).map(([key, value]) => (
-          <div key={key}>
-            <dt>
-              <code>{key}</code>
-            </dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {doc.related.length > 0 ? (
-        <section className="passport__related" aria-labelledby="related-title">
-          <h3 id="related-title">Связанные документы</h3>
-          <ul>
-            {doc.related.map((rel) =>
-              rel.resolved ? (
-                <li key={rel.id}>
-                  <Link to={`/documents/${rel.id}`}>{rel.title}</Link>
-                  <code className="doc-id">{rel.id}</code>
-                </li>
-              ) : (
-                <li key={rel.id} className="muted">
-                  <code className="doc-id">{rel.id}</code> — не найден в базе знаний
-                </li>
-              ),
-            )}
-          </ul>
-        </section>
-      ) : null}
-      {doc.source_refs.length > 0 ? (
-        <section className="passport__related" aria-labelledby="refs-title">
-          <h3 id="refs-title">Внешние источники</h3>
-          <ul>
-            {doc.source_refs.map((ref) => (
-              <li key={ref}>
-                <code className="passport__uri">{ref}</code>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-    </aside>
-  );
+/** Distinct documents this one links to or is linked from (only those the reader can see). */
+export function linkedDocumentCount(links: DocumentLinks): number {
+  return new Set([...links.outgoing.map((l) => l.target.document_id), ...links.backlinks.map((l) => l.source.document_id)])
+    .size;
 }
 
 /** AI actions on an approved document: proposals only; an accepted change becomes an update DRAFT. */
 function DocumentAiPanel({ doc }: { doc: DocumentDetail }) {
-  const session = useSession();
   const state = useAiProposal();
-  const disabled = session?.features.ai_mode === "disabled";
   const actions: AiAction[] = [
     { key: "meta", label: "Предложить метаданные", build: () => ({ kind: "suggest_metadata", document_id: doc.id }) },
     { key: "related", label: "Найти связанные", build: () => ({ kind: "find_related", document_id: doc.id }) },
@@ -222,7 +86,6 @@ function DocumentAiPanel({ doc }: { doc: DocumentDetail }) {
       title="ИИ-помощник по документу"
       state={state}
       actions={actions}
-      blocked={disabled ? "ИИ отключён в этой установке: предложения недоступны." : undefined}
       intro={
         <p className="muted">
           Предложения опираются на утверждённые документы и показывают основания. Утверждённый документ не меняется:
@@ -246,86 +109,308 @@ function DocumentAiPanel({ doc }: { doc: DocumentDetail }) {
   );
 }
 
-export function DocumentPage() {
-  const { id = "" } = useParams();
+interface LinksState {
+  data: DocumentLinks | null;
+  error: ApiError | null;
+  loading: boolean;
+}
+
+/** The six facts under the title (design-04); everything else is in «Сведения». */
+function DocumentProperties({
+  doc,
+  links,
+  onShowLinks,
+  onShowDetails,
+}: {
+  doc: DocumentDetail;
+  links: LinksState;
+  onShowLinks: () => void;
+  onShowDetails: () => void;
+}) {
+  const count = links.data ? linkedDocumentCount(links.data) : null;
+  const unresolved = links.data?.unresolved.length ?? 0;
+  return (
+    <div className="doc-props-wrap">
+      <dl className="doc-props">
+        <div>
+          <dt>Владелец</dt>
+          <dd className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? `не назначен (${doc.owner})` : doc.owner}</dd>
+        </div>
+        <div>
+          <dt>Раздел</dt>
+          <dd>
+            <Link to={`/documents?type=${doc.type}`} className="doc-props__link">
+              {TYPE_LABEL[doc.type]}
+            </Link>
+          </dd>
+        </div>
+        <div>
+          <dt>Проверен</dt>
+          <dd>
+            {doc.reviewed_at ? formatDate(doc.reviewed_at) : REVIEW_LABEL[doc.review_state]}
+            {doc.reviewed_at && doc.review_state === "stale" ? (
+              <span className="review-flag">{REVIEW_LABEL[doc.review_state]}</span>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Источник</dt>
+          <dd>
+            {SOURCE_LABEL[doc.source]}
+            {doc.web_url ? (
+              <>
+                {" "}
+                <SourceLocation doc={doc} />
+              </>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Ревизия</dt>
+          <dd>
+            <code className="doc-id doc-props__revision" title={doc.revision}>
+              {shortRevision(doc.revision)}
+            </code>
+            {doc.index_state === "stale" ? <StaleMark /> : null}
+          </dd>
+        </div>
+        <div>
+          <dt>Связи</dt>
+          <dd>
+            {links.error ? (
+              <span className="muted">не загрузились</span>
+            ) : count === null ? (
+              <span className="muted">загрузка…</span>
+            ) : (
+              <button type="button" className="link-button" onClick={onShowLinks}>
+                {count === 0 ? "нет связей" : `${count} ${pluralRu(count, "документ", "документа", "документов")}`}
+              </button>
+            )}
+            {unresolved > 0 ? <span className="flag doc-props__flag">нерешённых: {unresolved}</span> : null}
+          </dd>
+        </div>
+      </dl>
+      <button type="button" className={buttonClass("quiet", "sm", "doc-props__more")} onClick={onShowDetails}>
+        Все сведения
+      </button>
+    </div>
+  );
+}
+
+function ProposalRow({ proposal: p }: { proposal: ProposalSummary }) {
+  return (
+    <li className="doc-history__item">
+      <Link to={`/proposals/${encodeURIComponent(p.id)}`}>{p.reason}</Link>
+      <span className="doc-history__meta">
+        <ProposalStateLabel status={p.status} />
+        <span>{OPERATION_LABEL[p.operation]}</span>
+        <span>{p.author}</span>
+        <When value={p.created_at} />
+      </span>
+    </li>
+  );
+}
+
+/** «История»: what the API really knows — the current revision, the proposals for this document, publication. */
+function DocumentHistory({
+  doc,
+  proposals,
+  publication,
+}: {
+  doc: DocumentDetail;
+  proposals: ProposalSummary[];
+  publication: { data: DocumentPublicationStatus | null; failed: boolean };
+}) {
+  const publisherOff = publication.data?.publisher.mode === "disabled";
+  return (
+    <div className="doc-history" id="doc-history">
+      <section className="doc-history__block" aria-labelledby="history-revision-title">
+        <h2 id="history-revision-title">Текущая ревизия</h2>
+        <dl className="doc-history__facts">
+          <div>
+            <dt>Ревизия</dt>
+            <dd>
+              <code className="doc-id">{doc.revision}</code>
+            </dd>
+          </div>
+          <div>
+            <dt>Дата ревизии</dt>
+            <dd>{doc.updated_at ? <time dateTime={doc.updated_at}>{formatDateTime(doc.updated_at)}</time> : "не указана"}</dd>
+          </div>
+          <div>
+            <dt>Версия</dt>
+            <dd>{doc.version ?? "не указана"}</dd>
+          </div>
+          <div>
+            <dt>Проверен</dt>
+            <dd>
+              {formatDate(doc.reviewed_at)} · {REVIEW_LABEL[doc.review_state]}
+            </dd>
+          </div>
+        </dl>
+        <p className="muted">
+          {doc.source === "local"
+            ? "Приложение показывает только текущую ревизию: локальный workspace не хранит прежние ревизии."
+            : `Приложение показывает только текущую ревизию. Прежние ревизии и их авторы — в истории источника (${SOURCE_LABEL[doc.source]}).`}
+          {doc.web_url ? (
+            <>
+              {" "}
+              <SourceLocation doc={doc} />
+            </>
+          ) : null}
+        </p>
+      </section>
+
+      <section className="doc-history__block" aria-labelledby="history-proposals-title">
+        <h2 id="history-proposals-title">Предложения изменений</h2>
+        {proposals.length === 0 ? (
+          <p className="muted">К этому документу предложений изменений не было.</p>
+        ) : (
+          <ul className="doc-history__list">
+            {proposals.map((p) => (
+              <ProposalRow key={p.id} proposal={p} />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {publication.data && !publisherOff ? (
+        <PublicationSection status={publication.data} />
+      ) : (
+        <section className="doc-history__block" aria-labelledby="history-publication-title">
+          <h2 id="history-publication-title">Публикация</h2>
+          <p className="muted">
+            {publication.failed
+              ? "Состояние публикации недоступно."
+              : publisherOff
+                ? "Публикация в Confluence не настроена в этой установке."
+                : "Загружаем состояние публикации…"}
+          </p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function DocumentBody({
+  doc,
+  proposals,
+  links,
+  reloadLinks,
+  publication,
+}: {
+  doc: DocumentDetail;
+  proposals: ProposalList;
+  links: LinksState;
+  reloadLinks: () => void;
+  publication: { data: DocumentPublicationStatus | null; failed: boolean };
+}) {
   const location = useLocation();
+  const navigate = useNavigate();
   const session = useSession();
   const aiOff = session?.features.ai_mode === "disabled";
-  const [view, setView] = useState<"rendered" | "metadata" | "raw">("rendered");
-  const { data, error, loading, reload } = useAsync(() => loadDocument(id), id);
-  // Loaded separately: a publication problem never hides the document itself.
-  const publication = useAsync(() => api.documentPublication(id), `publication-${id}`);
-  const links = useAsync(() => api.documentLinks(id), `links-${id}`);
+  const [view, setView] = useState<DocumentView>(() => viewForHash(location.hash));
+  const [seenHash, setSeenHash] = useState(location.hash);
+  if (location.hash !== seenHash) {
+    // A link to an anchor (a citation, «Подробнее о публикации») opens the segment that holds it.
+    setSeenHash(location.hash);
+    if (location.hash) setView(viewForHash(location.hash));
+  }
+  const [panel, setPanel] = useState<DocumentPanel | null>(null);
+  const panelMode = useSidePanelMode();
+  const tabRefs = useRef<Partial<Record<DocumentView, HTMLButtonElement | null>>>({});
+  const closePanel = useCallback(() => setPanel(null), []);
 
   useEffect(() => {
-    if (!data || !location.hash) return;
+    if (!location.hash) return undefined;
     const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
-    if (target) {
-      target.scrollIntoView({ block: "start" });
-      target.classList.add("is-targeted");
-      return () => target.classList.remove("is-targeted");
-    }
-    return undefined;
-  }, [data, location.hash]);
+    if (!target) return undefined;
+    target.scrollIntoView({ block: "start" });
+    target.classList.add("is-targeted");
+    return () => target.classList.remove("is-targeted");
+  }, [location.hash, view]);
 
-  if (loading && !data) return <Loading label="Загрузка документа…" />;
-  if (error) {
-    return (
-      <div className="stack">
-        <ErrorState
-          error={error}
-          onRetry={error.status >= 500 || error.status === 0 ? reload : undefined}
-          title={error.status === 404 ? "Документ не найден" : undefined}
-          page
-        />
-        <Link to="/documents" className="text-link">
-          Вернуться к списку документов
-        </Link>
-      </div>
-    );
+  function showView(next: DocumentView, focusTab = false) {
+    setView(next);
+    if (focusTab) requestAnimationFrame(() => tabRefs.current[next]?.focus());
   }
-  if (!data) return null;
-  const { doc, proposals } = data;
+
   const openProposals = proposals.items.filter((p) => p.status !== "rejected" && p.status !== "merged");
+  const more: MenuItem[] = [
+    {
+      id: "details",
+      label: panel === "details" ? "Скрыть сведения" : "Сведения о документе",
+      icon: "info",
+      onSelect: () => setPanel((current) => (current === "details" ? null : "details")),
+    },
+    {
+      id: "graph",
+      label: "Показать на карте знаний",
+      icon: "map",
+      onSelect: () => navigate(`/graph?focus=${encodeURIComponent(doc.id)}`),
+    },
+    ...(aiOff
+      ? []
+      : [
+          {
+            id: "ask",
+            label: "Спросить ассистента",
+            icon: "assistant" as const,
+            onSelect: () => navigate(`/ask?about=${encodeURIComponent(doc.title)}`),
+          },
+        ]),
+    { id: "raw", label: "Исходный Markdown", icon: "file-text", onSelect: () => showView("raw", true) },
+  ];
 
   return (
-    <article className="document">
+    <article className={`document doc-page${panel && panelMode === "inline" ? " doc-page--with-panel" : ""}`}>
       <PageToolbar
         crumbs={[
           { label: "Документы", to: "/documents" },
           { label: TYPE_LABEL[doc.type], to: `/documents?type=${doc.type}` },
           { label: doc.title },
         ]}
+        actions={
+          <>
+            <Link
+              to={`/proposals/new?document=${encodeURIComponent(doc.id)}`}
+              className={buttonClass("secondary", "md", "button--collapsible")}
+            >
+              <Icon name="edit" />
+              <span className="button__label">Предложить изменение</span>
+            </Link>
+            {/* The document assistant toggle («Ассистент», ⌘J) goes here, before «Ещё». */}
+            <Menu
+              label="Действия с документом"
+              align="end"
+              groups={[{ items: more }]}
+              trigger={(props) => <IconButton {...props} icon="more" label="Ещё" variant="secondary" />}
+            />
+          </>
+        }
       />
 
-      <header className="document__head">
-        <h1>{doc.title}</h1>
-        <p className="document__compact-meta">
-          <StatusStamp status={doc.status} /> <code className="doc-id">{doc.id}</code>
-        </p>
-        {doc.summary ? <p className="lead">{doc.summary}</p> : null}
-        <div className="document__actions">
-          <Link to={`/proposals/new?document=${encodeURIComponent(doc.id)}`} className="button button--primary">
-            Предложить изменение
-          </Link>
-          {aiOff ? null : (
-            <Link to={`/ask?about=${encodeURIComponent(doc.title)}`} className="button button--secondary">
-              Спросить ассистента
-            </Link>
-          )}
-          <Link to={`/graph?focus=${encodeURIComponent(doc.id)}`} className="button button--quiet">
-            Связи на графе
-          </Link>
-          {aiOff ? null : (
-            <a href="#doc-ai" className="button button--quiet">
-              ИИ-помощник
-            </a>
-          )}
-        </div>
-      </header>
+      <div className="doc-page__body">
+        <div className="doc-page__main">
+          <header className="doc-head">
+            <p className="doc-head__status">
+              <StatusMark status={doc.status} />
+              <code className="doc-id">{doc.id}</code>
+              {doc.is_demo ? (
+                <span className="doc-head__demo" title="Синтетический документ для проверки приложения — не источник фактов о банке.">
+                  Демо-документ
+                </span>
+              ) : null}
+            </p>
+            <h1 className="doc-head__title">{doc.title}</h1>
+            <DocumentProperties
+              doc={doc}
+              links={links}
+              onShowLinks={() => showView("links", true)}
+              onShowDetails={() => setPanel("details")}
+            />
+          </header>
 
-      <div className="document__layout">
-        <div className="document__main">
           {doc.index_state === "stale" ? (
             <Notice tone="warning">
               <strong>Версия может быть устаревшей.</strong> Последняя синхронизация не смогла обновить этот документ —
@@ -365,65 +450,99 @@ export function DocumentPage() {
             </Notice>
           ) : null}
 
-          <div className="tabs" role="tablist" aria-label="Представление документа" onKeyDown={onTabListKeyDown}>
-            <button
-              type="button"
-              role="tab"
-              id="tab-rendered"
-              aria-selected={view === "rendered"}
-              tabIndex={view === "rendered" ? 0 : -1}
-              aria-controls="panel-document"
-              onClick={() => setView("rendered")}
-            >
-              Документ
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="tab-metadata"
-              aria-selected={view === "metadata"}
-              tabIndex={view === "metadata" ? 0 : -1}
-              aria-controls="panel-document"
-              onClick={() => setView("metadata")}
-            >
-              Метаданные
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="tab-raw"
-              aria-selected={view === "raw"}
-              tabIndex={view === "raw" ? 0 : -1}
-              aria-controls="panel-document"
-              onClick={() => setView("raw")}
-            >
-              Исходный Markdown
-            </button>
+          <div className="tabs doc-tabs" role="tablist" aria-label="Представление документа" onKeyDown={onTabListKeyDown}>
+            {VIEWS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                id={`doc-tab-${option.value}`}
+                ref={(el) => {
+                  tabRefs.current[option.value] = el;
+                }}
+                aria-selected={view === option.value}
+                tabIndex={view === option.value ? 0 : -1}
+                aria-controls="doc-panel"
+                onClick={() => setView(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-          <div id="panel-document" role="tabpanel" aria-labelledby={`tab-${view}`}>
-            {view === "rendered" ? (
-              <WikiLinkPreviewArea>
-                <SafeHtml html={doc.content_html} className="prose" />
-              </WikiLinkPreviewArea>
-            ) : view === "metadata" ? (
-              <MetadataPanel doc={doc} />
+          <div id="doc-panel" role="tabpanel" aria-labelledby={`doc-tab-${view}`} className={`doc-panel doc-panel--${view}`}>
+            {view === "text" ? (
+              <>
+                <WikiLinkPreviewArea>
+                  <SafeHtml html={doc.content_html} className="prose" />
+                </WikiLinkPreviewArea>
+                {/* Without an AI provider the block is not shown at all (the manual path is the page itself). */}
+                {aiOff ? null : <DocumentAiPanel doc={doc} />}
+              </>
+            ) : view === "links" ? (
+              <DocumentLinksPanel
+                links={links.data}
+                error={links.error}
+                loading={links.loading}
+                onRetry={reloadLinks}
+                actions={
+                  <Link to={`/graph?focus=${encodeURIComponent(doc.id)}`} className={buttonClass("secondary", "sm")}>
+                    <Icon name="map" size={14} />
+                    Связи на графе
+                  </Link>
+                }
+              />
+            ) : view === "history" ? (
+              <DocumentHistory doc={doc} proposals={proposals.items} publication={publication} />
             ) : (
-              <pre className="raw-source">
+              <pre className="raw-source" id="doc-raw">
                 <code>{doc.raw}</code>
               </pre>
             )}
           </div>
-          <DocumentLinksPanel links={links.data} error={links.error} loading={links.loading} onRetry={links.reload} />
-          {/* Without an AI provider the panel is not shown at all (the manual path is the page itself). */}
-          {aiOff ? null : <DocumentAiPanel key={doc.id} doc={doc} />}
-          {publication.data ? <PublicationSection status={publication.data} /> : null}
         </div>
-        <Passport
-          doc={doc}
-          publication={{ status: publication.data, failed: publication.error !== null }}
-          links={links.data}
-        />
+
+        {panel === "details" ? (
+          <SidePanel id="document-details" title="Сведения о документе" mode={panelMode} onClose={closePanel}>
+            <DocumentDetails doc={doc} publication={{ status: publication.data, failed: publication.failed }} />
+          </SidePanel>
+        ) : null}
       </div>
     </article>
+  );
+}
+
+export function DocumentPage() {
+  const { id = "" } = useParams();
+  const { data, error, loading, reload } = useAsync(() => loadDocument(id), id);
+  // Loaded separately: a publication or links problem never hides the document itself.
+  const publication = useAsync(() => api.documentPublication(id), `publication-${id}`);
+  const links = useAsync(() => api.documentLinks(id), `links-${id}`);
+
+  if (loading && !data) return <Loading label="Загрузка документа…" />;
+  if (error) {
+    return (
+      <div className="stack">
+        <ErrorState
+          error={error}
+          onRetry={error.status >= 500 || error.status === 0 ? reload : undefined}
+          title={error.status === 404 ? "Документ не найден" : undefined}
+          page
+        />
+        <Link to="/documents" className="text-link">
+          Вернуться к списку документов
+        </Link>
+      </div>
+    );
+  }
+  if (!data) return null;
+  return (
+    <DocumentBody
+      key={data.doc.id}
+      doc={data.doc}
+      proposals={data.proposals}
+      links={{ data: links.data, error: links.error, loading: links.loading }}
+      reloadLinks={links.reload}
+      publication={{ data: publication.data, failed: publication.error !== null }}
+    />
   );
 }

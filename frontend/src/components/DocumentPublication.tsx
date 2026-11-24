@@ -19,7 +19,7 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
 }
 
-/** One passport row: the publication state, or a quiet note when publication is not configured. */
+/** One «Сведения» row: the publication state, or a quiet note when publication is not configured. */
 export function PublicationPassportRow({ status, failed }: { status: DocumentPublicationStatus | null; failed: boolean }) {
   if (!status && !failed) return null;
   return (
@@ -33,7 +33,7 @@ export function PublicationPassportRow({ status, failed }: { status: DocumentPub
         ) : (
           <>
             <PublicationStateLabel state={status.state} />{" "}
-            <a href="#publication" className="passport__note">
+            <a href="#publication" className="doc-details__note">
               Подробнее о публикации
             </a>
           </>
@@ -53,7 +53,7 @@ export function PublicationSection({ status }: { status: DocumentPublicationStat
   const [error, setError] = useState<ApiError | null>(null);
   const inFlight = useRef(false);
   const { publisher, mapping, latest_job: job } = status;
-  if (publisher.mode === "disabled") return null; // the passport shows a quiet note instead
+  if (publisher.mode === "disabled") return null; // «Сведения» and «История» show a quiet note instead
 
   const mock = publisher.target_kind === "mock";
   const jobProblem =

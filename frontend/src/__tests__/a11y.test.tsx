@@ -27,15 +27,16 @@ describe("Phase 4 accessibility", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Документ не найден" })).toBeInTheDocument();
   });
 
-  it("moves between document tabs with the arrow keys, Home and End (roving tabindex)", async () => {
+  it("moves between document segments with the arrow keys, Home and End (roving tabindex)", async () => {
     mockApi([
       { path: "/api/documents/SEM-INT-ARIS-001", body: arisDetail },
       { path: "/api/drafts?document_id=SEM-INT-ARIS-001", body: drafts },
     ]);
     renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
-    const rendered = await screen.findByRole("tab", { name: "Документ" });
-    const metadata = screen.getByRole("tab", { name: "Метаданные" });
-    const raw = screen.getByRole("tab", { name: "Исходный Markdown" });
+    // UI v2 segments: Текст / Связи / История / Markdown (formerly Документ / Метаданные / Исходный Markdown).
+    const rendered = await screen.findByRole("tab", { name: "Текст" });
+    const metadata = screen.getByRole("tab", { name: "Связи" });
+    const raw = screen.getByRole("tab", { name: "Markdown" });
     expect(rendered).toHaveAttribute("tabindex", "0");
     expect(metadata).toHaveAttribute("tabindex", "-1");
 

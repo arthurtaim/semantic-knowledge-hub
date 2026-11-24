@@ -214,7 +214,7 @@ describe("Route map", () => {
       ["/documents", "documents", "Документы", "wide"],
       ["/documents/new", "documents", "Документы / Новый документ", "default"],
       ["/documents/import", "documents", "Документы / Новый документ / Импорт Markdown", "default"],
-      ["/documents/SEM-ARCH-001", "documents", "Документы / Документ", "default"],
+      ["/documents/SEM-ARCH-001", "documents", "Документы / Документ", "wide"], // its own text column + a right panel
       ["/graph", "map", "Карта знаний", "wide"],
       ["/templates", "templates", "Шаблоны", "default"],
       ["/templates/dataset_spec", "templates", "Шаблоны / Шаблон", "default"],

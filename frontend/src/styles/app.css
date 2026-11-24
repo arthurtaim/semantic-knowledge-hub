@@ -2884,80 +2884,45 @@ a.assistant-home__row:hover {
 
 /* ---------- explorer ---------- */
 
-.explorer .page-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: var(--space-4);
-}
-
-.explorer .page-head h1 {
-  margin: 0;
-}
-
-.explorer .search-box {
-  flex: 1 1 24rem;
-}
-
-.explorer__body {
-  display: grid;
-  grid-template-columns: 14rem minmax(0, 1fr);
-  gap: var(--space-6);
-  align-items: start;
-}
-
-.filters {
-  position: sticky;
-  top: calc(var(--toolbar-height) + var(--space-4));
-}
-
-.filter-group {
-  margin-bottom: var(--space-5);
-}
-
-.filter-group summary {
-  font-size: var(--fs-caption);
-  color: var(--text-secondary);
-  font-weight: 500;
-  margin-bottom: var(--space-2);
-  cursor: pointer;
-}
-
-.filter-group__active {
-  color: var(--accent-text);
-}
-
-.filter-group ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
 .filter-option {
   display: flex;
-  justify-content: space-between;
-  width: 100%;
+  align-items: center;
   gap: var(--space-2);
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-control);
+  width: 100%;
+  min-height: var(--control-height-sm);
   padding: var(--space-1) var(--space-2);
-  margin: 0 calc(-1 * var(--space-2));
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
   text-align: left;
   cursor: pointer;
-  width: calc(100% + 2 * var(--space-2));
 }
 
 .filter-option:hover {
   background: var(--bg-hover);
 }
 
-/* Selected = the grey selection surface + weight, as in the sidebar; never the primary green fill. */
+.filter-option__check {
+  visibility: hidden;
+  color: var(--accent-text);
+}
+
+.filter-option__label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Selected = the grey selection surface + weight + a tick, as in the sidebar; never the primary green fill. */
 .filter-option[aria-pressed="true"] {
   background: var(--bg-selected);
-  color: var(--text);
   font-weight: 500;
+}
+
+.filter-option[aria-pressed="true"] .filter-option__check {
+  visibility: visible;
 }
 
 .filter-option__count {
@@ -2992,18 +2957,6 @@ a.assistant-home__row:hover {
   align-items: center;
   gap: var(--space-3);
   margin-bottom: var(--space-3);
-}
-
-.sort-control {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.sort-control label {
-  margin: 0;
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
 }
 
 .result__badges {
@@ -3128,35 +3081,6 @@ h1 a:hover {
 
 /* ---------- document ---------- */
 
-.document__head {
-  margin-bottom: var(--space-5);
-}
-
-.document__head h1 {
-  max-width: 30ch;
-  font-size: var(--fs-doc-title);
-  line-height: var(--lh-doc-title);
-}
-
-.document__compact-meta {
-  display: none;
-  gap: var(--space-3);
-  align-items: center;
-}
-
-.document__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.document__layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 20.5rem;
-  gap: var(--space-6);
-  align-items: start;
-}
-
 .prose {
   font-family: var(--font-ui);
   font-size: var(--fs-doc);
@@ -3272,110 +3196,8 @@ h1 a:hover {
   overflow-wrap: anywhere;
 }
 
-.passport {
-  background: var(--bg-surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-block);
-  padding: var(--space-5);
-  position: sticky;
-  top: calc(var(--toolbar-height) + var(--space-4));
-}
-
-.passport__title {
-  font-size: var(--fs-ui);
-  font-weight: 600;
-  margin-bottom: var(--space-4);
-}
-
-.passport__fields {
-  margin: var(--space-5) 0 0;
-}
-
-.passport__fields > div {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: var(--space-2);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--fs-small);
-}
-
-.passport__fields dt {
-  color: var(--text-secondary);
-}
-
-.passport__fields dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Demo caveat as a passport fact: label above, text below (the label is longer than the field column). */
-.passport__fields > .passport__demo {
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-1);
-}
-
-.passport__demo dd {
-  color: var(--text-secondary);
-  overflow-wrap: normal;
-}
-
-.passport__demo strong {
-  color: var(--status-draft-text);
-}
-
-.passport__uri {
-  display: block;
-  font-size: var(--fs-caption);
-  color: var(--text-secondary);
-}
-
-.passport__source-link {
-  display: inline-block;
-  margin-top: var(--space-1);
-  font-weight: 500;
-}
-
-.passport__note {
-  display: block;
-  margin-top: var(--space-1);
-  color: var(--text-secondary);
-}
-
-.passport__fields .stale-mark {
-  display: flex;
-  align-items: flex-start;
-  white-space: normal;
-  margin-top: var(--space-1);
-}
-
 .notice li .proposal-state {
   margin-left: var(--space-1);
-}
-
-.passport__related {
-  margin-top: var(--space-5);
-}
-
-.passport__related h3 {
-  font-size: var(--fs-small);
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.passport__related ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: var(--fs-small);
-}
-
-.passport__related li {
-  padding: var(--space-1) 0;
-}
-
-.passport__related .doc-id {
-  display: block;
 }
 
 .tags {
@@ -3404,6 +3226,1006 @@ h1 a:hover {
   background: var(--bg-hover);
   color: var(--text);
   text-decoration: none;
+}
+
+/* ── Catalog (UI v2 phase D, design-05): view switch, «Найти в списке», filter chips, grouped table ── */
+
+.page-toolbar__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: var(--space-2);
+  flex: none;
+}
+
+.page-toolbar__count {
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* Список / Таблица / Карта: a segmented look; «Карта» is a link to the map with the same filters. */
+.view-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--bg-hover);
+}
+
+.view-switch__item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.625rem;
+  padding: 0 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.view-switch__item:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.view-switch__item[aria-pressed="true"] {
+  background: var(--bg-surface);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.catalog-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: min(22.5rem, 100%);
+}
+
+.catalog-search__icon {
+  position: absolute;
+  left: 0.625rem;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+.catalog-search input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding-left: 2rem;
+  font-size: var(--fs-ui);
+}
+
+/* Below 1280 px the switch and the search field sit at the top of the content. */
+.catalog__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+/* The filter row: active filters as chips, «+ Фильтр», then grouping and «Вид» on the right. */
+.catalog-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 calc(-1 * var(--space-6));
+  padding: var(--space-2) var(--space-6);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Right under the toolbar when the switch and the search are in it (design-05). */
+.catalog-bar--flush {
+  margin-top: calc(-1 * var(--space-6));
+}
+
+.catalog-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-bar__chips .chip {
+  min-height: var(--control-height-sm);
+}
+
+.catalog-bar__add {
+  border-style: dashed;
+}
+
+.catalog-bar__end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.catalog-bar__menu {
+  color: var(--text);
+}
+
+.catalog-bar__menu .icon {
+  color: var(--text-secondary);
+}
+
+.facet-popover {
+  width: min(20rem, calc(100vw - 2 * var(--space-4)));
+  max-height: min(32rem, 70vh);
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.facet-groups {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.facet-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.facet-group__title {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.catalog .results {
+  margin-top: var(--space-4);
+}
+
+.catalog .results__bar {
+  margin-bottom: var(--space-2);
+}
+
+/* Browsing the table: the summary is for screen readers only, the table starts right under the filter row. */
+.catalog .results--quiet {
+  margin-top: 0;
+}
+
+.catalog .results--quiet .results__bar {
+  margin: 0;
+}
+
+/* The table runs edge to edge of the work area, like design-05. */
+.catalog-table-wrap {
+  margin: 0 calc(-1 * var(--space-6)) var(--space-5);
+  overflow-x: auto;
+}
+
+.catalog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+}
+
+.catalog-table__col-status {
+  width: 11rem;
+}
+
+.catalog-table__col-owner {
+  width: 14rem;
+}
+
+.catalog-table__col-updated {
+  width: 8.5rem;
+}
+
+.catalog-table th,
+.catalog-table td {
+  padding: 0 var(--space-4);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.catalog-table th:first-child,
+.catalog-table td:first-child {
+  padding-left: var(--space-6);
+}
+
+.catalog-table thead th {
+  height: 2.25rem;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.catalog-group th {
+  height: var(--group-row-height);
+  padding: 0 var(--space-4) 0 var(--space-5);
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--line);
+}
+
+.catalog-group__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.catalog-group__toggle:hover {
+  background: var(--bg-hover);
+}
+
+.catalog-group__chevron {
+  color: var(--text-secondary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.catalog-group__toggle[aria-expanded="false"] .catalog-group__chevron {
+  transform: rotate(-90deg);
+}
+
+.catalog-group__count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.catalog-row {
+  height: var(--row-height);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.catalog-row:hover {
+  background: var(--bg-hover);
+}
+
+.catalog-row__name {
+  padding-block: var(--space-2);
+}
+
+.catalog__title {
+  margin-right: var(--space-2);
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.catalog__title:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.catalog__id {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-right: var(--space-2);
+  font-size: var(--fs-small);
+}
+
+.catalog__source {
+  color: var(--text-tertiary);
+}
+
+.catalog-row__status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.catalog-row .when {
+  color: var(--text-secondary);
+}
+
+/* Phones: each document is a card row; groups stay, with the same counts and collapse. */
+.catalog-cards {
+  margin: 0 0 var(--space-5);
+}
+
+.catalog-group--card {
+  margin: 0;
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-subtle);
+}
+
+.catalog-cards__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.catalog-card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.catalog-card .catalog__id {
+  margin: 0;
+}
+
+.catalog-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 959.98px) {
+  .catalog-bar {
+    margin-inline: calc(-1 * var(--space-4));
+    padding-inline: var(--space-4);
+  }
+
+  .catalog-table-wrap {
+    margin-inline: calc(-1 * var(--space-4));
+  }
+
+  .catalog-table th:first-child,
+  .catalog-table td:first-child {
+    padding-left: var(--space-4);
+  }
+}
+
+@media (max-width: 719.98px) {
+  .catalog-bar {
+    margin-top: 0;
+  }
+
+  .catalog__top .view-switch {
+    flex: none;
+  }
+
+  .catalog-search {
+    width: 100%;
+  }
+
+  .catalog-group--card .catalog-group__toggle {
+    margin-left: calc(-1 * var(--space-1));
+  }
+}
+
+/* ── Document page (UI v2 phase D, design-04): status line, title, properties grid, segments, right panel ── */
+
+.doc-page__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.doc-page--with-panel .doc-page__body {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* The text column: ≤ 700 px, centred in what the right panel leaves. */
+.doc-page__main {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--prose-max);
+  margin: 0 auto;
+  padding-top: var(--space-2);
+}
+
+.doc-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.doc-head__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.doc-head__status .doc-id {
+  font-size: inherit;
+}
+
+.doc-head__demo {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.375rem;
+  padding: 0 var(--space-2);
+  border-radius: 6px;
+  background: var(--demo-bg);
+  color: var(--demo-text);
+  font-weight: 500;
+}
+
+.doc-head__title {
+  margin: 0;
+  font-size: var(--fs-doc-title);
+  line-height: var(--lh-doc-title);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+/* Properties: two columns of «label value» rows and a divider below — not a boxed passport. */
+.doc-props-wrap {
+  margin-top: var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-props {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-5);
+  margin: 0;
+}
+
+.doc-props > div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: 1.875rem;
+  padding: 0.3125rem 0;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.doc-props dt {
+  color: var(--text-tertiary);
+}
+
+.doc-props dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-props .doc-id {
+  font-size: inherit;
+  color: var(--text);
+}
+
+.doc-props .doc-props__link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.doc-props .doc-props__link:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.doc-props__flag {
+  font-size: var(--fs-caption);
+}
+
+.doc-props__more {
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-2));
+}
+
+/* A button that reads as a link in running text (it changes the view, it does not navigate). */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--accent-hover);
+  text-decoration-color: currentColor;
+}
+
+.doc-tabs {
+  margin-bottom: var(--space-5);
+}
+
+/* The text itself: Inter 16/27 on the page, no box. */
+.doc-page .prose {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.doc-page .prose > * {
+  max-width: none;
+}
+
+.doc-panel--text .ai-assist {
+  margin-top: var(--space-7);
+}
+
+.doc-panel .links-panel {
+  margin-top: 0;
+}
+
+/* «История»: the current revision, the proposals, publication — what the API really has. */
+.doc-history {
+  display: grid;
+  gap: var(--space-6);
+}
+
+.doc-history h2 {
+  font-size: var(--fs-doc);
+  line-height: 1.5rem;
+  margin-bottom: var(--space-3);
+}
+
+.doc-history__block > .muted {
+  margin: 0;
+  font-size: var(--fs-small);
+}
+
+.doc-history__facts {
+  margin: 0 0 var(--space-3);
+}
+
+.doc-history__facts > div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  font-size: var(--fs-small);
+}
+
+.doc-history__facts dt {
+  color: var(--text-tertiary);
+}
+
+.doc-history__facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.doc-history__item {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-history__item > a {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.doc-history__item > a:hover {
+  color: var(--accent-text);
+}
+
+.doc-history__meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.doc-history .publication {
+  margin: 0;
+}
+
+/* «Сведения о документе»: every former passport / metadata field, by trust class. */
+.doc-details {
+  display: grid;
+  gap: var(--space-5);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.doc-details__demo {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--demo-bg);
+  color: var(--demo-text);
+}
+
+.doc-details__group h3 {
+  margin-bottom: var(--space-1);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.doc-details__group > .muted {
+  margin-bottom: var(--space-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+.doc-details__group > ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.doc-details__fields {
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.doc-details__fields > div {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-details__fields dt {
+  color: var(--text-secondary);
+}
+
+.doc-details__fields dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-details__uri {
+  display: block;
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.doc-details__note {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-secondary);
+}
+
+.doc-props .doc-details__note,
+.doc-props .doc-details__source-link {
+  margin-top: 0;
+}
+
+.doc-details__source-link {
+  display: inline-block;
+  font-weight: 500;
+}
+
+.doc-details__related {
+  list-style: none;
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+}
+
+.doc-details .stale-mark {
+  display: flex;
+  align-items: flex-start;
+  margin-top: var(--space-1);
+  white-space: normal;
+}
+
+@media (max-width: 599.98px) {
+  .doc-head__title {
+    font-size: 1.625rem;
+    line-height: 2rem;
+  }
+
+  .doc-props {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-props > div {
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+  }
+}
+
+/* A toolbar action that keeps only its icon on a phone (the label stays its accessible name); on wider screens
+   the icon shows only with `button--with-icon` («+ Создать документ»). */
+.button--collapsible:not(.button--with-icon) > .icon {
+  display: none;
+}
+
+@media (max-width: 599.98px) {
+  .button--collapsible {
+    width: var(--control-height);
+    min-width: var(--control-height);
+    padding: 0;
+  }
+
+  .button--collapsible > .icon,
+  .button--collapsible:not(.button--with-icon) > .icon {
+    display: inline-block;
+  }
+
+  .button--collapsible > .button__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* A long path must not run under the toolbar's badges: a phone shows only the current page. */
+  .page-toolbar__lead {
+    overflow: hidden;
+  }
+
+  .page-toolbar .crumbs li:not(:last-child) {
+    display: none;
+  }
+
+  .page-toolbar .crumbs li + li::before {
+    content: none;
+  }
+}
+
+/* ── Other pages in the new system (UI v2 phase D): proposals list, corporate page, 404 ── */
+
+/* Proposals: a ruled table edge to edge, like the catalog — not a boxed grid. */
+.proposals .table-wrap {
+  margin: 0 calc(-1 * var(--space-6)) var(--space-5);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.proposals .data-table th,
+.proposals .data-table td {
+  padding-block: var(--space-2);
+  vertical-align: middle;
+}
+
+.proposals .data-table th:first-child,
+.proposals .data-table td:first-child {
+  min-width: 15rem;
+  padding-left: var(--space-6);
+}
+
+.proposals .data-table th {
+  height: 2.25rem;
+  background: transparent;
+  font-weight: 400;
+}
+
+.proposals .data-table tr:last-child td {
+  border-bottom: 1px solid var(--line);
+}
+
+.proposals .data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.proposals .data-table td:first-child a {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.proposals .data-table td:first-child a:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+@media (max-width: 959.98px) {
+  .proposals .table-wrap {
+    margin-inline: calc(-1 * var(--space-4));
+  }
+
+  .proposals .data-table th:first-child,
+  .proposals .data-table td:first-child {
+    padding-left: var(--space-4);
+  }
+}
+
+/* The new-document wizard (DocumentEditor AuthoringRoute): its steps are segments on a grey track — the current
+   step a raised white surface, done steps a green tick, failed a red mark — instead of a ruled stepper. */
+.lifecycle.lifecycle--compact {
+  gap: 2px;
+  padding: 3px;
+  border-top: 0;
+  border-left: 0;
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+
+.lifecycle--compact .lifecycle__step,
+.lifecycle--compact .lifecycle__step--done,
+.lifecycle--compact .lifecycle__step--current,
+.lifecycle--compact .lifecycle__step--failed {
+  align-items: center;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.lifecycle--compact .lifecycle__step--current {
+  background: var(--bg-surface);
+  border-color: var(--line-strong);
+}
+
+.lifecycle--compact .lifecycle__step--current .lifecycle__title {
+  color: var(--text);
+}
+
+/* A link that looks like a button is never underlined, even inside a notice, an empty state or a paragraph. */
+.feedback a.button,
+.notice a.button,
+p a.button,
+dd a.button {
+  text-decoration: none;
+}
+
+/* Page actions that left the toolbar on a phone (PageToolbar `actionsInContentOnPhone`). */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* The toolbar puts the primary last (rightmost); on its own row it comes first. */
+.page-actions > .button--primary {
+  order: -1;
+}
+
+.corporate-page__body {
+  white-space: pre-line;
+}
+
+.not-found {
+  max-width: var(--text-max);
+}
+
+/* ── Right panel (components/shell/SidePanel): a docked column ≥ 1200 px, a sheet below, from the bottom on phones ── */
+
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+/* Docked: flush with the toolbar and the right edge (it cancels the content padding), sticky while the text scrolls. */
+.side-panel--inline {
+  position: sticky;
+  top: var(--toolbar-height);
+  width: var(--side-panel-width, var(--details-panel-width));
+  height: calc(100dvh - var(--toolbar-height));
+  margin: calc(-1 * var(--space-6)) calc(-1 * var(--space-6)) 0 var(--space-6);
+  border-left: 1px solid var(--line);
+}
+
+.side-panel-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+  animation: layer-fade var(--duration-panel) var(--ease-out);
+}
+
+.side-panel--sheet,
+.side-panel--bottom {
+  position: fixed;
+  z-index: 61;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.side-panel--sheet {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(var(--side-panel-width, var(--assistant-panel-width)), calc(100vw - var(--space-6)));
+  border-left: 1px solid var(--line-popover);
+  animation: sheet-in-right var(--duration-panel) var(--ease-out);
+}
+
+.side-panel--bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 85dvh;
+  border-top: 1px solid var(--line-popover);
+  border-radius: var(--radius-block) var(--radius-block) 0 0;
+  animation: sheet-in-up var(--duration-panel) var(--ease-out);
+}
+
+.side-panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 3rem;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.side-panel__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.side-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  overscroll-behavior: contain;
+}
+
+@keyframes sheet-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sheet-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* ── Assistant: dialog (pages/AskPage.tsx, components/AnswerParts.tsx, AnswerSources.tsx, AskProposal.tsx;
@@ -6417,21 +7239,6 @@ a.source__title:hover {
 
 /* ---------- responsive ---------- */
 
-@media (max-width: 1279.98px) {
-  .document__layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .passport {
-    position: static;
-  }
-
-  .document__compact-meta {
-    display: flex;
-  }
-}
-
-
 @media (max-width: 860px) {
   :root {
     --gutter: var(--space-4);
@@ -6466,46 +7273,8 @@ a.source__title:hover {
     padding: var(--space-5) var(--gutter) var(--space-6);
   }
 
-  .passport {
-    top: auto;
-  }
-
-  .explorer__body {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-4);
-  }
-
   .integration {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .filters {
-    position: static;
-  }
-
-  .filters-disclosure > summary {
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .filters-disclosure[open] > summary {
-    border-bottom-color: transparent;
-  }
-
-  .filters-disclosure__body {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-    padding: var(--space-2) 0 var(--space-4);
-    border-bottom: 1px solid var(--line);
-  }
-
-  .filter-group {
-    flex: 1 1 12rem;
-    margin-bottom: 0;
   }
 
   .prose {
@@ -6579,15 +7348,16 @@ a.source__title:hover {
   }
 }
 
-/* Print: the document itself. No app chrome; prose on the full width; the passport (provenance and the demo
-   caveat) after the prose; status and ID stay under the title. Interactive controls are not printed. */
+/* Print: the document itself. No app chrome; prose on the full width; status, ID and the properties stay under
+   the title. Interactive controls and the right panel are not printed. */
 @media print {
   .sidebar,
   .page-toolbar,
   .scrim,
   .skip-link,
-  .document__actions,
   .tabs,
+  .side-panel,
+  .side-panel-scrim,
   .document .button {
     display: none;
   }
@@ -6601,16 +7371,8 @@ a.source__title:hover {
     padding: 0;
   }
 
-  .document__head {
-    margin-bottom: var(--space-4);
-  }
-
-  .document .document__compact-meta {
-    display: flex;
-  }
-
-  .document .document__layout {
-    display: block;
+  .doc-page__main {
+    max-width: none;
   }
 
   .document .prose {
@@ -6622,12 +7384,6 @@ a.source__title:hover {
 
   .document .prose > * {
     max-width: none;
-  }
-
-  .document .passport {
-    position: static;
-    margin-top: var(--space-6);
-    break-inside: avoid;
   }
 
   .document .publication {
@@ -7253,10 +8009,20 @@ a.source__title:hover {
   margin: var(--space-6) 0;
 }
 
-.links-panel > h2 {
+/* The heading row of «Связи»: the title and «Связи на графе» on one line. */
+.links-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.links-panel__head h2 {
+  margin: 0;
   font-size: var(--fs-doc);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line);
+  line-height: 1.5rem;
 }
 
 .links-panel__intro {
@@ -7264,10 +8030,11 @@ a.source__title:hover {
   max-width: 80ch;
 }
 
+/* One column: outgoing, backlinks, unresolved one after another in the 700 px text column. */
 .links-panel__groups {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: var(--space-4) var(--space-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
 }
 
 .links-group h3 {
@@ -7293,6 +8060,18 @@ a.source__title:hover {
 
 .link-row__head {
   overflow-wrap: anywhere;
+}
+
+/* Titles in the lists are interface links: ink, no underline until hover. */
+.link-row__head a {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.link-row__head a:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
 }
 
 .link-row__relation {
@@ -7375,21 +8154,7 @@ a.source__title:hover {
   background: var(--status-review-bg);
 }
 
-/* ---------- metadata panel ---------- */
-
-.metadata-panel {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.metadata-panel__group h3 {
-  font-size: var(--fs-ui);
-  margin-bottom: var(--space-1);
-}
-
-.metadata-panel__group > p {
-  font-size: var(--fs-small);
-}
+/* ---------- metadata grid (change editor) ---------- */
 
 .meta-grid {
   margin: 0;

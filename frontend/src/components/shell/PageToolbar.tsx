@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect, type ReactNode } from "reac
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import type { Crumb } from "../../lib/routes";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 
 /*
  * The 52 px page toolbar (docs/ui-v2/specs/03_SCREENS.md §1): the path or title on the left, the page's actions
@@ -54,12 +55,30 @@ interface PageToolbarProps {
   title?: string;
   /** Buttons for the right side; at most one primary. */
   actions?: ReactNode;
+  /** Shown right after the title or path: a count, a view switch (the catalog: «Документы 83 · Список / Таблица»). */
+  meta?: ReactNode;
+  /** Several wide actions: on a phone they go to the top of the content instead of overflowing the 52 px bar. */
+  actionsInContentOnPhone?: boolean;
 }
 
-export function PageToolbar({ crumbs, title, actions }: PageToolbarProps) {
+/** Phones (docs/ui-v2/specs/03_SCREENS.md §6). */
+const PHONE_QUERY = "(max-width: 599.98px)";
+
+export function PageToolbar({ crumbs, title, actions, meta, actionsInContentOnPhone = false }: PageToolbarProps) {
   const slots = useContext(ToolbarSlotsContext);
   const register = slots?.register;
-  const path = crumbs ? <ToolbarPath crumbs={crumbs} /> : title ? <ToolbarPath crumbs={[{ label: title }]} /> : null;
+  const phone = useMediaQuery(PHONE_QUERY);
+  const actionsInContent = actionsInContentOnPhone && phone;
+  const named = crumbs ? <ToolbarPath crumbs={crumbs} /> : title ? <ToolbarPath crumbs={[{ label: title }]} /> : null;
+  const path =
+    named && meta ? (
+      <>
+        {named}
+        <div className="page-toolbar__meta">{meta}</div>
+      </>
+    ) : (
+      named
+    );
   const hasPath = path !== null;
   // Only a page that names itself replaces the default path (actions alone leave it).
   useLayoutEffect(() => (hasPath ? register?.() : undefined), [register, hasPath]);
@@ -75,7 +94,8 @@ export function PageToolbar({ crumbs, title, actions }: PageToolbarProps) {
   return (
     <>
       {path && slots.lead ? createPortal(path, slots.lead) : null}
-      {actions && slots.actions ? createPortal(actions, slots.actions) : null}
+      {actions && actionsInContent ? <div className="page-actions">{actions}</div> : null}
+      {actions && slots.actions && !actionsInContent ? createPortal(actions, slots.actions) : null}
     </>
   );
 }

@@ -43,10 +43,12 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   await expect(page).toHaveURL(/\/documents\?query=/);
   await expect(page.locator(".result").first()).toBeVisible();
 
+  // UI v2: browsing opens the catalog table; the sort is in the «Вид» menu.
   await page.goto("/documents");
-  await page.getByLabel("Сортировка").selectOption({ label: "Сначала новые" });
+  await page.getByRole("button", { name: "Вид" }).click();
+  await page.getByRole("menuitemradio", { name: "Сначала новые" }).click();
   await expect(page).toHaveURL(/sort=updated/);
-  await expect(page.locator(".result").first()).toContainText("Обновлён");
+  await expect(page.getByRole("table")).toContainText("Обновлён");
   await page.goto("/documents?query=квазизвездный");
   await expect(page.getByText("По запросу «квазизвездный» ничего не найдено")).toBeVisible();
   expect(problems).toEqual([]);
@@ -54,12 +56,18 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
 
 test("E2E-03 document with metadata and provenance", async ({ page }) => {
   await page.goto("/documents/SEM-ARCH-001");
-  const passport = page.getByRole("complementary", { name: "Паспорт документа" });
-  for (const text of ["SEM-ARCH-001", "Архитектура", "demo-team", "Утверждён", "sha256:", "Дата ревизии"]) {
-    await expect(passport).toContainText(text);
+  // UI v2: the key facts under the title, every other former passport field in «Сведения о документе».
+  const properties = page.locator(".doc-props");
+  for (const text of ["demo-team", "Архитектура", "Локальный workspace", "sha256:"]) {
+    await expect(properties).toContainText(text);
   }
-  await expect(passport).toContainText("внешней ссылки нет"); // local workspace: no fake link
-  await expect(passport.getByRole("link", { name: /ARIS integration/ })).toBeVisible(); // related document
+  await page.getByRole("button", { name: "Все сведения" }).click();
+  const details = page.getByRole("complementary", { name: "Сведения о документе" });
+  for (const text of ["SEM-ARCH-001", "Архитектура", "demo-team", "Утверждён", "sha256:", "Дата ревизии"]) {
+    await expect(details).toContainText(text);
+  }
+  await expect(details).toContainText("внешней ссылки нет"); // local workspace: no fake link
+  await expect(details.getByRole("link", { name: /ARIS integration/ })).toBeVisible(); // related document
   await expect(page.getByRole("link", { name: "Предложить изменение" })).toBeVisible();
 });
 
@@ -89,7 +97,7 @@ test("E2E-05 question without evidence → «Недостаточно данны
 test("E2E-06/07 create a proposal and review the diff; the source stays unchanged", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/documents/SEM-STD-001");
-  const revision = await page.locator(".passport__fields .doc-id").nth(1).textContent();
+  const revision = await page.locator(".doc-props__revision").getAttribute("title");
   await page.goto("/proposals/new?document=SEM-STD-001");
   const editor = page.getByLabel(/Текст документа/);
   await editor.fill((await editor.inputValue()) + "\nДобавлено правило E2E-06.\n");
@@ -105,7 +113,7 @@ test("E2E-06/07 create a proposal and review the diff; the source stays unchange
   await expect(page.getByRole("button", { name: "Отправить в GitLab" })).toBeDisabled(); // not configured offline
 
   await page.goto("/documents/SEM-STD-001");
-  await expect(page.locator(".passport__fields .doc-id").nth(1)).toHaveText(revision ?? "");
+  await expect(page.locator(".doc-props__revision")).toHaveAttribute("title", revision ?? "");
   expect(problems).toEqual([]);
 });
 
@@ -126,7 +134,9 @@ test("@mobile E2E-12 phone: home, menu, document and proposal pages fit the scre
   await page.goto("/");
   await page.getByRole("button", { name: "Меню" }).click();
   await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Документы" }).click();
-  await expect(page.getByRole("heading", { name: "База знаний", level: 1 })).toBeVisible();
+  // UI v2: the catalog is «Документы», as in the sidebar; the toolbar shows the name, the H1 keeps the outline.
+  await expect(page.getByRole("heading", { name: "Документы", level: 1 })).toBeAttached();
+  await expect(page.locator(".page-toolbar")).toContainText("Документы");
 });
 
 test("E2E-13 AI-first entry: Ctrl+K → question → the answer with its sources → the marker opens the cited section", async ({ page }) => {
