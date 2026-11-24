@@ -238,6 +238,22 @@ export interface Citation {
   attachment_name?: string | null;
   /** Computed by the server from the cited lines: «строка 1», «стр. 4», «лист Fields, строка 12», «строки 3–5». */
   locator?: string | null;
+  /**
+   * Display of `excerpt` when the verified quote touches a Markdown table (v0.4, additive): the quote's prose and the
+   * table rows it touches (with the header row), taken by the server from the cited section of the same revision.
+   * Absent / null: show `excerpt` as is. `excerpt` stays the verbatim, verified quote.
+   */
+  excerpt_parts?: ExcerptPart[] | null;
+}
+
+/** A piece of a cited excerpt: prose of the quote, or the rows of a table the quote touches. */
+export interface ExcerptPart {
+  kind: "text" | "table";
+  /** `kind: "text"`: the quote's own text. */
+  text?: string | null;
+  /** `kind: "table"`: the header row and the touched body rows (cells as plain text, never glued). */
+  headers?: string[] | null;
+  rows?: string[][] | null;
 }
 
 export interface ExcludedSource {

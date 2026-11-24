@@ -5130,6 +5130,33 @@ dd a.button {
   overflow-wrap: anywhere;
 }
 
+/* Table rows of a quote in the card: one line per row, cells separated by « — », the header row muted. */
+.cite-card__table,
+.cite-card__row,
+.cite-card__text {
+  display: block;
+}
+
+.cite-card__table + .cite-card__text,
+.cite-card__text + .cite-card__table {
+  margin-top: var(--space-1);
+}
+
+/* A wrapped row keeps a hanging indent, so its continuation never reads as the next row. */
+.cite-card__row {
+  padding-left: var(--space-3);
+  text-indent: calc(-1 * var(--space-3));
+}
+
+.cite-card__row + .cite-card__row {
+  margin-top: 2px;
+}
+
+.cite-card__row--head {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
 .cite-card__quote mark,
 .source__quote mark {
   background: var(--cite-bg);
@@ -5285,6 +5312,81 @@ a.source__title:hover {
   color: var(--text-secondary);
   quotes: "«" "»";
   overflow-wrap: anywhere;
+}
+
+/* A quote that touches a Markdown table (Citation.excerpt_parts): the prose in quotes, the touched rows as a mini
+   table; where the column is narrow (a phone, the document panel) each row stacks as «заголовок: значение». */
+.source__excerpt {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  container: excerpt / inline-size;
+}
+
+.excerpt-table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.excerpt-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-caption);
+  line-height: 1.0625rem;
+  color: var(--text-secondary);
+}
+
+.excerpt-table th,
+.excerpt-table td {
+  padding: 3px var(--space-2);
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word; /* a code like SYS-ARIS stays whole; only a word wider than the column breaks */
+}
+
+.excerpt-table th {
+  background: var(--bg-subtle);
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+@container excerpt (max-width: 32rem) {
+  .excerpt-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .excerpt-table table,
+  .excerpt-table tbody,
+  .excerpt-table tr,
+  .excerpt-table td {
+    display: block;
+  }
+
+  .excerpt-table tr {
+    padding: var(--space-1) var(--space-2);
+    border: 1px solid var(--line);
+  }
+
+  .excerpt-table tr + tr {
+    border-top: 0;
+  }
+
+  .excerpt-table td {
+    padding: 1px 0;
+    border: 0;
+  }
+
+  .excerpt-table td[data-label]:not([data-label=""])::before {
+    content: attr(data-label) ": ";
+    font-weight: 500;
+    color: var(--text-tertiary);
+  }
 }
 
 .source__meta {

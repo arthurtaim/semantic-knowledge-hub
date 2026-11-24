@@ -107,6 +107,11 @@ def tokenize(text: str) -> list[str]:
     return [fold(m.group(0)) for m in _WORD_RE.finditer(text)]
 
 
+def token_spans(text: str) -> list[tuple[str, int, int]]:
+    """The tokens of `tokenize(text)` with their character offsets in `text`: (token, start, end)."""
+    return [(fold(m.group(0)), m.start(), m.end()) for m in _WORD_RE.finditer(text)]
+
+
 def stem(term: str) -> str:
     """Light, deterministic suffix stripping; the result is used as an FTS prefix."""
     word = fold(term)

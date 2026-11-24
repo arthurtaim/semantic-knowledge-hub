@@ -5,6 +5,7 @@ import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState } 
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { CONFIDENCE_LABEL, shortRevision } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { CardExcerpt, excerptText } from "./CitationExcerpt";
 import { Highlighted } from "./Highlighted";
 import { StatusStamp } from "./StatusStamp";
 import { buttonClass } from "./ui/Button";
@@ -56,35 +57,6 @@ export const GROUP_LABEL: Record<CitationGroup, string> = {
   corporate: "Корпоративные",
   attachment: "Вложение этого диалога",
 };
-
-/** Words of the question (stems of 4+ letters) — what the card highlights in the quote. */
-function questionStems(question: string): string[] {
-  const words = question.toLocaleLowerCase("ru").match(/[\p{L}\p{N}_]{4,}/gu) ?? [];
-  return [...new Set(words.map((word) => (/^[\p{L}]+$/u.test(word) ? word.slice(0, 5) : word)))].slice(0, 12);
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** The quote with the question's words marked (search-style highlighting; the quote itself is verbatim). */
-export function HighlightedQuote({ text, question }: { text: string; question: string }) {
-  const stems = questionStems(question);
-  if (stems.length === 0) return <>{text}</>;
-  const pattern = new RegExp(`(${stems.map(escapeRegExp).join("|")})[\\p{L}\\p{N}_]*`, "giu");
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of text.matchAll(pattern)) {
-    const index = match.index ?? 0;
-    const before = index === 0 ? "" : text[index - 1] ?? "";
-    if (/[\p{L}\p{N}_]/u.test(before)) continue; // only whole words that start with a stem
-    parts.push(text.slice(last, index));
-    parts.push(<mark key={index}>{match[0]}</mark>);
-    last = index + match[0].length;
-  }
-  parts.push(text.slice(last));
-  return <>{parts}</>;
-}
 
 interface CitationMarkerProps {
   citation: Citation;
@@ -141,9 +113,7 @@ export function CitationMarker({ citation, label, turnNo, question }: CitationMa
         <span className="cite-card__title">{citationTitle(citation)}</span>
         {group === "attachment" ? <span className="cite-card__kind">Вложение</span> : <StatusMark status={citation.status} />}
       </span>
-      <span className="cite-card__quote">
-        «<HighlightedQuote text={citation.excerpt} question={question} />»
-      </span>
+      <CardExcerpt citation={citation} question={question} />
       <span className="cite-card__meta">
         {meta.map((part) => (
           <span key={part}>{part}</span>
@@ -317,7 +287,7 @@ export function answerWithSources(answer: AskResponse, labels: Map<number, strin
         : group === "corporate"
           ? `Confluence, версия ${externalVersion(c)}`
           : `${c.document_id}${c.section ? `, раздел «${c.section}»` : ""}, ред. ${shortRevision(c.revision)}`;
-    return `[${label}] ${citationTitle(c)} — ${where}\n«${c.excerpt}»`;
+    return `[${label}] ${citationTitle(c)} — ${where}\n«${excerptText(c)}»`;
   });
   return [body.trim(), sources.length > 0 ? `Источники:\n${sources.join("\n")}` : ""].filter(Boolean).join("\n\n");
 }

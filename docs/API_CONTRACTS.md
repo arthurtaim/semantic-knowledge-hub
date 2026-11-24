@@ -285,7 +285,18 @@ AskResponse += { skill: {id, name, access} | null      (echoed when the request 
 Citation   += { source_type: local|gitlab|confluence|attachment,
                 attachment_id?, attachment_name?, locator? («строка 1», «стр. 4», «лист Fields, строка 12», «строки 3–5») }
                 for an attachment: document_id = attachment id, source_uri = attachment://<id>, status/section/app_path = null
+Citation   += { excerpt_parts?: ExcerptPart[] | null }        (round 2, additive; team documents only)
+ExcerptPart  = { kind: "text", text } | { kind: "table", headers: string[], rows: string[][] }
 ```
+
+**Table excerpts (`excerpt_parts`).** `excerpt` stays the verbatim quote the server verified against the passage (a
+table's cells appear glued there: section text, the search index and the provider input are unchanged). When that
+quote touches a Markdown table of the cited section, the server traces it back word by word to the section's Markdown
+at the same revision and adds `excerpt_parts`: the quote's own prose and, for each table it touches, the header row and
+the touched body rows (complete rows, cells as plain text; an escaped `\|` is a `|` in the cell, the alignment row is
+not a row, an empty cell is `""`). Several pieces of a quote joined by « … » keep a `…` between them. No table touched,
+or no confident match (e.g. a redacted fragment) → `null`, and the UI shows `excerpt` as before. Set for ask answers
+and for the evidence citations of workflow skills; never for Confluence pages or attachments.
 
 **Skills and AI modes.** `internal_api`, `claude_cli`: all available. `mock`: all except `improve_section`
 (`unavailable_reason`: «В демо-режиме нет языковой модели: переписать раздел нельзя.» — the mock can only normalize

@@ -5,6 +5,7 @@ import type { AskResponse, Citation, DiscoveryVerdict, DocStatus, ExcludedSource
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { pluralRu, shortRevision, SOURCE_LABEL } from "../lib/labels";
 import { citationTitle, externalVersion } from "./AnswerParts";
+import { SourceExcerpt } from "./CitationExcerpt";
 import { buttonClass } from "./ui/Button";
 import { StatusMark } from "./ui/StatusMark";
 
@@ -146,7 +147,7 @@ function SourceRow({ citation, label, turnNo, actionsTrace, compact }: SourceRow
             <StatusMark status={citation.status} />
           )}
         </div>
-        <q className="source__quote">{citation.excerpt}</q>
+        <SourceExcerpt citation={citation} />
         {meta.length > 0 ? (
           <p className="source__meta">
             {meta.map((part) => (
