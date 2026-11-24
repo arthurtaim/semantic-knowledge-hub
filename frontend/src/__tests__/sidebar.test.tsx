@@ -88,14 +88,15 @@ describe("Sidebar", () => {
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
   });
 
-  it("shows counts only from the API: documents, proposals and the green review badge", async () => {
+  it("shows counts only from the API: documents, open proposals and the green review badge", async () => {
     const others = [
       proposalSummary({ id: "a", status: "ready_for_review", author: "colleague" }),
       proposalSummary({ id: "c", status: "ready_for_review", author: "colleague" }),
     ];
     const calls = mockApi([
       { path: "/api/knowledge/facets", body: { ...facets, total: 83 } },
-      { path: "/api/drafts", body: { items: [...others, proposalSummary({ id: "b", status: "draft" })], total: 3 } },
+      // «Предложения»: the open ones only — merged, rejected and conflict are left out by the server.
+      { path: "/api/drafts?open_only=true", body: { items: [...others, proposalSummary({ id: "b", status: "draft" })], total: 3 } },
       // «Ревью»: ready for review, not the reader's own — the server filters, the badge is its total.
       { path: "/api/drafts?status=ready_for_review&exclude_own=true", body: { items: others, total: 2 } },
     ]);
@@ -106,14 +107,17 @@ describe("Sidebar", () => {
     const review = within(nav()).getByRole("link", { name: "Ревью" });
     expect(await within(review).findByText("2")).toHaveClass("sidebar__badge");
     expect(review).toHaveAccessibleDescription("Ждут ревью: 2");
-    expect(within(nav()).getByRole("link", { name: "Предложения" })).toHaveAccessibleDescription("Предложений: 3");
-    expect(calls.map((call) => call.url)).toContain("/api/drafts?status=ready_for_review&exclude_own=true");
+    expect(within(nav()).getByRole("link", { name: "Предложения" })).toHaveAccessibleDescription("Открытых предложений: 3");
+    expect(calls.map((call) => call.url)).toEqual(
+      expect.arrayContaining(["/api/drafts?open_only=true", "/api/drafts?status=ready_for_review&exclude_own=true"]),
+    );
+    expect(calls.some((call) => call.url === "/api/drafts")).toBe(false); // never the total of every status
   });
 
   it("shows no «Ревью» badge when everything ready for review is the reader's own (the single-user demo)", async () => {
     mockApi([
       { path: "/api/knowledge/facets", body: facets },
-      { path: "/api/drafts", body: { items: [proposalSummary({ status: "ready_for_review" })], total: 1 } },
+      { path: "/api/drafts?open_only=true", body: { items: [proposalSummary({ status: "ready_for_review" })], total: 1 } },
       { path: "/api/drafts?status=ready_for_review&exclude_own=true", body: { items: [], total: 0 } },
     ]);
     renderShell("/");

@@ -5,7 +5,7 @@ import { api } from "../../api/client";
 export interface NavCounts {
   /** Documents in the reader's snapshot (GET /api/knowledge/facets → total). */
   documents: number | null;
-  /** All change proposals (GET /api/drafts → total). */
+  /** Open change proposals (GET /api/drafts?open_only=true → total): merged, rejected and conflict are closed. */
   proposals: number | null;
   /** Proposals «Готово к ревью» that someone else created (GET /api/drafts?status=ready_for_review&exclude_own=true
    * → total): the Ревью item opens the same list. Usually 0 in the single-user demo — then no badge. */
@@ -29,7 +29,7 @@ export function useNavCounts(key: string): NavCounts {
         if (live) setCounts((prev) => ({ ...prev, documents: null }));
       });
     api
-      .drafts()
+      .drafts({ open_only: true })
       .then((list) => {
         if (!live) return;
         setCounts((prev) => ({ ...prev, proposals: list.total }));

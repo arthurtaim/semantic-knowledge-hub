@@ -135,6 +135,20 @@ describe("Other pages in the new system", () => {
     ]);
   });
 
+  it("«Открытые»: the sidebar's list — open proposals only, as the API filters them", async () => {
+    const calls = mockApi([
+      { path: "/api/drafts?open_only=true", body: { items: [proposalSummary({ id: "p-open" })], total: 1 } },
+      { path: "/api/drafts", body: { items: [proposalSummary({ id: "p-open" }), proposalSummary({ id: "p-merged", status: "merged" })], total: 2 } },
+    ]);
+    const { container } = renderAt("/proposals?open_only=true", "/proposals", <ProposalsPage />);
+    const statuses = await screen.findByRole("group", { name: "Фильтр по статусу" });
+    expect(within(statuses).getByRole("button", { name: "Открытые" })).toHaveAttribute("aria-pressed", "true");
+    expect(await within(toolbar(container)).findByText("1")).toHaveClass("page-toolbar__count");
+    await userEvent.click(within(statuses).getByRole("button", { name: "Все" }));
+    expect(await within(toolbar(container)).findByText("2")).toHaveClass("page-toolbar__count");
+    expect(calls.map((call) => call.url)).toEqual(["/api/drafts?open_only=true", "/api/drafts"]);
+  });
+
   it("Предложения on a phone: card rows with every column's facts instead of a table that scrolls sideways", async () => {
     mockViewport(390);
     mockApi([

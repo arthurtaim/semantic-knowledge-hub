@@ -12,8 +12,12 @@ import { PageToolbar } from "../components/shell/PageToolbar";
 import { buttonClass } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 
-const FILTERS: { value: ProposalStatus | ""; label: string }[] = [
+/** A status, «Открытые» (every open status: `open_only` in the API) or «Все» (""). */
+type StatusFilter = ProposalStatus | "open" | "";
+
+const FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "", label: "Все" },
+  { value: "open", label: "Открытые" },
   ...PROPOSAL_STATUS_ORDER.map((value) => ({ value, label: PROPOSAL_STATUS_LABEL[value] })),
 ];
 
@@ -93,18 +97,26 @@ function routeNotice(state: unknown): string | null {
   return null;
 }
 
-/** The URL mirrors the API filters (`?status=…&exclude_own=true`), so «Ревью» is a link like any other filter. */
-function filterParams(status: ProposalStatus | "", excludeOwn: boolean): Record<string, string> {
+/**
+ * The URL mirrors the API filters (`?status=…`, `?open_only=true`, `&exclude_own=true`), so «Ревью» and the
+ * sidebar's «Предложения» are links like any other filter.
+ */
+function filterParams(status: StatusFilter, excludeOwn: boolean): Record<string, string> {
   const next: Record<string, string> = {};
-  if (status) next.status = status;
+  if (status === "open") next.open_only = "true";
+  else if (status) next.status = status;
   if (excludeOwn) next.exclude_own = "true";
   return next;
 }
 
-function emptyTitle(status: ProposalStatus | "", excludeOwn: boolean): string {
+function emptyTitle(status: StatusFilter, excludeOwn: boolean): string {
   if (status === "ready_for_review" && excludeOwn) return "Нечего ревьюить";
-  if (excludeOwn) return status ? `Нет чужих предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»` : "Чужих предложений нет";
-  return status ? `Нет предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»` : "Предложений пока нет";
+  const which = status === "open" ? "открытых " : "";
+  if (status && status !== "open") {
+    return `Нет ${excludeOwn ? "чужих " : ""}предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»`;
+  }
+  if (excludeOwn) return `Чужих ${which}предложений нет`;
+  return status === "open" ? "Открытых предложений нет" : "Предложений пока нет";
 }
 
 export function ProposalsPage() {
@@ -112,13 +124,17 @@ export function ProposalsPage() {
   // e.g. "Черновик удалён" after deleting a draft on another page
   const notice = routeNotice(useLocation().state);
   const raw = params.get("status") ?? "";
-  const status = (KNOWN.has(raw) ? raw : "") as ProposalStatus | "";
+  const status: StatusFilter = KNOWN.has(raw) ? (raw as ProposalStatus) : params.get("open_only") === "true" ? "open" : "";
   // Not the reader's own proposals: nobody reviews their own change («Ревью» = «Готово к ревью» + this).
   const excludeOwn = params.get("exclude_own") === "true";
   const review = status === "ready_for_review" && excludeOwn;
   const phone = useMediaQuery(PHONE);
   const { data, error, loading, reload } = useAsync(
-    () => api.drafts({ ...(status ? { status } : {}), ...(excludeOwn ? { exclude_own: true } : {}) }),
+    () =>
+      api.drafts({
+        ...(status === "open" ? { open_only: true } : status ? { status } : {}),
+        ...(excludeOwn ? { exclude_own: true } : {}),
+      }),
     `drafts-${status}-${excludeOwn ? "others" : "all"}`,
   );
   const title = review ? "Ревью" : "Предложения";

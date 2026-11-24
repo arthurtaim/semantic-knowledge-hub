@@ -28,6 +28,12 @@ export interface NavGroup {
  */
 export const REVIEW_HREF = "/proposals?status=ready_for_review&exclude_own=true";
 
+/**
+ * «Предложения»: the open proposals — the sidebar count and the list behind it show the same thing
+ * (GET /api/drafts?open_only=true; open = draft, ready for review, being sent, in a GitLab MR, sending failed).
+ */
+export const PROPOSALS_HREF = "/proposals?open_only=true";
+
 /** The location is the «Ревью» list (the proposals page with both review filters). */
 export function isReviewList(pathname: string, search: string): boolean {
   const params = new URLSearchParams(search);
@@ -67,7 +73,7 @@ export function navGroups(askAvailable: boolean): NavGroup[] {
       id: "work",
       label: "Работа",
       items: [
-        { id: "proposals", label: "Предложения", icon: "proposals", to: "/proposals" },
+        { id: "proposals", label: "Предложения", icon: "proposals", to: PROPOSALS_HREF },
         { id: "publications", label: "Публикации", icon: "publications", to: PUBLICATIONS_HREF },
       ],
     },

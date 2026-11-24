@@ -414,13 +414,14 @@ export const api = {
   deleteAttachment: (id: string) =>
     request<null>(`/assistant/attachments/${encodeURIComponent(id)}`, { method: "DELETE" }),
   corporatePage: (id: string) => request<CorporatePage>(`/corporate/pages/${encodeURIComponent(id)}`),
-  /** `exclude_own`: not the caller's own proposals (the «Ревью» list; API v0.4). */
-  drafts: (params: { status?: ProposalStatus; document_id?: string; exclude_own?: boolean } = {}) =>
+  /** `exclude_own`: not the caller's own proposals (the «Ревью» list); `open_only`: only open ones (API v0.4). */
+  drafts: (params: { status?: ProposalStatus; document_id?: string; exclude_own?: boolean; open_only?: boolean } = {}) =>
     request<ProposalList>(
       `/drafts${query({
         status: params.status,
         document_id: params.document_id,
         exclude_own: params.exclude_own ? "true" : undefined,
+        open_only: params.open_only ? "true" : undefined,
       })}`,
     ),
   draft: (id: string) => request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}`),

@@ -31,7 +31,7 @@ describe("Application shell", () => {
       Документы: "/documents",
       "Карта знаний": "/graph",
       Шаблоны: "/templates",
-      Предложения: "/proposals",
+      Предложения: "/proposals?open_only=true",
       Публикации: "/integrations#integration-confluence_publisher",
       Интеграции: "/integrations",
     };

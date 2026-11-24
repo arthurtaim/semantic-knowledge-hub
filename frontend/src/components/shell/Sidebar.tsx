@@ -106,7 +106,7 @@ export function Sidebar({
    * Worded unlike any page text, so a search for a page's own words never lands in the sidebar.
    */
   const countText = (item: NavItem, value: number): string =>
-    item.id === "documents" ? `Документов: ${value}` : item.id === "review" ? `Ждут ревью: ${value}` : `Предложений: ${value}`;
+    item.id === "documents" ? `Документов: ${value}` : item.id === "review" ? `Ждут ревью: ${value}` : `Открытых предложений: ${value}`;
 
   const link = (item: NavItem) => {
     const current = active === item.id;
