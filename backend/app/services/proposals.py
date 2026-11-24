@@ -305,6 +305,7 @@ class ProposalStore:
         document_id: str | None,
         *,
         exclude_author: str | None = None,
+        open_only: bool = False,
     ) -> list[sqlite3.Row]:
         sql = "SELECT * FROM proposals WHERE 1=1"
         params: list[str] = []
@@ -317,6 +318,9 @@ class ProposalStore:
         if exclude_author is not None:
             sql += " AND author != ?"
             params.append(exclude_author)
+        if open_only:
+            sql += f" AND status IN ({', '.join('?' for _ in _OPEN)})"
+            params.extend(_OPEN)
         sql += " ORDER BY created_at DESC, id"
         with self._lock:
             return list(self._conn.execute(sql, params).fetchall())
@@ -1035,13 +1039,15 @@ class ProposalService:
         document_id: str | None,
         *,
         exclude_own: bool = False,
+        open_only: bool = False,
     ) -> ProposalList:
         """`exclude_own`: leave out the caller's own proposals (nobody reviews their own change — the «Ревью»
-        list)."""
+        list). `open_only`: only `OPEN_STATUSES` (the work still in progress — the «Предложения» count)."""
         rows = self._store.list_rows(
             status.value if status else None,
             document_id,
             exclude_author=user.user_id if exclude_own else None,
+            open_only=open_only,
         )
         items = [self._summary(r) for r in rows]
         return ProposalList(items=items, total=len(items))

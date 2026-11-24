@@ -211,6 +211,30 @@ def test_review_list_leaves_out_the_callers_own_proposals(client: TestClient) ->
     assert {d["id"] for d in others["items"]} == {theirs, their_draft}
 
 
+def test_open_only_counts_the_work_still_in_progress(client: TestClient) -> None:
+    statuses = [
+        "draft",
+        "ready_for_review",
+        "submitting",
+        "submitted_to_gitlab",
+        "submission_failed",
+        "merged",
+        "rejected",
+        "conflict",
+    ]
+    ids = {}
+    for status in statuses:
+        ids[status] = create(client).json()["id"]
+        set_row(client, ids[status], status=status)
+    opened = client.get("/api/drafts", params={"open_only": "true"}).json()
+    assert opened["total"] == 5
+    assert {d["status"] for d in opened["items"]} == set(statuses[:5])
+    assert client.get("/api/drafts").json()["total"] == 8  # without the filter: unchanged
+    both = client.get("/api/drafts", params={"open_only": "true", "status": "merged"}).json()
+    assert both["total"] == 0  # filters combine with AND
+    assert client.get("/api/drafts", params={"open_only": "maybe"}).status_code == 422
+
+
 def test_drafts_persist_across_restart(client_factory: Any) -> None:
     client = client_factory()
     draft_id = create(client).json()["id"]

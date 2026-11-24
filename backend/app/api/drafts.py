@@ -43,9 +43,17 @@ async def list_drafts(
     exclude_own: Annotated[
         bool, Query(description="Leave out the caller's own proposals (the «Ревью» list).")
     ] = False,
+    open_only: Annotated[
+        bool,
+        Query(
+            description="Only open proposals: draft, ready_for_review, submitting, submitted_to_gitlab, submission_failed."
+        ),
+    ] = False,
 ) -> ProposalList:
     """Filters combine with AND; without them the list is the same as before (newest first)."""
-    return await container.proposals.list_proposals(user, status, document_id, exclude_own=exclude_own)
+    return await container.proposals.list_proposals(
+        user, status, document_id, exclude_own=exclude_own, open_only=open_only
+    )
 
 
 @router.post("/suggest", response_model=SuggestResponse)

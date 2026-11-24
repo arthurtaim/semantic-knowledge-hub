@@ -341,12 +341,13 @@ generating → validating and `final` (no `delta`).
 
 Additive: without the new parameters every response is the same as before.
 
-**Proposals list filters.** `GET /api/drafts` (`read_knowledge`) adds optional boolean query parameters that combine
-with `status` and `document_id` (AND):
+**Proposals list filters.** `GET /api/drafts` (`read_knowledge`) adds two optional boolean query parameters that
+combine with `status` and `document_id` (AND):
 
 | Parameter | Default | Effect | Used by |
 |---|---|---|---|
 | `exclude_own` | `false` | leaves out the caller's own proposals (`author == user_id`): nobody reviews their own change | «Ревью»: `?status=ready_for_review&exclude_own=true` (sidebar badge, the list behind it, the home «Ждёт вашего решения») |
+| `open_only` | `false` | only open proposals (`OPEN_STATUSES` in `app/domain/proposals.py`): `draft`, `ready_for_review`, `submitting`, `submitted_to_gitlab`, `submission_failed`. Closed for good: `merged`, `rejected` (also an MR closed without merge), `conflict` (the base changed; a new proposal is needed). There is no withdrawn / applied status. | the sidebar «Предложения» count and its «Открытые» list |
 
 A non-boolean value is `422 invalid_request`. In demo single-user mode every proposal is the caller's own, so
 the «Ревью» list is usually empty (no badge).
