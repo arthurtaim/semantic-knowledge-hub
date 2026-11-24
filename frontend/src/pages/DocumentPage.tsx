@@ -312,6 +312,8 @@ function DocumentBody({
   const [view, setView] = useState<DocumentView>(() => viewForHash(location.hash));
   // Closed by default; a docked panel the reader left open opens again (a sheet never opens by itself).
   const [panel, setPanel] = useState<DocumentPanel | null>(() => (panelMode === "inline" ? rememberedPanel(aiOn) : null));
+  // A panel reopened on load is not the reader's action: it does not take the focus from the page.
+  const [restored, setRestored] = useState(panel !== null);
   const [seenHash, setSeenHash] = useState(location.hash);
   if (location.hash !== seenHash) {
     // A link to an anchor (a citation, «Подробнее о публикации») opens the segment that holds it; a sheet over
@@ -332,6 +334,7 @@ function DocumentBody({
   /** One right panel at a time; which one is open (or none) is remembered. */
   const changePanel = useCallback((next: DocumentPanel | null) => {
     setPanel(next);
+    setRestored(false);
     writePreference(ASSISTANT_OPEN_KEY, next === "assistant" ? "1" : null);
     writePreference(DETAILS_OPEN_KEY, next === "details" ? "1" : null);
   }, []);
@@ -597,7 +600,13 @@ function DocumentBody({
         </div>
 
         {panel === "details" ? (
-          <SidePanel id="document-details" title="Сведения о документе" mode={panelMode} onClose={closePanel}>
+          <SidePanel
+            id="document-details"
+            title="Сведения о документе"
+            mode={panelMode}
+            onClose={closePanel}
+            focusOnOpen={!restored}
+          >
             <DocumentDetails doc={doc} publication={{ status: publication.data, failed: publication.failed }} />
           </SidePanel>
         ) : panel === "assistant" && aiOn && aiMode ? (
@@ -609,6 +618,7 @@ function DocumentBody({
             onClose={closePanel}
             onClearSelection={clearSelection}
             toggleRef={toggleRef}
+            focusOnOpen={!restored}
           />
         ) : null}
       </div>

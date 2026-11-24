@@ -284,9 +284,20 @@ interface DocumentAssistantPanelProps {
   onClearSelection: () => void;
   /** The toolbar toggle: focus goes back there when the control that opened the panel is gone. */
   toggleRef: RefObject<HTMLElement | null>;
+  /** False when the page reopened the panel by itself (remembered): the field does not take the focus. */
+  focusOnOpen?: boolean;
 }
 
-export function DocumentAssistantPanel({ doc, assistant, mode, aiMode, onClose, onClearSelection, toggleRef }: DocumentAssistantPanelProps) {
+export function DocumentAssistantPanel({
+  doc,
+  assistant,
+  mode,
+  aiMode,
+  onClose,
+  onClearSelection,
+  toggleRef,
+  focusOnOpen = true,
+}: DocumentAssistantPanelProps) {
   const { composer, conversation, skills } = assistant;
   const { turns, pending } = conversation;
   const inputRef = composer.inputRef as RefObject<HTMLElement | null>;
@@ -314,6 +325,7 @@ export function DocumentAssistantPanel({ doc, assistant, mode, aiMode, onClose, 
       onClose={onClose}
       className="side-panel--assistant"
       initialFocus={inputRef}
+      focusOnOpen={focusOnOpen}
       returnFocus={() => toggleRef.current}
       actions={<span className="doc-assistant__mode">{AI_CHIP_LABEL[aiMode]}</span>}
       footer={

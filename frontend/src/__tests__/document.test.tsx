@@ -225,6 +225,8 @@ describe("Document detail", () => {
 
     const second = renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
     const details = await screen.findByRole("complementary", { name: "Сведения о документе" });
+    // Reopened by the page, not by the reader: the focus stays where the page starts.
+    expect(details).not.toContainElement(document.activeElement as HTMLElement);
     await userEvent.click(within(details).getByRole("button", { name: "Закрыть: Сведения о документе" }));
     expect(localStorage.getItem(DETAILS_OPEN_KEY)).toBeNull();
     second.unmount();

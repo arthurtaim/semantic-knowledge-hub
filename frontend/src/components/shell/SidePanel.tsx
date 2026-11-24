@@ -40,6 +40,8 @@ interface SidePanelProps {
   initialFocus?: RefObject<HTMLElement | null>;
   /** Where focus goes on close when the control that opened the panel is gone (or was the page itself). */
   returnFocus?: () => HTMLElement | null;
+  /** False when the page reopens a panel the reader left open: a docked panel then does not take the focus. */
+  focusOnOpen?: boolean;
   className?: string;
 }
 
@@ -47,7 +49,19 @@ interface SidePanelProps {
  * Rendered only while open. Takes focus when it opens (the heading of a docked panel, «Закрыть» of a sheet) and
  * gives it back to the control that opened it when it closes.
  */
-export function SidePanel({ id, title, onClose, children, mode, actions, footer, initialFocus, returnFocus, className }: SidePanelProps) {
+export function SidePanel({
+  id,
+  title,
+  onClose,
+  children,
+  mode,
+  actions,
+  footer,
+  initialFocus,
+  returnFocus,
+  focusOnOpen = true,
+  className,
+}: SidePanelProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -61,7 +75,7 @@ export function SidePanel({ id, title, onClose, children, mode, actions, footer,
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const opener = active && active !== document.body ? active : null;
     if (modal) closeRef.current?.focus();
-    else (initialFocus?.current ?? headingRef.current)?.focus();
+    else if (focusOnOpen) (initialFocus?.current ?? headingRef.current)?.focus();
     return () => {
       const target = opener && opener.isConnected ? opener : (fallbackRef.current?.() ?? null);
       target?.focus();

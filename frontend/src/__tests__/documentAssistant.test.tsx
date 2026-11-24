@@ -196,6 +196,7 @@ describe("Document assistant panel", () => {
 
     const second = renderDocument();
     expect(await screen.findByRole("complementary", { name: "Ассистент" })).toBeInTheDocument();
+    expect(within(panel()).getByRole("textbox", { name: "Вопрос по документу" })).not.toHaveFocus(); // not the reader's action
     expect(toggle()).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(toggle());
     expect(localStorage.getItem(ASSISTANT_OPEN_KEY)).toBeNull();
