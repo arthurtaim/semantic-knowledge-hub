@@ -190,6 +190,50 @@ test("E2E-MAP-5 «Вся база»: edges stay faint until one of their nodes i
   expect(problems).toEqual([]);
 });
 
+test("E2E-MAP-6 «Вся база»: only the most connected nodes are named, the hovered and selected ones on top", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  const labels = page.locator("[data-label-for]");
+  const overlapping = () =>
+    page.evaluate(() => {
+      const boxes = Array.from(document.querySelectorAll("[data-label-for]")).map((label) => label.getBoundingClientRect());
+      let count = 0;
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i] as DOMRect;
+          const b = boxes[j] as DOMRect;
+          if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) count += 1;
+        }
+      }
+      return count;
+    });
+  const atRest = await labels.count();
+  expect(atRest).toBeGreaterThanOrEqual(8);
+  expect(atRest).toBeLessThanOrEqual(15);
+  expect(await overlapping()).toBe(0);
+  // Every node without a label keeps its full name in its tooltip and accessible name.
+  const unnamed = await page.evaluate(() => {
+    const named = new Set(Array.from(document.querySelectorAll<SVGTextElement>("[data-label-for]")).map((l) => l.dataset.labelFor));
+    return Array.from(document.querySelectorAll<SVGGElement>("[data-node-id]"))
+      .filter((n) => !named.has(n.dataset.nodeId))
+      .map((n) => {
+        const title = n.querySelector("title")?.textContent ?? "";
+        return title.length > 0 && (n.getAttribute("aria-label") ?? "").startsWith(`${title}.`);
+      });
+  });
+  expect(unnamed.length).toBeGreaterThan(80);
+  expect(unnamed.every(Boolean)).toBe(true);
+
+  const point = await grip(page, "doc:DEMO-INT-001");
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator('[data-label-for="doc:DEMO-INT-001"]')).toBeVisible();
+  expect(await overlapping()).toBe(0);
+  await page.mouse.click(point.x, point.y);
+  await page.mouse.move(2, 2);
+  await expect(page.locator('[data-label-for="doc:DEMO-INT-001"]')).toHaveClass(/is-strong/);
+  expect(await overlapping()).toBe(0);
+});
+
 test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and «Граф ответа» from an assistant answer", async ({ page }) => {
   const session = (await (await page.request.get("/api/session", { headers: { "X-SKH-Client": "web" } })).json()) as {
     features: { ai_mode: string };

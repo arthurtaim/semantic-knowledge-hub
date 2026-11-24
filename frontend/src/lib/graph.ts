@@ -915,11 +915,61 @@ const boxHitsCircle = (box: Box, c: LabelObstacle) => {
 
 const boxInside = (box: Box, area: Box) => box.x0 >= area.x0 && box.x1 <= area.x1 && box.y0 >= area.y0 && box.y1 <= area.y1;
 
+/** Labels by default: the most connected nodes of a map (the selected, hovered and their neighbours come on top). */
+export const TOP_LABELS = 15;
+
+/** The `count` most connected nodes: by degree on the map, then by degree in the whole graph, then by ID. */
+export function topByDegree(nodes: GraphNode[], degree: ReadonlyMap<string, number>, count = TOP_LABELS): Set<string> {
+  return new Set(
+    [...nodes]
+      .sort(
+        (a, b) =>
+          (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0) || b.degree - a.degree || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+      )
+      .slice(0, count)
+      .map((n) => n.id),
+  );
+}
+
+export interface LabelContext {
+  selected: string | null;
+  hovered: string | null;
+  /** The focus or the question. */
+  center: string | null;
+  /** Search hits. */
+  matches: ReadonlySet<string>;
+  /** Neighbours of the highlighted node (the hovered one, otherwise the selected one). */
+  neighbours: ReadonlySet<string>;
+  /** The most connected nodes (`topByDegree`). */
+  top: ReadonlySet<string>;
+  /** Every node may be named (a small neighbourhood or answer graph); otherwise only `top` beyond the rest. */
+  all: boolean;
+}
+
+/** Rank of the relation labels of the highlighted node's edges: after its neighbours, before the most connected. */
+export const EDGE_LABEL_RANK = 5;
+
+/**
+ * Whether a node is named on the map and with what priority (lower first): selected 0 > hovered 1 > centre 2 >
+ * search hit 3 > neighbour of the highlighted node 4 > (relation labels 5) > most connected 6; `null` — no label
+ * (the full name stays in the node's title and accessible name).
+ */
+export function labelRank(id: string, context: LabelContext): number | null {
+  if (id === context.selected) return 0;
+  if (id === context.hovered) return 1;
+  if (id === context.center) return 2;
+  if (context.matches.has(id)) return 3;
+  if (context.neighbours.has(id)) return 4;
+  if (context.all || context.top.has(id)) return 6;
+  return null;
+}
+
 /**
  * Greedy label placement: requests come in priority order (selected > hovered > neighbours > by degree); each
  * takes the first side that stays inside `area`, overlaps no label placed before it and covers no obstacle (a
  * node other than its own); a label that fits nowhere is hidden (the full name stays in the node's title and
- * accessible name).
+ * accessible name). A forced label (the selected or hovered node is always named) that fits nowhere takes the
+ * first side that at least overlaps no other label, and only then its first side.
  */
 export function placeLabels(requests: LabelRequest[], obstacles: LabelObstacle[], area?: Box, margin = 2): Map<string, LabelSide> {
   const placed: Box[] = [];
@@ -934,7 +984,15 @@ export function placeLabels(requests: LabelRequest[], obstacles: LabelObstacle[]
       chosen = side;
       break;
     }
-    if (chosen === null && request.force) chosen = request.sides[0] ?? "right";
+    if (chosen === null && request.force) {
+      chosen =
+        request.sides.find((side) => {
+          const box = labelBox(request, side);
+          return (!area || boxInside(box, area)) && !placed.some((other) => boxesOverlap(box, other, margin));
+        }) ??
+        request.sides[0] ??
+        "right";
+    }
     if (chosen === null) continue;
     result.set(request.key, chosen);
     placed.push(labelBox(request, chosen));

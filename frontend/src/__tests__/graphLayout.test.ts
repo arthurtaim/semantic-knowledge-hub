@@ -6,10 +6,12 @@ import {
   estimateTextWidth,
   kindRegions,
   labelBox,
+  labelRank,
   layoutGraph,
   mergePositions,
   NODE_GAP,
   placeLabels,
+  topByDegree,
   type LabelRequest,
   type Layout,
 } from "../lib/graph";
@@ -419,6 +421,46 @@ describe("Edges and labels", () => {
     // A label outside the allowed area is not placed there.
     const inArea = placeLabels([{ ...requests[1]!, key: "n:edge", sides: ["right", "left"] }], [], { x0: -200, y0: -50, x1: 60, y1: 50 });
     expect(inArea.get("n:edge")).toBe("left");
+  });
+
+  it("a forced label (selected or hovered) that fits nowhere still avoids the other labels", () => {
+    const sides: LabelRequest["sides"] = ["right", "left", "below", "above"];
+    const base = { x: 0, y: 0, ext: 10, width: 80, height: 15, sides };
+    // Nodes on every side of the forced one: no side is free of obstacles…
+    const obstacles = [
+      { id: "r", x: 40, y: 0, r: 8 },
+      { id: "l", x: -40, y: 0, r: 8 },
+      { id: "b", x: 0, y: 22, r: 8 },
+      { id: "t", x: 0, y: -22, r: 8 },
+    ];
+    // …and the selected node's label already on the right: the hovered one takes the next side without a label,
+    // not its first side.
+    const placed = placeLabels(
+      [
+        { ...base, key: "n:first", own: "selected", force: true },
+        { ...base, key: "n:hovered", own: "hovered", force: true },
+      ],
+      obstacles,
+    );
+    expect(placed.get("n:first")).toBe("right");
+    expect(placed.get("n:hovered")).toBe("left");
+  });
+
+  it("ranks labels: selected > hovered > centre > search hit > neighbour > most connected, nothing else named", () => {
+    const context = {
+      selected: "S",
+      hovered: "H",
+      center: "C",
+      matches: new Set(["M"]),
+      neighbours: new Set(["N", "S"]),
+      top: new Set(["T", "N"]),
+      all: false,
+    };
+    expect(["S", "H", "C", "M", "N", "T", "X"].map((id) => labelRank(id, context))).toEqual([0, 1, 2, 3, 4, 6, null]);
+    expect(labelRank("X", { ...context, all: true })).toBe(6);
+    // The top by degree on the map, then in the whole graph, then by ID (stable).
+    const nodes = ["doc:A", "doc:B", "doc:C", "doc:D"].map((id, i) => node(id, "document", id, "approved", i));
+    expect([...topByDegree(nodes, new Map([["doc:A", 3]]), 2)]).toEqual(["doc:A", "doc:D"]);
   });
 
   it("estimates label widths from the text (wider for capitals and bold)", () => {
