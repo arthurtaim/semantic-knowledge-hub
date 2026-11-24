@@ -2667,12 +2667,6 @@ h1 a:hover {
 
 /* ---------- document ---------- */
 
-.document__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
 .prose {
   font-family: var(--font-ui);
   font-size: var(--fs-doc);
@@ -3596,6 +3590,124 @@ h1 a:hover {
   .page-toolbar .crumbs li + li::before {
     content: none;
   }
+}
+
+/* ── Other pages in the new system (UI v2 phase D): proposals list, corporate page, 404 ── */
+
+/* Proposals: a ruled table edge to edge, like the catalog — not a boxed grid. */
+.proposals .table-wrap {
+  margin: 0 calc(-1 * var(--space-6)) var(--space-5);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.proposals .data-table th,
+.proposals .data-table td {
+  padding-block: var(--space-2);
+  vertical-align: middle;
+}
+
+.proposals .data-table th:first-child,
+.proposals .data-table td:first-child {
+  min-width: 15rem;
+  padding-left: var(--space-6);
+}
+
+.proposals .data-table th {
+  height: 2.25rem;
+  background: transparent;
+  font-weight: 400;
+}
+
+.proposals .data-table tr:last-child td {
+  border-bottom: 1px solid var(--line);
+}
+
+.proposals .data-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.proposals .data-table td:first-child a {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.proposals .data-table td:first-child a:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+@media (max-width: 959.98px) {
+  .proposals .table-wrap {
+    margin-inline: calc(-1 * var(--space-4));
+  }
+
+  .proposals .data-table th:first-child,
+  .proposals .data-table td:first-child {
+    padding-left: var(--space-4);
+  }
+}
+
+/* The new-document wizard (DocumentEditor AuthoringRoute): its steps are segments on a grey track — the current
+   step a raised white surface, done steps a green tick, failed a red mark — instead of a ruled stepper. */
+.lifecycle.lifecycle--compact {
+  gap: 2px;
+  padding: 3px;
+  border-top: 0;
+  border-left: 0;
+  border-radius: 10px;
+  background: var(--bg-hover);
+}
+
+.lifecycle--compact .lifecycle__step,
+.lifecycle--compact .lifecycle__step--done,
+.lifecycle--compact .lifecycle__step--current,
+.lifecycle--compact .lifecycle__step--failed {
+  align-items: center;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+}
+
+.lifecycle--compact .lifecycle__step--current {
+  background: var(--bg-surface);
+  border-color: var(--line-strong);
+}
+
+.lifecycle--compact .lifecycle__step--current .lifecycle__title {
+  color: var(--text);
+}
+
+/* A link that looks like a button is never underlined, even inside a notice, an empty state or a paragraph. */
+.feedback a.button,
+.notice a.button,
+p a.button,
+dd a.button {
+  text-decoration: none;
+}
+
+/* Page actions that left the toolbar on a phone (PageToolbar `actionsInContentOnPhone`). */
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+/* The toolbar puts the primary last (rightmost); on its own row it comes first. */
+.page-actions > .button--primary {
+  order: -1;
+}
+
+.corporate-page__body {
+  white-space: pre-line;
+}
+
+.not-found {
+  max-width: var(--text-max);
 }
 
 /* ── Right panel (components/shell/SidePanel): a docked column ≥ 1200 px, a sheet below, from the bottom on phones ── */
@@ -6656,7 +6768,6 @@ h1 a:hover {
   .page-toolbar,
   .scrim,
   .skip-link,
-  .document__actions,
   .tabs,
   .side-panel,
   .side-panel-scrim,

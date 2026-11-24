@@ -117,6 +117,6 @@ test("@mobile phone layout has no horizontal scroll and a working menu", async (
   await page.getByRole("button", { name: "Меню" }).click();
   const drawer = page.getByRole("dialog", { name: "Меню" });
   await drawer.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Предложения" }).click();
-  await expect(page.getByRole("heading", { name: "Предложения изменений", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Предложения", level: 1 })).toBeVisible(); // UI v2: as in the sidebar
   await expect(drawer).toBeHidden();
 });

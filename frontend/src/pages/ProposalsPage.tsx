@@ -6,6 +6,9 @@ import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../c
 import { PROPOSAL_STATUS_LABEL, PROPOSAL_STATUS_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
 import { When } from "../components/When";
+import { PageToolbar } from "../components/shell/PageToolbar";
+import { buttonClass } from "../components/ui/Button";
+import { Icon } from "../components/ui/Icon";
 
 const FILTERS: { value: ProposalStatus | ""; label: string }[] = [
   { value: "", label: "Все" },
@@ -33,15 +36,22 @@ export function ProposalsPage() {
 
   return (
     <div className="proposals">
+      <PageToolbar
+        title="Предложения"
+        meta={data ? <span className="page-toolbar__count">{data.total}</span> : null}
+        actions={
+          <Link to="/documents/new" className={buttonClass("secondary", "md", "button--collapsible button--with-icon")}>
+            <Icon name="plus" />
+            <span className="button__label">Создать документ</span>
+          </Link>
+        }
+      />
       <div className="page-head">
-        <h1>Предложения изменений</h1>
+        <h1>Предложения</h1>
         <p className="lead">
           Все правки проходят через предложения: они не меняют документы до ревью и merge в GitLab. «Готово к ревью» и
           открытый MR — это ещё не merge.
         </p>
-        <Link to="/documents/new" className="button button--secondary">
-          Создать документ
-        </Link>
       </div>
       {notice ? (
         <div role="status">
