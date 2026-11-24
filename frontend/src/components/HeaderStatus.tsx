@@ -72,7 +72,7 @@ export function AiModeChip() {
   }, [open, status, failed]);
 
   if (!mode) return null;
-  // «ИИ: демо» → «ИИ» + «: демо»: a phone shows only «ИИ» (the rest stays in the accessible name and the popover).
+  // «ИИ: без модели» → «ИИ» + «: без модели»: a phone shows only «ИИ» (the rest stays in the accessible name and the popover).
   const label = AI_CHIP_LABEL[mode];
   const colon = label.indexOf(":");
   return (
@@ -125,7 +125,7 @@ function AiModeDetails({ mode, status, failed }: { mode: AiMode; status: Integra
           <div>
             <dt>Состояние</dt>
             <dd>
-              <StateBadge state={status.state} /> <span className="muted">{status.human_readable_message}</span>
+              <StateBadge state={status.state} kind={status.kind} /> <span className="muted">{status.human_readable_message}</span>
             </dd>
           </div>
         ) : null}

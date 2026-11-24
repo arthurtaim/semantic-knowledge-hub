@@ -306,6 +306,29 @@ export interface Citation {
    * Absent / null: show `excerpt` as is. `excerpt` stays the verbatim, verified quote.
    */
   excerpt_parts?: ExcerptPart[] | null;
+  /**
+   * Origin of this source from its metadata (answer-quality fix, additive): "synthetic" — marked synthetic/demo,
+   * "not_synthetic" — no such mark, "unknown" — no provenance metadata (an attachment; `is_demo` is false there, so
+   * never read `is_demo: false` as «real»). Show it as a quiet per-source badge, not as a warning.
+   */
+  provenance?: ProvenanceOrigin | null;
+}
+
+export type ProvenanceOrigin = "synthetic" | "not_synthetic" | "unknown";
+
+/**
+ * Origin of the evidence an answer ACTUALLY relies on (validated citations + documents named by its system facts),
+ * counted in distinct sources. Replaces the former fixed warning «Используются только демо-документы…» on every
+ * answer: show one quiet indicator; the server adds a warning only when it is material (mixed origins).
+ * `overall: "none"` — the answer relies on no source (insufficient evidence, general knowledge, a bare count).
+ */
+export interface AnswerProvenance {
+  overall: ProvenanceOrigin | "mixed" | "none";
+  synthetic: number;
+  not_synthetic: number;
+  unknown: number;
+  /** "team" | "corporate" | "attachment" → distinct sources. */
+  by_kind: Record<string, number>;
 }
 
 /** A piece of a cited excerpt: prose of the quote, or the rows of a table the quote touches. */
@@ -352,6 +375,8 @@ export interface SystemFactItem {
   /** e.g. «guide · владелец не назначен · обновлён 2026-11-21», «references · body:12», «v2 · действующая». */
   detail: string | null;
   app_path: string | null;
+  /** A document item: marked synthetic/demo in its metadata (absent / null for templates, relations, proposals). */
+  is_demo?: boolean | null;
 }
 
 /**
@@ -521,6 +546,8 @@ export interface AskResponse {
   general_knowledge?: boolean;
   /** M5.7: send back as `history[i].context` of this turn so a follow-up keeps its referent. */
   conversation_context?: TurnFactContext[];
+  /** Origin of the validated evidence (additive; absent from older servers). */
+  provenance?: AnswerProvenance;
 }
 
 // --- UI v2: assistant skills and conversation attachments (docs/ui-v2/specs/02_ASSISTANT.md §3–§5) ---
@@ -1363,6 +1390,12 @@ export interface TemplateSummary {
   optional_sections: number;
   /** Visible documents created with this template (any version). */
   documents: number;
+  /** Template Studio: a file of the release or created in the studio (older backends omit it). */
+  source?: "shipped" | "studio";
+  /** An open, not yet activated draft (a new version or catalogue corrections). */
+  has_draft?: boolean;
+  /** A release shipped this version of a template edited in the studio; not current until someone activates it. */
+  shipped_update?: number | null;
 }
 
 export interface TemplateSection {
@@ -1425,6 +1458,151 @@ export interface TemplateComparison {
   breaking: boolean;
   migration: string;
   changes: string;
+  /** Template Studio (additive): every changed field of the spec, and the line diff of the template source. */
+  fields_changed?: string[];
+  source_diff?: DiffResult | null;
+  /** The «стало» side is the open draft, not a version. */
+  to_draft?: boolean;
+}
+
+// --- Template Studio (backend/app/services/template_studio.py, docs/TEMPLATE_HUB.md) ---
+
+export interface TemplateSectionSpec {
+  title: string;
+  required: boolean;
+  /** One line: the «Требует уточнения: …» placeholder of the section. */
+  hint: string;
+  /** Free Markdown after the hint (a table, a list); never a `#`/`##` heading. */
+  content: string;
+}
+
+export type TemplateVersionStatus = "active" | "deprecated" | "archived";
+
+/** What the editor edits: catalogue fields and the schema. */
+export interface TemplateSpec {
+  template_id: string;
+  title: string;
+  description: string;
+  category: string;
+  doc_type: string;
+  id_prefix: string;
+  owner: string;
+  labels: string[];
+  default_tags: string[];
+  sections: TemplateSectionSpec[];
+  required_metadata: string[];
+  optional_metadata: string[];
+  validation: string[];
+  instructions: string;
+  ai_guidance: string;
+  example: string;
+  changes: string;
+  breaking: boolean;
+  migration: string;
+  status: TemplateVersionStatus;
+}
+
+/** A validation finding bound to a field: `title`, `id_prefix`, `sections.2.title`, `validation.0`, `source`… */
+export interface StudioIssue {
+  field: string;
+  code: string;
+  message: string;
+  severity: "error" | "warning";
+}
+
+export interface StudioPermissions {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  activate: boolean;
+}
+
+export interface StudioOptions {
+  doc_types: string[];
+  metadata_fields: string[];
+  statuses: TemplateVersionStatus[];
+  reserved_ids: string[];
+  /** ID prefix → template id of the active templates (a new template needs a free prefix). */
+  prefixes: Record<string, string>;
+  template_id_pattern: string;
+  id_prefix_pattern: string;
+  max_sections: number;
+  permissions: StudioPermissions;
+  /** «Создать с помощью AI»: unavailable without a language model (mock) or with AI off (disabled). */
+  ai: { available: boolean; mode: string; reason: string | null };
+  defaults: TemplateSpec;
+}
+
+/** What «Активировать» would do with this spec. */
+export type ActivationOutcome = "new_template" | "new_version" | "info_update" | "reactivate" | "no_change";
+
+export interface StudioCheck {
+  valid: boolean;
+  issues: StudioIssue[];
+  activation: ActivationOutcome;
+  next_version: number;
+  schema_changed: boolean;
+  changed_fields: string[];
+  /** The template file this spec stands for (the format of the shipped templates). */
+  source: string;
+  preview: {
+    document_id: string;
+    markdown: string;
+    /** Sanitized HTML; render only through <SafeHtml>. */
+    html: string;
+    sections: TemplateSection[];
+  };
+}
+
+export interface StudioVersion {
+  version: number;
+  status: string;
+  current: boolean;
+  source: "shipped" | "studio";
+  first_seen: string;
+  changes: string;
+  breaking: boolean;
+  activated_by: string | null;
+  activated_at: string | null;
+  /** Visible documents pinned to this version. */
+  documents: number;
+}
+
+export interface StudioEvent {
+  at: string;
+  actor: string;
+  action: string;
+  version: number | null;
+  revision: number;
+  summary: string;
+}
+
+export interface StudioState {
+  template_id: string;
+  kind: "shipped" | "created" | "adopted";
+  /** Name it as `expected_revision` in every write; a stale one is 409 `template_conflict`. */
+  revision: number;
+  current_version: number | null;
+  current: TemplateSpec | null;
+  draft: { spec: TemplateSpec; base_version: number | null; saved_by: string; saved_at: string; check: StudioCheck } | null;
+  versions: StudioVersion[];
+  events: StudioEvent[];
+  shipped_version: number | null;
+  shipped_update: number | null;
+  updated_by: string | null;
+  updated_at: string | null;
+  ai_proposal_id: string | null;
+}
+
+export interface StudioSaveResult {
+  state: StudioState;
+  check: StudioCheck;
+}
+
+export interface StudioActivation {
+  action: "info_updated" | "reactivated" | "activated";
+  version: number;
+  state: StudioState;
 }
 
 // --- M5.6.3: links of documents (backend/app/services/links.py) ---
@@ -1578,7 +1756,8 @@ export type AiProposalKind =
   | "check_completeness"
   | "find_related"
   | "explain_relation"
-  | "impact_analysis";
+  | "impact_analysis"
+  | "draft_template";
 export type AiProposalStatus = "suggested" | "applied" | "partially_applied" | "rejected" | "invalidated" | "answered";
 export type AiItemKind = "metadata" | "section" | "link" | "template" | "draft" | "task" | "note";
 
@@ -1632,6 +1811,8 @@ export interface AiProposal {
   applied_items: string[];
   /** The draft the accepted items went into (the same draft, a new update draft or a new document draft). */
   result_draft_id: string | null;
+  /** draft_template: the template created when the person saved the (edited) proposal in the editor. */
+  result_template_id?: string | null;
 }
 
 export interface AiProposalRequest {

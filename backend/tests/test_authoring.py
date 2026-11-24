@@ -315,7 +315,7 @@ def test_ai_draft_follows_template_and_quotes_only_verified_sources(client: Test
         doc = client.get(f"/api/documents/{citation['document_id']}").json()
         assert " ".join(citation["quote"].split()) in " ".join(doc["raw"].split())
         assert citation["revision"] == doc["revision"]
-    assert any("Демо-режим" in w for w in data["warnings"])
+    assert any(w.startswith("Без языковой модели:") for w in data["warnings"])
     assert data["unverified_claims"] == []
 
 

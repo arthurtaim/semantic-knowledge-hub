@@ -61,7 +61,7 @@ describe("Creating a document: type and mode", () => {
     expect(screen.getByRole("radio", { name: /ADR/ })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Вручную" })).toBeChecked();
     expect(screen.getByRole("radio", { name: "С помощью AI" })).toBeEnabled();
-    expect(screen.getByText(/Демо-режим без языковой модели/)).toBeInTheDocument();
+    expect(screen.getByText(/^Без языковой модели: помощник соберёт структуру/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Открыть редактор" })).toBeDisabled();
 
     await openManualEditor();
@@ -278,7 +278,7 @@ describe("Creating a document with the AI helper", () => {
     await userEvent.click(screen.getByRole("radio", { name: /Архитектура/ }));
     await userEvent.click(screen.getByRole("button", { name: "Далее: запрос помощнику" }));
 
-    expect(screen.getByText("Демо-режим: без языковой модели")).toBeInTheDocument();
+    expect(screen.getByText("Без языковой модели")).toBeInTheDocument();
     await userEvent.type(screen.getByRole("textbox", { name: /^Название/ }), "Витрина метрик");
     await userEvent.type(screen.getByRole("textbox", { name: /Что должно быть в документе/ }), "Описать витрину метрик");
     await userEvent.type(screen.getByRole("textbox", { name: /Связанные документы/ }), "SEM-INT-ARIS-001");
@@ -291,7 +291,7 @@ describe("Creating a document with the AI helper", () => {
       request: "Описать витрину метрик",
       related_ids: ["SEM-INT-ARIS-001"],
     });
-    expect(within(panel).getByText("Демо-режим: без языковой модели")).toBeInTheDocument();
+    expect(within(panel).getByText("Без языковой модели")).toBeInTheDocument();
     expect(within(panel).getByText("Недостаточно данных")).toBeInTheDocument();
     expect(within(panel).getByText("This local demonstration models a knowledge base with four layers")).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Semantic Layer — demonstration architecture" })).toHaveAttribute(

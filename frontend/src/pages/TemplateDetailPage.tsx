@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
-import type { TemplateComparison, TemplateDetail } from "../api/types";
+import type { StudioOptions, TemplateComparison, TemplateDetail } from "../api/types";
 import { AiProposalCard, useAiProposal } from "../components/AiProposal";
 import { AI_MODE_LABEL } from "../components/AiSourcesPanel";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
@@ -14,6 +14,7 @@ import { TemplateStatusBadge } from "./TemplatesPage";
 import { When } from "../components/When";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { buttonClass } from "../components/ui/Button";
+import { TemplateComparisonView } from "../components/studio/TemplateComparisonView";
 
 function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
@@ -37,64 +38,6 @@ function Block({ title, id, children }: { title: string; id: string; children: R
 }
 
 // --- compare two versions ---------------------------------------------------------------------------
-
-function ChangeList({ title, items, tone }: { title: string; items: string[]; tone: "add" | "remove" | "neutral" }) {
-  if (items.length === 0) return null;
-  return (
-    <div className="compare__group">
-      <h3>{title}</h3>
-      <ul className={`compare__list compare__list--${tone}`}>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function ComparisonView({ result }: { result: TemplateComparison }) {
-  const empty =
-    [
-      result.sections_added,
-      result.sections_removed,
-      result.became_required,
-      result.became_optional,
-      result.metadata_required_added,
-      result.metadata_required_removed,
-      result.validation_added,
-      result.validation_removed,
-    ].every((list) => list.length === 0) && !result.status_change;
-  return (
-    <div className="compare__result" aria-live="polite">
-      <p className="compare__title">
-        <strong>
-          v{result.from_version} → v{result.to_version}
-        </strong>
-        {result.breaking ? <span className="breaking-badge">несовместимое изменение</span> : null}
-      </p>
-      {result.changes ? <p>{result.changes}</p> : null}
-      {empty ? <p className="muted">Структура, обязательные поля и правила не различаются.</p> : null}
-      <ChangeList title="Добавлены разделы" items={result.sections_added} tone="add" />
-      <ChangeList title="Удалены разделы" items={result.sections_removed} tone="remove" />
-      <ChangeList title="Стали обязательными" items={result.became_required} tone="add" />
-      <ChangeList title="Стали необязательными" items={result.became_optional} tone="neutral" />
-      <ChangeList title="Новые обязательные поля" items={result.metadata_required_added.map(fieldName)} tone="add" />
-      <ChangeList title="Поля больше не обязательны" items={result.metadata_required_removed.map(fieldName)} tone="remove" />
-      <ChangeList title="Новые правила проверки" items={result.validation_added} tone="add" />
-      <ChangeList title="Удалённые правила проверки" items={result.validation_removed} tone="remove" />
-      {result.status_change ? <p>Статус шаблона: {result.status_change}</p> : null}
-      {result.migration ? (
-        <Notice tone="warning">
-          <p>
-            <strong>Переход на новую версию</strong> — отдельная правка на ревью; существующие документы остаются валидными
-            по своей версии.
-          </p>
-          <p>{result.migration}</p>
-        </Notice>
-      ) : null}
-    </div>
-  );
-}
 
 function CompareVersions({ template }: { template: TemplateDetail }) {
   const versions = [...template.versions].sort((a, b) => a - b);
@@ -152,7 +95,7 @@ function CompareVersions({ template }: { template: TemplateDetail }) {
       </div>
       {from === to ? <p className="muted">Выберите две разные версии.</p> : null}
       {error ? <ErrorState error={error} /> : null}
-      {result ? <ComparisonView result={result} /> : null}
+      {result ? <TemplateComparisonView result={result} /> : null}
     </form>
   );
 }
@@ -276,6 +219,8 @@ export function TemplateDetailPage() {
     `${id}@${requested ?? "current"}`,
   );
   const [aiOpen, setAiOpen] = useState(false);
+  // Template Studio rights; an older backend (or no right to view the studio) simply shows no «Редактировать».
+  const studio = useAsync<StudioOptions | null>(() => api.studioOptions().catch(() => null), "studio-options");
 
   if (loading && !data) return <Loading label="Загрузка шаблона…" />;
   if (error) {
@@ -310,6 +255,8 @@ export function TemplateDetailPage() {
           ? "Служебный шаблон: документы по нему создаются только импортом."
           : null;
   const drafts = Object.entries(t.my_open_drafts).filter(([, n]) => n > 0);
+  const canEdit = (studio.data?.permissions.edit ?? false) && !oldVersion;
+  const editHref = `/templates/${encodeURIComponent(t.id)}/edit`;
 
   return (
     <article className="template-detail">
@@ -321,6 +268,11 @@ export function TemplateDetailPage() {
             <a href="#compare" className={buttonClass("quiet")}>
               Сравнить версии
             </a>
+            {canEdit ? (
+              <Link to={editHref} className={buttonClass("secondary")}>
+                Редактировать
+              </Link>
+            ) : null}
             {aiOff ? null : (
               <button
                 type="button"
@@ -383,6 +335,33 @@ export function TemplateDetailPage() {
         ) : null}
       </header>
 
+      {t.has_draft && !oldVersion ? (
+        <Notice tone="info" className="template-detail__studio">
+          <p>
+            {t.status === "draft"
+              ? "Шаблон ещё не активирован: документы по нему не создаются, пока его не активируют в редакторе."
+              : `Есть неактивированный черновик изменений. Действует v${t.version}: черновик не влияет на документы.`}
+          </p>
+          {canEdit ? (
+            <Link to={editHref} className="text-link">
+              Открыть в редакторе
+            </Link>
+          ) : null}
+        </Notice>
+      ) : null}
+      {t.shipped_update && !oldVersion ? (
+        <Notice tone="warning" className="template-detail__studio">
+          <p>
+            В поставке приложения появилась версия <strong>v{t.shipped_update}</strong> этого шаблона. Действует v{t.version}{" "}
+            из студии шаблонов: новая версия сама не включается.
+          </p>
+          {canEdit ? (
+            <Link to={`${editHref}?tab=history`} className="text-link">
+              Решить в редакторе
+            </Link>
+          ) : null}
+        </Notice>
+      ) : null}
       {oldVersion ? (
         <Notice tone="info">
           <p>

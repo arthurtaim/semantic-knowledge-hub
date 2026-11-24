@@ -20,7 +20,7 @@ TemplateId = Annotated[str, Path(min_length=2, max_length=41, pattern=r"^[a-z][a
 @router.get("", response_model=list[TemplateSummary])
 async def catalogue(
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+    user: Annotated[UserContext, Depends(require(Action.view_templates))],
     q: Annotated[str, Query(max_length=100)] = "",
     status: Annotated[str | None, Query(pattern=r"^(draft|active|deprecated|archived)$")] = None,
     type: Annotated[str | None, Query(max_length=40)] = None,
@@ -44,7 +44,7 @@ async def catalogue(
 async def template_detail(
     template_id: TemplateId,
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+    user: Annotated[UserContext, Depends(require(Action.view_templates))],
 ) -> TemplateDetail:
     """The current version: sections (required/optional), fields, rules, guidance, example, history, usage."""
     detail = await container.template_hub.detail(user, template_id)
@@ -58,7 +58,7 @@ async def template_version(
     template_id: TemplateId,
     version: Annotated[int, Path(ge=1, le=1000)],
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+    user: Annotated[UserContext, Depends(require(Action.view_templates))],
 ) -> TemplateDetail:
     """An exact version (also older ones that drafts are pinned to)."""
     detail = await container.template_hub.detail(user, template_id, version)
@@ -71,7 +71,7 @@ async def template_version(
 async def compare_versions(
     template_id: TemplateId,
     container: Annotated[Container, Depends(get_container)],
-    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+    user: Annotated[UserContext, Depends(require(Action.view_templates))],
     from_version: Annotated[int, Query(alias="from", ge=1, le=1000)],
     to_version: Annotated[int, Query(alias="to", ge=1, le=1000)],
 ) -> TemplateComparison:

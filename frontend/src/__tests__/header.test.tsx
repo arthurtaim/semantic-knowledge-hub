@@ -45,7 +45,7 @@ describe("Header: AI mode chip and demo tag", () => {
   });
 
   it.each([
-    ["mock", "ИИ: демо"],
+    ["mock", "ИИ: без модели"],
     ["internal_api", "ИИ: внутренняя модель"],
     ["claude_cli", "ИИ: Claude CLI (эксперимент)"],
     ["disabled", "ИИ отключён"],
@@ -69,6 +69,21 @@ describe("Header: AI mode chip and demo tag", () => {
     expect(within(details).getByText(/сервер сверяет каждую цитату/)).toBeInTheDocument();
     expect(within(details).getByRole("link", { name: "Подробнее о подключениях" })).toHaveAttribute("href", "/integrations");
     expect(calls.filter((c) => c.url === "/api/integrations/status")).toHaveLength(1);
+  });
+
+  it("names the mock MODE «без модели» — the demo tag keeps describing the synthetic corpus", async () => {
+    mockApi([{ path: "/api/integrations/status", body: integrations }]);
+    renderAt("/", "/", <Layout>page</Layout>, withMode("mock"));
+    // Two concepts, two places: the corpus («Демо-данные», amber) and the AI mode (the chip, no «демо» in it).
+    expect(within(screen.getByRole("note")).getByRole("button", { name: "Демо-данные" })).toBeInTheDocument();
+    const chip = screen.getByRole("button", { name: "ИИ: без модели" });
+    expect(chip.textContent).not.toMatch(/демо/i);
+    await userEvent.click(chip);
+    const details = document.getElementById("ai-mode-details") as HTMLElement;
+    expect(within(details).getByText("Без языковой модели (mock)")).toBeVisible();
+    expect(within(details).getByText(/это режим ответа, а не свойство документов/i)).toBeVisible();
+    expect(await within(details).findByText("Без модели (mock)", { selector: ".state" })).toBeInTheDocument();
+    expect(details.textContent).not.toMatch(/Демо/);
   });
 
   it("says plainly that the app works without AI when it is disabled", async () => {

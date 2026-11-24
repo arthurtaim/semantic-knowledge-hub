@@ -1,13 +1,17 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { ApiError } from "../api/client";
 import type { AiMode, AskRequest, AskResponse, AskSkillRef, ExternalRetrievalSummary, SearchScope } from "../api/types";
 import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeLabel, scopeOfSources } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
+import { showsSourceOrigins } from "../lib/provenance";
 import { useSession } from "../lib/session";
 import { failedChecks, proposalCardId, toolChecksFailed } from "../lib/systemFacts";
+import { AnswerMarkdown } from "./AnswerMarkdown";
 import { AnswerActions, AnswerText, DemoAnswerText, factRefsOf, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
 import { AnswerSources } from "./AnswerSources";
 import { AskProposal } from "./AskProposal";
+import { ProvenanceLine } from "./Provenance";
 import { ErrorState, Notice } from "./Feedback";
 import { ChecksInsufficient, FailedChecks, SystemFacts } from "./SystemFacts";
 import { Chip } from "./ui/Chip";
@@ -120,7 +124,7 @@ function externalSummary(ext: ExternalRetrievalSummary): string {
 }
 
 const MODE_LABEL: Record<AskResponse["mode"], string> = {
-  mock: "Демо-режим: выдержки без языковой модели",
+  mock: "Без языковой модели: дословные выдержки",
   disabled: "Языковая модель отключена — только выдержки из источников",
   internal_api: "Внутренняя модель, цитаты сверены с источниками",
   claude_cli: "Claude Code CLI (личный тест), цитаты сверены с источниками",
@@ -187,20 +191,23 @@ interface AnswerViewProps {
 }
 
 /**
- * The assistant's answer: who answers and how well it is supported (a category, never a percentage), the text
- * with citation markers, terms without support, the proposal of a skill (nothing applied), what to do next and
- * one list of sources — team, corporate and attachments apart. Generated text is labelled «ИИ», demo «Демо».
+ * The assistant's answer: who answers and how well it is supported (a category, never a percentage), where its
+ * sources come from (one quiet line, lib/provenance.ts — metadata, not a warning), the text with citation markers,
+ * terms without support, the proposal of a skill (nothing applied), what to do next and one list of sources — team,
+ * corporate and attachments apart. Generated text is labelled «ИИ», the extractive mode «без языковой модели» (a
+ * mode, not the content: synthetic sources are said by the provenance line).
  */
 export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, compact = false }: AnswerViewProps) {
   const session = useSession();
   const question = request.question;
   const insufficient = answer.confidence === "insufficient_evidence";
   const traceId = answer.retrieval_trace_id ?? null;
-  const labels = citationLabels(answer.citations);
+  // Stable per answer: the Markdown of the text is parsed again only when the answer itself changes.
+  const labels = useMemo(() => citationLabels(answer.citations), [answer.citations]);
   const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
   const demoExcerpts = answer.mode === "mock" && !answer.proposal;
-  const facts = factRefsOf(answer);
-  const textProps = { citations: answer.citations, labels, turnNo, question, facts };
+  const facts = useMemo(() => factRefsOf(answer), [answer]);
+  const textProps = { citations: answer.citations, labels, turnNo, question, facts, compact, origins: showsSourceOrigins(answer) };
   const showText = !insufficient || Boolean(answer.proposal);
   // M5.7: system tools were used and some did not work out — an answer that could not be confirmed says what could
   // not be checked instead of «В базе знаний нет ответа» with near matches (a metric is not a document).
@@ -209,7 +216,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
   const { text, notFound } = splitServerNotes(answer);
   const unsupported = notFound ?? (answer.unmatched_terms.length > 0 ? answer.unmatched_terms.map((term) => `«${term}»`).join(", ") : null);
   const Heading = compact ? "h3" : "h2";
-  const modeLabel = answer.mode === "mock" && answer.proposal ? "Демо-режим: предложение по правилам, без языковой модели" : (MODE_LABEL[answer.mode] ?? answer.mode);
+  const modeLabel = answer.mode === "mock" && answer.proposal ? "Без языковой модели: предложение по правилам" : (MODE_LABEL[answer.mode] ?? answer.mode);
   return (
     <section
       className={`answer${insufficient ? " answer--insufficient" : ""}${compact ? " answer--compact" : ""}`}
@@ -231,8 +238,8 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
           </span>
         ) : null}
         {compact && answer.mode === "mock" ? (
-          <span className="demo-tag" title={modeLabel}>
-            Демо
+          <span className="mode-tag" title={modeLabel}>
+            Без модели
           </span>
         ) : (
           <span className="answer__mode">{modeLabel}</span>
@@ -242,6 +249,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
             Граф ответа
           </Link>
         ) : null}
+        <ProvenanceLine provenance={answer.provenance} />
       </div>
       <CorporateGap answer={answer} asked={request.sources} />
       {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
@@ -430,7 +438,9 @@ export function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate, comp
           <p className="answer-preliminary__label" id={`preliminary-title-${turnNo}`}>
             Предварительный текст модели — цитаты ещё не проверены
           </p>
-          <div className="answer-preliminary__text">{turn.preliminary}</div>
+          <div className="answer-preliminary__text answer-md">
+            <AnswerMarkdown text={turn.preliminary} markers={null} headingLevel={compact ? 3 : 2} />
+          </div>
         </section>
       ) : null}
 

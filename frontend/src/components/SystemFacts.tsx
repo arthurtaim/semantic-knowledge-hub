@@ -2,6 +2,7 @@ import { useId, useLayoutEffect, useRef, useState, type MouseEvent, type RefObje
 import { Link } from "react-router-dom";
 import type { AskResponse, DocStatus, SystemFact, SystemFactItem, ToolStepInfo } from "../api/types";
 import { formatWhen, STATUS_LABEL, TEMPLATE_STATUS_LABEL } from "../lib/labels";
+import { factItemOrigin, ORIGIN_GROUP_LABEL, showsSourceOrigins } from "../lib/provenance";
 import {
   ATTENTION_REASON_LABEL,
   CHECK_OUTCOME_LABEL,
@@ -12,6 +13,7 @@ import {
   isProposalFact,
   proposalCardId,
 } from "../lib/systemFacts";
+import { OriginMark } from "./Provenance";
 import { StatusMark } from "./ui/StatusMark";
 
 /*
@@ -121,7 +123,8 @@ function ItemStatus({ item }: { item: SystemFactItem }) {
   return <span className="fact-item__kind">{STATUS_LABEL[item.status as DocStatus] ?? item.status}</span>;
 }
 
-function FactItems({ fact, compact }: { fact: SystemFact; compact: boolean }) {
+/** `origins`: the answer's sources differ in origin, so each listed document names its own (lib/provenance.ts). */
+function FactItems({ fact, compact, origins }: { fact: SystemFact; compact: boolean; origins: boolean }) {
   const [all, setAll] = useState(false);
   const listId = useId();
   const items = fact.items;
@@ -132,22 +135,26 @@ function FactItems({ fact, compact }: { fact: SystemFact; compact: boolean }) {
   return (
     <>
       <ul id={listId} className="fact__items" aria-label={`Объекты: ${fact.label}`}>
-        {shown.map((item) => (
-          <li key={`${item.kind}:${item.id}`} className="fact-item">
-            <span className="fact-item__head">
-              {item.app_path ? (
-                <Link to={item.app_path} className="fact-item__title">
-                  {item.title}
-                </Link>
-              ) : (
-                <span className="fact-item__title">{item.title}</span>
-              )}
-              <span className="fact-item__id">{item.id}</span>
-              <ItemStatus item={item} />
-            </span>
-            {item.detail ? <span className="fact-item__detail">{item.detail}</span> : null}
-          </li>
-        ))}
+        {shown.map((item) => {
+          const origin = origins ? factItemOrigin(item) : null;
+          return (
+            <li key={`${item.kind}:${item.id}`} className="fact-item">
+              <span className="fact-item__head">
+                {item.app_path ? (
+                  <Link to={item.app_path} className="fact-item__title">
+                    {item.title}
+                  </Link>
+                ) : (
+                  <span className="fact-item__title">{item.title}</span>
+                )}
+                <span className="fact-item__id">{item.id}</span>
+                <ItemStatus item={item} />
+                {origin ? <OriginMark origin={origin} /> : null}
+              </span>
+              {item.detail ? <span className="fact-item__detail">{item.detail}</span> : null}
+            </li>
+          );
+        })}
       </ul>
       {hidden > 0 || all ? (
         <button type="button" className="link-button fact__toggle" aria-expanded={all} aria-controls={listId} onClick={() => setAll((v) => !v)}>
@@ -171,11 +178,14 @@ const BREAKDOWN_TITLE: Record<string, string> = {
   owner: "По владельцу",
   tag: "По тегам",
   attention: "По причинам",
+  provenance: "По происхождению",
 };
 
 function breakdownName(key: string, name: string): string {
   if (key === "status") return (STATUS_LABEL[name as DocStatus] ?? name).toLocaleLowerCase("ru");
   if (key === "attention") return ATTENTION_REASON_LABEL[name] ?? name;
+  // «синтетические 83 · без пометки 2»: the server's keys are not words (and never «реальные»).
+  if (key === "provenance") return ORIGIN_GROUP_LABEL[name as keyof typeof ORIGIN_GROUP_LABEL] ?? name;
   return name;
 }
 
@@ -199,7 +209,15 @@ function Breakdown({ fact }: { fact: SystemFact }) {
   );
 }
 
-function FactCard({ fact, label, turnNo, compact }: { fact: SystemFact; label: string; turnNo: number; compact: boolean }) {
+interface FactCardProps {
+  fact: SystemFact;
+  label: string;
+  turnNo: number;
+  compact: boolean;
+  origins: boolean;
+}
+
+function FactCard({ fact, label, turnNo, compact, origins }: FactCardProps) {
   const value = factValueText(fact);
   const filters = filtersText(fact);
   const when = formatWhen(fact.as_of);
@@ -219,7 +237,7 @@ function FactCard({ fact, label, turnNo, compact }: { fact: SystemFact; label: s
         {filters ? <p className="fact__filters">{filters}</p> : null}
         {fact.definition && !compact ? <p className="fact__definition">{fact.definition}</p> : null}
         <Breakdown fact={fact} />
-        <FactItems fact={fact} compact={compact} />
+        <FactItems fact={fact} compact={compact} origins={origins} />
         {truncatedNote(fact) ? <p className="fact__more">{truncatedNote(fact)}</p> : null}
         <p className="fact__meta">
           <span>Область: {SCOPE_TEXT[fact.source] ?? "доступное вам"}</span>
@@ -248,6 +266,7 @@ export function SystemFacts({ answer, labels, turnNo, compact = false }: SystemF
   if (facts.length === 0) return null;
   const headingId = `facts-title-${turnNo}`;
   const Title = compact ? "h4" : "h3";
+  const origins = showsSourceOrigins(answer);
   return (
     <section className={`facts${compact ? " facts--compact" : ""}`} aria-labelledby={headingId}>
       <Title id={headingId} className="facts__title">
@@ -256,7 +275,7 @@ export function SystemFacts({ answer, labels, turnNo, compact = false }: SystemF
       <p className="facts__note">Значения посчитаны сервером SKH в момент ответа по доступным вам данным — это не цитата из документа.</p>
       <ol className="facts__list">
         {facts.map((fact) => (
-          <FactCard key={fact.ref} fact={fact} label={labels.get(fact.ref) ?? fact.ref} turnNo={turnNo} compact={compact} />
+          <FactCard key={fact.ref} fact={fact} label={labels.get(fact.ref) ?? fact.ref} turnNo={turnNo} compact={compact} origins={origins} />
         ))}
       </ol>
     </section>

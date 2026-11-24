@@ -75,6 +75,9 @@ class AnswerOptions:
     # Compare mode (skill compare_with_file): the terms come from an attached file, so terms absent from the
     # knowledge base are a FINDING to report, not a reason to refuse the whole answer.
     compare_terms: bool = False
+    # A follow-up: terms that come only from the previous question (the conversation's referent). They help to
+    # select passages and sentences, but the user did not ask them now: never reported as missing.
+    context_terms: list[QueryTerm] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -161,6 +164,38 @@ class AssistResult:
     citations: list[AuthoringCitation]
     warnings: list[str]
     insufficient_data: bool
+
+
+@dataclass(frozen=True)
+class TemplateCatalogueEntry:
+    """An existing active template as DATA for the model (so it can say «похоже на существующий шаблон»)."""
+
+    template_id: str
+    title: str
+    doc_type: str
+    category: str
+    description: str
+    sections: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TemplateDraftRequest:
+    """Template Studio «Создать с помощью AI» (docs/AI_WORKFLOWS.md): a PROPOSAL of a template structure. The request
+    and the catalogue are DATA; the allowed values come from the backend. The reply is the model's raw text, parsed
+    by app/adapters/ai/template_protocol.py — the provider never stores, validates or activates anything."""
+
+    request: str
+    catalogue: tuple[TemplateCatalogueEntry, ...]
+    doc_types: tuple[str, ...]
+    metadata_fields: tuple[str, ...]
+
+
+class TemplateDraftingAIProvider(Protocol):
+    """Optional capability (model-agnostic JSON protocol; any chat model: internal API, a future GigaChat)."""
+
+    supports_template_drafting: bool
+
+    async def draft_template(self, request: TemplateDraftRequest) -> str: ...
 
 
 class AIProviderError(RuntimeError):

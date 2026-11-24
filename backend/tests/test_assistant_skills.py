@@ -263,7 +263,9 @@ def test_read_skills_return_a_proposal_reference(kb_client: TestClient) -> None:
     assert freshness["proposal"]["graph_link"].startswith("/graph?focus=DEMO-SEM-002")
     summary = ask(kb_client, skill_id="summarize", context_document_ids=["DEMO-INT-014"])
     assert summary["proposal"]["kind"] == "summarize"
-    assert any(w.startswith("Используются только демо-документы") for w in summary["warnings"])
+    # the chosen synthetic document is the provenance of the result (metadata), not a fixed «only demo» warning
+    assert summary["provenance"]["overall"] == "synthetic" and summary["provenance"]["synthetic"] >= 1
+    assert not any("демо-документ" in w for w in summary["warnings"])
     assert_nothing_applied(kb_client)
 
 

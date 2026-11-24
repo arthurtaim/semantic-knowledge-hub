@@ -157,7 +157,7 @@ describe("Four AI modes: no dead controls", () => {
     const { unmount } = renderAt("/proposals/new?document=SEM-INT-ARIS-001", "/proposals/new", <ProposalEditorPage />);
     const button = await screen.findByRole("button", { name: "Подготовить черновик" });
     expect(button).toBeDisabled();
-    expect(button).toHaveAccessibleDescription(/В демо-режиме ИИ не генерирует правки/);
+    expect(button).toHaveAccessibleDescription(/Без языковой модели правки не генерируются/);
     unmount();
     renderAt("/proposals/new?document=SEM-INT-ARIS-001", "/proposals/new", <ProposalEditorPage />, withMode("disabled"));
     expect(await screen.findByRole("textbox", { name: "Текст документа" })).toBeInTheDocument();

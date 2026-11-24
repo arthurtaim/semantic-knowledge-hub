@@ -35,6 +35,7 @@ from app.domain.models import (
     SkillRef,
     UserContext,
 )
+from app.domain.provenance import apply_provenance
 from app.domain.skills import (
     DEFAULT_SKILL,
     SKILL_BY_ID,
@@ -48,7 +49,6 @@ from app.domain.text import QueryTerm, term_matches_text, tokenize
 from app.errors import ApiError
 from app.services.ai_workflows import AiProposal, AiWorkflowService, ProposalRequest
 from app.services.assistant import (
-    DEMO_WARNING,
     MAX_PASSAGE_CHARS,
     MIN_QUOTE_CHARS,
     AskExtras,
@@ -478,9 +478,7 @@ class AssistantSkillService:
         if plan.skill.access == "draft":
             warnings.append(DRAFT_NOTE)
         subject = plan.subject
-        if (subject is not None and subject.is_demo) or any(c.is_demo for c in citations):
-            warnings.insert(0, DEMO_WARNING)
-        return AskResponse(
+        response = AskResponse(
             answer=(prefix + proposal.summary).strip(),
             mode=self._assistant.provider.mode,
             confidence=confidence,
@@ -493,6 +491,9 @@ class AssistantSkillService:
                 id=proposal.id, kind=proposal.kind, status=proposal.status, graph_link=proposal.graph_link
             ),
         )
+        # The chosen document is what the result is about: its origin is part of the provenance (metadata, no
+        # fixed «only demo» warning).
+        return apply_provenance(response, [(subject.id, subject.is_demo)] if subject is not None else ())
 
     async def _run_workflow(self, user: UserContext, plan: AskPlan) -> AskResponse:
         request, prefix = self._proposal_request(plan)

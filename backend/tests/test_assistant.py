@@ -48,10 +48,14 @@ def test_documented_fact_returns_extractive_evidence(client: TestClient) -> None
     answer = ask(client, "What layers does the demonstration architecture have?")
     assert answer["mode"] == "mock"
     assert answer["confidence"] == "supported"
-    assert answer["answer"].startswith("Демо-режим")
+    assert answer["answer"].startswith("Без языковой модели:")
     assert [c["document_id"] for c in answer["citations"]] == ["SEM-ARCH-001"]
     assert "four layers" in answer["citations"][0]["excerpt"]
-    assert answer["warnings"][0].startswith("Используются только демо-документы")
+    # Synthetic origin is source metadata (provenance), not a fixed warning on every answer.
+    assert (
+        answer["provenance"]["overall"] == "synthetic" and answer["citations"][0]["provenance"] == "synthetic"
+    )
+    assert not any("демо-документ" in w for w in answer["warnings"])
     assert_citations_valid(client, answer)
 
 

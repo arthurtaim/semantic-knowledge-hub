@@ -30,6 +30,7 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «почему <A> связан с <B>» | graph_inspect path |
 | «шаблон» | templates_inspect list (doc_type integration when «интеграц») |
 | «утвержд» + «aris» + «пробел» | composite: count + knowledge_search in one round, then a cited analysis |
+| «оформи» | count + knowledge_search «ARIS», then a MARKDOWN answer (heading, bold, list, code, table) with [F1]/[Cn] |
 | «черновик» | drafts_propose draft_from_prompt (proposal only) |
 | «метаданные <ID>» | catalog_query get_metadata |
 | «что такое rag» / «what is rag» | general knowledge, no tools |
@@ -40,7 +41,19 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «неизвестный инструмент» | requests `sql_query` (rejected), then answers |
 | «бесконечн» | requests a tool in every round (loop limit) |
 | «упади» | provider error after the first tool round |
+| «модель данных» | overview: catalog_query list (text «модель») + knowledge_search in one round, then a scoped, cited overview |
+| «интересны» + history | follow-up: knowledge_search for the PREVIOUS question's subject, then a cited continuation |
+| «реальные данные» | catalog_query facets → discloses the provenance breakdown of the accessible catalog |
 | anything else | cites the first passage verbatim (content answer), or «insufficient» without passages |
+
+Template Studio «Создать с помощью AI» (app/adapters/ai/template_protocol.py), keyed by the REQUEST text:
+
+| request contains | reply |
+|---|---|
+| «сломанный формат» | not JSON (the backend answers `ai_invalid_response`) |
+| «…: a, b и c» | «Назначение» + one required section per listed item + optional «Связанные документы», a rule per |
+|  | required section, a TAKEN prefix and an unknown metadata field (the backend replaces / drops them and warns) |
+| «интеграц» | doc_type integration; `similar_to` names the catalogue's integration templates |
 """
 
 from __future__ import annotations
@@ -242,6 +255,9 @@ def tool_script(r: Round) -> str:
         text += " Возможный пробел (вывод, не факт): нет утверждённых правил частоты выгрузки."
         return final(text, facts=[count["fact_id"]], citations=cites)
 
+    if "оформи" in q:
+        return _markdown_script(r)
+
     if "черновик" in q or "draft" in q:
         if not r.results:
             return tool_request(("drafts_propose", {"kind": "draft_from_prompt", "prompt": r.question[:500]}))
@@ -292,6 +308,12 @@ def tool_script(r: Round) -> str:
         )
     if "внимани" in q or "need attention" in q or "needs attention" in q:
         return _attention_script(r, q, facts)
+    if "модель данных" in q:
+        return _overview_script(r, facts)
+    if "интересны" in q and r.history:
+        return _follow_up_script(r)
+    if "реальные данные" in q:
+        return _real_data_script(r, facts)
     if "сколько" in q and "aris" in q:
         if not r.results:
             return tool_request(
@@ -405,6 +427,117 @@ def _attention_script(r: Round, q: str, facts: list[dict[str, Any]]) -> str:
     )
 
 
+def _cited_overview(r: Round, limit: int = 3) -> tuple[list[str], list[dict[str, str]]]:
+    """Verbatim quotes of the first passages found by knowledge_search, one per document."""
+    lines: list[str] = []
+    cites: list[dict[str, str]] = []
+    seen: set[str] = set()
+    searched = _searched_ids(r)
+    for cid, meta, body in r.passages:
+        document = json.loads(meta).get("document_id")
+        if cid not in searched or document in seen or len(cites) >= limit:
+            continue
+        seen.add(document)
+        quote = _verbatim(body)
+        cites.append({"id": cid, "quote": quote})
+        lines.append(f"- {json.loads(meta).get('title')}: «{quote}» [{cid}]")
+    return lines, cites
+
+
+def _overview_script(r: Round, facts: list[dict[str, Any]]) -> str:
+    """A broad question: look at the catalog AND search content in one round, then a scoped overview."""
+    if not r.results:
+        return tool_request(
+            (
+                "catalog_query",
+                {"operation": "list", "filters": {"text": "модель"}, "sort": "id", "limit": 20},
+            ),
+            (
+                "knowledge_search",
+                {"operation": "search", "query": "логическая модель физическая модель", "limit": 6},
+            ),
+        )
+    listed = (r.facts("catalog_query") or [None])[0]
+    lines, cites = _cited_overview(r)
+    head = "В доступных вам документах SKH модели данных описаны в нескольких документах"
+    text = (
+        head + (f" — {listed['total']} совпадений в каталоге [{listed['fact_id']}]" if listed else "") + ":\n"
+    )
+    text += "\n".join(lines) + "\n\nЭто обзор просмотренных документов, а не полный перечень."
+    return final(text, facts=[listed["fact_id"]] if listed else [], citations=cites)
+
+
+def _follow_up_script(r: Round) -> str:
+    """A short clarification: the subject comes from the previous question of the dialog, not from these words."""
+    previous = str(r.history[-1].get("question") or "")
+    if not r.results:
+        return tool_request(
+            ("knowledge_search", {"operation": "search", "query": previous[:200], "limit": 6})
+        )
+    lines, cites = _cited_overview(r)
+    if not cites:
+        return final("В просмотренных источниках ответа не нашлось.", confidence="insufficient_evidence")
+    return final(f"Продолжая предыдущий вопрос («{previous}»):\n" + "\n".join(lines), citations=cites)
+
+
+def _real_data_script(r: Round, facts: list[dict[str, Any]]) -> str:
+    """«Are these real data?»: the provenance breakdown of the accessible catalog is the evidence."""
+    if not r.results:
+        return tool_request(("catalog_query", {"operation": "facets"}))
+    fact = facts[0]
+    provenance = fact.get("breakdown", {}).get("provenance", {})
+    synthetic, total = provenance.get("synthetic", 0), fact["total"]
+    if total and synthetic == total:
+        text = (
+            f"Нет. Все {total} документов доступного вам каталога SKH помечены как синтетические (учебные) "
+            f"[{fact['fact_id']}]: это не сведения о банке."
+        )
+    else:
+        text = (
+            f"Синтетическими помечены {synthetic} из {total} документов доступного вам каталога SKH "
+            f"[{fact['fact_id']}]; остальные такой пометки не имеют."
+        )
+    return final(text, facts=[fact["fact_id"]])
+
+
+def _markdown_script(r: Round) -> str:
+    """A rich Markdown final answer (UI Workstream A): verified markers in a paragraph, bold, a list item and table
+    cells; a marker inside inline code (a code sample, not a reference) and a literal [7] that is no citation."""
+    if not r.results:
+        return tool_request(
+            ("catalog_query", {"operation": "count"}),
+            ("knowledge_search", {"operation": "search", "query": "ARIS"}),
+        )
+    count = r.facts("catalog_query")[0]
+    found = [p for p in r.passages if p[0] in _searched_ids(r)]
+    if not found:
+        return final(
+            f"В доступном вам каталоге SKH — {count['count']} документов [{count['fact_id']}].",
+            facts=[count["fact_id"]],
+        )
+    cid, _meta, body = found[0]
+    quote = _verbatim(body)
+    f = count["fact_id"]
+    text = "\n".join(
+        [
+            "## Сводка по ARIS",
+            "",
+            f"**Что нашлось:** в доступном вам каталоге SKH — {count['count']} документов [{f}].",
+            "",
+            f"- Документы описывают: *«{quote}»* [{cid}]",
+            f"- Пример сущности: `BusinessProcess`; запись `[{cid}]` в коде — не ссылка",
+            "",
+            "| Что | Подтверждение |",
+            "| --- | --- |",
+            f"| Число документов | [{f}] |",
+            f"| Цитата | [{cid}] |",
+            "",
+            "Пометка [7] не проверена сервером и остаётся текстом.",
+        ]
+    )
+    return final(text, facts=[f], citations=[{"id": cid, "quote": quote}])
+
+
 def _searched_ids(r: Round) -> set[str]:
     out: set[str] = set()
     for _, name, _, result in r.results:
@@ -447,10 +580,78 @@ def legacy_script(system: str, prompt: str, transport: Transport) -> str:
     )
 
 
+_REQUEST_RE = re.compile(r"<<<REQUEST>>>\n(.*?)\n<<<END REQUEST>>>", re.S)
+_CATALOGUE_RE = re.compile(r"<<<CATALOGUE>>>\n(.*?)\n?<<<END CATALOGUE>>>", re.S)
+
+
+def template_script(prompt: str) -> str:
+    """A template proposal in the model-agnostic JSON protocol of Template Studio (synthetic, deterministic)."""
+    match = _REQUEST_RE.search(prompt)
+    request = (match.group(1) if match else "").strip()
+    q = request.casefold()
+    if "сломанный формат" in q:
+        return "Вот шаблон: Назначение, Источники — без JSON."
+    catalogue = []
+    if block := _CATALOGUE_RE.search(prompt):
+        for line in block.group(1).splitlines():
+            try:
+                catalogue.append(json.loads(line))
+            except ValueError:
+                continue
+    listed = request.split(":", 1)[1] if ":" in request else ""
+    items = [p.strip(" .;") for p in re.split(r",|\sи\s", listed) if p.strip(" .;")][:8]
+    sections = [
+        {"title": "Назначение", "required": True, "hint": "зачем нужен документ и какой результат он даёт"}
+    ]
+    sections += [
+        {"title": item[:1].upper() + item[1:], "required": True, "hint": f"опишите: {item}"} for item in items
+    ]
+    sections.append(
+        {"title": "Связанные документы", "required": False, "hint": "ссылки [[ID]] на документы базы"}
+    )
+    integration = "интеграц" in q
+    similar = [
+        {"template_id": c["template_id"], "reason": "тоже описывает интеграцию"}
+        for c in catalogue
+        if integration and c.get("doc_type") == "integration"
+    ]
+    rules = [f"Заполнен раздел «{section['title']}»" for section in sections if section["required"]]
+    template = {
+        "title": "Обмен данными между системами" if integration else "Новый шаблон",
+        "description": "Синтетический шаблон по запросу: " + request[:120],
+        "template_id": "data_exchange" if integration else "new_template",
+        "id_prefix": "SEM-INT",  # taken by «Интеграция»: the backend must propose another one and say so
+        "doc_type": "integration" if integration else "guide",
+        "category": "Интеграции" if integration else "Руководства",
+        "labels": ["обмен", "интеграция"] if integration else ["шаблон"],
+        "default_tags": ["integration"] if integration else [],
+        "sections": sections,
+        "required_metadata": [
+            "title",
+            "owner",
+            "tags",
+            "system_owner",
+        ],  # system_owner is not a document field
+        "optional_metadata": ["related_ids"],
+        "validation": rules[:6],
+        "instructions": "Один документ — один обмен. Источники и получатели — ссылками [[ID]].",
+        "ai_guidance": "Только факты из утверждённых документов с цитатой; неизвестное — «Требует уточнения».",
+        "example": "## Назначение\nЕжедневная выгрузка справочника регионов (синтетический пример).",
+    }
+    payload = {
+        "template": template,
+        "similar_to": similar,
+        "warnings": ["Проверьте обязательность разделов."],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
     if "Режим системных инструментов SKH" in system:
         return tool_script(parse_round(system, prompt))
+    if "Режим проектирования шаблона SKH" in system:
+        return template_script(prompt)
     return legacy_script(system, prompt, transport)
 
 

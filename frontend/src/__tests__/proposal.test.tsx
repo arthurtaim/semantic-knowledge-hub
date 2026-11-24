@@ -83,7 +83,7 @@ describe("Proposal editor", () => {
     ]);
     renderAt("/proposals/new?document=SEM-INT-ARIS-001", "/proposals/new", <ProposalEditorPage />);
     const editor = await screen.findByLabelText(/Текст документа/);
-    expect(screen.getByText(/В демо-режиме ИИ не генерирует правки/)).toBeInTheDocument();
+    expect(screen.getByText(/Без языковой модели правки не генерируются/)).toBeInTheDocument();
     const create = screen.getByRole("button", { name: "Создать предложение" });
     expect(create).toBeDisabled();
 

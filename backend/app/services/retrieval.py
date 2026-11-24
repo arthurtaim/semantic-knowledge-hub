@@ -35,6 +35,16 @@ TITLE_TERM_BONUS = 30.0  # × share of query terms found in title/aliases
 TAG_BONUS = 4.0
 DEPRECATED_FACTOR = 0.6  # catalog only: below an equally relevant current document
 WORDS_CACHE_MAX = 4096  # tokenized documents kept between requests (keyed by id + revision)
+# Boilerplate: a body line repeated verbatim in at least this many documents AND this share of the reader's snapshot
+# (e.g. the disclaimer every synthetic document opens with) carries no evidence for any particular question.
+BOILERPLATE_MIN_DOCUMENTS = 5
+BOILERPLATE_MIN_SHARE = 0.05
+BOILERPLATE_CACHE_MAX = 16
+
+
+def only_boilerplate(text: str, common: frozenset[str]) -> bool:
+    lines = [line for line in (normalize(raw) for raw in text.splitlines()) if line]
+    return bool(lines) and all(line in common for line in lines)
 
 
 def normalize(text: str) -> str:
@@ -84,10 +94,35 @@ class RetrievalService:
         # Tokens of title + body per (id, revision): explaining a synonym match must not re-tokenize every
         # candidate's body for every expanded term. A new revision is a new key; the cache is bounded.
         self._words: dict[tuple[str, str], list[str]] = {}
+        # Boilerplate lines per reader's snapshot (version + visible ids): computed once per generation.
+        self._boilerplate: dict[tuple[str, int], frozenset[str]] = {}
 
     @property
     def dictionary(self) -> SearchDictionary:
         return self._dictionary
+
+    def boilerplate(self, snapshot: KnowledgeSnapshot) -> frozenset[str]:
+        """Normalized body lines repeated in many documents of THIS reader's snapshot (corpus statistics, no
+        keywords): a banner, a disclaimer or a stock sentence is the same in every document and answers nothing."""
+        key = (snapshot.version, hash(frozenset(snapshot.documents)))
+        cached = self._boilerplate.get(key)
+        if cached is not None:
+            return cached
+        counts: dict[str, int] = {}
+        for doc in snapshot.documents.values():
+            lines = {normalize(line) for section in doc.sections for line in section.text.splitlines()}
+            for line in lines - {""}:
+                counts[line] = counts.get(line, 0) + 1
+        threshold = max(BOILERPLATE_MIN_DOCUMENTS, int(len(snapshot.documents) * BOILERPLATE_MIN_SHARE) + 1)
+        result = frozenset(line for line, n in counts.items() if n >= threshold)
+        if len(self._boilerplate) >= BOILERPLATE_CACHE_MAX:
+            self._boilerplate.clear()
+        self._boilerplate[key] = result
+        return result
+
+    def is_boilerplate(self, snapshot: KnowledgeSnapshot, text: str) -> bool:
+        """True when every line of `text` is corpus-wide boilerplate: such a passage is never offered as evidence."""
+        return only_boilerplate(text, self.boilerplate(snapshot))
 
     def analyze(self, query: str) -> QueryAnalysis:
         terms, notes = self._dictionary.expand(analyze_query(query))
@@ -276,19 +311,22 @@ class RetrievalService:
         if analysis.terms:
             for chunk in self._search.search_chunks(analysis.terms, filters, 60):
                 chunks.setdefault(chunk.document_id, []).append(chunk)
+        common = self.boilerplate(snapshot)
         result: list[Passage] = []
         for round_no in range(2):
             for rank, hit in enumerate(ranked):
                 doc = snapshot.get(hit.document_id)
                 if doc is None or len(result) >= max_passages:
                     continue
-                doc_chunks = chunks.get(doc.id, [])
+                # A section that is only corpus-wide boilerplate (a short banner section matches many words and
+                # outranks content) is skipped: the next section of the same document is offered instead.
+                doc_chunks = [c for c in chunks.get(doc.id, []) if not only_boilerplate(c.text, common)]
                 if round_no < len(doc_chunks):
                     c = doc_chunks[round_no]
                     result.append(Passage(doc, c.section, c.section_anchor, c.text, rank))
                 elif not doc_chunks and {"id", "title", "alias"} & set(hit.matched_fields):
                     # Found by id/title only: quote the opening sections.
-                    sections = [s for s in doc.sections if s.text]
+                    sections = [s for s in doc.sections if s.text and not only_boilerplate(s.text, common)]
                     if round_no < len(sections):
                         s = sections[round_no]
                         result.append(Passage(doc, s.heading, s.anchor, s.text, rank))

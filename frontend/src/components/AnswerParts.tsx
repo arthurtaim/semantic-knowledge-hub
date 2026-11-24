@@ -1,13 +1,17 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState, SystemFact } from "../api/types";
+import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState, ProvenanceOrigin, SystemFact } from "../api/types";
+import { answerPlainText } from "../lib/answerMarkdown";
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { CONFIDENCE_LABEL, shortRevision } from "../lib/labels";
+import { citationOrigin, ORIGIN_LABEL, provenanceCopyLine, showsSourceOrigins } from "../lib/provenance";
 import { factLabels, factPlainText } from "../lib/systemFacts";
 import { useAsync } from "../lib/useAsync";
+import { AnswerMarkdown, type AnswerMarkers } from "./AnswerMarkdown";
 import { CardExcerpt, excerptText } from "./CitationExcerpt";
 import { Highlighted } from "./Highlighted";
+import { OriginMark } from "./Provenance";
 import { StatusStamp } from "./StatusStamp";
 import { FactMarker, useFitInWindow } from "./SystemFacts";
 import { buttonClass } from "./ui/Button";
@@ -66,13 +70,15 @@ interface CitationMarkerProps {
   label: string;
   turnNo: number;
   question: string;
+  /** The source's origin when the answer's sources differ (lib/provenance.ts `showsSourceOrigins`); else none. */
+  origin?: ProvenanceOrigin | null;
 }
 
 /**
  * An inline marker. Hover or focus shows a card: number, source, status, the quote, section, scope and revision;
  * a click opens the document at the cited section (`section_anchor`), or the file's row under «Источники».
  */
-export function CitationMarker({ citation, label, turnNo, question }: CitationMarkerProps) {
+export function CitationMarker({ citation, label, turnNo, question, origin = null }: CitationMarkerProps) {
   const [open, setOpen] = useState(false);
   const cardId = useId();
   const cardRef = useRef<HTMLSpanElement>(null);
@@ -90,7 +96,6 @@ export function CitationMarker({ citation, label, turnNo, question }: CitationMa
     meta.push(GROUP_LABEL[group]);
   }
   if (group === "team") meta.push(`ред. ${shortRevision(citation.revision)}`);
-  if (citation.is_demo && group !== "attachment") meta.push("демо");
 
   const card = (
     <span id={cardId} ref={cardRef} role="tooltip" className="cite-card" hidden={!open} style={shift ? { translate: `${shift}px 0` } : undefined}>
@@ -104,6 +109,7 @@ export function CitationMarker({ citation, label, turnNo, question }: CitationMa
         {meta.map((part) => (
           <span key={part}>{part}</span>
         ))}
+        {origin ? <OriginMark origin={origin} /> : null}
       </span>
     </span>
   );
@@ -156,64 +162,56 @@ interface TextProps {
   turnNo: number;
   question: string;
   facts?: FactRefs;
+  /** The document panel: its answer heading is an h3, so Markdown headings start one level lower. */
+  compact?: boolean;
+  /** The answer's sources differ in origin: each citation card names its own (lib/provenance.ts). */
+  origins?: boolean;
 }
 
 /**
- * A line of answer text with its «[n]» markers turned into citation markers (only for verified citations) and its
- * «[F1]» markers into markers of system data (only for facts the server produced).
+ * The markers of a validated answer: `[n]` becomes a citation marker only for a citation the server verified,
+ * `[F1]` a marker of system data only for a fact the server produced (lib/answerMarkdown.ts finds them in the
+ * Markdown text nodes; code, link text and URLs are never searched).
  */
-function MarkedLine({ line, citations, labels, turnNo, question, facts = NO_FACTS }: TextProps & { line: string }) {
-  const byRef = new Map(citations.map((c) => [c.ref, c]));
-  const factByRef = new Map(facts.facts.map((f) => [f.ref, f]));
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of line.matchAll(/\s?\[(\d{1,3}|F\d{1,3})\]/g)) {
-    const ref = match[1] ?? "";
-    const index = match.index ?? 0;
-    parts.push(line.slice(last, index));
-    if (ref.startsWith("F")) {
-      const fact = factByRef.get(ref);
-      parts.push(
-        fact ? (
-          <FactMarker key={index} fact={fact} label={facts.labels.get(ref) ?? ref} turnNo={turnNo} hasProposal={facts.hasProposal} />
-        ) : (
-          match[0]
-        ),
-      );
-    } else {
-      const citation = byRef.get(Number(ref));
-      parts.push(
-        citation ? (
-          <CitationMarker key={index} citation={citation} label={labels.get(citation.ref) ?? String(citation.ref)} turnNo={turnNo} question={question} />
-        ) : (
-          match[0]
-        ),
-      );
-    }
-    last = index + match[0].length;
-  }
-  parts.push(line.slice(last));
-  return <>{parts}</>;
+function useMarkers({ citations, labels, turnNo, question, facts = NO_FACTS, origins = false }: TextProps): AnswerMarkers {
+  return useMemo(() => {
+    const byRef = new Map(citations.map((c) => [c.ref, c]));
+    const factByRef = new Map(facts.facts.map((f) => [f.ref, f]));
+    return {
+      known: { citations: new Set(byRef.keys()), facts: new Set(factByRef.keys()) },
+      render: (kind, ref) => {
+        if (kind === "fact") {
+          const fact = factByRef.get(ref);
+          return fact ? <FactMarker fact={fact} label={facts.labels.get(ref) ?? ref} turnNo={turnNo} hasProposal={facts.hasProposal} /> : null;
+        }
+        const citation = byRef.get(Number(ref));
+        return citation ? (
+          <CitationMarker
+            citation={citation}
+            label={labels.get(citation.ref) ?? String(citation.ref)}
+            turnNo={turnNo}
+            question={question}
+            origin={origins ? citationOrigin(citation) : null}
+          />
+        ) : null;
+      },
+    };
+  }, [citations, labels, turnNo, question, facts, origins]);
 }
 
-/** The answer text: paragraphs, lines and citation markers. */
+/** The answer text: Markdown with citation and system-data markers (components/AnswerMarkdown.tsx). */
 export function AnswerText({ text, ...props }: TextProps & { text: string }) {
+  const markers = useMarkers(props);
   return (
-    <div className="answer__text">
-      {text.split(/\n{2,}/).map((paragraph, pIndex) => (
-        <p key={pIndex}>
-          {paragraph.split("\n").map((line, lIndex) => (
-            <span key={lIndex} className="answer__line">
-              <MarkedLine line={line} {...props} />
-            </span>
-          ))}
-        </p>
-      ))}
+    <div className="answer__text answer-md">
+      <AnswerMarkdown text={text} markers={markers} headingLevel={props.compact ? 3 : 2} />
     </div>
   );
 }
 
 const DEMO_FILES_HEADER = /^Вложения этого диалога/;
+/** The mock provider's first line names its mode (backend `MOCK_PREFIX`; «Демо-режим:» from an older server). */
+const MODE_NOTE = /^(?:Без языковой модели|Демо-режим):/;
 const EXCLUDED_NOTE = /\n*^Исключены из доказательной базы по статусу: .*$/m;
 const NOT_FOUND_NOTE = /\n*^В процитированных фрагментах не встречаются: (.*?)\.?$/m;
 
@@ -233,7 +231,7 @@ export function splitServerNotes(answer: AskResponse): { text: string; notFound:
 /**
  * What remains of a demo answer once its verbatim excerpts are shown under «Источники»: the demo provider's text
  * is a list of those same quotes, so repeating them here would duplicate every quote. Kept: lines that are not
- * a numbered quote of a verified citation, the demo prefix or the attachments header (e.g. «Недостаточно данных»
+ * a numbered quote of a verified citation, the mode line or the attachments header (e.g. «Недостаточно данных»
  * about the team documents next to quotes from a file).
  */
 export function demoRemainder(answer: AskResponse): string[] {
@@ -242,7 +240,7 @@ export function demoRemainder(answer: AskResponse): string[] {
     .text.split("\n")
     .map((line) => line.trim())
     .filter((line) => {
-      if (!line || line.startsWith("Демо-режим:") || DEMO_FILES_HEADER.test(line)) return false;
+      if (!line || MODE_NOTE.test(line) || DEMO_FILES_HEADER.test(line)) return false;
       const refs = [...line.matchAll(/\[(\d{1,3})\]/g)].map((m) => Number(m[1]));
       const quote = /^\d+\.\s*«/.test(line) && refs.length > 0 && refs.every((ref) => known.has(ref));
       return !quote;
@@ -253,6 +251,7 @@ export function demoRemainder(answer: AskResponse): string[] {
 /** A demo answer: no model, no conclusions — which sources hold the quotes, and anything else the server said. */
 export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskResponse }) {
   const rest = demoRemainder(answer);
+  const markers = useMarkers(props);
   const groups: { group: CitationGroup; title: string }[] = [
     { group: "team", title: "документы команды" },
     { group: "corporate", title: "корпоративные страницы" },
@@ -262,7 +261,7 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
     .map(({ group, title }) => ({ title, items: answer.citations.filter((c) => citationGroup(c) === group) }))
     .filter((entry) => entry.items.length > 0);
   return (
-    <div className="answer__text">
+    <div className="answer__text answer-md">
       {present.length > 0 ? (
         <p>
           Без языковой модели ассистент не делает выводов: ниже, в «Источниках», — дословные выдержки.{" "}
@@ -277,6 +276,7 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
                   label={props.labels.get(citation.ref) ?? String(citation.ref)}
                   turnNo={props.turnNo}
                   question={props.question}
+                  origin={props.origins ? citationOrigin(citation) : null}
                 />
               ))}
             </span>
@@ -284,24 +284,19 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
           .
         </p>
       ) : null}
-      {rest.map((line, index) => (
-        <p key={index}>
-          <MarkedLine line={line} {...props} />
-        </p>
-      ))}
+      {rest.length > 0 ? <AnswerMarkdown text={rest.join("\n\n")} markers={markers} headingLevel={props.compact ? 3 : 2} /> : null}
     </div>
   );
 }
 
-/** Plain text of the answer with its sources, for «Копировать с источниками». */
+/** Plain text of the answer with its sources, for «Копировать с источниками»: readable text, not Markdown syntax. */
 export function answerWithSources(answer: AskResponse, labels: Map<number, string>, demo: boolean): string {
   const facts = answer.system_facts ?? [];
   const factLabel = factLabels(facts);
-  const relabel = (line: string) =>
-    line
-      .replace(/\[(\d{1,3})\]/g, (whole, ref: string) => (labels.has(Number(ref)) ? `[${labels.get(Number(ref))}]` : whole))
-      .replace(/\[(F\d{1,3})\]/g, (whole, ref: string) => (factLabel.has(ref) ? `[${factLabel.get(ref)}]` : whole));
-  const body = demo ? demoRemainder(answer).map(relabel).join("\n") : relabel(splitServerNotes(answer).text);
+  const known = { citations: new Set(answer.citations.map((c) => c.ref)), facts: new Set(facts.map((f) => f.ref)) };
+  const markdown = demo ? demoRemainder(answer).join("\n\n") : splitServerNotes(answer).text;
+  const body = answerPlainText(markdown, known, { citation: (ref) => labels.get(ref), fact: (ref) => factLabel.get(ref) });
+  const origins = showsSourceOrigins(answer);
   const sources = answer.citations.map((c) => {
     const label = labels.get(c.ref) ?? String(c.ref);
     const group = citationGroup(c);
@@ -311,13 +306,17 @@ export function answerWithSources(answer: AskResponse, labels: Map<number, strin
         : group === "corporate"
           ? `Confluence, версия ${externalVersion(c)}`
           : `${c.document_id}${c.section ? `, раздел «${c.section}»` : ""}, ред. ${shortRevision(c.revision)}`;
-    return `[${label}] ${citationTitle(c)} — ${where}\n«${excerptText(c)}»`;
+    const origin = origins ? ` · ${ORIGIN_LABEL[citationOrigin(c)]}` : "";
+    return `[${label}] ${citationTitle(c)} — ${where}${origin}\n«${excerptText(c)}»`;
   });
   const system = facts.map((fact) => factPlainText(fact, factLabel.get(fact.ref) ?? fact.ref));
+  // Copied text leaves the app: where its sources come from goes with it (a quiet line on screen, said here in words).
+  const provenance = provenanceCopyLine(answer.provenance);
   return [
     body.trim(),
     system.length > 0 ? `Данные системы SKH:\n${system.join("\n")}` : "",
     sources.length > 0 ? `Источники:\n${sources.join("\n")}` : "",
+    provenance ?? "",
   ]
     .filter(Boolean)
     .join("\n\n");
