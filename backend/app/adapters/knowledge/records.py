@@ -107,6 +107,7 @@ def build_record(
         revision=revision,
         path=path,
         updated_at=updated_at,
+        metadata_updated_at=meta.get("updated_at"),
         is_demo=is_demo or "demo" in tags or bool(meta.get("synthetic", False)),
         extra_metadata=parsed.extra_metadata,
         warnings=tuple(parsed.warnings),

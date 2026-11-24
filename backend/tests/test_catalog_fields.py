@@ -1,10 +1,13 @@
 """Catalog fields of `GET /api/documents` (UI v2 round 2): `link_count` — the document page's «Связи» for every
-row, from the reader's snapshot in one pass."""
+row, from the reader's snapshot in one pass — and `metadata_updated_at`, the document's own date («Обновлён»)."""
 
 from __future__ import annotations
 
 import asyncio
+import os
+import time
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +16,9 @@ from fastapi.testclient import TestClient
 from app.adapters.knowledge.base import KnowledgeSnapshot, SyncInfo
 from app.adapters.knowledge.records import assemble_snapshot, build_record
 from app.domain.models import DocumentRecord, UserContext
+from app.domain.schema import parse_document
 from app.services.knowledge import DocumentQuery, KnowledgeService, linked_document_counts
-from tests.conftest import make_doc
+from tests.conftest import make_doc, write_doc
 
 OWNER = UserContext(user_id="owner", display_name="o")
 GUEST = UserContext(user_id="guest", display_name="g")
@@ -120,3 +124,56 @@ def test_link_count_is_listed_with_a_query_too_and_absent_from_detail(client: Te
     assert found and all(isinstance(item["link_count"], int) for item in found)
     detail = client.get("/api/documents/SEM-ARCH-001").json()
     assert detail["link_count"] is None  # the document page counts its own links from /links
+
+
+# --- «Обновлён»: the document's own date ----------------------------------------------------------------------
+
+
+def test_front_matter_updated_at_is_a_date_and_never_rejects_a_document() -> None:
+    dated = parse_document(make_doc("DOC-D-001", extra="updated_at: 2026-10-05\n"))
+    assert dated.is_valid and dated.metadata["updated_at"] == date(2026, 10, 5)
+    assert "updated_at" not in dated.extra_metadata and not dated.warnings
+    stamped = parse_document(make_doc("DOC-D-002", extra="updated_at: 2026-10-05T23:10:00Z\n"))
+    assert stamped.metadata["updated_at"] == date(2026, 10, 5)
+    quoted = parse_document(make_doc("DOC-D-003", extra='updated_at: "2026-09-01"\n'))
+    assert quoted.metadata["updated_at"] == date(2026, 9, 1)
+    broken = parse_document(make_doc("DOC-D-004", extra="updated_at: вчера\n"))
+    assert broken.is_valid and broken.metadata["updated_at"] is None  # a warning, not an error
+    assert [w.code for w in broken.warnings] == ["invalid_updated_at"]
+    assert broken.extra_metadata["updated_at"] == "вчера"  # what the author wrote is not lost
+    absent = parse_document(make_doc("DOC-D-005"))
+    assert absent.metadata["updated_at"] is None and not absent.warnings
+
+
+def test_catalog_date_and_sort_come_from_the_document_not_the_file_time(
+    client: TestClient, workspace: Path
+) -> None:
+    def doc(doc_id: str, title: str, extra: str = "") -> Path:
+        return write_doc(
+            workspace, f"{doc_id}.md", make_doc(doc_id, title=title, tags="[dated]", extra=extra)
+        )
+
+    doc("DATED-001", "Весенний регламент", "updated_at: 2026-03-01\n")
+    doc("DATED-002", "Осенний регламент", "updated_at: 2026-10-05\n")
+    doc("DATED-003", "Битая дата", "updated_at: когда-то\n")
+    undated = doc("DATED-004", "Без даты")
+    # The undated file was written last (and its mtime is the newest): that must not make it «new».
+    later = time.time() + 3600
+    os.utime(undated, (later, later))
+
+    items = client.get("/api/documents", params={"tag": "dated", "sort": "updated"}).json()["items"]
+    # Newest own date first; the undated ones last, by title («Без даты» before «Битая дата»).
+    assert [i["id"] for i in items] == ["DATED-002", "DATED-001", "DATED-004", "DATED-003"]
+    by_id = {i["id"]: i for i in items}
+    assert by_id["DATED-002"]["metadata_updated_at"] == "2026-10-05"
+    assert by_id["DATED-001"]["metadata_updated_at"] == "2026-03-01"
+    assert (
+        by_id["DATED-003"]["metadata_updated_at"] is None
+        and by_id["DATED-004"]["metadata_updated_at"] is None
+    )
+    assert all(i["updated_at"] for i in items)  # the revision time is still reported, under its own name
+
+    detail = client.get("/api/documents/DATED-003").json()
+    assert detail["metadata_updated_at"] is None and detail["extra_metadata"]["updated_at"] == "когда-то"
+    assert "invalid_updated_at" in [w["code"] for w in detail["warnings"]]
+    assert client.get("/api/documents/DATED-002").json()["metadata_updated_at"] == "2026-10-05"

@@ -126,6 +126,9 @@ export function DocumentDetails({ doc, publication }: DocumentDetailsProps) {
             )}
           </Row>
           <Row term="Описание">{doc.summary ? doc.summary : <span className="muted">не задано</span>}</Row>
+          <Row term="Обновлён">
+            {doc.metadata_updated_at ? formatDate(doc.metadata_updated_at) : <span className="muted">дата не указана</span>}
+          </Row>
           <Row term="Связанные">
             {doc.related.length > 0 ? (
               <ul className="doc-details__related">

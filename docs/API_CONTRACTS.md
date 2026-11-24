@@ -17,6 +17,13 @@ These are proposed MVP HTTP contracts. Claude Code may refine field details but 
     the snapshot the list is built from (cached per snapshot), never per row. Other routes that return a
     `DocumentSummary` / `DocumentDetail` leave it `null`. Code: `services/knowledge.py` `linked_document_counts`;
     tests `tests/test_catalog_fields.py`.
+  - *UI v2 round 2 (additive).* `metadata_updated_at: date | null` on every `DocumentSummary` / `DocumentDetail`: the
+    document's own date, `updated_at: YYYY-MM-DD` in its front matter (`docs/DOCUMENT_SCHEMA.md`); `null` when the
+    document has none — it is never filled from the file, the commit or the index. The catalog's «Обновлён» shows it
+    («—» without it), and `sort=updated` orders by it (newest first, undated last by title). `updated_at` keeps its
+    meaning: the time of the source revision (commit date / file mtime), shown on the document page as «Дата
+    ревизии». A front-matter value that is not a date is a warning `invalid_updated_at` (kept in `extra_metadata`),
+    never a load error.
 - `GET /api/documents/{id}` -> `DocumentDetail` with rendered-safe markdown/source content, frontmatter metadata and revision.
 - `GET /api/search?q=...&source=team,corporate&limit=10` -> ranked `SearchResult[]`.
 
@@ -115,7 +122,7 @@ Refinements made during implementation (the schema is served at `GET /api/openap
 Changes on top of v0.1 (OpenAPI checked by `tests/test_knowledge_rules.py::test_openapi_contract_lists_documented_endpoints`):
 
 - **Provenance on documents.** `DocumentSummary`/`DocumentDetail` add `web_url` (link to *this revision* in the source system; host must equal `GITLAB_URL`; `null` for the local workspace) and `index_state` (`current|stale` — `stale` means the last sync could not refresh the document and its last successfully read revision is shown). `updated_at` = commit date of the revision (GitLab) or file mtime (local); never guessed.
-- **Sorting.** `GET /api/documents?sort=relevance|title|updated|status` (`updated` = newest first, undated last); unknown values → `422`.
+- **Sorting.** `GET /api/documents?sort=relevance|title|updated|status` (`updated` = newest first, undated last; since UI v2 round 2 by the front-matter `metadata_updated_at`, see §2); unknown values → `422`.
 - **Synchronisation.** `GET /api/index/status` and `POST /api/index/sync` (full re-sync; `X-SKH-Client` required) → `SyncStatus {source, state: fresh|stale|error|never_synced, message, documents, issues, failed_paths[], last_attempt_at, last_success_at, source_version, branch, head_commit, indexed_documents, indexed_version, indexed_at}`. `POST` returns `503` with the source error code when the source cannot be read.
 - **Proposal lifecycle.** `ProposalStatus = draft | ready_for_review | submitting | submitted_to_gitlab | merged | rejected | conflict | submission_failed` (stores from v0.1 are migrated: `open→draft`, `submitted→submitted_to_gitlab`). The GitLab MR state is separate: `merge_request {iid, url, state: opened|merged|closed|locked|unknown, source_branch, target_branch, checked_at}`. `ProposalDetail` adds `can_submit`, `can_refresh_status`, `source_document_state` (`unchanged|changed_since_base|updated_by_this_proposal|missing`), `branch_name`, `submission {attempts, last_attempt_at, error_code, error_message, uncertain}`; `ProposalSummary` adds `merge_request_url`, `merge_request_state`.
   - `POST /api/drafts/{id}/mark-ready`: re-checks the revision at the source; stale → `409 revision_conflict` and status `conflict`.

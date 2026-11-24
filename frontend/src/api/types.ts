@@ -100,6 +100,11 @@ export interface DocumentSummary {
    * GET /api/documents; null (or absent) elsewhere.
    */
   link_count?: number | null;
+  /**
+   * The document's own date — `updated_at` in its front matter (YYYY-MM-DD), the catalog's «Обновлён»; null when
+   * the document has none. `updated_at` above is the time of the source revision (commit date / file mtime).
+   */
+  metadata_updated_at?: string | null;
 }
 
 export interface Section {

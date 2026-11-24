@@ -145,6 +145,8 @@ class DocumentRecord(BaseModel):
     updated_at: datetime | None = (
         None  # time of the source revision (commit date / file mtime); never guessed
     )
+    # The document's own date: `updated_at` in its front matter (the catalog's «Обновлён»); None when it has none.
+    metadata_updated_at: date | None = None
     web_url: str | None = None  # link to this revision in the source system (validated host), if any
     is_demo: bool = False
     extra_metadata: dict[str, str] = Field(default_factory=dict)
@@ -176,7 +178,7 @@ class DocumentSummary(BaseModel):
     excerpt: str
     is_demo: bool
     reviewed_at: date | None
-    updated_at: datetime | None
+    updated_at: datetime | None  # time of the source revision (commit date / file mtime)
     review_state: ReviewState
     owner_missing: bool
     web_url: str | None = None
@@ -189,6 +191,8 @@ class DocumentSummary(BaseModel):
     # Distinct documents linked to this one in the READER's snapshot (its links ∪ its backlinks) — the document
     # page's «Связи». Set by `GET /api/documents`; null where a summary is built without it.
     link_count: int | None = None
+    # `updated_at` from the document's own front matter (YYYY-MM-DD) — the catalog's «Обновлён»; null without one.
+    metadata_updated_at: date | None = None
 
 
 class RelatedLink(BaseModel):

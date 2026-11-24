@@ -53,8 +53,15 @@ def sort_documents(docs: list[DocumentRecord], order: SortOrder | None) -> list[
     if order == "title":
         return sorted(docs, key=lambda d: (d.title.lower(), d.id))
     if order == "updated":
-        dated = sorted((d for d in docs if d.updated_at), key=lambda d: (d.updated_at, d.id), reverse=True)
-        return dated + sorted((d for d in docs if not d.updated_at), key=lambda d: (d.title.lower(), d.id))
+        # The document's own date (front matter `updated_at`), the one the catalog shows — never the time the
+        # file was written or indexed. Newest first; undated documents last, by title.
+        dated = sorted(
+            (d for d in docs if d.metadata_updated_at),
+            key=lambda d: (d.metadata_updated_at, d.id),
+            reverse=True,
+        )
+        undated = (d for d in docs if not d.metadata_updated_at)
+        return dated + sorted(undated, key=lambda d: (d.title.lower(), d.id))
     if order == "status":
         return sorted(docs, key=lambda d: (_STATUS_RANK[d.status], d.title.lower(), d.id))
     return docs  # relevance / default: keep the incoming order
@@ -171,6 +178,7 @@ class KnowledgeService:
             is_demo=doc.is_demo,
             reviewed_at=doc.reviewed_at,
             updated_at=doc.updated_at,
+            metadata_updated_at=doc.metadata_updated_at,
             review_state=self.review_state(doc),
             owner_missing=doc.owner.strip().lower() in UNASSIGNED_OWNERS,
             web_url=doc.web_url,

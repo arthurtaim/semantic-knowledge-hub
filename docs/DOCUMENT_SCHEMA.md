@@ -30,7 +30,7 @@ This page is a documentation-template example, not a bank architecture fact.
 - Which restrictions apply?
 ```
 
-Required fields: `id`, `title`, `type`, `status`, `owner`, `tags`. Optional: `reviewed_at`, `related_ids`, `source_refs`, `confluence_page_id` (prefer separate sync-state mapping to avoid putting platform-specific IDs in content), `summary`. Since M5 the publisher **ignores** `confluence_page_id` (warning `frontmatter_page_id_ignored`): the target page comes only from the application's mapping (`docs/CONFLUENCE_MAPPING.md`). New documents get their front matter generated from templates (`docs/DOCUMENT_TEMPLATES.md`).
+Required fields: `id`, `title`, `type`, `status`, `owner`, `tags`. Optional: `reviewed_at`, `updated_at` (`YYYY-MM-DD`, the date the document was last changed — the catalog's «Обновлён»; a value that is not a date is a warning, never a load error), `related_ids`, `source_refs`, `confluence_page_id` (prefer separate sync-state mapping to avoid putting platform-specific IDs in content), `summary`. Since M5 the publisher **ignores** `confluence_page_id` (warning `frontmatter_page_id_ignored`): the target page comes only from the application's mapping (`docs/CONFLUENCE_MAPPING.md`). New documents get their front matter generated from templates (`docs/DOCUMENT_TEMPLATES.md`).
 
 ## 2. Controlled vocabulary
 - `type`: `overview`, `architecture`, `domain`, `integration`, `process`, `decision`, `standard`, `glossary`.

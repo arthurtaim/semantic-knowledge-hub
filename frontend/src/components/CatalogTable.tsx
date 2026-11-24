@@ -60,8 +60,10 @@ function TitleCell({ doc, singleSource }: { doc: DocumentSummary; singleSource: 
 
 /**
  * The catalog table of design-05: Название (+ ID), Статус, Владелец, Обновлён, Связи; 42 px rows, 36 px group
- * headers with counts that collapse; the whole row opens the document. «Связи» is the API's `link_count` — the
- * same number as the document page's «Связи» (linked documents the reader can see); «—» when it is not reported.
+ * headers with counts that collapse; the whole row opens the document. «Обновлён» is the document's own date
+ * (`updated_at` in its metadata) — «—» without one, never the time the file was loaded or indexed. «Связи» is the
+ * API's `link_count` — the same number as the document page's «Связи» (linked documents the reader can see); «—»
+ * when it is not reported. A phone card leaves out what is unknown.
  */
 export function CatalogTable({ items, group, singleSource, cards = false }: CatalogTableProps) {
   const groups = groupDocuments(items, group);
@@ -112,7 +114,7 @@ export function CatalogTable({ items, group, singleSource, cards = false }: Cata
                       <StatusMark status={doc.status} />
                       <ReviewFlag doc={doc} />
                       <span className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? "не назначен" : doc.owner}</span>
-                      <When value={doc.updated_at} fallback="не указано" />
+                      {doc.metadata_updated_at ? <When value={doc.metadata_updated_at} /> : null}
                       {doc.link_count != null ? <span className="catalog-card__links">{linksText(doc.link_count)}</span> : null}
                     </span>
                   </li>
@@ -172,8 +174,8 @@ export function CatalogTable({ items, group, singleSource, cards = false }: Cata
                       </span>
                     </td>
                     <td className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? "не назначен" : doc.owner}</td>
-                    <td>
-                      <When value={doc.updated_at} fallback="не указано" />
+                    <td className={doc.metadata_updated_at ? undefined : "catalog-row__none"}>
+                      <When value={doc.metadata_updated_at} />
                     </td>
                     <td className={doc.link_count ? "catalog-table__num" : "catalog-table__num catalog-row__none"}>
                       {doc.link_count ?? "—"}
