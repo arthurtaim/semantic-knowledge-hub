@@ -11888,16 +11888,9 @@ a.fact-item__title:hover {
   line-height: 1.6;
 }
 
+/* The rendered document is already a framed object (.prose): no second frame around it. */
 .studio-preview__doc {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-block);
-  background: var(--bg-surface);
-  padding: var(--space-4) var(--space-5);
   margin-bottom: var(--space-4);
-}
-
-.studio-preview__doc .prose {
-  padding: 0;
 }
 
 .studio-history > section {
