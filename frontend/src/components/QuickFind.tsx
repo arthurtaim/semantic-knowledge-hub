@@ -21,13 +21,13 @@ type Option =
   | { kind: "all"; key: string };
 
 interface QuickFindProps {
-  /** `palette`: inside the ⌘K dialog; `hero`: the home page's main field. */
-  variant: "palette" | "hero";
+  /** Only the ⌘K dialog uses it now (the home and ask pages use the assistant Composer). */
+  variant: "palette";
   inputId: string;
   autoFocus?: boolean;
-  /** Scope for questions (the hero shows the switch); team by default. */
+  /** Scope for questions; team by default. */
   scope?: AskScope;
-  /** Extra controls under the field for the current mode (the hero's scope switch for questions). */
+  /** Extra controls under the field for the current mode. */
   renderExtra?: (mode: QuickFindMode) => ReactNode;
   /** Called after the field navigated somewhere (closes the palette). */
   onNavigate?: () => void;
@@ -276,7 +276,7 @@ export function QuickFind({ variant, inputId, autoFocus, scope = "team", renderE
             ) : null}
           </ul>
         </div>
-        <button type="submit" className={`button ${variant === "hero" ? "button--primary" : "button--secondary"}`}>
+        <button type="submit" className="button button--secondary">
           {effectiveMode === "ask" ? "Спросить" : "Найти"}
         </button>
       </div>

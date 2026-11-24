@@ -89,6 +89,8 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** Shown under the field as an alert (a request error that belongs to the field). */
   error?: ReactNode;
+  /** A quiet line under the field that describes it (e.g. how many earlier answers go along as context). */
+  note?: ReactNode;
 }
 
 function fileIcon(file: ComposerFile): IconName {
@@ -135,6 +137,7 @@ export function Composer({
   placeholder,
   autoFocus,
   error,
+  note,
 }: ComposerProps) {
   const session = useSession();
   const navigate = useNavigate();
@@ -146,6 +149,7 @@ export function Composer({
   const fieldId = inputId ?? `${generatedId}-field`;
   const listId = `${generatedId}-list`;
   const hintId = `${generatedId}-hint`;
+  const noteId = `${generatedId}-note`;
   const fileInput = useRef<HTMLInputElement>(null);
   const { draft, inputRef } = composer;
   const text = draft.text;
@@ -550,7 +554,7 @@ export function Composer({
           aria-autocomplete="list"
           aria-controls={open ? listId : undefined}
           aria-activedescendant={open && active ? `${listId}-${activeIndex}` : undefined}
-          aria-describedby={hints.length > 0 ? hintId : undefined}
+          aria-describedby={[hints.length > 0 ? hintId : null, note ? noteId : null].filter(Boolean).join(" ") || undefined}
           onChange={onChange}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -722,8 +726,13 @@ export function Composer({
         </p>
       </div>
 
-      {hints.length > 0 || localError || error ? (
+      {hints.length > 0 || localError || error || note ? (
         <div className="composer__notes">
+          {note ? (
+            <p id={noteId} className="composer__hint">
+              {note}
+            </p>
+          ) : null}
           {hints.length > 0 ? (
             <div id={hintId}>
               {hints.map((hint, index) => (

@@ -29,6 +29,13 @@ test.beforeEach(async ({ request }) => {
   expect((await request.post(`${MCP}/__mock__/reset`)).ok()).toBeTruthy();
 });
 
+/** UI v2: «Где искать» is a small panel of the assistant field. */
+async function chooseScope(page: Page, label: "Команда" | "Корпоративные" | "Оба") {
+  await page.getByRole("button", { name: /^Где искать:/ }).click();
+  await page.getByRole("radio", { name: label, exact: true }).check();
+  await page.keyboard.press("Escape");
+}
+
 test("@gitlab E2E-09 send to GitLab mock → MR → merge in GitLab → knowledge base updated", async ({ page, request }) => {
   await page.goto("/documents/SEM-ARCH-001");
   const passport = page.getByRole("complementary", { name: "Паспорт документа" });
@@ -110,20 +117,20 @@ test("@gitlab E2E-11 unavailable Confluence MCP is shown as such", async ({ page
 
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
-  await page.getByLabel("Оба").check({ force: true });
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await chooseScope(page, "Оба");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByText("Корпоративные источники не использованы.")).toBeVisible();
   await expect(page.getByText(/сейчас недоступен/)).toBeVisible();
-  await expect(page.locator(".citation").first()).toContainText("GitLab");
+  await expect(page.locator(".source").first()).toContainText("GitLab");
   await request.delete(`${MCP}/__mock__/faults`);
 });
 
 test("@gitlab E2E-11b available Confluence MCP double gives a corporate citation with provenance", async ({ page }) => {
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
-  await page.getByLabel("Корпоративные").check({ force: true });
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
-  const corporate = page.locator(".citation", { hasText: "Регламент публикации тестовых страниц (MOCK)" });
+  await chooseScope(page, "Корпоративные");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  const corporate = page.locator(".source", { hasText: "Регламент публикации тестовых страниц (MOCK)" });
   await expect(corporate).toBeVisible();
   await expect(corporate).toContainText("Confluence");
 });

@@ -36,7 +36,7 @@ const posts = (calls: RecordedCall[]) => calls.filter((c) => c.method === "POST"
 
 async function askSla() {
   await userEvent.type(screen.getByLabelText("Вопрос"), "Какой SLA у интеграции с ЦФТ?");
-  await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+  await userEvent.click(screen.getByRole("button", { name: "Отправить" }));
   return screen.findByRole("heading", { name: "В базе знаний нет ответа на этот вопрос" });
 }
 
@@ -73,7 +73,7 @@ describe("«Недостаточно данных» card", () => {
     const card = (await askSla()).closest("section") as HTMLElement;
     expect(within(card).getByText(/mock-коннектор/)).toBeInTheDocument();
     await userEvent.click(within(card).getByRole("button", { name: "Искать в корпоративных источниках" }));
-    await screen.findAllByRole("heading", { name: "Ответ" });
+    await screen.findAllByRole("heading", { name: "Ассистент" });
     expect(posts(calls)).toHaveLength(2);
     expect(posts(calls)[1]?.body).toMatchObject({ question: "Какой SLA у интеграции с ЦФТ?", sources: ["corporate"], history: [] });
     expect(screen.getAllByText(/Где искать: Корпоративные/).length).toBeGreaterThan(0);
@@ -86,8 +86,11 @@ describe("Four AI modes: no dead controls", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Спросить базу знаний" })).toBeInTheDocument();
     expect(screen.getByText(/ИИ в этой установке отключён/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Вопрос")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Спросить" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отправить" })).toBeNull();
+    // UI v2: the assistant field in its search form — no file or skill controls at all.
+    expect(screen.getByRole("textbox", { name: "Поиск по базе знаний" })).toHaveAttribute("placeholder", "Найти в базе знаний");
+    expect(screen.queryByRole("button", { name: "Файл" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Навык" })).toBeNull();
   });
 
   // UI v2: the sidebar's first item is the assistant (the start page); without AI it is the start page by name.

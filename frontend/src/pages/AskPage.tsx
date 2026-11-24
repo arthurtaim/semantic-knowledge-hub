@@ -1,41 +1,46 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, api, isCancelled } from "../api/client";
 import type {
   AiMode,
   AskRequest,
   AskResponse,
+  AskSkillRef,
   AskStreamEvent,
-  Citation,
   ConversationTurn,
-  DiscoveryVerdict,
   ExternalRetrievalSummary,
   SearchScope,
 } from "../api/types";
 import {
+  AnswerActions,
   AnswerText,
-  externalVersion,
+  DemoAnswerText,
   InsufficientEvidence,
-  isExternal,
-  NextActions,
+  splitServerNotes,
   SupportBadge,
 } from "../components/AnswerParts";
-import { QuickFind } from "../components/QuickFind";
+import { AnswerSources } from "../components/AnswerSources";
+import { AskProposal } from "../components/AskProposal";
+import { Composer } from "../components/Composer";
 import { ErrorState, Notice } from "../components/Feedback";
-import { StateBadge } from "../components/StateBadge";
-import { StatusStamp } from "../components/StatusStamp";
-import { AI_ERROR_TITLE, SOURCE_LABEL, pluralRu } from "../lib/labels";
+import { PageToolbar } from "../components/shell/PageToolbar";
+import { Button } from "../components/ui/Button";
+import { Chip } from "../components/ui/Chip";
 import { canAsk } from "../lib/aiMode";
-import { restoreConversation, saveConversation } from "../lib/conversation";
-import { rememberQuestion } from "../lib/recentQuestions";
+import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeFromParam, scopeOfSources, scopeLabel, scopeSources } from "../lib/assistant";
+import { clearHandOff, peekHandOff, restoreConversation, saveConversation } from "../lib/conversation";
+import { pluralRu } from "../lib/labels";
+import { noteDialogSources, rememberDialog } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
-import { When } from "../components/When";
+import { toAskRequest, useComposer, type ComposerMessage } from "../lib/useComposer";
+import { useSkills } from "../lib/useSkills";
+import type { HomeHandOff } from "./HomePage";
 
-const SCOPES: { value: string; label: string; scopes: SearchScope[] }[] = [
-  { value: "team", label: "Команда", scopes: ["team"] },
-  { value: "corporate", label: "Корпоративные", scopes: ["corporate"] },
-  { value: "both", label: "Оба", scopes: ["team", "corporate"] },
-];
+/*
+ * /ask is a dialog (docs/ui-v2/specs/02_ASSISTANT.md §2, design-03): the user's messages on the right with what
+ * was attached, the assistant's answers with citation markers and one list of sources each, the field pinned at
+ * the bottom. Streaming stages, «Недостаточно данных», errors with a retry and conflicts are states of a turn.
+ */
 
 const EXAMPLES = [
   "Где хранится каноническая база знаний команды?",
@@ -50,10 +55,21 @@ const MAX_HISTORY_ANSWER_CHARS = 4000;
 
 type TurnPhase = "retrieving" | "generating" | "validating" | "done" | "error" | "cancelled";
 
-/** One question of the conversation and what became of it. Lives in React state only (never stored). */
+/** What the user attached to a message — shown as chips above it. Names only, never contents. */
+interface TurnDisplay {
+  skill: AskSkillRef | null;
+  files: { id: string; name: string }[];
+  documents: { id: string; title: string }[];
+  selection: string | null;
+}
+
+const NOTHING_ATTACHED: TurnDisplay = { skill: null, files: [], documents: [], selection: null };
+
+/** One message of the dialog and what became of it. Lives in memory only (never stored). */
 interface Turn {
   id: number;
   request: AskRequest;
+  display: TurnDisplay;
   phase: TurnPhase;
   passages: number | null;
   provider: AiMode | null;
@@ -72,10 +88,10 @@ function truncate(text: string, max: number): string {
   return Array.from(text).slice(0, max).join("");
 }
 
-/** Context for a follow-up: the last completed turns (with a validated answer), oldest first. */
+/** Context for a follow-up: the last completed turns with a question and a validated answer, oldest first. */
 function historyFrom(turns: Turn[]): ConversationTurn[] {
   return turns
-    .filter((turn) => turn.response !== null)
+    .filter((turn) => turn.response !== null && turn.request.question.trim().length > 0)
     .slice(-MAX_HISTORY_TURNS)
     .map((turn) => ({
       question: turn.request.question,
@@ -87,16 +103,25 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
 }
 
-/** Stages of an answer, as the stream reports them (phase 4 copy). */
+function displayOf(message: ComposerMessage): TurnDisplay {
+  return {
+    skill: message.skill ? { id: message.skill.id, name: message.skill.name, access: message.skill.access } : null,
+    files: message.attachments.map((file) => ({ id: file.id, name: file.name })),
+    documents: message.documents.map((document) => ({ id: document.id, title: document.title })),
+    selection: message.selection?.label ?? null,
+  };
+}
+
+/** The stages of an answer as the stream reports them (status events: retrieving → generating → validating). */
 const STAGES: { phase: TurnPhase; label: string }[] = [
   { phase: "retrieving", label: "Ищу источники" },
-  { phase: "generating", label: "Формирую ответ" },
+  { phase: "generating", label: "Формулирую ответ" },
   { phase: "validating", label: "Проверяю цитаты" },
 ];
 
 function statusText(turn: Turn): string {
   if (turn.phase === "generating") {
-    const action = turn.provider === "claude_cli" ? "Формирую ответ с Claude Code CLI…" : "Формирую ответ…";
+    const action = turn.provider === "claude_cli" ? "Формулирую ответ с Claude Code CLI…" : "Формулирую ответ…";
     if (turn.passages === null) return action;
     const n = turn.passages;
     return `${action} (${pluralRu(n, "найден", "найдено", "найдено")} ${n} ${pluralRu(n, "фрагмент", "фрагмента", "фрагментов")})`;
@@ -123,9 +148,11 @@ function StageTrack({ phase }: { phase: TurnPhase }) {
   );
 }
 
-function scopeSummary(request: AskRequest): string {
-  const scope = SCOPES.find((s) => s.scopes.join() === request.sources.join())?.label ?? request.sources.join(", ");
-  const parts = [`Где искать: ${scope}`];
+/** «Где искать: Оба · с черновиками» — only when it differs from the default (team, approved only). */
+function scopeSummary(request: AskRequest): string | null {
+  const scope = scopeOfSources(request.sources);
+  if (scope === "team" && !request.include_drafts && !request.include_deprecated) return null;
+  const parts = [`Где искать: ${scopeLabel(scope)}`];
   if (request.include_drafts) parts.push("с черновиками");
   if (request.include_deprecated) parts.push("с устаревшими");
   return parts.join(" · ");
@@ -151,150 +178,8 @@ function externalSummary(ext: ExternalRetrievalSummary): string {
   return parts.join(", ") + (ext.degraded ? " — внешний источник ответил не полностью" : "");
 }
 
-/**
- * Optional relevance feedback and «Предложить в базу» for ONE Confluence source of ONE answer. Never blocks the
- * answer; it changes neither the status nor the access of anything.
- */
-function ExternalSourceActions({ traceId, sourceId, title }: { traceId: string; sourceId: string; title: string }) {
-  const navigate = useNavigate();
-  const [verdict, setVerdict] = useState<DiscoveryVerdict | null>(null);
-  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
-  const [pending, setPending] = useState<"feedback" | "propose" | null>(null);
-
-  async function rate(next: DiscoveryVerdict) {
-    if (pending || verdict === next) return;
-    setPending("feedback");
-    try {
-      const result = await api.discoveryFeedback({ trace_id: traceId, source_id: sourceId, verdict: next });
-      setVerdict(next);
-      setNote({ text: result.note, error: false });
-    } catch (err) {
-      setNote({ text: `Отзыв не сохранён: ${toApiError(err).message}`, error: true });
-    } finally {
-      setPending(null);
-    }
-  }
-
-  async function propose() {
-    if (pending) return;
-    setPending("propose");
-    try {
-      const draft = await api.discoveryPropose({ trace_id: traceId, source_id: sourceId });
-      navigate(`/proposals/${encodeURIComponent(draft.id)}`);
-    } catch (err) {
-      setNote({ text: `Предложение не создано: ${toApiError(err).message}`, error: true });
-      setPending(null);
-    }
-  }
-
-  return (
-    <div className="citation__feedback" role="group" aria-label={`Оценка источника «${title}»`}>
-      <span className="citation__feedback-label">Источник подошёл?</span>
-      <button
-        type="button"
-        className="toggle-button"
-        aria-pressed={verdict === "relevant"}
-        disabled={pending !== null}
-        onClick={() => void rate("relevant")}
-      >
-        Подошёл
-      </button>
-      <button
-        type="button"
-        className="toggle-button"
-        aria-pressed={verdict === "irrelevant"}
-        disabled={pending !== null}
-        onClick={() => void rate("irrelevant")}
-      >
-        Не подошёл
-      </button>
-      <button type="button" className="button button--quiet" disabled={pending !== null} onClick={() => void propose()}>
-        {pending === "propose" ? "Создаём черновик…" : "Предложить в базу"}
-      </button>
-      <p className={`citation__note${note?.error ? " citation__note--error" : ""}`} role="status">
-        {note?.text ?? ""}
-      </p>
-    </div>
-  );
-}
-
-interface CitationItemProps {
-  citation: Citation;
-  turnNo: number;
-  /** Trace of the answer: feedback and «Предложить в базу» for the first citation of each Confluence page. */
-  actionsTrace: string | null;
-}
-
-function CitationItem({ citation, turnNo, actionsTrace }: CitationItemProps) {
-  const external = citation.source_kind === "confluence_mcp";
-  return (
-    <li id={`cite-${turnNo}-${citation.ref}`} className="citation">
-      <div className="citation__head">
-        <span className="citation__ref" aria-hidden="true">
-          {citation.ref}
-        </span>
-        <div>
-          {citation.app_path ? (
-            <Link to={citation.app_path} className="citation__title">
-              {citation.title}
-            </Link>
-          ) : citation.source_uri.startsWith("https://") ? (
-            // Server-validated link to the authorized source (allowlisted host only).
-            <a href={citation.source_uri} className="citation__title" target="_blank" rel="noopener noreferrer nofollow">
-              {citation.title}
-            </a>
-          ) : (
-            <span className="citation__title">{citation.title}</span>
-          )}
-          {citation.section ? <span className="citation__section">раздел «{citation.section}»</span> : null}
-          {external ? (
-            <span className="citation__origin">
-              <span>Confluence · версия {externalVersion(citation)}</span>
-              {citation.external_status !== "approved" ? (
-                <span className="graph-unconfirmed">статус не подтверждён</span>
-              ) : null}
-            </span>
-          ) : null}
-        </div>
-        <StatusStamp status={citation.status} />
-      </div>
-      <blockquote className="citation__excerpt">{citation.excerpt}</blockquote>
-      <dl className="citation__meta">
-        <div>
-          <dt>Источник</dt>
-          <dd>
-            {SOURCE_LABEL[citation.source_type]}
-            {citation.is_demo ? " (демо)" : ""}
-          </dd>
-        </div>
-        <div>
-          <dt>ID</dt>
-          <dd>
-            <code className="doc-id">{citation.document_id}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Ревизия</dt>
-          <dd>
-            <code className="doc-id">{citation.revision}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Получено</dt>
-          <dd>
-            <When value={citation.retrieved_at} />
-          </dd>
-        </div>
-      </dl>
-      {external && actionsTrace && citation.source_id ? (
-        <ExternalSourceActions traceId={actionsTrace} sourceId={citation.source_id} title={citation.title} />
-      ) : null}
-    </li>
-  );
-}
-
 const MODE_LABEL: Record<AskResponse["mode"], string> = {
-  mock: "Демо-режим, без языковой модели",
+  mock: "Демо-режим: выдержки без языковой модели",
   disabled: "Языковая модель отключена — только выдержки из источников",
   internal_api: "Внутренняя модель, цитаты сверены с источниками",
   claude_cli: "Claude Code CLI (личный тест), цитаты сверены с источниками",
@@ -329,38 +214,6 @@ function CorporateGap({ answer, asked }: { answer: AskResponse; asked: SearchSco
   );
 }
 
-interface EvidenceGroupProps {
-  title: string;
-  note?: string;
-  citations: Citation[];
-  turnNo: number;
-  withActions: Set<number>;
-  traceId: string | null;
-}
-
-/** One scope of evidence. Team documents and corporate pages are never mixed in one list. */
-function EvidenceGroup({ title, note, citations, turnNo, withActions, traceId }: EvidenceGroupProps) {
-  const headingId = `${title === "Документы команды" ? "team" : "corporate"}-evidence-${turnNo}`;
-  return (
-    <section className="evidence__group" aria-labelledby={headingId}>
-      <h4 id={headingId} className="evidence__title">
-        {title}
-      </h4>
-      {note ? <p className="evidence__note">{note}</p> : null}
-      <ol className="citations">
-        {citations.map((citation) => (
-          <CitationItem
-            key={citation.ref}
-            citation={citation}
-            turnNo={turnNo}
-            actionsTrace={withActions.has(citation.ref) ? traceId : null}
-          />
-        ))}
-      </ol>
-    </section>
-  );
-}
-
 interface AnswerViewProps {
   answer: AskResponse;
   request: AskRequest;
@@ -371,41 +224,44 @@ interface AnswerViewProps {
 }
 
 /**
- * Evidence first: the support level, then the quoted passages (team and corporate apart), then the
- * explanation with [n] markers, then what to do next. Generated text is labelled «ИИ», demo output «Демо».
+ * The assistant's answer: who answers and how well it is supported (a category, never a percentage), the text
+ * with citation markers, terms without support, the proposal of a skill (nothing applied), what to do next and
+ * one list of sources — team, corporate and attachments apart. Generated text is labelled «ИИ», demo «Демо».
  */
 function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate }: AnswerViewProps) {
   const session = useSession();
-  const asked = request.sources;
   const question = request.question;
   const insufficient = answer.confidence === "insufficient_evidence";
   const traceId = answer.retrieval_trace_id ?? null;
-  // Several citations may quote one Confluence page: its feedback controls appear once, at the first of them.
-  const withActions = new Set<number>();
-  const seenSources = new Set<string>();
-  for (const citation of answer.citations) {
-    if (citation.source_kind === "confluence_mcp" && citation.source_id && !seenSources.has(citation.source_id)) {
-      seenSources.add(citation.source_id);
-      withActions.add(citation.ref);
-    }
-  }
-  const team = answer.citations.filter((c) => !isExternal(c));
-  const corporate = answer.citations.filter(isExternal);
+  const labels = citationLabels(answer.citations);
   const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
+  const demoExcerpts = answer.mode === "mock" && !answer.proposal;
+  const textProps = { citations: answer.citations, labels, turnNo, question };
+  const showText = !insufficient || Boolean(answer.proposal);
+  const { text, notFound } = splitServerNotes(answer);
+  const unsupported = notFound ?? (answer.unmatched_terms.length > 0 ? answer.unmatched_terms.map((term) => `«${term}»`).join(", ") : null);
   return (
     <section className={`answer${insufficient ? " answer--insufficient" : ""}`} aria-labelledby={`answer-title-${turnNo}`}>
       <div className="answer__head">
-        <h2 id={`answer-title-${turnNo}`}>Ответ</h2>
+        <h2 id={`answer-title-${turnNo}`} className="answer__who">
+          Ассистент
+        </h2>
         <SupportBadge confidence={answer.confidence} />
-        {answer.mode === "mock" ? <span className="demo-tag">Демо</span> : null}
-        <span className="answer__mode">{MODE_LABEL[answer.mode] ?? answer.mode}</span>
+        {generated ? (
+          <span className="ai-label" title="Текст сформирован языковой моделью; цитаты сверены сервером">
+            ИИ
+          </span>
+        ) : null}
+        <span className="answer__mode">
+          {answer.mode === "mock" && answer.proposal ? "Демо-режим: предложение по правилам, без языковой модели" : (MODE_LABEL[answer.mode] ?? answer.mode)}
+        </span>
         {traceId ? (
           <Link to={`/graph?trace=${encodeURIComponent(traceId)}`} className="answer__graph">
             Граф ответа
           </Link>
         ) : null}
       </div>
-      <CorporateGap answer={answer} asked={asked} />
+      <CorporateGap answer={answer} asked={request.sources} />
       {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
       {insufficient ? (
         <InsufficientEvidence
@@ -414,48 +270,23 @@ function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate }: Answe
           answer={answer}
           corporateState={session?.features.corporate_search}
           onRefine={onRefine}
-          onAskCorporate={() =>
-            onAskCorporate({ ...request, sources: ["corporate"], search_external: true, history: [] })
-          }
+          onAskCorporate={() => onAskCorporate({ ...request, sources: ["corporate"], search_external: true, history: [] })}
         />
       ) : null}
 
-      {answer.citations.length > 0 ? (
-        <section className="answer__sources evidence" aria-labelledby={`sources-title-${turnNo}`}>
-          <h3 id={`sources-title-${turnNo}`}>Доказательства</h3>
-          {team.length > 0 ? (
-            <EvidenceGroup
-              title="Документы команды"
-              citations={team}
-              turnNo={turnNo}
-              withActions={withActions}
-              traceId={traceId}
-            />
-          ) : null}
-          {corporate.length > 0 ? (
-            <EvidenceGroup
-              title="Корпоративные источники"
-              note="Внешние страницы Confluence: статус и версия — как указаны на странице, это не утверждённые документы команды."
-              citations={corporate}
-              turnNo={turnNo}
-              withActions={withActions}
-              traceId={traceId}
-            />
-          ) : null}
-        </section>
+      {showText ? (
+        demoExcerpts ? (
+          <DemoAnswerText answer={answer} {...textProps} />
+        ) : (
+          <AnswerText text={text} {...textProps} />
+        )
       ) : null}
 
-      <section className="answer__explanation" aria-labelledby={`explanation-title-${turnNo}`}>
-        <div className="answer__explanation-head">
-          <h3 id={`explanation-title-${turnNo}`}>Объяснение</h3>
-          {generated ? (
-            <span className="ai-label" title="Текст сформирован языковой моделью; цитаты сверены сервером">
-              ИИ
-            </span>
-          ) : null}
-        </div>
-        <AnswerText text={answer.answer} citations={answer.citations} turnNo={turnNo} />
-      </section>
+      {!insufficient && unsupported ? (
+        <p className="answer__unsupported">
+          <span className="answer__unsupported-label">Нет подтверждения в источниках:</span> {unsupported}
+        </p>
+      ) : null}
 
       {answer.warnings.length > 0 ? (
         <Notice tone="warning">
@@ -467,63 +298,118 @@ function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate }: Answe
         </Notice>
       ) : null}
 
-      {insufficient ? null : <NextActions citations={answer.citations} question={question} onRefine={onRefine} />}
-
-      {answer.excluded_sources.length > 0 ? (
-        <section aria-labelledby={`excluded-title-${turnNo}`} className="excluded">
-          <h3 id={`excluded-title-${turnNo}`}>Не использованы как доказательство</h3>
-          <ul>
-            {answer.excluded_sources.map((source) => (
-              <li key={source.document_id}>
-                <Link to={`/documents/${source.document_id}`}>{source.title}</Link> <StatusStamp status={source.status} />
-                <span className="muted"> {source.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {answer.proposal ? (
+        <AskProposal reference={answer.proposal} mode={answer.mode} primary={answer.proposal.status === "suggested"} />
       ) : null}
 
-      <dl className="scope-status">
-        {answer.scopes.map((scope) => (
-          <div key={scope.scope}>
-            <dt>{scope.scope === "team" ? "Документы команды" : "Корпоративные источники"}</dt>
-            <dd>
-              <StateBadge state={scope.state} /> <span className="muted">{scope.message}</span>
-            </dd>
-          </div>
-        ))}
-      </dl>
+      {insufficient ? null : (
+        <AnswerActions
+          answer={answer}
+          question={question}
+          labels={labels}
+          demo={demoExcerpts}
+          hasProposal={Boolean(answer.proposal)}
+          onRefine={onRefine}
+        />
+      )}
+
+      <AnswerSources answer={answer} labels={labels} turnNo={turnNo} />
     </section>
   );
+}
+
+/** Input errors of a skill or a file: repeating the same request would fail the same way. */
+const NOT_RETRYABLE = new Set([
+  "skill_unknown",
+  "skill_unavailable",
+  "skill_input_missing",
+  "attachment_not_found",
+  "selection_not_found",
+  "document_not_found",
+  "invalid_request",
+]);
+
+function TurnError({ error, onRetry }: { error: ApiError; onRetry?: () => void }) {
+  const retry = NOT_RETRYABLE.has(error.code) ? undefined : onRetry;
+  if (isConflict(error.code, error.status)) {
+    return (
+      <div className="turn__conflict" role="alert">
+        <p className="feedback__title">{ASK_ERROR_TITLE[error.code] ?? "Конфликт с текущим состоянием"}</p>
+        <p>{error.message}</p>
+        {retry ? (
+          <button type="button" className="button button--secondary" onClick={retry}>
+            Повторить запрос
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  return <ErrorState error={error} title={ASK_ERROR_TITLE[error.code]} onRetry={retry} retryLabel="Повторить запрос" />;
 }
 
 interface TurnViewProps {
   turn: Turn;
   turnNo: number;
   onRefine: (question: string) => void;
-  onAskCorporate: (request: AskRequest) => void;
+  onAskCorporate: (request: AskRequest, display: TurnDisplay) => void;
   /** Only the last failed turn offers a retry (a new question replaces it). */
   onRetry?: () => void;
 }
 
 function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate }: TurnViewProps) {
   const running = isRunning(turn);
+  const { display } = turn;
+  const attached = display.skill || display.files.length > 0 || display.documents.length > 0 || display.selection;
+  const scope = scopeSummary(turn.request);
   return (
     <article className="turn" aria-busy={running}>
-      <div className="turn__question">
-        <p className="turn__meta">
-          <span className="turn__who">Вы спросили</span> <span className="muted">{scopeSummary(turn.request)}</span>
+      <div className="turn__user">
+        <h2 className="visually-hidden">Вы</h2>
+        {attached ? (
+          <ul className="turn__chips" aria-label="Приложено к сообщению">
+            {display.skill ? (
+              <li>
+                <Chip tone="skill" icon="skill">
+                  {display.skill.name}
+                </Chip>
+              </li>
+            ) : null}
+            {display.files.map((file) => (
+              <li key={file.id}>
+                <Chip tone="file" icon="file-text">
+                  {file.name}
+                </Chip>
+              </li>
+            ))}
+            {display.documents.map((document) => (
+              <li key={document.id}>
+                <Chip tone="document" icon="documents">
+                  {document.title}
+                </Chip>
+              </li>
+            ))}
+            {display.selection ? (
+              <li>
+                <Chip tone="document" icon="edit">
+                  {display.selection}
+                </Chip>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+        <p className="turn__bubble">
+          {turn.request.question || <span className="turn__bubble-empty">Без вопроса: навык «{display.skill?.name ?? "—"}»</span>}
         </p>
-        <p className="turn__question-text">{turn.request.question}</p>
+        {scope ? <p className="turn__scope">{scope}</p> : null}
       </div>
 
       {running ? (
-        <>
+        <div className="turn__progress">
           <StageTrack phase={turn.phase} />
           <p className="turn__status" role="status">
             {statusText(turn)}
           </p>
-        </>
+        </div>
       ) : null}
       {running && turn.preliminary ? (
         <section className="answer-preliminary" aria-live="polite" aria-labelledby={`preliminary-title-${turnNo}`}>
@@ -539,21 +425,14 @@ function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate }: TurnViewP
           Запрос отменён. Вопрос возвращён в поле ввода.
         </p>
       ) : null}
-      {turn.phase === "error" && turn.error ? (
-        <ErrorState
-          error={turn.error}
-          title={AI_ERROR_TITLE[turn.error.code]}
-          onRetry={onRetry}
-          retryLabel="Повторить запрос"
-        />
-      ) : null}
+      {turn.phase === "error" && turn.error ? <TurnError error={turn.error} onRetry={onRetry} /> : null}
       {turn.response ? (
         <AnswerView
           answer={turn.response}
           request={turn.request}
           turnNo={turnNo}
           onRefine={onRefine}
-          onAskCorporate={onAskCorporate}
+          onAskCorporate={(request) => onAskCorporate(request, turn.display)}
         />
       ) : null}
     </article>
@@ -561,50 +440,45 @@ function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate }: TurnViewP
 }
 
 /** The ask page without an AI provider: what is off, and the search that still works. */
-function AskUnavailable() {
+function AskUnavailable({ initial }: { initial: string }) {
+  const composer = useComposer({ defaults: { text: initial } });
   return (
-    <div className="ask">
-      <div className="page-head">
+    <div className="dialog dialog--search">
+      <div className="dialog__intro">
         <h1>Спросить базу знаний</h1>
-        <p className="lead">ИИ в этой установке отключён — ответы ассистента недоступны. Поиск по документам работает полностью.</p>
+        <p className="dialog__lead">ИИ в этой установке отключён — ответы ассистента недоступны. Поиск по документам работает полностью.</p>
       </div>
-      <QuickFind variant="hero" inputId="ask-search-input" />
-      <p className="ask__unavailable-links">
-        <Link to="/documents" className="text-link">
-          Открыть каталог документов
-        </Link>
+      <Composer variant="home" composer={composer} onSend={() => undefined} inputId="ask-search-input" />
+      <p className="dialog__links">
+        <Link to="/documents">Открыть каталог документов</Link>
       </p>
     </div>
   );
 }
 
-/** `?scope=` from the composer: team by default; corporate only when the user chose it. */
-function scopeFromParam(value: string | null): string {
-  return SCOPES.some((s) => s.value === value) ? (value as string) : "team";
-}
-
 export function AskPage() {
   const [params, setParams] = useSearchParams();
   const session = useSession();
-  const about = params.get("about");
-  const initial = params.get("q");
-  const [question, setQuestion] = useState(about ? `Что известно о «${about}»?` : (initial ?? "").slice(0, 2000));
-  const [scope, setScope] = useState(() => scopeFromParam(params.get("scope")));
-  // `?run=1` (from «Спросить или найти»): ask at once. The flag is removed from the URL first, so a reload
-  // or a second effect run (React StrictMode) never asks twice.
-  const runRequested = params.get("run") === "1";
   const aiMode = session?.features.ai_mode;
-  const [includeDrafts, setIncludeDrafts] = useState(false);
-  const [includeDeprecated, setIncludeDeprecated] = useState(false);
+  const userId = session?.user.user_id;
+  const about = params.get("about");
+  const initialQuestion = params.get("q");
+  // `?run=1` (from «Спросить или найти»): ask at once. The flag is removed from the URL first, so a reload or a
+  // second effect run (React StrictMode) never asks twice.
+  const runRequested = params.get("run") === "1";
+  // A message sent from the home page: it starts a new dialog here with its chips (lib/conversation.ts).
+  const [handed] = useState(() => peekHandOff<HomeHandOff>());
+  const composer = useComposer({
+    persistKey: "dialog",
+    initial: handed ? { conversationId: handed.conversationId, draft: handed.draft } : null,
+  });
+  const skills = useSkills(aiMode);
   // Completed turns survive a visit to a cited document (memory only; see lib/conversation.ts).
-  const [turns, setTurns] = useState<Turn[]>(() => restoreConversation<Turn>());
-  const [formError, setFormError] = useState<ApiError | null>(null);
+  const [turns, setTurns] = useState<Turn[]>(() => (handed ? [] : restoreConversation<Turn>()));
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const nextId = useRef(turns.reduce((max, turn) => Math.max(max, turn.id), 0));
   const abortRef = useRef<AbortController | null>(null);
-  const questionRef = useRef<HTMLTextAreaElement>(null);
-  const corporateState = session?.features.corporate_search;
   const context = historyFrom(turns);
 
   // Leaving the page cancels a running generation on the server.
@@ -612,31 +486,62 @@ export function AskPage() {
 
   useEffect(() => saveConversation(turns.filter((turn) => turn.phase === "done")), [turns]);
 
+  // `?q=` / `?about=` fill the field and `?scope=` the scope (unless a message is about to run).
   useEffect(() => {
-    if (!runRequested || !canAsk(aiMode)) return undefined;
+    if (handed || runRequested) return;
+    if (about) composer.setText(`Что известно о «${about}»?`);
+    else if (initialQuestion) composer.setText(initialQuestion.slice(0, 2000));
+    if (params.get("scope")) composer.setScope(scopeFromParam(params.get("scope")));
+    // Read once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function dropRunFlag() {
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("run");
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  // The hand-off from the home page runs once (the timer survives StrictMode's double effects).
+  useEffect(() => {
+    if (!handed || !canAsk(aiMode)) return undefined;
+    const timer = window.setTimeout(() => {
+      clearHandOff();
+      if (runRequested) dropRunFlag();
+      setTurns([]);
+      void run(toAskRequest(handed.message), displayOf(handed.message));
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handed, aiMode]);
+
+  useEffect(() => {
+    if (handed || !runRequested || !canAsk(aiMode)) return undefined;
     const timer = window.setTimeout(() => {
       const text = (params.get("q") ?? "").trim().slice(0, 2000);
-      const chosen = scopeFromParam(params.get("scope"));
-      setParams(
-        (current) => {
-          const next = new URLSearchParams(current);
-          next.delete("run");
-          return next;
-        },
-        { replace: true },
-      );
+      const scope = scopeFromParam(params.get("scope"));
+      dropRunFlag();
       if (text.length < 3) return;
-      // A question from «Спросить или найти» starts a new conversation (no earlier answers as context).
+      // A question from «Спросить или найти» starts a new dialog (no earlier answers, files or skill).
       setTurns([]);
-      setQuestion(text);
-      setScope(chosen);
-      void run({
-        question: text,
-        sources: SCOPES.find((s) => s.value === chosen)?.scopes ?? ["team"],
-        include_drafts: false,
-        include_deprecated: false,
-        history: [],
-      });
+      const conversationId = composer.reset();
+      composer.setScope(scope);
+      void run(
+        {
+          question: text,
+          sources: scopeSources(scope),
+          include_drafts: false,
+          include_deprecated: false,
+          history: [],
+          conversation_id: conversationId,
+        },
+        NOTHING_ATTACHED,
+      );
     }, 0);
     return () => window.clearTimeout(timer);
     // run/params are read at the moment of the request; the effect reacts to the flag only.
@@ -663,18 +568,21 @@ export function AskPage() {
   }
 
   /** Runs one request as a new turn; a failed or cancelled last turn is replaced by it. */
-  async function run(request: AskRequest) {
+  async function run(request: AskRequest, display: TurnDisplay) {
     if (inFlight.current) return;
     inFlight.current = true;
-    rememberQuestion(session?.user.user_id, request.question);
+    rememberDialog(userId, {
+      question: request.question,
+      skill: display.skill?.name,
+      context: display.files[0]?.name ?? display.documents[0]?.title ?? null,
+    });
     const id = ++nextId.current;
     const controller = new AbortController();
     abortRef.current = controller;
     setPending(true);
-    setFormError(null);
     setTurns((list) => [
       ...list.filter((turn) => turn.phase === "done"),
-      { id, request, phase: "retrieving", passages: null, provider: null, preliminary: "", response: null, error: null },
+      { id, request, display, phase: "retrieving", passages: null, provider: null, preliminary: "", response: null, error: null },
     ]);
     try {
       const response = await api.askStream(request, {
@@ -683,15 +591,17 @@ export function AskPage() {
       });
       // The validated answer replaces the preliminary text.
       patchTurn(id, { phase: "done", response, preliminary: "" });
+      noteDialogSources(userId, request.question, display.skill?.name ?? null, response.citations.length);
       // Clear the field only if it still holds this question (the next one may already be typed there).
-      setQuestion((current) => (current.trim() === request.question ? "" : current));
+      if (composer.message().question === request.question) composer.setText("");
     } catch (err) {
       const error = toApiError(err);
       const cancelled = isCancelled(error);
       patchTurn(id, cancelled ? { phase: "cancelled", preliminary: "" } : { phase: "error", error, preliminary: "" });
       // The question is never lost: put it back unless something else has been typed meanwhile.
-      setQuestion((current) => (current.trim() === "" || current.trim() === request.question ? request.question : current));
-      if (cancelled) questionRef.current?.focus();
+      const current = composer.message().question;
+      if (current === "" || current === request.question) composer.setText(request.question);
+      if (cancelled) composer.focus();
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       inFlight.current = false;
@@ -699,170 +609,101 @@ export function AskPage() {
     }
   }
 
-  function ask() {
+  function send(message: ComposerMessage) {
     if (inFlight.current) return;
-    const text = question.trim();
-    if (text.length < 3) {
-      setFormError(new ApiError(400, "question_too_short", "Введите вопрос длиной не менее 3 символов.", null));
-      return;
-    }
-    void run({
-      question: text,
-      sources: SCOPES.find((s) => s.value === scope)?.scopes ?? ["team"],
-      include_drafts: includeDrafts,
-      include_deprecated: includeDeprecated,
-      history: context,
-    });
-  }
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    ask();
-  }
-
-  function onQuestionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      ask();
-    }
+    void run(toAskRequest(message, context), displayOf(message));
   }
 
   function newConversation() {
     if (inFlight.current) return;
     setTurns([]);
-    setFormError(null);
-    questionRef.current?.focus();
+    composer.reset();
+    composer.focus();
+  }
+
+  function refine(question: string) {
+    composer.setText(question);
+    composer.focus();
   }
 
   const lastTurn = turns[turns.length - 1];
+  const first = turns[0];
 
   // AI_PROVIDER=disabled: no question form with a button that can only fail — the page says so and searches.
-  if (aiMode === "disabled") return <AskUnavailable />;
+  if (aiMode === "disabled") return <AskUnavailable initial={about ?? initialQuestion ?? ""} />;
 
   return (
-    <div className="ask">
-      <div className="page-head">
-        <h1>Спросить базу знаний</h1>
-        <p className="lead">
-          Ответ строится только по найденным документам. Если подтверждений нет, ассистент прямо скажет, что данных
-          недостаточно.
-        </p>
-      </div>
-
+    <div className="dialog">
+      <PageToolbar
+        crumbs={
+          first
+            ? [{ label: "Ассистент", to: "/" }, { label: first.request.question || first.display.skill?.name || "Диалог" }]
+            : [{ label: "Ассистент" }]
+        }
+        actions={
+          <Button icon="plus" onClick={newConversation} disabled={pending}>
+            Новый диалог
+          </Button>
+        }
+      />
       {turns.length > 0 ? (
-        <section className="conversation" aria-label="Диалог">
-          {turns.map((turn, index) => (
-            <TurnView
-              key={turn.id}
-              turn={turn}
-              turnNo={index + 1}
-              onRetry={turn === lastTurn && turn.phase === "error" ? () => void run(turn.request) : undefined}
-              onRefine={(text) => {
-                setQuestion(text);
-                questionRef.current?.focus();
-              }}
-              onAskCorporate={(request) => void run(request)}
-            />
-          ))}
-        </section>
-      ) : null}
-
-      <form className="ask__form" onSubmit={submit}>
-        <label htmlFor="question">Вопрос</label>
-        <textarea
-          id="question"
-          ref={questionRef}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          rows={3}
-          maxLength={2000}
-          placeholder={
-            context.length > 0
-              ? "Уточняющий вопрос — например: а какие у неё ограничения?"
-              : "Например: где хранится каноническая база знаний команды?"
-          }
-          aria-describedby={context.length > 0 ? "question-hint question-context" : "question-hint"}
-          onKeyDown={onQuestionKeyDown}
-        />
-        <p id="question-hint" className="field-hint">
-          Ctrl+Enter (⌘+Enter на Mac) — отправить вопрос.
-        </p>
-        {context.length > 0 ? (
-          <p id="question-context" className="field-hint">
-            Следующий вопрос будет задан с учётом {context.length}{" "}
-            {pluralRu(context.length, "предыдущего ответа", "предыдущих ответов", "предыдущих ответов")} этого диалога (не
-            более {MAX_HISTORY_TURNS}) — только как контекст, доказательствами остаются найденные источники. Диалог не
-            сохраняется: после перезагрузки страницы он исчезнет.
-          </p>
-        ) : null}
-        <div className="ask__examples">
-          <span className="muted">Примеры:</span>
-          {EXAMPLES.map((example) => (
-            <button key={example} type="button" className="chip" onClick={() => setQuestion(example)}>
-              {example}
-            </button>
-          ))}
-        </div>
-        <fieldset className="segmented">
-          <legend>Где искать</legend>
-          {SCOPES.map((option) => (
-            <label key={option.value} className="segmented__option">
-              <input
-                type="radio"
-                name="scope"
-                value={option.value}
-                checked={scope === option.value}
-                onChange={() => setScope(option.value)}
+        <>
+          <h1 className="visually-hidden">Диалог с ассистентом</h1>
+          <section className="conversation" aria-label="Диалог">
+            {turns.map((turn, index) => (
+              <TurnView
+                key={turn.id}
+                turn={turn}
+                turnNo={index + 1}
+                onRetry={turn === lastTurn && turn.phase === "error" ? () => void run(turn.request, turn.display) : undefined}
+                onRefine={refine}
+                onAskCorporate={(request, display) => void run(request, display)}
               />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </fieldset>
-        {scope !== "team" && corporateState === "disabled" ? (
-          <Notice tone="info">
-            Корпоративные источники (Confluence Data Center) не подключены — поиск выполнится только по документам
-            команды.
-          </Notice>
-        ) : null}
-        {scope !== "team" && corporateState === "mock" ? (
-          <Notice tone="info">Корпоративный поиск работает через mock-коннектор с синтетическими страницами.</Notice>
-        ) : null}
-        <div className="ask__options">
-          <label className="checkbox">
-            <input type="checkbox" checked={includeDrafts} onChange={(e) => setIncludeDrafts(e.target.checked)} />
-            Учитывать черновики и документы на ревью
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={includeDeprecated}
-              onChange={(e) => setIncludeDeprecated(e.target.checked)}
-            />
-            Учитывать устаревшие документы
-          </label>
+            ))}
+          </section>
+        </>
+      ) : (
+        <div className="dialog__intro">
+          <h1>Спросить базу знаний</h1>
+          <p className="dialog__lead">
+            Ответ строится только по найденным документам. Если подтверждений нет, ассистент прямо скажет, что данных
+            недостаточно.
+          </p>
+          <div className="dialog__examples" role="group" aria-label="Примеры">
+            {EXAMPLES.map((example) => (
+              <button
+                key={example}
+                type="button"
+                className="dialog__example"
+                onClick={() => {
+                  composer.setText(example);
+                  composer.focus();
+                }}
+              >
+                {example}
+              </button>
+            ))}
+          </div>
         </div>
-        {formError ? <ErrorState error={formError} /> : null}
-        <div className="ask__actions">
-          <button type="submit" className="button button--primary" disabled={pending}>
-            {pending ? "Ищем подтверждения…" : "Спросить"}
-          </button>
-          {pending ? (
-            <button type="button" className="button button--secondary" onClick={() => abortRef.current?.abort()}>
-              Отменить
-            </button>
-          ) : null}
-          {turns.length > 0 ? (
-            <button
-              type="button"
-              className="button button--ghost ask__new"
-              onClick={newConversation}
-              disabled={pending}
-            >
-              Новый диалог
-            </button>
-          ) : null}
-        </div>
-      </form>
+      )}
+
+      <div className="dialog__composer">
+        <Composer
+          variant="dialog"
+          composer={composer}
+          skills={skills}
+          onSend={send}
+          pending={pending}
+          onCancel={() => abortRef.current?.abort()}
+          inputId="question"
+          placeholder={turns.length > 0 && !composer.draft.skill ? "Уточните вопрос или попросите черновик правки" : undefined}
+          note={
+            context.length > 0
+              ? `С учётом ${context.length} ${pluralRu(context.length, "предыдущего ответа", "предыдущих ответов", "предыдущих ответов")} этого диалога (не более ${MAX_HISTORY_TURNS}) — только как контекст; доказательства — найденные источники.`
+              : undefined
+          }
+        />
+      </div>
     </div>
   );
 }

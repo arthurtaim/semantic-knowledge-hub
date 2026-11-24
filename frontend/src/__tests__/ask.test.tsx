@@ -39,11 +39,22 @@ const send = (stream: ReturnType<typeof ndjsonStream>, ...events: (object | stri
     stream.push(...events);
   });
 
+// UI v2: the question field is the Composer (label «Вопрос»); its send button is «Отправить», Enter sends.
+const field = () => screen.getByLabelText("Вопрос");
+const sendButton = () => screen.getByRole("button", { name: "Отправить" });
+
+/** «Где искать» is a small panel of the composer: open it, choose, close it. */
+async function chooseScope(label: "Команда" | "Корпоративные" | "Оба") {
+  await userEvent.click(screen.getByRole("button", { name: /^Где искать:/ }));
+  await userEvent.click(screen.getByRole("radio", { name: label }));
+  await userEvent.keyboard("{Escape}");
+}
+
 describe("Asking from «Спросить или найти» (?run=1)", () => {
   it("asks once at once in the chosen scope and removes the flag from the URL", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderRoutes("/ask?q=%D0%93%D0%B4%D0%B5%20%D0%B1%D0%B0%D0%B7%D0%B0%3F&run=1&scope=both", { "/ask": <AskPage /> });
-    expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
     expect(posts(calls)).toHaveLength(1);
     expect(posts(calls)[0]?.body).toMatchObject({ question: "Где база?", sources: ["team", "corporate"] });
     // react-router applies the URL change in a transition: it may land after the answer renders.
@@ -65,28 +76,29 @@ describe("Ask the knowledge base", () => {
   it("shows a grounded demo answer with clickable citations", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.type(screen.getByLabelText("Вопрос"), "What layers does the architecture have?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "What layers does the architecture have?");
+    await userEvent.click(sendButton());
 
     expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
-    expect(screen.getByText("Демо-режим, без языковой модели")).toBeInTheDocument();
+    expect(screen.getByText("Демо-режим: выдержки без языковой модели")).toBeInTheDocument();
     // The marker opens the cited document at the cited section (evidence first: the quote is listed above).
     const marker = screen.getByRole("link", { name: "Источник 1" });
     expect(marker).toHaveAttribute("href", "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture");
     expect(document.getElementById("cite-1-1")).toHaveTextContent("This local demonstration models");
     const source = screen.getByRole("link", { name: "Semantic Layer — demonstration architecture" });
     expect(source).toHaveAttribute("href", "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture");
-    expect(screen.getByText("Корпоративные источники не подключены.")).toBeInTheDocument();
 
     const request = posts(calls)[0];
     expect(request?.headers["X-SKH-Client"]).toBe("web");
     expect(request?.headers.Accept).toBe("application/x-ndjson");
+    // The v0.3 body plus the dialog id; no skill, files or documents were chosen.
     expect(request?.body).toEqual({
       question: "What layers does the architecture have?",
       sources: ["team"],
       include_drafts: false,
       include_deprecated: false,
       history: [],
+      conversation_id: expect.stringMatching(/^conv-[0-9a-f]{24}$/),
     });
   });
 
@@ -94,33 +106,35 @@ describe("Ask the knowledge base", () => {
     mockApi([streamRoute({ type: "status", stage: "retrieving" }, { type: "final", response: insufficientAnswer })]);
     renderAt("/ask", "/ask", <AskPage />);
     await userEvent.click(screen.getByRole("button", { name: "Какой SLA у интеграции с ЦФТ?" }));
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.click(sendButton());
     expect(await screen.findByText("Недостаточно данных")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Источники" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Не использованы как доказательство" })).toBeInTheDocument();
+    // Excluded documents are folded into one line.
+    expect(screen.getByText("1 документ не использован: черновик.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Показать" }));
+    expect(screen.getByRole("list", { name: "Не использованы как доказательство" })).toHaveTextContent("ARIS integration");
     expect(screen.getByText("Подтверждений в доступных источниках не найдено.")).toBeInTheDocument();
     expect(screen.getByText(/Не найдено в источниках/)).toHaveTextContent("«ЦФТ»");
   });
 
-  it("submits with Ctrl+Enter from the question field and clears it after the validated answer", async () => {
+  it("sends with Enter (Ctrl+Enter too) and clears the field after the validated answer", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    const field = screen.getByLabelText("Вопрос");
-    expect(field).toHaveAccessibleDescription(/Ctrl\+Enter/);
-    await userEvent.type(field, "Что такое ревизия?");
+    await userEvent.type(field(), "Что такое ревизия?");
     await userEvent.keyboard("{Control>}{Enter}{/Control}");
     expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
     expect(posts(calls)).toHaveLength(1);
-    expect(field).toHaveValue("");
-    expect(screen.getByText("Что такое ревизия?")).toBeInTheDocument(); // the question stays in the conversation
+    expect(field()).toHaveValue("");
+    // the question stays in the conversation, as the user's message
+    expect(within(screen.getByRole("region", { name: "Диалог" })).getByText("Что такое ревизия?")).toHaveClass("turn__bubble");
   });
 
   it("states near the top of the answer that corporate sources were not used", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.type(screen.getByLabelText("Вопрос"), "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByLabelText("Оба"));
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await chooseScope("Оба");
+    await userEvent.click(sendButton());
     expect(await screen.findByText("Корпоративные источники не использованы.")).toBeInTheDocument();
     expect(screen.getByText(/ответ построен только по документам команды/)).toBeInTheDocument();
     expect(posts(calls)[0]?.body).toMatchObject({ sources: ["team", "corporate"] });
@@ -129,22 +143,23 @@ describe("Ask the knowledge base", () => {
   it("prefills the question from the home page search", () => {
     mockApi([]);
     renderAt("/ask?q=FTS5", "/ask", <AskPage />);
-    expect(screen.getByLabelText("Вопрос")).toHaveValue("FTS5");
+    expect(field()).toHaveValue("FTS5");
   });
 
   it("explains that corporate sources are not connected", async () => {
     mockApi([]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.click(screen.getByLabelText("Оба"));
-    expect(screen.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeInTheDocument();
+    await chooseScope("Оба");
+    expect(screen.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены — ответ будет/)).toBeInTheDocument();
   });
 
-  it("validates the question length before calling the API", async () => {
+  it("validates the question length before calling the API; an empty field cannot be sent", async () => {
     const calls = mockApi([]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    expect(sendButton()).toBeDisabled();
+    await userEvent.type(field(), "аб{Enter}");
     expect(await screen.findByRole("alert")).toHaveTextContent("не менее 3 символов");
-    expect(calls).toHaveLength(0);
+    expect(calls.filter((c) => c.url === STREAM)).toHaveLength(0);
   });
 
   it("surfaces a disabled assistant clearly (HTTP 503 before the stream) and keeps the question", async () => {
@@ -157,17 +172,17 @@ describe("Ask the knowledge base", () => {
       },
     ]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.type(screen.getByLabelText("Вопрос"), "Что такое ревизия?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-    expect(await screen.findByText("Интеграция недоступна")).toBeInTheDocument();
+    await userEvent.type(field(), "Что такое ревизия?");
+    await userEvent.click(sendButton());
+    expect(await screen.findByText("Ассистент отключён")).toBeInTheDocument();
     expect(screen.getByText("Ассистент отключён конфигурацией.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Вопрос")).toHaveValue("Что такое ревизия?");
+    expect(field()).toHaveValue("Что такое ревизия?");
 
     mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     await userEvent.click(screen.getByRole("button", { name: "Повторить запрос" }));
     expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
-    expect(screen.queryByText("Интеграция недоступна")).toBeNull();
-    expect(screen.getByLabelText("Вопрос")).toHaveValue("");
+    expect(screen.queryByText("Ассистент отключён")).toBeNull();
+    expect(field()).toHaveValue("");
   });
 });
 
@@ -176,16 +191,17 @@ describe("Streaming answers", () => {
     const stream = ndjsonStream();
     mockApi([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.type(screen.getByLabelText("Вопрос"), "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await userEvent.click(sendButton());
 
     expect(await screen.findByText("Ищу источники…")).toBeInTheDocument();
+    // While the answer runs, the send button is «Отменить».
     expect(screen.getByRole("button", { name: "Отменить" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Ищем подтверждения…" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Отправить" })).toBeNull();
 
     await send(stream, { type: "status", stage: "retrieving" });
     await send(stream, { type: "status", stage: "generating", passages: 5, provider: "claude_cli" });
-    expect(await screen.findByText("Формирую ответ с Claude Code CLI… (найдено 5 фрагментов)")).toBeInTheDocument();
+    expect(await screen.findByText("Формулирую ответ с Claude Code CLI… (найдено 5 фрагментов)")).toBeInTheDocument();
 
     // A line split across chunks is buffered until its newline arrives.
     await send(stream, '{"type":"delta","te', 'xt":"Слоёв четыре [C1]"}\n', { type: "delta", text: ", включая витрину." });
@@ -193,31 +209,31 @@ describe("Streaming answers", () => {
     const preliminary = label.closest("section") as HTMLElement;
     expect(preliminary).toHaveAttribute("aria-live", "polite");
     expect(within(preliminary).getByText("Слоёв четыре [C1], включая витрину.")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Ответ" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Ассистент" })).toBeNull();
 
     await send(stream, { type: "status", stage: "validating" });
     expect(await screen.findByText("Проверяю цитаты…")).toBeInTheDocument();
     await send(stream, { type: "final", response: claudeAnswer });
     stream.close();
 
-    expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
     expect(screen.getByText("Подтверждено источниками")).toBeInTheDocument();
     expect(screen.getByText("Claude Code CLI (личный тест), цитаты сверены с источниками")).toBeInTheDocument();
     expect(screen.queryByText("Предварительный текст модели — цитаты ещё не проверены")).toBeNull();
     expect(screen.queryByText(/Слоёв четыре/)).toBeNull();
     expect(screen.queryByText("Проверяю цитаты…")).toBeNull();
     expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Спросить" })).toBeEnabled();
+    expect(sendButton()).toBeInTheDocument();
   });
 
   it("uses a provider-neutral stage text for other providers", async () => {
     const stream = ndjsonStream();
     mockApi([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.type(screen.getByLabelText("Вопрос"), "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await userEvent.click(sendButton());
     await send(stream, { type: "status", stage: "generating", passages: 1, provider: "internal_api" });
-    expect(await screen.findByText("Формирую ответ… (найден 1 фрагмент)")).toBeInTheDocument();
+    expect(await screen.findByText("Формулирую ответ… (найден 1 фрагмент)")).toBeInTheDocument();
     await send(stream, { type: "final", response: { ...supportedAnswer, mode: "internal_api" } });
     expect(await screen.findByText("Внутренняя модель, цитаты сверены с источниками")).toBeInTheDocument();
   });
@@ -226,9 +242,8 @@ describe("Streaming answers", () => {
     const stream = ndjsonStream();
     mockApi([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]);
     renderAt("/ask", "/ask", <AskPage />);
-    const field = screen.getByLabelText("Вопрос");
-    await userEvent.type(field, "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await userEvent.click(sendButton());
     await send(
       stream,
       { type: "status", stage: "retrieving" },
@@ -248,13 +263,14 @@ describe("Streaming answers", () => {
     expect(alert).toHaveTextContent("Claude Code не ответил за отведённое время.");
     expect(screen.queryByText("Черновой текст модели")).toBeNull();
     expect(screen.queryByText("Предварительный текст модели — цитаты ещё не проверены")).toBeNull();
-    expect(field).toHaveValue("Какие слои у архитектуры?");
+    expect(field()).toHaveValue("Какие слои у архитектуры?");
 
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     await userEvent.click(within(alert).getByRole("button", { name: "Повторить запрос" }));
     expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getAllByText("Какие слои у архитектуры?")).toHaveLength(1); // the failed turn was replaced
+    // the failed turn was replaced
+    expect(within(screen.getByRole("region", { name: "Диалог" })).getAllByText("Какие слои у архитектуры?")).toHaveLength(1);
     expect(posts(calls)[0]?.body).toMatchObject({ question: "Какие слои у архитектуры?", history: [] });
   });
 
@@ -262,62 +278,63 @@ describe("Streaming answers", () => {
     const stream = ndjsonStream();
     mockApi([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]);
     renderAt("/ask", "/ask", <AskPage />);
-    const field = screen.getByLabelText("Вопрос");
-    await userEvent.type(field, "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await userEvent.click(sendButton());
     await send(stream, { type: "status", stage: "generating", passages: 3, provider: "claude_cli" }, { type: "delta", text: "Начало ответа" });
     expect(await screen.findByText("Начало ответа")).toBeInTheDocument();
-    await userEvent.clear(field); // even a cleared field gets the question back
+    await userEvent.clear(field()); // even a cleared field gets the question back
 
     await userEvent.click(screen.getByRole("button", { name: "Отменить" }));
     expect(await screen.findByText(/Запрос отменён/)).toBeInTheDocument();
     expect(stream.state.aborted).toBe(true);
-    expect(field).toHaveValue("Какие слои у архитектуры?");
+    expect(field()).toHaveValue("Какие слои у архитектуры?");
     expect(screen.queryByText("Начало ответа")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "Отменить" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Спросить" })).toBeEnabled();
+    expect(sendButton()).toBeEnabled();
   });
 
   it("sends the previous validated answers as history; failed turns are excluded and answers truncated", async () => {
     const longAnswer: AskResponse = { ...supportedAnswer, answer: `${"А".repeat(4500)} [1]` };
     let calls = mockApi([streamRoute(...mockEvents(longAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    const field = screen.getByLabelText("Вопрос");
-    await userEvent.type(field, "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-    expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
-    expect(field).toHaveAccessibleDescription(/с учётом 1 предыдущего ответа/);
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await userEvent.click(sendButton());
+    expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
+    expect(field()).toHaveAccessibleDescription(/С учётом 1 предыдущего ответа/);
 
     // A failed follow-up is not context for the next question.
     calls = mockApi([
       streamRoute({ type: "error", code: "ai_busy", message: "Ассистент занят другим запросом. Подождите.", status: 429 }),
     ]);
-    await userEvent.type(field, "А какие у неё ограничения?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "А какие у неё ограничения?");
+    await userEvent.click(sendButton());
+    // «busy» is a conflict, not a failure: amber, with a retry.
     expect(await screen.findByText("Ассистент занят другим запросом. Подождите.")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveClass("turn__conflict");
     expect(posts(calls)[0]?.body).toMatchObject({
       question: "А какие у неё ограничения?",
       history: [{ question: "Какие слои у архитектуры?", answer: "А".repeat(4000) }],
     });
 
     calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
-    await userEvent.clear(field);
-    await userEvent.type(field, "А что с витриной?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-    await waitFor(() => expect(screen.getAllByRole("heading", { name: "Ответ" })).toHaveLength(2));
+    await userEvent.clear(field());
+    await userEvent.type(field(), "А что с витриной?");
+    await userEvent.click(sendButton());
+    await waitFor(() => expect(screen.getAllByRole("heading", { name: "Ассистент" })).toHaveLength(2));
     expect(screen.queryByText("А какие у неё ограничения?")).toBeNull(); // the failed turn was replaced
     expect(posts(calls)[0]?.body).toMatchObject({
       question: "А что с витриной?",
       history: [{ question: "Какие слои у архитектуры?", answer: "А".repeat(4000) }],
     });
     // Ids stay unique per turn and the markers point at their own turn.
-    expect(document.getElementById("answer-title-1")).toHaveTextContent("Ответ");
-    expect(document.getElementById("answer-title-2")).toHaveTextContent("Ответ");
+    expect(document.getElementById("answer-title-1")).toHaveTextContent("Ассистент");
+    expect(document.getElementById("answer-title-2")).toHaveTextContent("Ассистент");
     // Markers open the cited document; each has its own passage card, and each turn its own evidence anchors.
     const markers = screen.getAllByRole("link", { name: "Источник 1" });
     const cards = markers.map((m) => m.getAttribute("aria-describedby"));
-    expect(new Set(cards).size).toBe(2);
+    expect(markers.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(cards).size).toBe(markers.length);
     expect(document.getElementById("cite-1-1")).toBeInTheDocument();
     expect(document.getElementById("cite-2-1")).toBeInTheDocument();
   });
@@ -325,11 +342,10 @@ describe("Streaming answers", () => {
   it("keeps at most the last 6 completed turns as history", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    const field = screen.getByLabelText("Вопрос");
     for (let n = 1; n <= 8; n += 1) {
-      await userEvent.type(field, `Тема номер ${n}`);
-      await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-      await waitFor(() => expect(screen.getAllByRole("heading", { name: "Ответ" })).toHaveLength(n));
+      await userEvent.type(field(), `Тема номер ${n}`);
+      await userEvent.click(sendButton());
+      await waitFor(() => expect(screen.getAllByRole("heading", { name: "Ассистент" })).toHaveLength(n));
     }
     const historyOf = (index: number) =>
       (posts(calls)[index]?.body as { history: { question: string }[] }).history.map((turn) => turn.question);
@@ -338,24 +354,24 @@ describe("Streaming answers", () => {
     expect(historyOf(7)).toEqual([2, 3, 4, 5, 6, 7].map((n) => `Тема номер ${n}`));
   });
 
-  it("starts a new conversation without history", async () => {
+  it("starts a new conversation (a new dialog id) without history", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    const field = screen.getByLabelText("Вопрос");
-    expect(screen.queryByRole("button", { name: "Новый диалог" })).toBeNull();
-    await userEvent.type(field, "Какие слои у архитектуры?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-    expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
+    await userEvent.type(field(), "Какие слои у архитектуры?");
+    await userEvent.click(sendButton());
+    expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Новый диалог" }));
-    expect(screen.queryByRole("heading", { name: "Ответ" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Ассистент" })).toBeNull();
     expect(screen.queryByText("Какие слои у архитектуры?")).toBeNull();
-    expect(field).toHaveFocus();
+    expect(field()).toHaveFocus();
 
-    await userEvent.type(field, "Где хранится база знаний?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
-    expect(await screen.findByRole("heading", { name: "Ответ" })).toBeInTheDocument();
+    await userEvent.type(field(), "Где хранится база знаний?");
+    await userEvent.click(sendButton());
+    expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
     expect(posts(calls)[1]?.body).toMatchObject({ question: "Где хранится база знаний?", history: [] });
+    const ids = posts(calls).map((c) => (c.body as { conversation_id: string }).conversation_id);
+    expect(ids[0]).not.toBe(ids[1]);
   });
 });
 
@@ -451,9 +467,9 @@ const externalAnswer: AskResponse = {
 };
 
 async function askExternal() {
-  await userEvent.type(screen.getByLabelText("Вопрос"), "Когда действует окно заморозки?");
-  await userEvent.click(screen.getByLabelText("Оба"));
-  await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+  await userEvent.type(field(), "Когда действует окно заморозки?");
+  await chooseScope("Оба");
+  await userEvent.click(sendButton());
   return screen.findByText("Подтверждено источниками");
 }
 
@@ -543,8 +559,8 @@ describe("Ask: Confluence evidence and the answer graph", () => {
   it("shows no graph link or feedback controls for an answer without a trace", async () => {
     mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);
-    await userEvent.type(screen.getByLabelText("Вопрос"), "What layers?");
-    await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+    await userEvent.type(field(), "What layers?");
+    await userEvent.click(sendButton());
     await screen.findByText("Подтверждено источниками");
     expect(screen.queryByRole("link", { name: "Граф ответа" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Подошёл" })).toBeNull();

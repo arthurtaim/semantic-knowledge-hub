@@ -141,9 +141,10 @@ export interface ComposerController {
   message: () => ComposerMessage;
   /**
    * «Новый диалог»: an empty field and a new dialog id; the files of the old dialog are deleted — unless they were
-   * handed over with the message (`{ handedOver: true }`: the home field after sending to the dialog).
+   * handed over with the message (`{ handedOver: true }`: the home field after sending to the dialog). Returns
+   * the new dialog id.
    */
-  reset: (options?: { handedOver?: boolean }) => void;
+  reset: (options?: { handedOver?: boolean }) => string;
   focus: () => void;
 }
 
@@ -388,6 +389,7 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
         conversationRef.current = id;
         setConversationId(id);
         setAnnouncement("");
+        return id;
       },
       focus: () => inputRef.current?.focus(),
     }),

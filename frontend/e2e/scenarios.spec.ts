@@ -69,7 +69,7 @@ test("E2E-04 assistant answer with a verified citation (demo mode)", async ({ pa
   await page.getByLabel("Вопрос").press("Control+Enter");
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
   await expect(page.getByText(/Демо-режим/).first()).toBeVisible();
-  const citation = page.locator(".citation").first();
+  const citation = page.locator(".source").first();
   await expect(citation).toContainText("Каноническая база знаний команды хранится в отдельном репозитории GitLab");
   await expect(citation).toContainText("Утверждён");
   await expect(citation).toContainText("sha256:");
@@ -80,10 +80,10 @@ test("E2E-04 assistant answer with a verified citation (demo mode)", async ({ pa
 test("E2E-05 question without evidence → «Недостаточно данных»", async ({ page }) => {
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Какой SLA у интеграции с ЦФТ?");
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator(".confidence")).toHaveText("Недостаточно данных");
   await expect(page.getByText("Подтверждений в доступных источниках не найдено.")).toBeVisible();
-  await expect(page.locator(".citation")).toHaveCount(0);
+  await expect(page.locator(".source")).toHaveCount(0);
 });
 
 test("E2E-06/07 create a proposal and review the diff; the source stays unchanged", async ({ page }) => {
@@ -129,7 +129,7 @@ test("@mobile E2E-12 phone: home, menu, document and proposal pages fit the scre
   await expect(page.getByRole("heading", { name: "База знаний", level: 1 })).toBeVisible();
 });
 
-test("E2E-13 AI-first entry: Ctrl+K → question → evidence first → the marker opens the cited section", async ({ page }) => {
+test("E2E-13 AI-first entry: Ctrl+K → question → the answer with its sources → the marker opens the cited section", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/documents");
   await page.keyboard.press("Control+k");
@@ -142,16 +142,14 @@ test("E2E-13 AI-first entry: Ctrl+K → question → evidence first → the mark
 
   await expect(page).toHaveURL(/\/ask\?q=/);
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
-  await expect(page.locator(".answer .demo-tag")).toHaveText("Демо");
-  // Evidence (quotes) comes before the explanation, team documents in their own list.
-  const evidence = page.getByRole("heading", { name: "Доказательства" });
-  const explanation = page.getByRole("heading", { name: "Объяснение" });
-  expect((await evidence.boundingBox())!.y).toBeLessThan((await explanation.boundingBox())!.y);
-  await expect(page.getByRole("region", { name: "Документы команды" }).locator(".citation").first()).toContainText("Утверждён");
+  await expect(page.locator(".answer .answer__mode")).toHaveText("Демо-режим: выдержки без языковой модели");
+  // UI v2: the quotes are in «Источники» (team documents in their own group), not repeated in the text.
+  const sources = page.getByRole("region", { name: "Источники" });
+  await expect(sources.getByRole("region", { name: "Документы команды" }).locator(".source").first()).toContainText("Утверждён");
 
   const marker = page.getByRole("link", { name: "Источник 1" }).first();
   await marker.hover();
-  await expect(page.getByRole("tooltip").first()).toContainText("Документ команды");
+  await expect(page.getByRole("tooltip").first()).toContainText("Документы команды");
   await marker.click();
   await expect(page).toHaveURL(/\/documents\/SEM-OVERVIEW-001#/);
   await page.goBack();

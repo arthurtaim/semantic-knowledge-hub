@@ -147,7 +147,7 @@ describe("«Спросить или найти»: the ⌘K palette from the side
     const tree = (value: typeof session | null) => (
       <SessionContext.Provider value={value}>
         <MemoryRouter>
-          <QuickFind variant="hero" inputId="c" />
+          <QuickFind variant="palette" inputId="c" />
         </MemoryRouter>
       </SessionContext.Provider>
     );

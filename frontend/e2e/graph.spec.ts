@@ -77,11 +77,13 @@ test("M5.6 ask with both sources: a Confluence citation and the evidence graph o
   const question = "Когда действует окно заморозки изменений метаданных?";
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill(question);
-  await page.getByLabel("Оба").check({ force: true });
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await page.getByRole("button", { name: /^Где искать:/ }).click();
+  await page.getByRole("radio", { name: "Оба", exact: true }).check();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
 
-  const citation = page.locator(".citation", { hasText: "Регламент заморозки изменений метаданных (демо)" }).first();
+  const citation = page.locator(".source", { hasText: "Регламент заморозки изменений метаданных (демо)" }).first();
   await expect(citation).toContainText(/Confluence · версия \d+/);
   await expect(citation).toContainText("статус не подтверждён");
   await expect(page.getByText(/^Внешний источник: запрос к Confluence \(причина: /)).toBeVisible();

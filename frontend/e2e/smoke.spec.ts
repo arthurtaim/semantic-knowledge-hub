@@ -10,6 +10,13 @@ function watch(page: Page): string[] {
   return problems;
 }
 
+/** UI v2: «Где искать» is a small panel of the assistant field. */
+async function chooseScope(page: Page, label: "Команда" | "Корпоративные" | "Оба") {
+  await page.getByRole("button", { name: /^Где искать:/ }).click();
+  await page.getByRole("radio", { name: label, exact: true }).check();
+  await page.keyboard.press("Escape");
+}
+
 test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
@@ -45,13 +52,14 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
   const problems = watch(page);
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
-  await page.getByLabel("Оба").check({ force: true });
-  await expect(page.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeVisible();
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await chooseScope(page, "Оба");
+  await expect(page.getByText(/не подключены — ответ будет только по документам команды/)).toBeVisible();
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
-  await expect(page.locator(".scope-status")).toContainText("Не подключено");
+  await expect(page.getByText("Корпоративные источники не использованы.")).toBeVisible();
 
-  const citation = page.locator(".citation").first();
+  // UI v2: one «Источники» block under the answer; a row is a source with its quote.
+  const citation = page.locator(".source").first();
   await expect(citation).toContainText("Каноническая база знаний команды хранится в отдельном репозитории GitLab");
   await citation.getByRole("link").first().click();
   await expect(page).toHaveURL(/\/documents\/SEM-OVERVIEW-001#/);
@@ -59,9 +67,9 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
 
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Какой SLA у интеграции с ЦФТ?");
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.locator(".confidence")).toHaveText("Недостаточно данных");
-  await expect(page.locator(".citations")).toHaveCount(0);
+  await expect(page.locator(".source")).toHaveCount(0);
   expect(problems).toEqual([]);
 });
 
