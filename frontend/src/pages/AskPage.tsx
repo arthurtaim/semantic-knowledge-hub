@@ -447,8 +447,8 @@ function DialogView({ conversationId, named, initial, reopened, prefill, scopePa
         actions={
           <>
             {turns.length > 0 ? (
-              <Button variant="quiet" onClick={() => setConfirmDelete(true)} disabled={pending || confirmDelete}>
-                Удалить диалог
+              <Button variant="quiet" icon="trash" onClick={() => setConfirmDelete(true)} disabled={pending || confirmDelete}>
+                <span className="toolbar-action__label">Удалить диалог</span>
               </Button>
             ) : null}
             <Button icon="plus" onClick={newDialog}>
