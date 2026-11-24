@@ -24,7 +24,7 @@ are rejected with a typed error. Names use underscores so they would also work f
 
 | Tool (spec name) | Operations | Arguments (summary) | Result / evidence |
 |---|---|---|---|
-| `catalog_query` (`catalog.query`) | `count`, `list`, `facets`, `get_metadata` | `filters`: `status[]`, `type[]`, `owner`, `owner_missing`, `needs_attention` (strict bool), `tags[]` (all of), `text` (full-text match), `updated_from/to` (front-matter date), `template_id`, `eligible_for_answers`; `document_ids[]` ≤ 20; `sort` updated/title/status/id; `limit` 1–50; `offset` ≤ 5000 | count / total / page of IDs + effective filters, definition, generation, as_of, source `skh_document_registry`, scope |
+| `catalog_query` (`catalog.query`) | `count`, `list`, `facets`, `get_metadata` | `filters`: `status[]`, `type[]`, `owner`, `owner_missing`, `needs_attention` (strict bool), `tags[]` (all of), `text` (full-text match), `updated_from/to` (front-matter date), `template_id`, `eligible_for_answers`; `document_ids[]` ≤ 20; `sort` updated/title/status/id; `limit` 1–50; `offset` ≤ 5000 | count / total / page of IDs + effective filters, definition, generation, as_of, source `skh_document_registry`, scope; `list` rows carry `synthetic`, `facets` adds `breakdown.provenance` (answer-quality fix) |
 | `knowledge_search` (`knowledge.search`) | `search`, `read` | `query`; `document_id` + `sections[]` ≤ 3; `types[]`, `tags[]`; `limit` 1–8 | passages `C<n>` (document, revision, section) for verified quotes; statuses = what THIS request may cite |
 | `graph_inspect` (`graph.inspect`) | `links`, `neighbours`, `path` | `document_id`, `target_id`, `direction` out/in/both, `relations[]`, `depth` 1–2, `limit` 1–50 | edges with `relation`, `origin`, `confirmed`, `declared_in`, `provenance` (`relations.depends_on`, `related_ids`, `body:<line>`) |
 | `templates_inspect` (`templates.inspect`) | `list`, `get` | `status` active/deprecated/draft/any, `doc_type`, `text`; `template_id` + `version` | template id, current version, versions with status, required sections/metadata, usage among visible documents |
@@ -64,6 +64,23 @@ There is no SQL, URL, file, shell, git or "call any method" tool.
   9 approved, 3 `aris`-tagged vs 4 mentioning ARIS (guest); FTS chunk rows > 12; observed revisions = 13 after an
   edit + rename. On the demo base (83 synthetic documents): 83 total, 73 approved, 13 tagged `aris`, 52 mentioning
   ARIS, 9 approved with tag `aris`.
+
+### Overviews, follow-ups and provenance (answer-quality fix)
+
+- The passages handed to the model before its first round are a small lexical **sample** (≤ 6 passages of ≤ 4
+  documents), and the data message says so. `TOOL_POLICY` v3 and the `catalog_query` / `knowledge_search`
+  descriptions tell the model to answer a broad question («какая у нас модель данных?», «какие источники описаны?»)
+  as an overview: catalog first (`list`/`facets` by `type`, `tags` or `text`), then content (`knowledge_search`),
+  with `[F…]` and `[C…]`; never a summary of the first passage, never «в базе нет» without looking at the catalog.
+  There is still no intent classifier: the model chooses the tools.
+- Corpus-wide boilerplate (a body line repeated in ≥ 5 documents and > 5 % of the reader's snapshot, e.g. the banner
+  every synthetic document opens with) is never offered as a passage — neither by the pre-retrieval, nor by
+  `knowledge_search` (`search`, or `read` without `sections`). It used to win as the shortest matching section.
+- A follow-up is pre-retrieved twice and merged round-robin: by its own words and together with the previous
+  question. Words of the previous question are never reported in `unmatched_terms` (and never block a new subject).
+- Provenance is metadata: `catalog_query facets` → `breakdown.provenance` (exhaustive over the filtered scope), list
+  rows → `synthetic`, passages → `"synthetic"`. The server no longer adds the fixed «only demo» warning; the answer
+  carries `provenance` (`docs/API_CONTRACTS.md` «Answer provenance»).
 
 ## Provider protocol
 
@@ -202,7 +219,9 @@ Point Vite at that backend (`SKH_BACKEND_URL=http://127.0.0.1:8021`). Useful que
 «Сколько документов по ARIS?» (13 tagged / 52 text), «Сколько документов в базе и сколько требуют внимания?» (83 / 12,
 as the documents tree), «Какие документы требуют внимания и почему?», «Сколько утверждённых документов об ARIS и где пробелы?»
 (9 + a verified quote), «Что такое RAG?» (general), «Покажи действующие шаблоны интеграции», «Сломанный формат: …»,
-«Неизвестный инструмент: …», «Бесконечный цикл: …», «Упади …».
+«Неизвестный инструмент: …», «Бесконечный цикл: …», «Упади …»; answer quality: «Какая у нас модель данных?» (catalog list +
+search → a scoped overview), then «нам интересны демо-файлы» (searches the previous question's subject), «Это реальные
+данные банка?» (`facets` → `breakdown.provenance`).
 
 ## Limitations
 
