@@ -51,6 +51,7 @@ from app.services.publications import PublicationService, PublicationStore
 from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
+from app.services.template_studio import TemplateStudioService
 
 logger = logging.getLogger("skh.container")
 
@@ -86,6 +87,7 @@ class Container:
     ai_workflows: AiWorkflowService
     attachments: AttachmentService
     skills: AssistantSkillService
+    template_studio: TemplateStudioService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
@@ -391,6 +393,9 @@ def build_container(settings: Settings) -> Container:
     )
     template_hub = TemplateHubService(authoring, knowledge)
     policy = build_policy(settings)
+    template_studio = TemplateStudioService(
+        registry=templates, knowledge=knowledge, ai=ai, workflows=ai_workflows, policy=policy
+    )
     # M5.7: the tool loop. Off when disabled by configuration or when the runtime policy fell back to the built-in
     # safe text (which forbids tools): fail closed, never a tool loop under a weaker prompt.
     if settings.ai_tools_enabled and not instructions.fallback:
@@ -442,6 +447,7 @@ def build_container(settings: Settings) -> Container:
         attachments=attachments,
         skills=skills,
         template_hub=template_hub,
+        template_studio=template_studio,
         discovery=discovery,
         external=external,
         instructions=instructions,

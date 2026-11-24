@@ -83,6 +83,18 @@ def test_write_routes_require_write_actions(client: TestClient) -> None:
         ("GET", "/api/assistant/skills"): Action.ask_assistant,
         ("POST", "/api/assistant/attachments"): Action.ask_assistant,
         ("DELETE", "/api/assistant/attachments/{attachment_id}"): Action.ask_assistant,
+        # Template Studio: four separate rights
+        ("GET", "/api/templates"): Action.view_templates,
+        ("GET", "/api/templates/{template_id}"): Action.view_templates,
+        ("GET", "/api/templates/studio/options"): Action.view_templates,
+        ("POST", "/api/templates/studio/validate"): Action.view_templates,
+        ("GET", "/api/templates/{template_id}/studio"): Action.view_templates,
+        ("GET", "/api/templates/{template_id}/studio/compare"): Action.view_templates,
+        ("POST", "/api/templates/studio"): Action.create_template,
+        ("PUT", "/api/templates/{template_id}/studio/draft"): Action.edit_template,
+        ("DELETE", "/api/templates/{template_id}/studio/draft"): Action.edit_template,
+        ("POST", "/api/templates/{template_id}/studio/acknowledge-shipped"): Action.edit_template,
+        ("POST", "/api/templates/{template_id}/studio/activate"): Action.activate_template,
     }
     seen = {(m, r.path): _actions(r.dependant) for r in api_routes(client) for m in r.methods}
     for key, action in expected.items():

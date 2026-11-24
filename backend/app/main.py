@@ -25,6 +25,7 @@ from app.api import (
     publications,
     system,
     template_apply,
+    template_studio,
     templates,
 )
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
@@ -119,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         discovery.router,
         links.router,
         metadata.router,
+        template_studio.router,  # before templates.router: `/api/templates/studio/...` is not a template id
         templates.router,
         template_apply.router,
         ai.router,
