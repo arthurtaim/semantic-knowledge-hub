@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-11-06
+updated_at: 2026-11-06
 tags: [process, процесс, publication, публикация, confluence, approved, утверждено, provenance, происхождение, opt-in]
 aliases: ["publishing approved docs", "публикация в Confluence", "опубликованное представление"]
 summary: "Как отобранные утверждённые документы публикуются в Confluence как представление только для чтения: только approved, публикация по явному выбору и выключена по умолчанию, блок происхождения на каждой странице."

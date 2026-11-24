@@ -20,8 +20,8 @@ from app.adapters.ai.base import (
     ProviderAnswer,
 )
 from app.domain.models import Confidence, IntegrationStatus
-from app.domain.safety import looks_like_prompt_injection
-from app.domain.text import QueryTerm, split_sentences, term_matches_text, tokenize
+from app.domain.safety import INJECTION_PLACEHOLDER, looks_like_prompt_injection
+from app.domain.text import QueryTerm, reportable_terms, split_sentences, term_matches_text, tokenize
 
 MAX_QUOTES = 4
 MAX_QUOTES_PER_PASSAGE = 2
@@ -84,6 +84,38 @@ def _sentences(passages: list[ContextPassage], terms: list[QueryTerm]) -> list[_
     return result
 
 
+ATTACHMENTS_HEADER = "Вложения этого диалога (дословно, без выводов):"
+MAX_FILE_QUOTES = 3
+MIN_FILE_QUOTE_CHARS = 12
+
+
+def _attachment_quotes(
+    files: list[ContextPassage], terms: list[QueryTerm], start: int
+) -> tuple[list[str], list[CitedEvidence]]:
+    """One verbatim quote per attachment fragment: its first line (extended to the next one when too short)
+    plus up to two lines with the question's words. Never a summary, never a comparison."""
+    lines: list[str] = []
+    evidence: list[CitedEvidence] = []
+    for passage in files[:MAX_FILE_QUOTES]:
+        rows = [
+            r
+            for r in passage.text.split("\n")
+            if r.strip() and INJECTION_PLACEHOLDER not in r and not looks_like_prompt_injection(r)
+        ]
+        if not rows:
+            continue
+        head = [rows[0]]
+        if len(rows[0]) < MIN_FILE_QUOTE_CHARS and len(rows) > 1:
+            head.append(rows[1])
+        matching = [r for r in rows[len(head) :] if any(term_matches_text(t, tokenize(r)) for t in terms)][:2]
+        quote = " … ".join([" ".join(head), *matching])
+        if len(quote) < MIN_FILE_QUOTE_CHARS:
+            continue
+        evidence.append(CitedEvidence(cid=passage.cid, quote=quote))
+        lines.append(f"{start + len(lines)}. «{quote}» [{passage.cid}]")
+    return lines, evidence
+
+
 PLACEHOLDER = "Требует уточнения"
 AUTHORING_DEMO_WARNING = (
     "Демо-режим: черновик собран без языковой модели — это структура шаблона, ссылки на найденные "
@@ -140,9 +172,55 @@ class MockAIProvider:
     async def answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
     ) -> ProviderAnswer:
+        files = [p for p in passages if p.source_type == "attachment"]
+        if not files:
+            return self._answer_team(passages, options)
+        # Attachments are a SEPARATE evidence group: the team documents are answered as always, the files are
+        # only quoted verbatim (the header line and lines with the question's words) — never compared by inference.
+        team = [p for p in passages if p.source_type != "attachment"]
+        result = (
+            self._answer_team(team, options)
+            if team
+            else insufficient(
+                "Недостаточно данных: в документах базы знаний не найдено фрагментов по вопросу."
+            )
+        )
+        lines, evidence = _attachment_quotes(files, options.terms, start=len(result.evidence) + 1)
+        if not evidence:
+            return result
+        if result.confidence == "insufficient_evidence":
+            answer = f"{MOCK_PREFIX}\n\nДокументы базы знаний: {result.answer}"
+            confidence: Confidence = "partial"
+        else:
+            answer, confidence = result.answer, result.confidence
+        answer += f"\n\n{ATTACHMENTS_HEADER}\n" + "\n".join(lines)
+        return ProviderAnswer(
+            answer=answer,
+            confidence=confidence,
+            evidence=[*result.evidence, *evidence],
+            warnings=result.warnings,
+        )
+
+    def _answer_team(self, passages: list[ContextPassage], options: AnswerOptions) -> ProviderAnswer:
         terms = options.terms
         if not terms:
             return insufficient("Вопрос не содержит значимых слов для поиска. Переформулируйте вопрос.")
+
+        if options.compare_terms:
+            # Terms of an attached file: the absent ones are reported with the quotes ("не встречаются: …"),
+            # they do not cancel the comparison. Nothing at all in common is still insufficient.
+            if len(options.unmatched_terms) == len(terms):
+                listed = reportable_terms(terms)[:12]
+                return insufficient(
+                    "Недостаточно данных: в документах базы знаний "
+                    + (
+                        f"не встречаются {_format_terms(listed)}"
+                        if listed
+                        else "нет совпадений со словами вопроса"
+                    )
+                    + ". Демо-ассистент не делает предположений о том, чего нет в документах."
+                )
+            return self._quote_team(passages, options)
 
         missing_entities = [t for t in options.unmatched_terms if t.is_entity_like]
         if missing_entities:
@@ -155,12 +233,20 @@ class MockAIProvider:
         # Half of the question is absent from every allowed document: whatever matched is not an answer.
         missing = options.unmatched_terms
         if len(terms) >= 2 and len(missing) * 2 >= len(terms):
+            listed = reportable_terms(missing)  # function words are counted, never named
             return insufficient(
-                "Недостаточно данных: в доступных источниках не встречаются "
-                f"{_format_terms(missing)} — подтверждённого ответа на вопрос нет. Демо-ассистент не делает "
-                "предположений о том, чего нет в документах."
+                "Недостаточно данных: в доступных источниках "
+                + (
+                    f"не встречаются {_format_terms(listed)} — подтверждённого ответа на вопрос нет"
+                    if listed
+                    else "нет подтверждённого ответа на вопрос"
+                )
+                + ". Демо-ассистент не делает предположений о том, чего нет в документах."
             )
+        return self._quote_team(passages, options)
 
+    def _quote_team(self, passages: list[ContextPassage], options: AnswerOptions) -> ProviderAnswer:
+        terms = options.terms
         sentences = _sentences(passages, terms)
         index = {(s.cid, s.position): s for s in sentences}
         warnings: list[str] = []
@@ -194,10 +280,17 @@ class MockAIProvider:
         threshold = max(1, (best + 1) // 2)
         selected: dict[str, set[int]] = {}
         seeds: dict[str, int] = {}
-        rank: dict[str, tuple[int, int]] = {}
+        rank: dict[str, tuple[int, int, int]] = {}
         total_seeds = 0
-        for cand in sorted(candidates, key=lambda c: (-c.weight, c.passage_index, c.position)):
-            if cand.weight < threshold or total_seeds >= MAX_QUOTES:
+        # Context the user chose (a document or a selection) is quoted first whenever it is relevant (contains a
+        # question term); without chosen context the order is by weight, as always.
+        chosen = {p.cid for p in passages if p.chosen}
+        for cand in sorted(
+            candidates, key=lambda c: (c.cid not in chosen, -c.weight, c.passage_index, c.position)
+        ):
+            if total_seeds >= MAX_QUOTES:
+                break
+            if cand.cid not in chosen and cand.weight < threshold:
                 break
             positions = selected.setdefault(cand.cid, set())
             following = index.get((cand.cid, cand.position + 1))
@@ -221,7 +314,7 @@ class MockAIProvider:
                     continue
             positions |= window
             seeds[cand.cid] = seeds.get(cand.cid, 0) + 1
-            rank.setdefault(cand.cid, (-cand.weight, cand.passage_index))
+            rank.setdefault(cand.cid, (int(cand.cid not in chosen), -cand.weight, cand.passage_index))
             total_seeds += 1
 
         covered: set[str] = set()
@@ -251,7 +344,7 @@ class MockAIProvider:
         # "supported" only when ONE source covers the question; scattered matches stay "partial".
         confidence: Confidence = "supported" if best_single >= SUPPORTED_COVERAGE else "partial"
         answer = MOCK_PREFIX + "\n\n" + "\n".join(lines)
-        not_covered = [t for t in terms if t.stem not in covered]
+        not_covered = reportable_terms([t for t in terms if t.stem not in covered])
         if not_covered and confidence == "partial":
             answer += f"\n\nВ процитированных фрагментах не встречаются: {_format_terms(not_covered)}."
         return ProviderAnswer(answer=answer, confidence=confidence, evidence=evidence, warnings=warnings)

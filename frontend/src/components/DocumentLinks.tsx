@@ -123,15 +123,21 @@ export function DocumentLinksPanel({
   error,
   loading,
   onRetry,
+  actions,
 }: {
   links: DocumentLinks | null;
   error: ApiError | null;
   loading: boolean;
   onRetry: () => void;
+  /** Controls next to the heading («Связи на графе»). */
+  actions?: ReactNode;
 }) {
   return (
     <section className="links-panel" id="doc-links" aria-labelledby="doc-links-title">
-      <h2 id="doc-links-title">Связи документа</h2>
+      <div className="links-panel__head">
+        <h2 id="doc-links-title">Связи документа</h2>
+        {actions}
+      </div>
       <p className="muted links-panel__intro">
         Ссылка <code>[[ID|Название]]</code> в тексте — это упоминание (references), а не зависимость данных. Показаны
         только документы, доступные вам{links ? `; поколение индекса ${links.generation}` : ""}.

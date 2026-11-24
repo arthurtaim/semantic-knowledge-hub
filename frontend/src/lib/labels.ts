@@ -21,7 +21,7 @@ import type {
   PublicationJobState,
   PublisherMode,
   ReviewState,
-  SourceType,
+  CitationSourceType,
   SyncState,
   UnresolvedReason,
 } from "../api/types";
@@ -64,10 +64,11 @@ export const STATUS_LABEL: Record<DocStatus, string> = {
   deprecated: "Устарел",
 };
 
-export const SOURCE_LABEL: Record<SourceType, string> = {
+export const SOURCE_LABEL: Record<CitationSourceType, string> = {
   local: "Локальный workspace",
   gitlab: "GitLab",
   confluence: "Confluence",
+  attachment: "Вложение",
 };
 
 export const REVIEW_LABEL: Record<ReviewState, string> = {
@@ -113,9 +114,6 @@ export const PROPOSAL_STATUS_ORDER: ProposalStatus[] = [
   "conflict",
   "submission_failed",
 ];
-
-/** Proposals that wait for a person in this application (home page block). */
-export const PROPOSAL_NEEDS_ACTION: ProposalStatus[] = ["draft", "ready_for_review", "submission_failed", "conflict"];
 
 /** Labels for ProposalEvent.action; unknown actions fall back to the raw value. */
 export const PROPOSAL_ACTION_LABEL: Record<string, string> = {

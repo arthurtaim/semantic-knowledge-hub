@@ -7,6 +7,7 @@ owner: unassigned
 tags: [process, deprecated, demo]
 related_ids: [SEM-PROC-001]
 reviewed_at: 2024-06-01
+updated_at: 2024-06-01
 ---
 
 # Устаревший порядок согласования правок по почте (демо)

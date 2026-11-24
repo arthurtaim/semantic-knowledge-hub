@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-10-15
+updated_at: 2026-10-15
 tags: [aris, catalog, mapping, маппинг, сопоставление, field-mapping, lookup, integration, интеграция, aris-catalog]
 aliases: ["ARIS mapping", "ARIS field mapping", "сопоставление полей ARIS", "маппинг ARIS"]
 summary: "Сопоставление шести полей экспорта ARIS с полями актива BusinessProcess в каталоге: aris_object_guid → process_id через таблицу MAP_ARIS_PROCESS, перевод aris_status в lifecycle_state."

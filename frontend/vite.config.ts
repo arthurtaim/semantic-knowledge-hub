@@ -21,6 +21,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
-    css: false,
+    // CSS is not processed in tests, except the stylesheet read as text by tokens.test.ts.
+    css: { include: [/styles\/app\.css/] },
   },
 });

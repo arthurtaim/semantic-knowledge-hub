@@ -12,6 +12,8 @@ import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { TemplateStatusBadge } from "./TemplatesPage";
 import { When } from "../components/When";
+import { PageToolbar } from "../components/shell/PageToolbar";
+import { buttonClass } from "../components/ui/Button";
 
 function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
@@ -311,11 +313,39 @@ export function TemplateDetailPage() {
 
   return (
     <article className="template-detail">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/templates">Шаблоны</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{t.title}</span>
-      </nav>
+      <PageToolbar
+        crumbs={[{ label: "Шаблоны", to: "/templates" }, { label: t.title }]}
+        actionsInContentOnPhone
+        actions={
+          <>
+            <a href="#compare" className={buttonClass("quiet")}>
+              Сравнить версии
+            </a>
+            {aiOff ? null : (
+              <button
+                type="button"
+                className={buttonClass("secondary")}
+                disabled={!usable || !aiAvailable}
+                aria-expanded={aiOpen}
+                aria-controls={aiOpen ? "template-ai" : undefined}
+                aria-describedby={!usable ? "template-unusable" : !aiAvailable ? "template-ai-off" : undefined}
+                onClick={() => setAiOpen((open) => !open)}
+              >
+                Создать с ИИ
+              </button>
+            )}
+            {usable ? (
+              <Link to={`/documents/new?template=${encodeURIComponent(t.id)}`} className={buttonClass("primary")}>
+                Использовать шаблон
+              </Link>
+            ) : (
+              <button type="button" className={buttonClass("primary")} disabled aria-describedby="template-unusable">
+                Использовать шаблон
+              </button>
+            )}
+          </>
+        }
+      />
       <header className="template-detail__head">
         <h1>
           {t.title} <span className="version-badge version-badge--large">v{t.version}</span>
@@ -341,33 +371,6 @@ export function TemplateDetailPage() {
           ID шаблона <code className="doc-id">{t.id}</code> · документы получают ID вида{" "}
           <code className="doc-id">{t.id_prefix}-NNN</code>
         </p>
-        <div className="document__actions">
-          {usable ? (
-            <Link to={`/documents/new?template=${encodeURIComponent(t.id)}`} className="button button--primary">
-              Использовать шаблон
-            </Link>
-          ) : (
-            <button type="button" className="button button--primary" disabled aria-describedby="template-unusable">
-              Использовать шаблон
-            </button>
-          )}
-          {aiOff ? null : (
-            <button
-              type="button"
-              className="button button--secondary"
-              disabled={!usable || !aiAvailable}
-              aria-expanded={aiOpen}
-              aria-controls="template-ai"
-              aria-describedby={!usable ? "template-unusable" : !aiAvailable ? "template-ai-off" : undefined}
-              onClick={() => setAiOpen((open) => !open)}
-            >
-              Создать с ИИ
-            </button>
-          )}
-          <a href="#compare" className="button button--quiet">
-            Сравнить версии
-          </a>
-        </div>
         {unusableReason ? (
           <p id="template-unusable" className="flag template-detail__why">
             {unusableReason}

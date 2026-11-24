@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.4"
 synthetic: true
 reviewed_at: 2026-10-02
+updated_at: 2026-10-02
 tags: [governance, data-quality, dq, completeness, полнота, качество-данных, metadata, метаданные, threshold, порог]
 aliases: ["полнота метаданных", "metadata completeness", "заполненность обязательных атрибутов", "completeness_score"]
 summary: "Порог полноты по умолчанию — 95 % записей с заполненными обязательными атрибутами на пакет или датасет; более строгое правило области (98 % в Process Overview) действует внутри своей области. Как считать completeness_score записи."

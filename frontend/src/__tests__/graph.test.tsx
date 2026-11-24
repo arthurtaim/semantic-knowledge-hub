@@ -117,8 +117,14 @@ describe("Knowledge graph", () => {
     const calls = mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
     renderRoutes("/graph", GRAPH);
     await screen.findByRole("group", { name: /Схема графа: 3 узла, 2 связи/ });
+    expect(screen.getByText("3 узла, 2 связи")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Карта знаний", level: 1 })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("radio", { name: "Списком" }));
+    // «Списком» is a toggle: the map and the list are two views of the same graph.
+    const listToggle = screen.getByRole("button", { name: "Списком" });
+    expect(listToggle).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(listToggle);
+    expect(listToggle).toHaveAttribute("aria-pressed", "true");
     const nodes = screen.getByRole("heading", { name: "Узлы (3)" }).closest("section") as HTMLElement;
     expect(within(nodes).getByText("DEMO-INT-002")).toBeInTheDocument();
     const edges = screen.getByRole("heading", { name: "Связи (2)" }).closest("section") as HTMLElement;
@@ -145,6 +151,23 @@ describe("Knowledge graph", () => {
 
     const request = calls.find((c) => c.url === "/api/graph/overview?limit=150");
     expect(request?.headers["X-SKH-Client"]).toBe("web");
+  });
+
+  it("keeps the graph generation out of the bar: in «Сведения» while nothing is selected and in the count's tooltip", async () => {
+    mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
+    renderRoutes("/graph", GRAPH);
+    await screen.findByRole("group", { name: /Схема графа/ });
+    expect(document.querySelector(".graph-caption")).not.toHaveTextContent("Поколение графа");
+    expect(document.querySelector(".graph-bar")).not.toHaveTextContent("Поколение графа");
+    expect(screen.getByText("3 узла, 2 связи")).toHaveAttribute("title", "Поколение графа: g1");
+    expect(within(panel()).getByText(/Поколение графа/)).toHaveTextContent("Поколение графа: g1");
+    // A selected node fills the panel with its own details.
+    const target = screen.getByRole("button", { name: /^Логическая модель: BusinessProcess\./ });
+    target.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(within(panel()).queryByText(/Поколение графа/)).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(within(panel()).getByText(/Поколение графа/)).toBeInTheDocument();
   });
 
   it("draws nodes as focusable buttons; Enter selects a node and Escape clears the selection", async () => {
@@ -185,8 +208,11 @@ describe("Knowledge graph", () => {
     );
     renderRoutes("/graph", GRAPH);
     await screen.findByRole("group", { name: /Схема графа/ });
-    await userEvent.selectOptions(screen.getByLabelText("Тип узла"), "integration");
+    // Filters are chips that open a menu of choices.
+    await userEvent.click(screen.getByRole("button", { name: "Тип узла: все" }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "Интеграция" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/graph?kind=integration"));
+    expect(screen.getByRole("button", { name: "Тип узла: Интеграция" })).toBeInTheDocument();
     expect(await screen.findByText("Связей между показанными узлами нет — измените фильтр.")).toBeInTheDocument();
     expect(calls.some((c) => c.url === "/api/graph/overview?limit=150&kind=integration")).toBe(true);
   });
@@ -229,7 +255,7 @@ describe("Knowledge graph", () => {
     expect(within(panel()).queryByRole("link", { name: "Показать соседей" })).toBeNull();
 
     await userEvent.click(within(panel()).getByRole("button", { name: "Показать соседей" }));
-    await userEvent.click(screen.getByRole("radio", { name: "Списком" }));
+    await userEvent.click(screen.getByRole("button", { name: "Списком" }));
     const nodes = (await screen.findByRole("heading", { name: "Узлы (3)" })).closest("section") as HTMLElement;
     expect(within(nodes).getByRole("button", { name: "Интеграционные ошибки и retry" })).toBeInTheDocument();
     expect(calls.some((c) => c.url === `${NEIGHBOURS}?depth=1&limit=100&cursor=1`)).toBe(true);
@@ -311,7 +337,7 @@ describe("Knowledge graph", () => {
     );
     renderRoutes(`/graph?trace=${TRACE}`, GRAPH);
     expect(await screen.findByRole("heading", { name: "Граф ответа", level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/Текст вопроса не хранится/)).toBeInTheDocument();
+    expect(screen.getByText(/Текст вопроса не хранится/)).toHaveTextContent("Узлы и связи следа временные.");
     expect(document.querySelectorAll(".graph-canvas__svg .graph-edge--unconfirmed")).toHaveLength(2);
 
     await userEvent.click(screen.getByRole("button", { name: /^Регламент заморозки изменений метаданных \(демо\)\. Внешняя страница Confluence, статус не подтверждён/ }));

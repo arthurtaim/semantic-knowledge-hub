@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-10-02
+updated_at: 2026-10-02
 tags: [process, процесс, dataset, датасет, attributes, атрибуты, breaking-change, совместимость, versioning, версионирование, change, изменение]
 aliases: ["dataset attribute change", "изменение схемы датасета", "добавление атрибута в датасет"]
 summary: "Как изменить атрибуты существующего датасета: правка спецификации по шаблону Dataset Specification, классификация изменения как аддитивного или ломающего и повышение версии MINOR или MAJOR."

@@ -7,6 +7,7 @@ owner: demo-team
 tags: [overview, product, demo]
 related_ids: [SEM-ARCH-001, SEM-PROC-001, SEM-GLOSS-001]
 reviewed_at: 2026-11-20
+updated_at: 2026-11-20
 summary: Назначение приложения, источники знаний и статусы документов в демонстрационном режиме.
 ---
 

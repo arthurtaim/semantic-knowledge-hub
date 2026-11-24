@@ -21,6 +21,7 @@ import {
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { When } from "../components/When";
+import { PageToolbar } from "../components/shell/PageToolbar";
 
 type ActionKind = "mark_ready" | "submit" | "refresh" | "reject" | "delete";
 
@@ -385,11 +386,7 @@ export function ProposalDetailPage() {
 
   return (
     <div className="proposal">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/proposals">Предложения</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{p.document_id}</span>
-      </nav>
+      <PageToolbar crumbs={[{ label: "Предложения", to: "/proposals" }, { label: p.document_id }]} />
       <div className="page-head">
         <h1>
           {creating ? "Новый документ" : "Изменение документа"} «

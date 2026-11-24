@@ -36,6 +36,15 @@ function documentRoutes(publication: unknown, extra: MockRoute[] = []): MockRout
 }
 
 const renderDocument = () => renderRoutes(DOC, { "/documents/:id": <DocumentPage /> });
+/** UI v2: publication lives in the «История» segment of the document. */
+async function openHistory() {
+  await userEvent.click(await screen.findByRole("tab", { name: "История" }));
+}
+/** UI v2: the former passport facts are in «Сведения о документе». */
+async function openDetails(): Promise<HTMLElement> {
+  await userEvent.click(await screen.findByRole("button", { name: "Все сведения" }));
+  return screen.getByRole("complementary", { name: "Сведения о документе" });
+}
 const renderJob = () =>
   renderRoutes(`/publications/${PUB_JOB_ID}`, { "/publications/:jobId": <PublicationJobPage /> });
 
@@ -43,8 +52,10 @@ describe("Document page: publication block", () => {
   it("shows only a quiet note when publication is not configured", async () => {
     mockApi(documentRoutes(disabledPublication));
     renderDocument();
-    const passport = await screen.findByRole("complementary", { name: "Паспорт документа" });
-    expect(await within(passport).findByText("публикация не настроена")).toBeInTheDocument();
+    const details = await openDetails();
+    expect(await within(details).findByText("публикация не настроена")).toBeInTheDocument();
+    await openHistory();
+    expect(await screen.findByText("Публикация в Confluence не настроена в этой установке.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Публикация в Confluence" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Подготовить публикацию" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Опубликовать/ })).toBeNull();
@@ -57,6 +68,7 @@ describe("Document page: publication block", () => {
       ]),
     );
     renderDocument();
+    await openHistory();
     const section = (await screen.findByRole("heading", { name: "Публикация в Confluence" })).closest("section") as HTMLElement;
     expect(within(section).getByText("Не публиковался")).toBeInTheDocument();
     expect(within(section).getByText("Документ ещё не публиковался в Confluence.")).toBeInTheDocument();
@@ -93,6 +105,7 @@ describe("Document page: publication block", () => {
       ),
     );
     renderDocument();
+    await openHistory();
     const section = (await screen.findByRole("heading", { name: "Публикация в Confluence" })).closest("section") as HTMLElement;
     expect(within(section).getByText("Опубликован", { selector: ".pub-state" })).toBeInTheDocument();
     const link = within(section).getByRole("link", { name: /Открыть страницу в Confluence/ });
@@ -105,8 +118,8 @@ describe("Document page: publication block", () => {
       "href",
       `/publications/${PUB_JOB_ID}`,
     );
-    const passport = screen.getByRole("complementary", { name: "Паспорт документа" });
-    expect(within(passport).getByText("Опубликован")).toBeInTheDocument();
+    const details = await openDetails();
+    expect(within(details).getByText("Опубликован")).toBeInTheDocument();
   });
 
   it("explains a conflict with the latest job error and links to the preview", async () => {
@@ -121,6 +134,7 @@ describe("Document page: publication block", () => {
       ),
     );
     renderDocument();
+    await openHistory();
     const section = (await screen.findByRole("heading", { name: "Публикация в Confluence" })).closest("section") as HTMLElement;
     expect(within(section).getByText("Конфликт", { selector: ".pub-state" })).toBeInTheDocument();
     expect(within(section).getAllByText(message)).toHaveLength(1);
@@ -140,6 +154,7 @@ describe("Document page: publication block", () => {
       ),
     );
     renderDocument();
+    await openHistory();
     expect(await screen.findByText(/Запись в Confluence выключена: можно подготовить и проверить предпросмотр/)).toBeInTheDocument();
     expect(screen.getByText(/Реальный сервер — live validation не проводилась/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Опубликовать/ })).toBeNull();

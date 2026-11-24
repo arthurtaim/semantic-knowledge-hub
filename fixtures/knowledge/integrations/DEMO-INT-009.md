@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-10-29
+updated_at: 2026-10-29
 tags: [versioning, версии, version-propagation, распространение-версий, event-hub, schema-change, изменение-схемы, major, minor, dataset, датасет, integration, интеграция]
 aliases: ["version propagation", "распространение версий", "source version propagation", "версии датасетов"]
 summary: "Как изменение версии контракта выгрузки источника доходит до датасетов: событие version_changed в Event Hub, правило MAJOR/MINOR из GOV-009, автоматическое повышение MINOR и ревью для MAJOR, ответное событие dataset_version_changed."

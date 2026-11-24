@@ -8,7 +8,14 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
-from app.domain.models import Confidence, DocStatus, DocType, IntegrationStatus, SourceType
+from app.domain.models import (
+    CitationSourceType,
+    Confidence,
+    DocStatus,
+    DocType,
+    IntegrationStatus,
+    SourceType,
+)
 from app.domain.text import QueryTerm
 
 # claude_cli: EXPERIMENTAL personal-test provider (Claude Code CLI through an isolated worker,
@@ -35,7 +42,7 @@ class ContextPassage:
     section: str | None
     section_anchor: str | None
     status: DocStatus | None
-    source_type: SourceType
+    source_type: CitationSourceType
     source_uri: str
     revision: str
     text: str
@@ -47,6 +54,14 @@ class ContextPassage:
     external_status: str | None = None
     fragment_id: str | None = None
     content_hash: str | None = None
+    # A file attached to the conversation (source_type "attachment", UI v2): user DATA, never a knowledge-base
+    # document. `locators` has one (scope, kind, number) per line of `text`, e.g. ("лист Fields", "row", 12); the
+    # server turns the lines a quote covers into «строка 3» / «стр. 2» / «лист Fields, строки 7–9».
+    attachment_id: str | None = None
+    locators: tuple[tuple[str, str, int], ...] = ()
+    locator: str = ""  # the whole fragment («строки 1–40»), shown to a model next to the text
+    # Context the user chose explicitly (a document via «@» or a selection): cited first when relevant.
+    chosen: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,6 +72,9 @@ class AnswerOptions:
     # Earlier turns of the same conversation (oldest first). Providers that do not support
     # conversations ignore it; the server never stores it.
     history: tuple[ConversationTurn, ...] = ()
+    # Compare mode (skill compare_with_file): the terms come from an attached file, so terms absent from the
+    # knowledge base are a FINDING to report, not a reason to refuse the whole answer.
+    compare_terms: bool = False
 
 
 @dataclass(frozen=True)

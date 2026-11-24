@@ -36,7 +36,7 @@ const posts = (calls: RecordedCall[]) => calls.filter((c) => c.method === "POST"
 
 async function askSla() {
   await userEvent.type(screen.getByLabelText("Вопрос"), "Какой SLA у интеграции с ЦФТ?");
-  await userEvent.click(screen.getByRole("button", { name: "Спросить" }));
+  await userEvent.click(screen.getByRole("button", { name: "Отправить" }));
   return screen.findByRole("heading", { name: "В базе знаний нет ответа на этот вопрос" });
 }
 
@@ -73,7 +73,7 @@ describe("«Недостаточно данных» card", () => {
     const card = (await askSla()).closest("section") as HTMLElement;
     expect(within(card).getByText(/mock-коннектор/)).toBeInTheDocument();
     await userEvent.click(within(card).getByRole("button", { name: "Искать в корпоративных источниках" }));
-    await screen.findAllByRole("heading", { name: "Ответ" });
+    await screen.findAllByRole("heading", { name: "Ассистент" });
     expect(posts(calls)).toHaveLength(2);
     expect(posts(calls)[1]?.body).toMatchObject({ question: "Какой SLA у интеграции с ЦФТ?", sources: ["corporate"], history: [] });
     expect(screen.getAllByText(/Где искать: Корпоративные/).length).toBeGreaterThan(0);
@@ -86,18 +86,23 @@ describe("Four AI modes: no dead controls", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Спросить базу знаний" })).toBeInTheDocument();
     expect(screen.getByText(/ИИ в этой установке отключён/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Вопрос")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Спросить" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отправить" })).toBeNull();
+    // UI v2: the assistant field in its search form — no file or skill controls at all.
+    expect(screen.getByRole("textbox", { name: "Поиск по базе знаний" })).toHaveAttribute("placeholder", "Найти в базе знаний");
+    expect(screen.queryByRole("button", { name: "Файл" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Навык" })).toBeNull();
   });
 
-  it("disabled: the main navigation has no «Спросить»; other modes keep it", () => {
+  // UI v2: the sidebar's first item is the assistant (the start page); without AI it is the start page by name.
+  it("disabled: the main navigation has no «Ассистент»; other modes keep it", () => {
     const { unmount } = renderAt("/documents", "/documents", <Layout>x</Layout>, withMode("disabled"));
     const nav = screen.getByRole("navigation", { name: "Основная навигация" });
-    expect(within(nav).queryByRole("link", { name: "Спросить" })).toBeNull();
-    expect(within(nav).getByRole("link", { name: "База знаний" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Ассистент" })).toBeNull();
+    expect(within(nav).getByRole("link", { name: "Главная" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "Документы" })).toHaveAttribute("aria-current", "page");
     unmount();
     renderAt("/documents", "/documents", <Layout>x</Layout>, withMode("mock"));
-    expect(within(screen.getByRole("navigation", { name: "Основная навигация" })).getByRole("link", { name: "Спросить" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Основная навигация" })).getByRole("link", { name: "Ассистент" })).toBeInTheDocument();
   });
 
   it("disabled: the explorer does not offer «Спросить ИИ об этих документах»", async () => {
@@ -121,14 +126,20 @@ describe("Four AI modes: no dead controls", () => {
     ];
     mockApi(routes);
     const { unmount } = renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />, withMode("disabled"));
-    await screen.findByRole("complementary", { name: "Паспорт документа" });
+    await screen.findByRole("heading", { level: 1, name: "ARIS integration — questions for discovery" });
     expect(screen.getByRole("link", { name: "Предложить изменение" })).toBeInTheDocument(); // the manual path
-    expect(screen.queryByRole("link", { name: "Спросить ассистента" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "ИИ-помощник" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "ИИ-помощник по документу" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    expect(screen.getByRole("menuitem", { name: "Показать на карте знаний" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Спросить ассистента" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ассистент" })).toBeNull(); // no assistant panel, no AI actions
+    expect(screen.queryByRole("heading", { name: "Ещё по документу" })).toBeNull();
     unmount();
     renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />, withMode("mock"));
-    expect(await screen.findByRole("heading", { name: "ИИ-помощник по документу" })).toBeInTheDocument();
+    // The document's AI actions are in the assistant panel (the block under the text was moved there).
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    expect(screen.getByRole("list", { name: "Ещё по документу" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    expect(screen.getByRole("menuitem", { name: "Спросить ассистента" })).toBeInTheDocument();
   });
 
   it("disabled: a new document is created manually only — the AI option is not offered", async () => {

@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-07-22
+updated_at: 2026-07-22
 tags: [ownership, владение, boundaries, границы, system-of-record, первоисточник, owner, владелец, steward, стюард]
 aliases: ["владение источниками и границы", "source ownership", "границы ответственности источников", "system of record"]
 summary: "Правила владения условными источниками: у каждой системы один Owner и минимум один Steward, у каждой бизнес-сущности ровно один первоисточник; реестр владения и границ."

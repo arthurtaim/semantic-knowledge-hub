@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-09-14
+updated_at: 2026-09-14
 tags: [governance, roles, роли, owner, владелец, reviewer, ревьюер, steward, стюард, ответственность]
 aliases: ["владелец документа", "стюард данных", "data steward", "ревьюер изменений", "зоны ответственности"]
 summary: "Обязанности трёх ролей управления документацией и метаданными: Owner отвечает за содержание и финальное согласие, Reviewer — за независимую проверку изменения, Steward — за качество метаданных."

@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import { useMemo, type MouseEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 
 const PURIFY_CONFIG = {
@@ -16,6 +16,25 @@ const PURIFY_CONFIG = {
 export function SafeHtml({ html, className }: { html: string; className?: string }) {
   const navigate = useNavigate();
   const clean = useMemo(() => DOMPurify.sanitize(html, PURIFY_CONFIG), [html]);
+  const root = useRef<HTMLDivElement>(null);
+
+  // A wide table or code block scrolls inside its own frame (the page never does); one that overflows gets a tab
+  // stop so it can be scrolled with the keyboard too (WCAG 2.1.1). Re-checked when the column changes width.
+  useLayoutEffect(() => {
+    const node = root.current;
+    if (!node) return undefined;
+    const mark = () => {
+      for (const el of node.querySelectorAll<HTMLElement>("pre, table")) {
+        if (el.scrollWidth > el.clientWidth + 1) el.tabIndex = 0;
+        else el.removeAttribute("tabindex");
+      }
+    };
+    mark();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(mark);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [clean]);
 
   function onClick(event: MouseEvent<HTMLDivElement>) {
     const anchor = (event.target as HTMLElement).closest("a");
@@ -30,5 +49,5 @@ export function SafeHtml({ html, className }: { html: string; className?: string
     }
   }
 
-  return <div className={className} onClick={onClick} dangerouslySetInnerHTML={{ __html: clean }} />;
+  return <div ref={root} className={className} onClick={onClick} dangerouslySetInnerHTML={{ __html: clean }} />;
 }

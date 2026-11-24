@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2025-11-20
+updated_at: 2025-11-20
 tags: [governance, deprecated, устарел, revision, ревизии, file-naming, имя-файла, legacy]
 aliases: ["дата в имени файла", "date in file name", "старое правило ревизий"]
 summary: "Устаревший регламент: ревизия документа обозначалась датой в имени файла (например, суффикс _2025-03-01). Отменён и заменён регламентом DEMO-GOV-009; не является действующим правилом."

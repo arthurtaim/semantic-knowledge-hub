@@ -2,7 +2,7 @@
 
 These are proposed MVP HTTP contracts. Claude Code may refine field details but must document changes, keep tests consistent and preserve adapter boundaries. All routes prefixed `/api`.
 
-**Current implemented contract: v0.3 (M4.6 authoring + M4 readiness + M5 publication)** — see the last section. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
+**Current implemented contract: v0.4 (v0.3 + UI v2 phase C: assistant skills and attachments)** — see the last two sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
 
 ## 1. Health and integrations
 - `GET /api/health` -> `{ "status": "ok", "mode": "local_demo" }` (no secrets).
@@ -10,6 +10,20 @@ These are proposed MVP HTTP contracts. Claude Code may refine field details but 
 
 ## 2. Knowledge
 - `GET /api/documents?query=&type=&status=&owner=&source=&page=1&size=20` -> `{items:[DocumentSummary],total,page,size}`.
+  - *UI v2 round 2 (additive).* Each item carries `link_count: int` — the distinct documents linked to it in the
+    **reader's** snapshot: targets of its declared, `related_ids` and inline `[[ID]]` relations plus the documents whose
+    relations point at it. Same number as the document page's «Связи» (`GET /api/documents/{id}/links`: outgoing
+    targets ∪ backlink sources); a document the reader cannot see neither appears nor counts. Computed in one pass over
+    the snapshot the list is built from (cached per snapshot), never per row. Other routes that return a
+    `DocumentSummary` / `DocumentDetail` leave it `null`. Code: `services/knowledge.py` `linked_document_counts`;
+    tests `tests/test_catalog_fields.py`.
+  - *UI v2 round 2 (additive).* `metadata_updated_at: date | null` on every `DocumentSummary` / `DocumentDetail`: the
+    document's own date, `updated_at: YYYY-MM-DD` in its front matter (`docs/DOCUMENT_SCHEMA.md`); `null` when the
+    document has none — it is never filled from the file, the commit or the index. The catalog's «Обновлён» shows it
+    («—» without it), and `sort=updated` orders by it (newest first, undated last by title). `updated_at` keeps its
+    meaning: the time of the source revision (commit date / file mtime), shown on the document page as «Дата
+    ревизии». A front-matter value that is not a date is a warning `invalid_updated_at` (kept in `extra_metadata`),
+    never a load error.
 - `GET /api/documents/{id}` -> `DocumentDetail` with rendered-safe markdown/source content, frontmatter metadata and revision.
 - `GET /api/search?q=...&source=team,corporate&limit=10` -> ranked `SearchResult[]`.
 
@@ -108,7 +122,7 @@ Refinements made during implementation (the schema is served at `GET /api/openap
 Changes on top of v0.1 (OpenAPI checked by `tests/test_knowledge_rules.py::test_openapi_contract_lists_documented_endpoints`):
 
 - **Provenance on documents.** `DocumentSummary`/`DocumentDetail` add `web_url` (link to *this revision* in the source system; host must equal `GITLAB_URL`; `null` for the local workspace) and `index_state` (`current|stale` — `stale` means the last sync could not refresh the document and its last successfully read revision is shown). `updated_at` = commit date of the revision (GitLab) or file mtime (local); never guessed.
-- **Sorting.** `GET /api/documents?sort=relevance|title|updated|status` (`updated` = newest first, undated last); unknown values → `422`.
+- **Sorting.** `GET /api/documents?sort=relevance|title|updated|status` (`updated` = newest first, undated last; since UI v2 round 2 by the front-matter `metadata_updated_at`, see §2); unknown values → `422`.
 - **Synchronisation.** `GET /api/index/status` and `POST /api/index/sync` (full re-sync; `X-SKH-Client` required) → `SyncStatus {source, state: fresh|stale|error|never_synced, message, documents, issues, failed_paths[], last_attempt_at, last_success_at, source_version, branch, head_commit, indexed_documents, indexed_version, indexed_at}`. `POST` returns `503` with the source error code when the source cannot be read.
 - **Proposal lifecycle.** `ProposalStatus = draft | ready_for_review | submitting | submitted_to_gitlab | merged | rejected | conflict | submission_failed` (stores from v0.1 are migrated: `open→draft`, `submitted→submitted_to_gitlab`). The GitLab MR state is separate: `merge_request {iid, url, state: opened|merged|closed|locked|unknown, source_branch, target_branch, checked_at}`. `ProposalDetail` adds `can_submit`, `can_refresh_status`, `source_document_state` (`unchanged|changed_since_base|updated_by_this_proposal|missing`), `branch_name`, `submission {attempts, last_attempt_at, error_code, error_message, uncertain}`; `ProposalSummary` adds `merge_request_url`, `merge_request_state`.
   - `POST /api/drafts/{id}/mark-ready`: re-checks the revision at the source; stale → `409 revision_conflict` and status `conflict`.
@@ -247,3 +261,137 @@ Problem codes: `revision_superseded`, `not_merged`, `status_not_publishable`, `s
   `read_marker`, `create_page`, `update_page`, `write_marker`, `status`; failures raise `PublicationError`
   (`uncertain`, `retryable`).
 - `KnowledgeRepository` protocol adds `file_exists(path)` (local and GitLab; fresh read for ID/path checks); `GitLabKnowledgeRepository` adds `merged_merge_request(revision)` (merge evidence for publication).
+
+## Implemented contract (v0.4, UI v2 phase C: assistant skills and attachments)
+
+Source: `docs/ui-v2/specs/02_ASSISTANT.md` §3–§6. Additive: every new request field is optional and every new
+response field has a default, so a v0.3 request gets exactly the v0.3 answer (deterministic eval unchanged).
+Code: `app/domain/skills.py`, `app/services/skills.py`, `app/services/attachments.py`, `app/api/multipart.py`,
+`app/api/assistant.py`; tests `tests/test_assistant_skills.py`, `tests/test_attachments.py`.
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/assistant/skills` | `ask_assistant` | — | `SkillInfo[]` in a fixed order | — |
+| `POST /api/assistant/attachments` | `ask_assistant` | `multipart/form-data`: `conversation_id`, `file` (send `conversation_id` first) | `201 AttachmentInfo` (`status: ready`) or `200 AttachmentInfo` (`status: error` + `error_code`, nothing stored) | `422 invalid_request` (`details.fields[].loc` = `body.conversation_id` / `body.file`), `422 invalid_multipart`, `503 assistant_disabled` |
+| `DELETE /api/assistant/attachments/{attachment_id}` | `ask_assistant` | — | `204` — idempotent (also for an expired, deleted or never stored id) | `422` (id is not `ATT-<16 hex>`) |
+| `POST /api/assistant/ask`, `/ask/stream` | `ask_assistant` (+ `create_proposal` for workflow skills, `read_corporate` for `corporate`) | v0.3 body + the fields below | `AskResponse` + `skill`, `proposal`; citations may have `source_type: attachment` | see below |
+
+Shapes:
+
+```text
+SkillInfo { id, name, description, access: read|draft,
+            requires: {document: bool, selection: bool, attachment: bool,
+                       document_or_question: bool},   (document_or_question: review round, default false)
+            prompt_optional: bool, available: bool, unavailable_reason: string|null }
+
+AttachmentInfo { id: "ATT-<16 hex>", conversation_id, name (display only, sanitized), size, mime,
+                 status: ready|error, summary: string|null («3 листа», «12 страниц», «1 240 строк»),
+                 error_code: unsupported_type|too_large|limit_reached|unreadable|null,
+                 expires_at: datetime|null (null for an error result) }
+
+AskRequest += { conversation_id?: ^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$ (required with attachment_ids),
+                skill_id?: string, attachment_ids?: string[≤10], context_document_ids?: string[≤5],
+                selection?: {document_id, section_anchor?, text? (≤ 8000, "" = the whole section)} | null }
+                question: ≥ 3 characters, or "" when the skill has prompt_optional
+
+AskResponse += { skill: {id, name, access} | null      (echoed when the request named a skill)
+                 proposal: {id, kind, status, graph_link?} | null   (workflow skills; GET /api/ai/proposals/{id}) }
+
+Citation   += { source_type: local|gitlab|confluence|attachment,
+                attachment_id?, attachment_name?, locator? («строка 1», «стр. 4», «лист Fields, строка 12», «строки 3–5») }
+                for an attachment: document_id = attachment id, source_uri = attachment://<id>, status/section/app_path = null
+Citation   += { excerpt_parts?: ExcerptPart[] | null }        (round 2, additive; team documents only)
+ExcerptPart  = { kind: "text", text } | { kind: "table", headers: string[], rows: string[][] }
+```
+
+**Table excerpts (`excerpt_parts`).** `excerpt` stays the verbatim quote the server verified against the passage (a
+table's cells appear glued there: section text, the search index and the provider input are unchanged). When that
+quote touches a Markdown table of the cited section, the server traces it back word by word to the section's Markdown
+at the same revision and adds `excerpt_parts`: the quote's own prose and, for each table it touches, the header row and
+the touched body rows (complete rows, cells as plain text; an escaped `\|` is a `|` in the cell, the alignment row is
+not a row, an empty cell is `""`). Several pieces of a quote joined by « … » keep a `…` between them. No table touched,
+or no confident match (e.g. a redacted fragment) → `null`, and the UI shows `excerpt` as before. Set for ask answers
+and for the evidence citations of workflow skills; never for Confluence pages or attachments.
+
+**Not found terms (`unmatched_terms`, round 2).** Words of the question that no allowed source contains — never
+function words (prepositions, conjunctions, particles, pronouns, auxiliary verb forms: `FUNCTION_WORDS` in
+`app/domain/text.py`, a documented RU + EN superset of the search stop words). The same filter applies to the demo
+provider's note «В процитированных фрагментах не встречаются: …» and to the «не встречаются» lists of insufficient
+answers. An empty list means nothing meaningful is missing: the UI then shows no «Не найдено в документах» line.
+Search terms, coverage counting and answer decisions are unchanged (function words still count; they are only never
+named).
+
+**Skills and AI modes.** `internal_api`, `claude_cli`: all available. `mock`: all except `improve_section`
+(`unavailable_reason`: «В демо-режиме нет языковой модели: переписать раздел нельзя.» — the mock can only normalize
+layout). `disabled`: none available, reason «ИИ отключён». `draft_document` additionally needs a provider with
+`supports_authoring`.
+
+**Attachments.** ≤ 10 ready files per conversation (≤ 100 per user over all conversations), ≤ 20 MB each; formats
+md/markdown, txt, csv, json, yaml/yml, sql, pdf, docx, xlsx; text extraction only. `unsupported_type`: another
+extension, an executable by content (PE/DOS, ELF, Mach-O, universal binary / Java class, WebAssembly, `#!` script —
+also under a text extension), a docx/xlsx carrying a macro project or executable entries. `too_large`: > 20 MB (a
+body beyond 20 MB + 64 KiB is not read to the end). `limit_reached`: the limits above. `unreadable`: corrupt,
+encrypted, without a text layer, binary under a text extension, empty, zip-bomb guard (entries, total and per-entry
+uncompressed size, ratio) or extraction over 20 s. Text: UTF-8 (BOM), UTF-16 with BOM, CP1251 fallback; units are
+lines (text, pdf pages), paragraphs and table rows (docx), rows (xlsx, ≤ 50 sheets); ≤ 300 000 characters kept
+(`summary` then ends with «, текст сокращён»). The body is read by `python-multipart`'s streaming parser under a hard
+byte cap checked before each chunk is parsed (never spooled to a temporary file; malformed bodies → `422
+invalid_multipart` with a message that never quotes the body). Only the extracted text is stored (app-state SQLite, table
+`assistant_attachments`), never the bytes; the file name never touches the filesystem; contents are never logged.
+Expiry: `ATTACHMENTS_TTL_HOURS` (default 24); expired rows are purged on access. Attachments are visible only in
+their conversation and to their uploader, never indexed into search, the graph or the discovery memory. With
+`AI_PROVIDER=disabled` uploads are refused (`503 assistant_disabled`; the UI has no file button then).
+
+**Ask errors (HTTP before any stream event).** `503 assistant_disabled`; `422 skill_unknown`; `503 skill_unavailable`
+(`details.skill_id`, message = the reason); `422 skill_input_missing` (`details.missing`: `document` | `selection` |
+`attachment` | `document_or_question`; `find_related` needs a document or a question, `improve_section` a selection
+with `section_anchor`);
+`404 attachment_not_found` (unknown, expired, deleted, another conversation or user — indistinguishable on purpose);
+`404 document_not_found` (chosen document or selection document not visible); `422 selection_not_found` (the
+selected text is not verbatim in the document / section, or the anchor does not exist); `403 forbidden`; `422
+invalid_request` (validation). Provider failures keep the v0.3 behaviour (HTTP error on `/ask`, `error` event on
+the stream).
+
+**Evidence rules.** Chosen documents (best sections for the question) and the verified selection are handed to the
+provider first, marked `chosen`, and quoted first when they contain a question term; a chosen document that is a
+draft keeps its status in the citation and the usual warning. Attachment fragments are a separate group (header line
++ windows around matching lines, ≤ 4 000 characters per answer, own budget); a citation of a fragment exists only
+with a verbatim quote, and its `locator` is computed by the server from the cited lines. An answer cited only from
+attachments is never `supported` (capped at `partial`, warning «Ответ опирается только на вложение…»). With
+attachments, the discovery trace stores only the user's own question (never the file's words or name).
+
+**Skills.** `answer` (default), `explain` (ask with «Объясни: …» over the selection / document), `compare_with_file`
+(ask; the file header joins the retrieval text; absent terms are reported, not a refusal) run through the grounded
+ask pipeline: `proposal = null`. The others call `AiWorkflowService.propose` (M5.6.3) and return `proposal`:
+`summarize` → `summarize`, `check_completeness` → `check_completeness`, `check_freshness` → `impact_analysis`,
+`find_related` → `find_related` (one document, or the best approved document for a question) / `explain_relation`
+(two documents), `draft_document` → `draft_from_prompt`, `improve_section` → `improve_section`, `suggest_metadata`
+→ `suggest_metadata`. For them `answer` = the proposal summary, `citations` = the proposal's evidence quotes
+re-verified verbatim against the reader's snapshot, `confidence` = `insufficient_evidence` when the proposal is
+insufficient, `supported` with verified citations, otherwise `partial`. Nothing is applied: Accept / Reject stay
+`POST /api/ai/proposals/{id}/accept|reject`. On `/ask/stream` a workflow skill sends `status` retrieving →
+generating → validating and `final` (no `delta`).
+
+### v0.4 additions (UI v2 review round)
+
+Additive: without the new parameters every response is the same as before.
+
+**Proposals list filters.** `GET /api/drafts` (`read_knowledge`) adds two optional boolean query parameters that
+combine with `status` and `document_id` (AND):
+
+| Parameter | Default | Effect | Used by |
+|---|---|---|---|
+| `exclude_own` | `false` | leaves out the caller's own proposals (`author == user_id`): nobody reviews their own change | «Ревью»: `?status=ready_for_review&exclude_own=true` (sidebar badge, the list behind it, the home «Ждёт вашего решения») |
+| `open_only` | `false` | only open proposals (`OPEN_STATUSES` in `app/domain/proposals.py`): `draft`, `ready_for_review`, `submitting`, `submitted_to_gitlab`, `submission_failed`. Closed for good: `merged`, `rejected` (also an MR closed without merge), `conflict` (the base changed; a new proposal is needed). There is no withdrawn / applied status. | the sidebar «Предложения» count and its «Открытые» list |
+
+A non-boolean value is `422 invalid_request`. In demo single-user mode every proposal is the caller's own, so
+the «Ревью» list is usually empty (no badge).
+
+**Skill rename.** `check_freshness` is named «Что перепроверить», description «Покажет связанные документы, которые
+могли устареть» (the id and the `impact_analysis` scenario behind it are unchanged).
+
+**«One of» requirement.** `SkillInfo.requires.document_or_question` (default `false`, so older clients and skills
+are unaffected): the skill needs a chosen document / a selection in one **or** a question of at least 3
+characters. Only `find_related` sets it. Without either, `/ask` answers `422 skill_input_missing` with
+`details.missing = ["document_or_question"]` (message «… нужно: документ или вопрос.»); the composer disables
+sending and says the same in one line.

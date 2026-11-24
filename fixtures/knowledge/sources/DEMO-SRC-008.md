@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-11-05
+updated_at: 2026-11-05
 tags: [event-hub, sys-evh, события, events, cdc, change-data-capture, уведомления, notifications]
 aliases: ["Event Hub", "шина событий", "change notifications", "CDC topic", "топик изменений"]
 summary: "Профиль условной системы SYS-EVH: топик demo.metadata.changes.v1 с CDC-событиями и служебными событиями об изменениях метаданных, доставка at-least-once, dead-letter очередь dlq.metadata.v1."

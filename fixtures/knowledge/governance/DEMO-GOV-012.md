@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "0.3"
 synthetic: true
 reviewed_at: 2026-11-12
+updated_at: 2026-11-12
 tags: [governance, approval, согласование, review, ревью, workflow, merge-request, тестовый-процесс]
 aliases: ["процесс согласования", "approval workflow", "согласование изменений", "два одобрения"]
 summary: "Проект регламента (на ревью): шаги тестового согласования изменения документа — от черновика до merge — с обязательными одобрениями Reviewer и Owner. Не является действующим правилом до утверждения."

@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.4"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [api, consumer-api, контракт, contract, process-overview, dependency-graph, rate-limit, лимит-запросов, integration, интеграция]
 aliases: ["API потребителей", "контракт выдачи данных", "consumer contract", "API Process Overview"]
 summary: "Синтетический контракт выдачи датасетов Process Overview и Dependency Graph потребителям: GET /demo/v1/process-overview?process_id=PRC-000417, страница 100 записей, не более 60 запросов в минуту на потребителя."

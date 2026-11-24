@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-06-10
+updated_at: 2026-06-10
 tags: [standard, стандарт, template, шаблон, adr, decision, решение, architecture, архитектура]
 aliases: ["ADR template", "шаблон архитектурного решения", "шаблон записи решения"]
 summary: "Описание шаблона Architecture Decision Record (ADR): пять обязательных разделов — Context, Decision, Alternatives, Consequences, Status; статус решения отличается от статуса документа."

@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-09-30
+updated_at: 2026-09-30
 tags: [governance, referential-integrity, ссылочная-целостность, integrity, целостность, process_id, data-quality, dq]
 aliases: ["ссылочная целостность", "referential integrity", "висячие ссылки", "dangling references"]
 summary: "Каждый process_id в датасетах должен существовать в таблице сопоставления MAP_ARIS_PROCESS; висячие ссылки попадают в отчёт и никогда не исправляются автоматически."

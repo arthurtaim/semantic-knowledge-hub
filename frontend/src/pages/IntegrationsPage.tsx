@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type {
   DiscoveryMemoryStats,
@@ -75,7 +76,7 @@ function IntegrationFacts({ item }: { item: IntegrationStatus }) {
 /** One row: name, state and what it means on the left; target, access, last check and capabilities on the right. */
 function IntegrationRow({ item }: { item: IntegrationStatus }) {
   return (
-    <li className={`integration integration--${item.state}`}>
+    <li id={`integration-${item.name}`} className={`integration integration--${item.state}`}>
       <div className="integration__main">
         <div className="integration__head">
           <h2>{item.title}</h2>
@@ -442,11 +443,19 @@ export function IntegrationsPage() {
   const sorted = [...(data?.items ?? [])].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
   const active = sorted.filter((item) => item.state !== "disabled");
   const off = sorted.filter((item) => item.state === "disabled");
+  const { hash } = useLocation();
+
+  // A link to one integration (the sidebar's «Публикации» → the Confluence publisher) scrolls to its row once the
+  // list is there; client-side navigation does not do that by itself.
+  useEffect(() => {
+    if (!data || !hash.startsWith("#integration-")) return;
+    document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: "start" });
+  }, [data, hash]);
 
   return (
     <div className="integrations">
       <div className="page-head">
-        <h1>Интеграции и источники</h1>
+        <h1>Интеграции</h1>
         <p className="lead">
           «Подключено» показывается только после реальной проверки соединения. Незаданные интеграции отключены и не
           выполняют сетевых запросов. Для каждой интеграции указано, куда она направлена (локально, тестовый дубль или

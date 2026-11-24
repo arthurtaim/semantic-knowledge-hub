@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-10-08
+updated_at: 2026-10-08
 tags: [mapping, маппинг, сопоставление, logical-model, логическая-модель, physical-model, физическая-модель, columns, колонки, map_logical_physical]
 aliases: ["Logical-to-physical mapping", "Сопоставление атрибутов и колонок", "MAP_LOGICAL_PHYSICAL", "маппинг атрибутов на колонки"]
 summary: "Реестр MAP_LOGICAL_PHYSICAL: как логические атрибуты BusinessProcess превращаются в колонки таблицы sl_process_metadata (owner_role → owner_role_code через DICT_OWNER_ROLE, lifecycle_state → lifecycle_code, source_changed_at → src_changed_ts), какие колонки чисто технические и как в тот же реестр попадают колонки ERP в состоянии mapped или unmapped."

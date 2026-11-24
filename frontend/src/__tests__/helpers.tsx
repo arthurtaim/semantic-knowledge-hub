@@ -30,7 +30,9 @@ export function mockApi(routes: MockRoute[]): RecordedCall[] {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const method = (init?.method ?? "GET").toUpperCase();
     const headers = (init?.headers ?? {}) as Record<string, string>;
-    calls.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : null, headers });
+    // JSON bodies are parsed; a multipart body (FormData: attachments) is recorded as it is.
+    const sent: unknown = init?.body ? (typeof init.body === "string" ? JSON.parse(init.body) : init.body) : null;
+    calls.push({ method, url, body: sent, headers });
     const route = routes.find(
       (r) => (r.method ?? "GET") === method && (typeof r.path === "string" ? r.path === url : r.path.test(url)),
     );
@@ -151,4 +153,42 @@ export function renderRoutes(
       </MemoryRouter>
     </SessionContext.Provider>,
   );
+}
+
+/** An in-memory localStorage (jsdom on this Node has none); stub it with `vi.stubGlobal("localStorage", …)`. */
+export function memoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    get length() {
+      return data.size;
+    },
+    clear: () => data.clear(),
+    getItem: (key) => data.get(key) ?? null,
+    key: (index) => Array.from(data.keys())[index] ?? null,
+    removeItem: (key) => void data.delete(key),
+    setItem: (key, value) => void data.set(key, String(value)),
+  };
+}
+
+/**
+ * Pretends the window is `width` px wide for `useMediaQuery` (jsdom has no matchMedia: by default the app takes
+ * the wide layout). Evaluates min-/max-width; any other feature (prefers-*) does not match.
+ */
+export function mockViewport(width: number) {
+  vi.stubGlobal("matchMedia", (query: string) => {
+    const max = /max-width:\s*([\d.]+)px/.exec(query);
+    const min = /min-width:\s*([\d.]+)px/.exec(query);
+    const sized = Boolean(max || min);
+    const matches = sized && (!max || width <= Number(max[1])) && (!min || width >= Number(min[1]));
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    };
+  });
 }

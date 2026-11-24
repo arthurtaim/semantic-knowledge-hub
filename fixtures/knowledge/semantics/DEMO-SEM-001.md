@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "2.1"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [glossary, глоссарий, semantic-layer, семантический-слой, terms, термины, abbreviations, аббревиатуры, lineage, линейдж, mapping, маппинг, data-quality, качество-данных, adr, mdm, cdc, fts, dq, sla]
 aliases: ["Словарь терминов семантического слоя", "Semantic layer glossary", "Термины и аббревиатуры семантического слоя", "Расшифровка аббревиатур ADR, MDM, CDC, FTS, DQ, SLA", "MDM-модель и мастер-данные"]
 summary: "Термины семантического слоя на русском и английском: lineage (происхождение данных), маппинг, логическая и физическая модели, владелец и стюард, полнота, актуальность, согласованность, ревизия и версия, authority; аббревиатуры ADR и MDM с конкурирующими значениями, CDC, FTS, DQ; SLA для демо-потоков не определён."

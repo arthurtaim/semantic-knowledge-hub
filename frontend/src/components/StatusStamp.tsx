@@ -1,19 +1,13 @@
 import type { DocStatus } from "../api/types";
-import { STATUS_LABEL } from "../lib/labels";
+import { StatusMark } from "./ui/StatusMark";
 
 interface Props {
   status: DocStatus | null;
+  /** A slightly larger mark (the document's own status). */
   large?: boolean;
 }
 
-/** Approval status as a stamp: the one bold, recurring element of the interface. */
+/** A document's approval status: the visual system's StatusMark (text + shape), kept under its old name. */
 export function StatusStamp({ status, large = false }: Props) {
-  if (status === null) {
-    return <span className={`stamp stamp--external${large ? " stamp--large" : ""}`}>Внешний источник</span>;
-  }
-  return (
-    <span className={`stamp stamp--${status}${large ? " stamp--large" : ""}`} data-status={status}>
-      {STATUS_LABEL[status]}
-    </span>
-  );
+  return <StatusMark status={status} className={large ? "stamp status-mark--large" : "stamp"} />;
 }

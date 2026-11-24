@@ -1,52 +1,54 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DocumentPage } from "../api/types";
-import { formatWhen } from "../lib/labels";
-import { HomePage } from "../pages/HomePage";
-import {
-  actionableProposals,
-  arisSummary,
-  documentPage,
-  facets,
-  freshSync,
-  integrations,
-  proposalSummary,
-  session,
-  staleSync,
-} from "./fixtures";
-import { mockApi, renderAt, renderRoutes, type MockRoute } from "./helpers";
+import type { DocumentPage, ProposalList } from "../api/types";
+import { askHref } from "../lib/assistant";
+import { peekHandOff } from "../lib/conversation";
+import { HomePage, type HomeHandOff } from "../pages/HomePage";
+import { arisSummary, documentPage, freshSync, proposalSummary, session, skills, staleSync } from "./fixtures";
+import { memoryStorage, mockApi, renderRoutes, type MockRoute } from "./helpers";
 
-const undated = { ...arisSummary, id: "SEM-GLOSS-001", title: "Glossary without a date", updated_at: null };
-const recentPage: DocumentPage = { items: [{ ...arisSummary, index_state: "stale" }, undated], total: 2, page: 1, size: 5 };
+/* The home page is the assistant (docs/ui-v2/specs/02_ASSISTANT.md §1, design-01/02). */
 
-function homeRoutes(overrides: Partial<Record<"recent" | "drafts" | "index" | "facets", MockRoute>> = {}): MockRoute[] {
+/** «Ждёт вашего решения» asks the server for «Ревью»: ready for review and not the reader's own. */
+const REVIEW_PATH = "/api/drafts?status=ready_for_review&exclude_own=true";
+
+const review: ProposalList = {
+  items: [
+    proposalSummary({
+      id: "p-ready",
+      status: "ready_for_review",
+      author: "colleague",
+      document_title: "Archive Store: исторические снимки",
+      updated_at: "2026-11-23T10:00:00Z",
+    }),
+  ],
+  total: 1,
+};
+
+const withOwnerless: DocumentPage = {
+  items: [
+    { ...arisSummary, id: "SEM-PROC-OLD-001", title: "Old process", type: "process", owner: "unassigned", owner_missing: true },
+    { ...arisSummary, id: "DEMO-SRC-010", title: "Source without owner", type: "source", owner: "unassigned", owner_missing: true },
+    arisSummary,
+  ],
+  total: 3,
+  page: 1,
+  size: 100,
+};
+
+function homeRoutes(overrides: Partial<Record<"skills" | "drafts" | "documents" | "index", MockRoute>> = {}): MockRoute[] {
   return [
-    overrides.facets ?? { path: "/api/knowledge/facets", body: facets },
-    { path: "/api/documents?size=100", body: documentPage },
-    { path: "/api/integrations/status", body: integrations },
-    overrides.recent ?? { path: "/api/documents?sort=updated&size=5", body: recentPage },
-    overrides.drafts ?? { path: "/api/drafts", body: actionableProposals },
+    overrides.skills ?? { path: "/api/assistant/skills", body: skills },
+    overrides.drafts ?? { path: REVIEW_PATH, body: review },
+    overrides.documents ?? { path: "/api/documents?size=100", body: withOwnerless },
     overrides.index ?? { path: "/api/index/status", body: freshSync },
   ];
 }
 
-/** An in-memory localStorage (jsdom on this Node has none; the app treats a missing one as empty). */
-function memoryStorage(): Storage {
-  const data = new Map<string, string>();
-  return {
-    get length() {
-      return data.size;
-    },
-    clear: () => data.clear(),
-    getItem: (key) => data.get(key) ?? null,
-    key: (index) => Array.from(data.keys())[index] ?? null,
-    removeItem: (key) => void data.delete(key),
-    setItem: (key, value) => void data.set(key, String(value)),
-  };
-}
+const routes = { "/": <HomePage />, "/ask": <p>Диалог</p> };
 
-describe("Home page", () => {
+describe("Home page: the assistant", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", memoryStorage());
   });
@@ -54,124 +56,165 @@ describe("Home page", () => {
     vi.unstubAllGlobals();
   });
 
-  it("makes the hero the «Спросить или найти» field: team scope by default, a question opens its answer", async () => {
+  it("asks «Что нужно найти или подготовить?» with the field and «Новый диалог» in the toolbar", async () => {
     mockApi(homeRoutes());
-    renderRoutes("/", { "/": <HomePage /> });
-    expect(screen.queryByRole("link", { name: "Спросить ассистента" })).toBeNull(); // retired
-    const field = screen.getByRole("combobox", { name: "Спросить или найти" });
+    renderRoutes("/", routes);
+    expect(screen.getByRole("heading", { level: 1, name: "Что нужно найти или подготовить?" })).toBeInTheDocument();
+    expect(screen.getByText(/отвечает только по документам команды и показывает цитаты/)).toBeInTheDocument();
+    const field = screen.getByLabelText("Вопрос");
     expect(field).toHaveAttribute("id", "home-composer-input");
-    expect(screen.getByRole("radio", { name: "Команда" })).toBeChecked();
-    expect(screen.getByRole("link", { name: "Создать документ" })).toHaveAttribute("href", "/documents/new");
-    await userEvent.type(field, "Что такое ревизия?{Enter}");
-    expect(screen.getByTestId("location")).toHaveTextContent(
-      "/ask?q=%D0%A7%D1%82%D0%BE+%D1%82%D0%B0%D0%BA%D0%BE%D0%B5+%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F%3F&run=1",
-    );
+    expect(field).toHaveAttribute("placeholder", "Спросите, опишите задачу или перетащите файл");
+    expect(screen.getByRole("button", { name: "Новый диалог" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Файл" })).toBeInTheDocument();
   });
 
-  it("asks in the chosen scope and says when corporate sources are not connected", async () => {
+  it("offers the four quick skills from the registry; one puts its chip into the field", async () => {
     mockApi(homeRoutes());
-    renderRoutes("/", { "/": <HomePage /> });
-    await userEvent.click(screen.getByRole("radio", { name: "Оба" }));
-    expect(screen.getByText(/Корпоративные источники \(Confluence Data Center\) не подключены/)).toBeInTheDocument();
-    await userEvent.type(screen.getByRole("combobox", { name: "Спросить или найти" }), "Где SLA?{Enter}");
-    expect(screen.getByTestId("location")).toHaveTextContent("&run=1&scope=both");
+    renderRoutes("/", routes);
+    const group = await screen.findByRole("group", { name: "Быстрые навыки" });
+    expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Черновик документа",
+      "Что перепроверить",
+      "Найти связи",
+      "Сравнить с файлом",
+    ]);
+    const compare = within(group).getByRole("button", { name: "Сравнить с файлом" });
+    await userEvent.click(compare);
+    expect(compare).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Убрать навык «Сравнить с файлом»" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Вопрос")).toHaveFocus();
+    expect(screen.getByText(/Навыку «Сравнить с файлом» нужен файл/)).toBeInTheDocument();
   });
 
-  it("searches from the hero in «Найти в документах» mode; the scope switch belongs to questions only", async () => {
-    mockApi([...homeRoutes(), { path: /^\/api\/documents\?query=/, body: documentPage }]);
-    renderRoutes("/", { "/": <HomePage /> });
-    await userEvent.click(screen.getByRole("button", { name: "Найти в документах" }));
-    expect(screen.queryByRole("radio", { name: "Команда" })).toBeNull();
-    await userEvent.type(screen.getByRole("combobox", { name: "Поиск по базе знаний" }), "ревизия");
-    await userEvent.click(screen.getByRole("button", { name: "Найти" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/documents?query=%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F");
+  it("shows only quick skills that the current mode can run", async () => {
+    const limited = skills.map((s) => (s.id === "check_freshness" ? { ...s, available: false, unavailable_reason: "нет" } : s));
+    mockApi(homeRoutes({ skills: { path: "/api/assistant/skills", body: limited } }));
+    renderRoutes("/", routes);
+    const group = await screen.findByRole("group", { name: "Быстрые навыки" });
+    expect(within(group).queryByRole("button", { name: "Что перепроверить" })).toBeNull();
+    expect(within(group).getAllByRole("button")).toHaveLength(3);
   });
 
-  it("is search only without AI: no mode switch, no scope, no recent questions", async () => {
-    window.localStorage.setItem("skh.recent-questions.v1:local-demo-user", JSON.stringify(["Старый вопрос"]));
+  it("opens the answer of a plain question (`?q=…&run=1`) and hands the message to the dialog", async () => {
     mockApi(homeRoutes());
-    renderRoutes("/", { "/": <HomePage /> }, { ...session, features: { ...session.features, ai_mode: "disabled" } });
-    expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toHaveAttribute("placeholder", "Найти в базе знаний…");
-    expect(screen.queryByRole("group", { name: "Режим поля" })).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Команда" })).toBeNull();
-    expect(screen.queryByText("Недавние вопросы")).toBeNull();
-    expect(screen.getByText(/ИИ в этой установке отключён/)).toBeInTheDocument();
+    renderRoutes("/", routes);
+    await userEvent.type(screen.getByLabelText("Вопрос"), "Что такое ревизия?{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent(askHref("Что такое ревизия?"));
+    const handed = peekHandOff<HomeHandOff>();
+    expect(handed?.message).toMatchObject({ question: "Что такое ревизия?", skill: null, scope: "team" });
+    expect(handed?.conversationId).toBe(handed?.message.conversationId);
   });
 
-  it("lists the user's recent questions from this browser and clears them", async () => {
+  it("sends a skill to the dialog with its chip once it has what it needs («Найти связи»: a document or a question)", async () => {
+    mockApi(homeRoutes());
+    renderRoutes("/", routes);
+    await userEvent.click(await screen.findByRole("button", { name: "Найти связи" }));
+    // requires.document_or_question: an empty field does not send (the server would refuse it).
+    await userEvent.keyboard("{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent(/^\/$/);
+    expect(screen.getByText(/Навыку «Найти связи» нужен документ или вопрос/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText("Вопрос"), "Выгрузка регионов{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent(askHref("Выгрузка регионов"));
+    const handed = peekHandOff<HomeHandOff>();
+    expect(handed?.message.skill?.id).toBe("find_related");
+    expect(handed?.draft.skill?.id).toBe("find_related");
+  });
+
+  it("«Новый диалог» empties the field and its chips", async () => {
+    mockApi(homeRoutes());
+    renderRoutes("/", routes);
+    await userEvent.click(await screen.findByRole("button", { name: "Черновик документа" }));
+    await userEvent.type(screen.getByLabelText("Вопрос"), "Интеграция с реестром");
+    await userEvent.click(screen.getByRole("button", { name: "Новый диалог" }));
+    expect(screen.getByLabelText("Вопрос")).toHaveValue("");
+    expect(screen.queryByRole("list", { name: "Приложено к сообщению" })).toBeNull();
+  });
+
+  it("lists recent dialogs of this browser: question, skill and sources or the file, time; clears them", async () => {
     window.localStorage.setItem(
       "skh.recent-questions.v1:local-demo-user",
-      JSON.stringify(["Где хранится база?", "Что такое ревизия?"]),
+      JSON.stringify([
+        { question: "Что отправляет ARIS в каталог?", at: new Date(Date.now() - 5 * 60_000).toISOString(), skill: null, sources: 3, context: null },
+        { question: "Сверить выгрузку с маппингом ARIS", at: "2026-11-20T10:00:00Z", skill: "Сравнить с файлом", sources: 2, context: "aris_export_2026-11.csv" },
+        "Старый вопрос из фазы 4",
+      ]),
     );
     mockApi(homeRoutes());
-    renderRoutes("/", { "/": <HomePage /> });
-    const recent = screen.getByRole("heading", { name: "Недавние вопросы" }).closest("section") as HTMLElement;
-    expect(within(recent).getByRole("link", { name: "Где хранится база?" }).getAttribute("href")).toMatch(/^\/ask\?q=.+&run=1$/);
+    renderRoutes("/", routes);
+    const recent = screen.getByRole("heading", { name: "Недавние диалоги" }).closest("section") as HTMLElement;
+    const first = within(recent).getByRole("link", { name: /Что отправляет ARIS в каталог\?/ });
+    expect(first.getAttribute("href")).toBe(askHref("Что отправляет ARIS в каталог?"));
+    expect(first).toHaveTextContent("Ответ по базе, 3 источника");
+    expect(first).toHaveTextContent("5 мин. назад");
+    expect(within(recent).getByRole("link", { name: /Сверить выгрузку/ })).toHaveTextContent("Сравнить с файлом, aris_export_2026-11.csv");
+    expect(within(recent).getByRole("link", { name: /Старый вопрос из фазы 4/ })).toHaveTextContent("Ответ по базе");
     expect(within(recent).getByText(/Хранятся только в этом браузере/)).toBeInTheDocument();
     await userEvent.click(within(recent).getByRole("button", { name: "Очистить" }));
-    expect(screen.queryByRole("heading", { name: "Недавние вопросы" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Недавние диалоги" })).toBeNull();
     expect(window.localStorage.getItem("skh.recent-questions.v1:local-demo-user")).toBeNull();
   });
 
-  it("lists recently updated documents by date and proposals that need action", async () => {
+  it("«Ждёт вашего решения»: others' proposals ready for review and documents without an owner — from the API only", async () => {
     const calls = mockApi(homeRoutes());
-    renderAt("/", "/", <HomePage />);
-
-    const recent = (await screen.findByRole("heading", { name: "Недавно обновлённые" })).closest("section") as HTMLElement;
-    const doc = await within(recent).findByRole("link", { name: "ARIS integration — questions for discovery" });
-    expect(doc).toHaveAttribute("href", "/documents/SEM-INT-ARIS-001");
-    expect(within(recent).getByText(formatWhen(arisSummary.updated_at).text, { exact: false })).toBeInTheDocument();
-    expect(within(recent).getByText("Версия может быть устаревшей")).toBeInTheDocument();
-    expect(within(recent).queryByText("Glossary without a date")).toBeNull();
-    expect(calls.some((c) => c.url === "/api/documents?sort=updated&size=5")).toBe(true);
-
-    const proposals = screen.getByRole("heading", { name: "Предложения, требующие действия" }).closest("section") as HTMLElement;
-    const links = await within(proposals).findAllByRole("link", { name: "ARIS integration — questions for discovery" });
-    expect(links.map((l) => l.getAttribute("href")).sort()).toEqual(["/proposals/p-draft", "/proposals/p-failed"]);
-    expect(within(proposals).getByText("Ошибка отправки")).toBeInTheDocument();
-    expect(within(proposals).getAllByText("Изменение документа")).toHaveLength(2);
-    expect(within(proposals).queryByText("Уже в GitLab")).toBeNull();
-    expect(within(proposals).queryByText("Уже принято")).toBeNull();
-    expect(screen.queryByText(/Данные могут быть устаревшими/)).toBeNull();
+    renderRoutes("/", routes);
+    const waiting = screen.getByRole("heading", { name: "Ждёт вашего решения" }).closest("section") as HTMLElement;
+    const ready = await within(waiting).findByRole("link", { name: /Archive Store: исторические снимки/ });
+    expect(ready).toHaveAttribute("href", "/proposals/p-ready");
+    expect(ready).toHaveTextContent("Готово к ревью · Изменение документа");
+    // The server leaves out drafts and the reader's own proposals: the page asks for exactly «Ревью».
+    expect(calls.filter((call) => call.url.startsWith("/api/drafts")).map((call) => call.url)).toEqual([REVIEW_PATH]);
+    const owners = await within(waiting).findByRole("link", { name: /2 документа без владельца/ });
+    expect(owners).toHaveTextContent("Процессы и системы-источники");
+    expect(owners).toHaveAttribute("href", "/documents?owner=unassigned");
   });
 
-  it("shows honest empty states instead of invented content", async () => {
+  it("invents nothing: no owner row when the catalogue page is incomplete, a plain note when nothing waits", async () => {
+    const partial: DocumentPage = { ...withOwnerless, total: 250 };
     mockApi(
       homeRoutes({
-        recent: { path: "/api/documents?sort=updated&size=5", body: { ...recentPage, items: [undated], total: 1 } },
-        drafts: { path: "/api/drafts", body: { items: [proposalSummary({ status: "merged" })], total: 1 } },
+        drafts: { path: REVIEW_PATH, body: { items: [], total: 0 } },
+        documents: { path: "/api/documents?size=100", body: partial },
       }),
     );
-    renderAt("/", "/", <HomePage />);
-    expect(await screen.findByText(/Источник не сообщает даты обновления документов/)).toBeInTheDocument();
-    expect(await screen.findByText("Нет предложений, требующих действия")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Перейти в каталог документов" })).toHaveAttribute("href", "/documents");
+    renderRoutes("/", routes);
+    const waiting = screen.getByRole("heading", { name: "Ждёт вашего решения" }).closest("section") as HTMLElement;
+    expect(await within(waiting).findByText("Сейчас ничего не ждёт решения.")).toBeInTheDocument();
+    expect(within(waiting).queryByText(/без владельца/)).toBeNull();
+  });
+
+  it("says when the review list cannot be read", async () => {
+    mockApi(
+      homeRoutes({
+        drafts: { path: REVIEW_PATH, status: 500, body: { code: "internal_error", message: "x", request_id: "r" } },
+        documents: { path: "/api/documents?size=100", body: documentPage },
+      }),
+    );
+    renderRoutes("/", routes);
+    expect(await screen.findByText("Не удалось получить предложения на ревью.")).toBeInTheDocument();
   });
 
   it("warns plainly when the knowledge index is stale", async () => {
     mockApi(homeRoutes({ index: { path: "/api/index/status", body: staleSync } }));
-    renderAt("/", "/", <HomePage />);
+    renderRoutes("/", routes);
     expect(await screen.findByText("Данные могут быть устаревшими.")).toBeInTheDocument();
-    expect(screen.getByText(/Показаны версии документов на момент последней успешной синхронизации/)).toBeInTheDocument();
-    expect(screen.getByText("GitLab недоступен: тайм-аут соединения.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Состояние синхронизации" })).toHaveAttribute("href", "/integrations");
   });
 
-  it("shows an error with a retry when the API fails", async () => {
-    mockApi(
-      homeRoutes({
-        facets: {
-          path: "/api/knowledge/facets",
-          status: 500,
-          body: { code: "internal_error", message: "Внутренняя ошибка сервера.", request_id: "home-1" },
-        },
-      }),
-    );
-    renderAt("/", "/", <HomePage />);
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("Внутренняя ошибка сервера.");
-    expect(within(alert).getByRole("button", { name: "Повторить" })).toBeInTheDocument();
-    // Independent blocks still load.
-    expect(await screen.findByRole("heading", { name: "Недавно обновлённые" })).toBeInTheDocument();
+  it("without AI: «Что нужно найти?», a search field, no skills, no recent dialogs, no «Новый диалог»", async () => {
+    window.localStorage.setItem("skh.recent-questions.v1:local-demo-user", JSON.stringify(["Старый вопрос"]));
+    const calls = mockApi(homeRoutes());
+    renderRoutes("/", routes, { ...session, features: { ...session.features, ai_mode: "disabled" } });
+    expect(screen.getByRole("heading", { level: 1, name: "Что нужно найти?" })).toBeInTheDocument();
+    const field = screen.getByLabelText("Поиск по базе знаний");
+    expect(field).toHaveAttribute("placeholder", "Найти в базе знаний");
+    expect(screen.queryByRole("group", { name: "Быстрые навыки" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Файл" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Навык" })).toBeNull();
+    expect(screen.queryByText("Недавние диалоги")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Новый диалог" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Ждёт вашего решения" })).toBeInTheDocument();
+    expect(calls.some((c) => c.url === "/api/assistant/skills")).toBe(false);
+    await userEvent.type(field, "ревизия{Enter}");
+    expect(screen.getByTestId("location")).toHaveTextContent("/documents?query=%D1%80%D0%B5%D0%B2%D0%B8%D0%B7%D0%B8%D1%8F");
   });
 });

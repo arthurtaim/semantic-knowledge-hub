@@ -91,9 +91,19 @@ def _no_filters() -> Any:
             ),
         ),
         (
+            # The document's own front-matter date (the catalog's «Обновлён»), not the file/index time: newest
+            # first, documents without a date last in title order (tests/test_catalog_fields.py covers the rules).
             "updated",
             lambda items: (
-                [i["updated_at"] for i in items] == sorted((i["updated_at"] for i in items), reverse=True)
+                any(i["metadata_updated_at"] for i in items)
+                and [i["metadata_updated_at"] for i in items if i["metadata_updated_at"]]
+                == sorted((i["metadata_updated_at"] for i in items if i["metadata_updated_at"]), reverse=True)
+                and all(
+                    i["metadata_updated_at"] is None
+                    for i in items[[bool(i["metadata_updated_at"]) for i in items].count(True) :]
+                )
+                and [i["title"].lower() for i in items if not i["metadata_updated_at"]]
+                == sorted(i["title"].lower() for i in items if not i["metadata_updated_at"])
             ),
         ),
     ],
@@ -282,6 +292,9 @@ def test_openapi_contract_lists_documented_endpoints(client: TestClient) -> None
         ("/api/publications/jobs/{job_id}/reconcile", "post"),
         ("/api/publications/jobs/{job_id}/acknowledge-manual-edit", "post"),
         ("/api/publications/jobs/{job_id}/release-missing-page", "post"),
+        ("/api/assistant/skills", "get"),
+        ("/api/assistant/attachments", "post"),
+        ("/api/assistant/attachments/{attachment_id}", "delete"),
     ]:
         assert method in paths.get(path, {}), (path, method)
     assert paths["/api/drafts/{draft_id}/open-mr"]["post"].get("deprecated") is True

@@ -7,6 +7,7 @@ owner: demo-enablement-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-10-13
+updated_at: 2026-10-13
 tags: [guide, руководство, how-to, logical-model, логическая-модель, physical-model, физическая-модель, model, модель, mapping, маппинг, english]
 aliases: ["logical vs physical model", "логическая и физическая модель", "BusinessProcess vs ProcessMetadataTable"]
 summary: "English how-to guide: how to tell a logical model (the BusinessProcess entity) from a physical model (the ProcessMetadataTable table) and how to follow the mapping between them, e.g. owner_role vs owner_role_code."

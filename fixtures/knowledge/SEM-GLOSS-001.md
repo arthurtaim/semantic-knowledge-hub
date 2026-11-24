@@ -7,6 +7,7 @@ owner: demo-team
 tags: [glossary, demo]
 related_ids: [SEM-OVERVIEW-001, SEM-STD-001]
 reviewed_at: 2026-11-18
+updated_at: 2026-11-18
 ---
 
 # Глоссарий демо-базы знаний

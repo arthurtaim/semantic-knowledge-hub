@@ -7,6 +7,7 @@ owner: demo-team
 tags: [semantic-layer, architecture, demo]
 related_ids: [SEM-INT-ARIS-001]
 reviewed_at: 2026-11-20
+updated_at: 2026-11-20
 ---
 
 # Semantic Layer — demonstration architecture

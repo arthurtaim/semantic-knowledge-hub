@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, Loading } from "../components/Feedback";
 import { pluralRu, TEMPLATE_STATUS_LABEL, TYPE_LABEL, TYPE_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
 import { When } from "../components/When";
+import { PageToolbar } from "../components/shell/PageToolbar";
 
 const FILTER_KEYS = ["q", "status", "type", "category", "label"] as const;
 type FilterKey = (typeof FILTER_KEYS)[number];
@@ -119,8 +120,12 @@ export function TemplatesPage() {
 
   return (
     <div className="templates">
+      <PageToolbar
+        title="Шаблоны"
+        meta={all.data ? <span className="page-toolbar__count">{all.data.length}</span> : null}
+      />
       <div className="page-head">
-        <h1>Шаблоны документов</h1>
+        <h1>Шаблоны</h1>
         <p className="lead">
           Один версионированный реестр для людей и для ИИ: структура документа, обязательные поля, правила проверки,
           указания и пример. Новый документ закрепляет версию шаблона — следующие версии на него не влияют.

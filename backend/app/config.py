@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     claude_cli_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
     claude_cli_draft_timeout_seconds: float = Field(default=240.0, gt=0, le=600)
     claude_cli_personal_use_ack: bool = False
+    # Assistant attachments (UI v2): how long the extracted text of a file attached to a conversation is kept.
+    # Limits (10 files per conversation, 20 MB each) are fixed by docs/ui-v2/specs/02_ASSISTANT.md §3.
+    attachments_ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
 
     # --- Confluence ----------------------------------------------------------------------------
     confluence_connector: Literal["disabled", "mock", "mcp"] = "disabled"

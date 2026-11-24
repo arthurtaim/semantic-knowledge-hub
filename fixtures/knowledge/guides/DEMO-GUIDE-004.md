@@ -7,6 +7,7 @@ owner: demo-enablement-team
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-11-03
+updated_at: 2026-11-03
 tags: [guide, руководство, how-to, revision, ревизия, conflict, конфликт, proposal, предложение, rebase, base-revision]
 aliases: ["конфликт версий документа", "revision conflict", "предложение на старой ревизии", "revision_conflict"]
 summary: "Пошаговое руководство: что значит конфликт ревизий (предложение изменения основано на старой ревизии документа), почему его нельзя решать перезаписью и как перенести правку на текущую ревизию."

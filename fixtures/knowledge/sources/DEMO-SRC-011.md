@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.5"
 synthetic: true
 reviewed_at: 2026-11-03
+updated_at: 2026-11-03
 tags: [data-quality, качество-данных, dq, sys-dqm, monitoring, мониторинг, adr, average-daily-rows, completeness, полнота, freshness, актуальность, consistency, согласованность]
 aliases: ["DQ Monitor", "Data Quality Monitor", "монитор качества данных", "DQM", "Average Daily Rows"]
 summary: "Профиль условной системы SYS-DQM: проверки DQ-COMP-001, DQ-CONS-001/002, DQ-FRESH-001 и DQ-REF-001 по стандартам качества и метрика объёма ADR — Average Daily Rows."

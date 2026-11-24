@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-07-21
+updated_at: 2026-07-21
 tags: [lineage, линейдж, происхождение-данных, data-lineage, aris, process-overview, integration, интеграция]
 aliases: ["линейдж", "происхождение данных", "data lineage", "цепочка происхождения", "lineage Process Overview"]
 summary: "Сквозная схема происхождения данных (data lineage) датасета Process Overview: ARIS → DEMO-INT-001 → DEMO-INT-002 → BusinessProcess → Process Overview; формат lineage_ref вида LIN-ARIS-PRC-000417."

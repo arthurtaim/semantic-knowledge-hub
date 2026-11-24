@@ -29,15 +29,24 @@ test.beforeEach(async ({ request }) => {
   expect((await request.post(`${MCP}/__mock__/reset`)).ok()).toBeTruthy();
 });
 
+/** UI v2: «Где искать» is a small panel of the assistant field. */
+async function chooseScope(page: Page, label: "Команда" | "Корпоративные" | "Оба") {
+  await page.getByRole("button", { name: /^Где искать:/ }).click();
+  await page.getByRole("radio", { name: label, exact: true }).check();
+  await page.keyboard.press("Escape");
+}
+
 test("@gitlab E2E-09 send to GitLab mock → MR → merge in GitLab → knowledge base updated", async ({ page, request }) => {
   await page.goto("/documents/SEM-ARCH-001");
-  const passport = page.getByRole("complementary", { name: "Паспорт документа" });
-  await expect(passport).toContainText("GitLab");
-  await expect(passport.getByRole("link", { name: "Открыть в GitLab" })).toHaveAttribute(
+  // UI v2: the former passport is «Сведения о документе»; the revision is in the properties under the title.
+  await page.getByRole("button", { name: "Все сведения" }).click();
+  const details = page.getByRole("complementary", { name: "Сведения о документе" });
+  await expect(details).toContainText("GitLab");
+  await expect(details.getByRole("link", { name: "Открыть в GitLab" })).toHaveAttribute(
     "href",
     /127\.0\.0\.1:8929\/skh-test\/knowledge-base-MOCK\/-\/blob\/[0-9a-f]{40}\/docs\/SEM-ARCH-001\.md/,
   );
-  const baseRevision = await page.locator(".passport__fields .doc-id").nth(1).textContent();
+  const baseRevision = await page.locator(".doc-props__revision").getAttribute("title");
 
   await createReadyProposal(page, "SEM-ARCH-001", "Строка E2E-09 после merge.");
   await page.getByRole("button", { name: "Отправить в GitLab" }).click();
@@ -61,7 +70,7 @@ test("@gitlab E2E-09 send to GitLab mock → MR → merge in GitLab → knowledg
 
   await page.goto("/documents/SEM-ARCH-001");
   await expect(page.getByText("Строка E2E-09 после merge.")).toBeVisible();
-  await expect(page.locator(".passport__fields .doc-id").nth(1)).not.toHaveText(baseRevision ?? "");
+  await expect(page.locator(".doc-props__revision")).not.toHaveAttribute("title", baseRevision ?? "");
 });
 
 test("@gitlab E2E-08 revision conflict: nothing is overwritten and the proposal is kept", async ({ page, request }) => {
@@ -110,20 +119,20 @@ test("@gitlab E2E-11 unavailable Confluence MCP is shown as such", async ({ page
 
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
-  await page.getByLabel("Оба").check({ force: true });
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
+  await chooseScope(page, "Оба");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByText("Корпоративные источники не использованы.")).toBeVisible();
   await expect(page.getByText(/сейчас недоступен/)).toBeVisible();
-  await expect(page.locator(".citation").first()).toContainText("GitLab");
+  await expect(page.locator(".source").first()).toContainText("GitLab");
   await request.delete(`${MCP}/__mock__/faults`);
 });
 
 test("@gitlab E2E-11b available Confluence MCP double gives a corporate citation with provenance", async ({ page }) => {
   await page.goto("/ask");
   await page.getByLabel("Вопрос").fill("Где хранится каноническая база знаний команды?");
-  await page.getByLabel("Корпоративные").check({ force: true });
-  await page.getByRole("button", { name: "Спросить", exact: true }).click();
-  const corporate = page.locator(".citation", { hasText: "Регламент публикации тестовых страниц (MOCK)" });
+  await chooseScope(page, "Корпоративные");
+  await page.getByRole("button", { name: "Отправить", exact: true }).click();
+  const corporate = page.locator(".source", { hasText: "Регламент публикации тестовых страниц (MOCK)" });
   await expect(corporate).toBeVisible();
   await expect(corporate).toContainText("Confluence");
 });

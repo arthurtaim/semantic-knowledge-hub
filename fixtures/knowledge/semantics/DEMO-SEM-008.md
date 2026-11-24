@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.5"
 synthetic: true
 reviewed_at: 2026-10-12
+updated_at: 2026-10-12
 tags: [reference-data, справочники, dictionary, normalization, нормализация, names, названия, mdm, name_key, consistency, согласованность]
 aliases: ["Reference data and name normalization", "Нормализация наименований", "справочники семантического слоя", "DICT_OWNER_ROLE"]
 summary: "Справочники семантического слоя (DICT_OWNER_ROLE, DICT_SYSTEM_CODE, DICT_LIFECYCLE_STATE, DICT_DEPENDENCY_TYPE, DICT_NAME_SYNONYM), их ведение в MDM и правила нормализации названий с ключом сравнения name_key."

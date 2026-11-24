@@ -7,6 +7,7 @@ owner: demo-enablement-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-10-27
+updated_at: 2026-10-27
 tags: [guide, руководство, how-to, lineage, линейдж, происхождение-данных, dataset, датасет, process-overview, aris]
 aliases: ["восстановить происхождение данных", "data lineage walkthrough", "трассировка датасета до источника"]
 summary: "Пошаговое руководство: как восстановить происхождение данных (data lineage) датасета Process Overview от поля lineage_ref обратно до источника ARIS по схеме DEMO-INT-014."

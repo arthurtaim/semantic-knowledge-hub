@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-09-10
+updated_at: 2026-09-10
 tags: [mdm, sys-mdm, мастер-данные, master-data, golden-record, золотая-запись, cdc, справочники, reference-data]
 aliases: ["Master Data Management", "MDM source profile", "система мастер-данных", "golden record"]
 summary: "Профиль условной системы SYS-MDM (Master Data Management): эталонные справочники семантического слоя и мастер-записи mdm_golden_id из справочных карточек CRM."

@@ -7,6 +7,7 @@ owner: demo-source-owners
 version: "1.4"
 synthetic: true
 reviewed_at: 2026-10-15
+updated_at: 2026-10-15
 tags: [aris, sys-aris, процессы, processes, metadata, метаданные, export, выгрузка]
 aliases: ["ARIS source profile", "профиль ARIS", "процессный репозиторий ARIS", "ARIS export fields"]
 summary: "Профиль условной системы SYS-ARIS: процессные объекты, шесть выгружаемых полей aris_*, инкрементальная выгрузка каждые 6 часов пакетами по 500 записей."

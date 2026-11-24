@@ -7,6 +7,7 @@ owner: demo-governance-team
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-10-12
+updated_at: 2026-10-12
 tags: [governance, provenance, происхождение, citations, цитаты, audit, аудит, audit-trail, журнал]
 aliases: ["происхождение ответа", "цитирование источников", "журнал согласований", "audit trail", "provenance"]
 summary: "Каждый ответ и результат поиска ссылается на id документа, ревизию и раздел с указанием источника; audit trail фиксирует, какая роль что одобрила и когда, без имён людей."

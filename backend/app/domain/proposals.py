@@ -45,6 +45,9 @@ SourceDocumentState = Literal[
 ]
 # create: a new file in the knowledge base; update: a change of an existing document.
 ProposalOperation = Literal["create", "update"]
+# «Open»: the proposal is still in progress — it can be edited, reviewed, sent or is waiting in a GitLab MR.
+# Everything else is closed for good: merged, rejected (also an MR closed without merge) and conflict (the base
+# changed; a new proposal is needed). There is no withdrawn / applied status. GET /api/drafts?open_only=true.
 OPEN_STATUSES = frozenset(
     {
         ProposalStatus.draft,

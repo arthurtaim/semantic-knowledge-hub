@@ -5,6 +5,8 @@ import type { AiDraftResponse, DocumentTemplateInfo } from "../api/types";
 import { AI_MODE_LABEL } from "../components/AiSourcesPanel";
 import { AuthoringRoute, DocumentEditor } from "../components/DocumentEditor";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
+import { PageToolbar } from "../components/shell/PageToolbar";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
 import {
   fieldsFromAi,
   fieldsFromProposal,
@@ -47,11 +49,7 @@ export function DocumentCreatePage() {
 
   return (
     <div className="authoring">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/documents">База знаний</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Новый документ</span>
-      </nav>
+      <PageToolbar crumbs={[{ label: "Документы", to: "/documents" }, { label: "Новый документ" }]} />
       <div className="page-head">
         <h1>Новый документ</h1>
         <p className="lead">
@@ -175,27 +173,19 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
           актуальный шаблон.
         </Notice>
       ) : null}
-      <fieldset className="segmented authoring__mode" aria-describedby="mode-hint">
-        <legend>Как создать</legend>
-        <label className="segmented__option">
-          <input type="radio" name="mode" value="manual" checked={mode === "manual"} onChange={() => setMode("manual")} />
-          <span>Вручную</span>
-        </label>
-        {/* No AI provider: the option is not offered at all (no dead control); otherwise it is disabled with a reason. */}
-        {aiOff ? null : (
-          <label className="segmented__option">
-            <input
-              type="radio"
-              name="mode"
-              value="ai"
-              checked={mode === "ai"}
-              disabled={!aiAvailable}
-              onChange={() => setMode("ai")}
-            />
-            <span>С помощью AI</span>
-          </label>
-        )}
-      </fieldset>
+      {/* No AI provider: the option is not offered at all (no dead control); otherwise it is disabled with a reason. */}
+      <SegmentedControl
+        label="Как создать"
+        showLabel
+        className="authoring__mode"
+        describedBy="mode-hint"
+        value={mode}
+        onChange={setMode}
+        options={[
+          { value: "manual", label: "Вручную" },
+          ...(aiOff ? [] : [{ value: "ai" as const, label: "С помощью AI", disabled: !aiAvailable }]),
+        ]}
+      />
       <p id="mode-hint" className="muted authoring__mode-hint">
         {modeHint}
       </p>

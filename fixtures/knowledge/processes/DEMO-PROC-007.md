@@ -7,6 +7,7 @@ owner: demo-process-office
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-09-30
+updated_at: 2026-09-30
 tags: [standard, стандарт, template, шаблон, dataset, датасет, specification, спецификация, attributes, атрибуты, refresh-policy]
 aliases: ["Dataset Spec", "шаблон описания датасета", "структура документа датасета"]
 summary: "Описание шаблона Dataset Specification v1: девять разделов от Overview до Related Docs, правила заполнения таблицы атрибутов, качества и политики обновления; шаблон — документная форма логической модели Dataset."

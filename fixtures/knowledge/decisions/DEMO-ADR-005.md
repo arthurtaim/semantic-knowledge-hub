@@ -7,6 +7,7 @@ owner: demo-architecture-board
 version: "1.0"
 synthetic: true
 reviewed_at: 2026-07-28
+updated_at: 2026-07-28
 tags: [adr, decision, решение, template, шаблон, versioning, версионирование, template-version, draft, черновик]
 aliases: ["versioned templates", "версии шаблонов документов", "template_version"]
 summary: "Архитектурное решение: шаблоны документов версионируются; новая версия шаблона применяется только к новым документам, а существующие черновики сохраняют версию шаблона, с которой были созданы."

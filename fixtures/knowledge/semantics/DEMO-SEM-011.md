@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-10-30
+updated_at: 2026-10-30
 tags: [dataset, датасет, source-coverage, покрытие-источников, coverage, покрытие, mapping, маппинг, catalog, каталог, metrics, метрики]
 aliases: ["Source Coverage", "DS-003", "покрытие источников", "покрытие маппингом"]
 summary: "Датасет DS-003 Source Coverage: для каждой системы-источника семантического слоя — сколько активов каталога разрешено в датасеты (covered_entities) и какой процент строк реестра маппинга MAP_LOGICAL_PHYSICAL находится в состоянии mapped (coverage_pct); ежедневное измерение в 04:00."

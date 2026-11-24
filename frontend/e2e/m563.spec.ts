@@ -68,6 +68,7 @@ test("L-01 `[[` autocomplete inserts [[ID|Title]]; the preview resolves it; back
 
   // backlinks: DEMO-GUIDE-001 links to DEMO-SRC-001 in its text
   await page.goto("/documents/DEMO-SRC-001");
+  await page.getByRole("tab", { name: "Связи" }).click(); // UI v2: links are a segment of the document
   const backlinks = page.getByRole("region", { name: /Обратные ссылки/ });
   await expect(backlinks).toContainText("DEMO-GUIDE-001");
   await expect(backlinks).toContainText("[[DEMO-SRC-001]]");

@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type { ImportPreview, MetadataField, NewDocumentMetadata } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { SafeHtml } from "../components/SafeHtml";
+import { PageToolbar } from "../components/shell/PageToolbar";
 import { splitList } from "../lib/authoring";
 import {
   AUTHORING_ERROR_TITLE,
@@ -14,6 +15,7 @@ import {
 } from "../lib/labels";
 import { newRequestId } from "../lib/requestId";
 import { useAsync } from "../lib/useAsync";
+import { useMediaQuery } from "../lib/useMediaQuery";
 
 /** Largest file the browser reads for an import (the server limit is about the same). */
 const MAX_FILE_BYTES = 400_000;
@@ -65,6 +67,9 @@ function initialDecisions(preview: ImportPreview): Decisions {
   };
 }
 
+/** Phones: the field table becomes one column (docs/ui-v2/specs/03_SCREENS.md §6), as the catalog and proposals. */
+const PHONE = "(max-width: 719.98px)";
+
 function OriginBadge({ origin }: { origin: MetadataField["origin"] }) {
   return <span className={`origin-badge origin-badge--${origin}`}>{FIELD_ORIGIN_LABEL[origin] ?? origin}</span>;
 }
@@ -72,6 +77,7 @@ function OriginBadge({ origin }: { origin: MetadataField["origin"] }) {
 // --- preview of one import --------------------------------------------------------------------------
 
 function PreviewView({ preview, onCreated }: { preview: ImportPreview; onCreated: (draftId: string, templateId: string | null) => void }) {
+  const phone = useMediaQuery(PHONE);
   const [d, setD] = useState<Decisions>(() => initialDecisions(preview));
   // One idempotency key per preview: a double click returns the same draft, a new preview gets a new key.
   const [requestId] = useState(newRequestId);
@@ -143,31 +149,49 @@ function PreviewView({ preview, onCreated }: { preview: ImportPreview; onCreated
         ) : null}
       </Notice>
 
-      <div className="table-scroll">
-        <table className="data-table import-fields">
-          <caption className="visually-hidden">Поля метаданных и их происхождение</caption>
-          <thead>
-            <tr>
-              <th scope="col">Поле</th>
-              <th scope="col">Значение</th>
-              <th scope="col">Происхождение</th>
-              <th scope="col">Примечание</th>
-            </tr>
-          </thead>
-          <tbody>
+      {phone ? (
+        <>
+          <h3 className="visually-hidden">Поля метаданных и их происхождение</h3>
+          <dl className="import-fields-list">
             {preview.fields.map((f) => (
-              <tr key={f.field}>
-                <th scope="row">{METADATA_FIELD_LABEL[f.field] ?? f.field}</th>
-                <td className="import-fields__value">{valueText(f.value)}</td>
-                <td>
+              <div key={f.field} className="import-fields-list__row">
+                <dt>{METADATA_FIELD_LABEL[f.field] ?? f.field}</dt>
+                <dd className="import-fields__value">{valueText(f.value)}</dd>
+                <dd className="import-fields-list__origin">
                   <OriginBadge origin={f.origin} />
-                </td>
-                <td className="muted">{f.note}</td>
-              </tr>
+                  {f.note ? <span className="muted">{f.note}</span> : null}
+                </dd>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </dl>
+        </>
+      ) : (
+        <div className="table-scroll">
+          <table className="data-table import-fields">
+            <caption className="visually-hidden">Поля метаданных и их происхождение</caption>
+            <thead>
+              <tr>
+                <th scope="col">Поле</th>
+                <th scope="col">Значение</th>
+                <th scope="col">Происхождение</th>
+                <th scope="col">Примечание</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.fields.map((f) => (
+                <tr key={f.field}>
+                  <th scope="row">{METADATA_FIELD_LABEL[f.field] ?? f.field}</th>
+                  <td className="import-fields__value">{valueText(f.value)}</td>
+                  <td>
+                    <OriginBadge origin={f.origin} />
+                  </td>
+                  <td className="muted">{f.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {preview.issues.length > 0 ? (
         <div className="import-issues">
@@ -377,13 +401,13 @@ export function ImportPage() {
 
   return (
     <div className="import-page">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/documents">База знаний</Link>
-        <span aria-hidden="true">/</span>
-        <Link to="/documents/new">Новый документ</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Импорт Markdown</span>
-      </nav>
+      <PageToolbar
+        crumbs={[
+          { label: "Документы", to: "/documents" },
+          { label: "Новый документ", to: "/documents/new" },
+          { label: "Импорт Markdown" },
+        ]}
+      />
       <div className="page-head">
         <h1>Импорт Markdown</h1>
         <p className="lead">

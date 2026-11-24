@@ -37,7 +37,8 @@ import { StatusStamp } from "./StatusStamp";
 import { TemplateVersionNotice } from "./TemplateVersionNotice";
 import { WikiLinkTextarea } from "./WikiLinkTextarea";
 
-const CHECK_DELAY_MS = 500;
+/** Debounce of the live ID / validation check after an edit (exported for the tests' waits). */
+export const CHECK_DELAY_MS = 500;
 
 /** ValidationIssue.field values shown next to a form field; everything else goes to the general list. */
 const FIELD_LABEL: Record<string, string> = {

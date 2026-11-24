@@ -6,6 +6,7 @@ import { AI_CHIP_LABEL, AI_LIMITS, AI_PROVIDER_TITLE, AI_SCOPE_NOTE } from "../l
 import { useSession } from "../lib/session";
 import { useDisclosure } from "../lib/useDisclosure";
 import { StateBadge } from "./StateBadge";
+import { Popover } from "./ui/Popover";
 
 function demoFacts(session: SessionResponse | null): string[] {
   if (!session) return ["Документы синтетические и не описывают банк."];
@@ -19,35 +20,30 @@ function demoFacts(session: SessionResponse | null): string[] {
 }
 
 /**
- * The demo status: a short striped tag in the header instead of a full-width band. The facts open on demand;
- * the wrapper is the page's one `note` and always contains «Демо-данные.».
+ * The demo status: a quiet amber badge in the page toolbar (--demo-*). The facts open on demand; the wrapper
+ * is the page's one `note` and always contains «Демо-данные.».
  */
 export function DemoPill() {
   const session = useSession();
   const facts = demoFacts(session);
-  const { open, toggle, root, button } = useDisclosure();
   if (facts.length === 0) return null;
   return (
-    <div className="header-status__item" role="note" ref={root}>
-      <button
-        ref={button}
-        type="button"
-        className="demo-pill"
-        aria-label="Демо-данные"
-        aria-expanded={open}
-        aria-controls="demo-facts"
-        onClick={toggle}
-      >
-        <span>
-          Демо<span className="demo-pill__rest">-данные</span>
-        </span>
-      </button>
-      <div id="demo-facts" className="popover" hidden={!open}>
-        <p>
-          <strong>Демо-данные.</strong> {facts.join(" ")}
-        </p>
-      </div>
-    </div>
+    <Popover
+      id="demo-facts"
+      role="note"
+      className="header-status__item"
+      trigger={(props) => (
+        <button type="button" className="demo-pill" aria-label="Демо-данные" {...props}>
+          <span>
+            Демо<span className="demo-pill__rest">-данные</span>
+          </span>
+        </button>
+      )}
+    >
+      <p>
+        <strong>Демо-данные.</strong> {facts.join(" ")}
+      </p>
+    </Popover>
   );
 }
 
@@ -76,20 +72,31 @@ export function AiModeChip() {
   }, [open, status, failed]);
 
   if (!mode) return null;
+  // «ИИ: демо» → «ИИ» + «: демо»: a phone shows only «ИИ» (the rest stays in the accessible name and the popover).
+  const label = AI_CHIP_LABEL[mode];
+  const colon = label.indexOf(":");
   return (
     <div className="header-status__item" ref={root}>
       <button
         ref={button}
         type="button"
         className={`ai-chip ai-chip--${mode}`}
+        aria-label={label}
         aria-expanded={open}
         aria-controls="ai-mode-details"
         onClick={toggle}
       >
-        {AI_CHIP_LABEL[mode]}
+        {colon > 0 ? (
+          <span>
+            {label.slice(0, colon)}
+            <span className="ai-chip__rest">{label.slice(colon)}</span>
+          </span>
+        ) : (
+          label
+        )}
       </button>
       {/* Rendered only while open: its text must not stand in for the page's own wording. */}
-      <div id="ai-mode-details" className="popover" hidden={!open}>
+      <div id="ai-mode-details" className="popover popover--bottom popover--end" hidden={!open}>
         {open ? <AiModeDetails mode={mode} status={status} failed={failed} /> : null}
       </div>
     </div>

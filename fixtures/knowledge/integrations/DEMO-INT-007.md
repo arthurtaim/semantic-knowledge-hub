@@ -7,6 +7,7 @@ owner: demo-integration-team
 version: "2.1"
 synthetic: true
 reviewed_at: 2026-10-20
+updated_at: 2026-10-20
 tags: [erp, semantic-layer, семантический-слой, full-refresh, полная-перезагрузка, mapping, маппинг, attributes, атрибуты, physical-model, физическая-модель, integration, интеграция]
 aliases: ["ERP attributes flow", "загрузка атрибутов ERP", "ERP full refresh"]
 summary: "Ночная полная перезагрузка (01:00) каталога колонок ERP в реестр маппинга логической и физической моделей MAP_LOGICAL_PHYSICAL: пакеты по 2 000 строк, правила MAP_ERP_ATTRIBUTE, состояния mapped/unmapped, атомарная замена снимка."

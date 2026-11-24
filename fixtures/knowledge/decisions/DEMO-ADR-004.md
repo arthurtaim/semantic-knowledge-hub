@@ -7,6 +7,7 @@ owner: demo-architecture-board
 version: "1.2"
 synthetic: true
 reviewed_at: 2026-10-06
+updated_at: 2026-10-06
 tags: [adr, decision, решение, sync, синхронизация, snapshot, снимок, manifest, манифест, cdc, events, события]
 aliases: ["snapshot vs events", "снимок или события", "manifest diff", "стратегия синхронизации базы знаний"]
 summary: "Архитектурное решение: база знаний синхронизируется полным снимком (full snapshot) с вычислением разницы манифестов, а потоки данных между системами — событиями CDC; снимок выбран за идемпотентность и проверяемость."

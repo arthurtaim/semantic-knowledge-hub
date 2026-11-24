@@ -51,7 +51,11 @@ describe("Header: AI mode chip and demo tag", () => {
     ["disabled", "ИИ отключён"],
   ] as const)("names the AI mode %s on every page", (mode, label) => {
     renderAt("/documents", "/documents", <Layout>page</Layout>, withMode(mode));
-    expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    const chip = screen.getByRole("button", { name: label });
+    // UI v2 phase F: a phone shows «ИИ» only; the mode after the colon is the part it hides (CSS), not drops.
+    const rest = chip.querySelector(".ai-chip__rest");
+    if (label.includes(":")) expect(rest).toHaveTextContent(label.slice(label.indexOf(":")));
+    else expect(rest).toBeNull();
   });
 
   it("explains provider, model, scope and limits in the chip's popover", async () => {

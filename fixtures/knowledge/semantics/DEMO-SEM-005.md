@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.1"
 synthetic: true
 reviewed_at: 2026-09-30
+updated_at: 2026-09-30
 tags: [physical-model, физическая-модель, table, таблица, columns, колонки, processmetadatatable, sl_process_metadata, process, процесс, ddl]
 aliases: ["ProcessMetadataTable", "sl_process_metadata", "Физическая таблица метаданных процессов", "Physical model ProcessMetadataTable"]
 summary: "Физическая таблица sl_process_metadata (модель ProcessMetadataTable), реализующая логическую сущность BusinessProcess: колонки и типы, ключи и проверки (ck_process_id_format, ck_path_depth), технические колонки source_object_id, record_hash, load_batch_id, loaded_at."

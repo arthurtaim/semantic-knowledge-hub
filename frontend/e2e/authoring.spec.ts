@@ -12,9 +12,9 @@ function uniqueId(prefix: string): string {
 }
 
 async function openEditor(page: Page, template: RegExp, mode: "Вручную" | "С помощью AI" = "Вручную"): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("link", { name: "Создать документ" }).first().click();
-  await expect(page).toHaveURL(/\/documents\/new/);
+  // UI v2: the start page is the assistant (its «Черновик документа» skill drafts with AI); the manual
+  // editor is the catalogue's «Создать документ» page.
+  await page.goto("/documents/new");
   await page.getByRole("radio", { name: mode }).check({ force: true });
   await page.getByRole("radio", { name: template }).check({ force: true });
   await page.getByRole("button", { name: mode === "Вручную" ? "Открыть редактор" : "Далее: запрос помощнику" }).click();
@@ -155,5 +155,5 @@ test("@gitlab E2E-18/19/20 new document → branch + create commit → one MR �
   await page.goto(`/documents?query=${encodeURIComponent(marker)}`);
   await expect(page.locator(".result").first()).toContainText(id);
   await page.goto(`/documents/${id}`);
-  await expect(page.getByRole("complementary", { name: "Паспорт документа" })).toContainText("GitLab");
+  await expect(page.locator(".doc-props")).toContainText("GitLab"); // UI v2: «Источник» in the properties
 });

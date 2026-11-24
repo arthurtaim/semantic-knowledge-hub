@@ -7,6 +7,7 @@ owner: demo-semantic-team
 version: "1.3"
 synthetic: true
 reviewed_at: 2026-10-02
+updated_at: 2026-10-02
 tags: [logical-model, логическая-модель, dataset, датасет, набор-данных, metadata, метаданные, specification, спецификация, entity, сущность]
 aliases: ["Dataset entity", "Сущность Dataset", "модель описания датасета", "Logical model Dataset"]
 summary: "Логическая сущность Dataset: какими атрибутами описывается любой датасет семантического слоя (dataset_id вида DS-001, источники, бизнес-сущности, атрибуты, правила качества, политика обновления, доступ, версия шаблона) и как они соответствуют разделам шаблона Dataset Specification."
