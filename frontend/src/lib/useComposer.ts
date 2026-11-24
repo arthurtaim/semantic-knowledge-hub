@@ -136,8 +136,11 @@ export interface ComposerController {
   addDocument: (document: ComposerDocument) => boolean;
   removeDocument: (id: string) => void;
   setSelection: (selection: ComposerSelection | null) => void;
-  /** Backspace in an empty field: removes the last chip (selection, documents, files, skill). */
-  removeLast: () => boolean;
+  /**
+   * Backspace in an empty field: removes the last chip (selection, documents, files, skill). `keepContext`: the
+   * page shows the documents and the selection itself (a document's panel) — only files and the skill go.
+   */
+  removeLast: (options?: { keepContext?: boolean }) => boolean;
   message: () => ComposerMessage;
   /**
    * «Новый диалог»: an empty field and a new dialog id; the files of the old dialog are deleted — unless they were
@@ -332,13 +335,14 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
       },
       removeDocument: (id) => update({ documents: draftRef.current.documents.filter((item) => item.id !== id) }),
       setSelection: (selection) => update({ selection }),
-      removeLast: () => {
+      removeLast: (options) => {
         const current = draftRef.current;
-        if (current.selection) {
+        const context = !options?.keepContext;
+        if (context && current.selection) {
           update({ selection: null });
           return true;
         }
-        const lastDocument = current.documents[current.documents.length - 1];
+        const lastDocument = context ? current.documents[current.documents.length - 1] : undefined;
         if (lastDocument) {
           update({ documents: current.documents.slice(0, -1) });
           return true;

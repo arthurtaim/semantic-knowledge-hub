@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { IconButton } from "../ui/Button";
 
 /*
  * The right panel of the «toolbar, content, right panel» pattern (docs/ui-v2/specs/03_SCREENS.md §1, §3, §6):
- * «Сведения» of a document now, the document assistant later. On wide screens it is a column next to the
+ * «Сведения» of a document and the document assistant (one at a time). On wide screens it is a column next to the
  * content (a complementary landmark); below 1200 px it is a slide-over sheet from the right, on phones a sheet
  * from the bottom — both modal (scrim, focus trap, Esc, focus return).
  */
@@ -34,6 +34,12 @@ interface SidePanelProps {
   mode: SidePanelMode;
   /** Controls in the header before «Закрыть». */
   actions?: ReactNode;
+  /** Pinned under the scrolling body (the assistant's field). */
+  footer?: ReactNode;
+  /** A docked panel focuses this on open instead of its heading (the assistant's field). */
+  initialFocus?: RefObject<HTMLElement | null>;
+  /** Where focus goes on close when the control that opened the panel is gone (or was the page itself). */
+  returnFocus?: () => HTMLElement | null;
   className?: string;
 }
 
@@ -41,20 +47,24 @@ interface SidePanelProps {
  * Rendered only while open. Takes focus when it opens (the heading of a docked panel, «Закрыть» of a sheet) and
  * gives it back to the control that opened it when it closes.
  */
-export function SidePanel({ id, title, onClose, children, mode, actions, className }: SidePanelProps) {
+export function SidePanel({ id, title, onClose, children, mode, actions, footer, initialFocus, returnFocus, className }: SidePanelProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const fallbackRef = useRef(returnFocus);
+  fallbackRef.current = returnFocus;
   const modal = mode !== "inline";
 
   // Focus in on open, back to the opener on close.
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const opener = active && active !== document.body ? active : null;
     if (modal) closeRef.current?.focus();
-    else headingRef.current?.focus();
+    else (initialFocus?.current ?? headingRef.current)?.focus();
     return () => {
-      if (opener && opener.isConnected) opener.focus();
+      const target = opener && opener.isConnected ? opener : (fallbackRef.current?.() ?? null);
+      target?.focus();
     };
     // The opener is the element focused when the panel mounted; a mode change keeps it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,6 +118,7 @@ export function SidePanel({ id, title, onClose, children, mode, actions, classNa
         <IconButton ref={closeRef} icon="close" label={`Закрыть: ${title}`} size="sm" onClick={onClose} />
       </div>
       <div className="side-panel__body">{children}</div>
+      {footer ? <div className="side-panel__footer">{footer}</div> : null}
     </>
   );
 

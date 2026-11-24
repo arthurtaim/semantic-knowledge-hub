@@ -91,6 +91,11 @@ export interface ComposerProps {
   error?: ReactNode;
   /** A quiet line under the field that describes it (e.g. how many earlier answers go along as context). */
   note?: ReactNode;
+  /**
+   * false: the chosen documents and the selection are shown by the page, not as chips in the field (a document's
+   * panel: «Контекст» above the conversation). They still go with every message and satisfy a skill's inputs.
+   */
+  contextChips?: boolean;
 }
 
 function fileIcon(file: ComposerFile): IconName {
@@ -138,6 +143,7 @@ export function Composer({
   autoFocus,
   error,
   note,
+  contextChips = true,
 }: ComposerProps) {
   const session = useSession();
   const navigate = useNavigate();
@@ -385,7 +391,7 @@ export function Composer({
     }
     if (event.key === "Backspace" && text === "" && !searchMode) {
       const field = event.currentTarget;
-      if (field.selectionStart === 0 && field.selectionEnd === 0 && composer.removeLast()) {
+      if (field.selectionStart === 0 && field.selectionEnd === 0 && composer.removeLast({ keepContext: !contextChips })) {
         event.preventDefault();
         setAnnouncement("Последнее вложение убрано.");
       }
@@ -471,7 +477,9 @@ export function Composer({
         : draft.files.length > 0 && !skill
           ? "Что сделать с файлами?"
           : "Спросите, опишите задачу или перетащите файл");
-  const chips = !searchMode && (skill || draft.files.length > 0 || draft.documents.length > 0 || draft.selection);
+  const shownDocuments = contextChips ? draft.documents : [];
+  const shownSelection = contextChips ? draft.selection : null;
+  const chips = !searchMode && (skill || draft.files.length > 0 || shownDocuments.length > 0 || shownSelection);
   const popupSide = variant === "home" ? "bottom" : "top";
   const listLabel = popup?.kind === "skills" ? "Навыки" : popup?.kind === "documents" ? "Документы" : "Подсказки";
   const hints: ReactNode[] = [];
@@ -515,7 +523,7 @@ export function Composer({
                 </Chip>
               </li>
             ))}
-            {draft.documents.map((document) => (
+            {shownDocuments.map((document) => (
               <li key={document.id}>
                 <Chip
                   tone="document"
@@ -528,10 +536,10 @@ export function Composer({
                 </Chip>
               </li>
             ))}
-            {draft.selection ? (
+            {shownSelection ? (
               <li>
                 <Chip tone="document" icon="edit" onRemove={() => composer.setSelection(null)} removeLabel="Убрать выделение">
-                  {draft.selection.label}
+                  {shownSelection.label}
                 </Chip>
               </li>
             ) : null}
