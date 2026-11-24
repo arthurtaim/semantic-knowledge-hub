@@ -27,7 +27,7 @@ from app.adapters.publishers.base import ConfluencePublisher, ProposalPublisher
 from app.adapters.publishers.disabled import DisabledConfluencePublisher, DisabledProposalPublisher
 from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
-from app.authz import AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
+from app.authz import Action, AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
 from app.config import Settings, tls_verify
 from app.domain.instructions import DEFAULT_INSTRUCTIONS_DIR, RuntimeInstructions, load_instructions
 from app.domain.models import UserContext
@@ -35,6 +35,8 @@ from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import DEFAULT_TEMPLATES_DIR
 from app.services.ai_workflows import AiProposalStore, AiWorkflowService
 from app.services.assistant import AssistantService
+from app.services.assistant_loop import ToolLoop, ToolLoopLimits
+from app.services.assistant_tools import SystemToolExecutor
 from app.services.attachments import AttachmentService, AttachmentStore
 from app.services.authoring import AuthoringService
 from app.services.discovery import DiscoveryStore
@@ -240,6 +242,25 @@ def build_confluence_publisher(settings: Settings) -> ConfluencePublisher:
     )
 
 
+def tool_limits(settings: Settings) -> ToolLoopLimits:
+    # drafts_propose runs the existing workflow, which calls the model itself: its own (longer) deadline.
+    model_timeout = (
+        settings.claude_cli_draft_timeout_seconds
+        if settings.ai_provider == "claude_cli"
+        else settings.ai_timeout_seconds * 2
+    )
+    return ToolLoopLimits(
+        max_rounds=settings.ai_tools_max_rounds,
+        max_calls_per_round=settings.ai_tools_max_calls_per_round,
+        max_calls_total=settings.ai_tools_max_calls_total,
+        tool_timeout_seconds=settings.ai_tools_timeout_seconds,
+        proposal_timeout_seconds=min(model_timeout, settings.ai_tools_budget_seconds),
+        budget_seconds=settings.ai_tools_budget_seconds,
+        result_chars=settings.ai_tools_result_chars,
+        transcript_chars=settings.ai_tools_transcript_chars,
+    )
+
+
 def build_policy(settings: Settings) -> AuthorizationPolicy:
     # local_demo: one operator on loopback (enforced at startup). Anything else fails closed until a
     # corporate SSO/RBAC policy exists (docs/SSO_RBAC_REQUIREMENTS.md).
@@ -368,6 +389,24 @@ def build_container(settings: Settings) -> Container:
     skills = AssistantSkillService(
         assistant=assistant_service, workflows=ai_workflows, attachments=attachments, knowledge=knowledge
     )
+    template_hub = TemplateHubService(authoring, knowledge)
+    policy = build_policy(settings)
+    # M5.7: the tool loop. Off when disabled by configuration or when the runtime policy fell back to the built-in
+    # safe text (which forbids tools): fail closed, never a tool loop under a weaker prompt.
+    if settings.ai_tools_enabled and not instructions.fallback:
+        assistant_service.attach_tools(
+            ToolLoop(
+                SystemToolExecutor(
+                    knowledge=knowledge,
+                    links=link_service,
+                    graph=graph_service,
+                    templates=template_hub,
+                    workflows=ai_workflows,
+                ),
+                tool_limits(settings),
+            ),
+            can_propose=lambda user: policy.allows(user, Action.create_proposal),
+        )
     return Container(
         settings=settings,
         repository=repository,
@@ -395,14 +434,14 @@ def build_container(settings: Settings) -> Container:
             confluence_publisher=confluence_publisher,
             tasks=tasks,
         ),
-        policy=build_policy(settings),
+        policy=policy,
         graph=graph_service,
         links=link_service,
         metadata=metadata_service,
         ai_workflows=ai_workflows,
         attachments=attachments,
         skills=skills,
-        template_hub=TemplateHubService(authoring, knowledge),
+        template_hub=template_hub,
         discovery=discovery,
         external=external,
         instructions=instructions,

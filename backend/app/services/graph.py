@@ -405,13 +405,15 @@ class GraphService:
     ) -> None:
         self._knowledge = knowledge
         self._templates = templates
-        self._cache: tuple[tuple[str, str], CanonicalGraph] | None = None
+        self._cache: tuple[tuple[str, str, str], CanonicalGraph] | None = None
 
     async def graph(self, user: UserContext) -> CanonicalGraph:
         snapshot = await self._knowledge.snapshot(user)
         templates = self._templates()
         generation = self._knowledge.generation_label(snapshot)
-        key = (generation, repr(sorted(templates.items())))
+        # The reader's snapshot version is part of the key: a graph built from another reader's (larger) snapshot
+        # is never served (M5.7 — no hidden node, edge or path through the cache).
+        key = (generation, snapshot.version, repr(sorted(templates.items())))
         if self._cache is None or self._cache[0] != key:
             self._cache = (key, build_canonical_graph(snapshot, generation, templates))
         return self._cache[1]

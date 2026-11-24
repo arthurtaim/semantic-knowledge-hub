@@ -16,6 +16,8 @@ FastAPI backend — every route: require(Action) → AuthorizationPolicy (LocalD
    ├─ AssistantService ──── AIProvider.answer (mock | internal_api | claude_cli | disabled) + citation validation
   │                        optional StreamingAIProvider.stream_answer → POST /api/assistant/ask/stream (NDJSON)
   │                        claude_cli (EXPERIMENTAL, personal test) → claude-worker container → Claude Code CLI
+  │                        M5.7: optional ToolCallingAIProvider.tool_turn → bounded ToolLoop → SystemToolExecutor
+  │                        (catalog / search / graph / templates / proposals; reader's snapshot; docs/AI_NATIVE_TOOLS.md)
    ├─ AuthoringService ──── templates (files) · generated frontmatter · ID/path checks · safe preview
    │                        AIProvider.draft_document + verbatim citation check (scope "team")
    ├─ ProposalService ───── ProposalStore (SQLite: proposals, content-free audit)

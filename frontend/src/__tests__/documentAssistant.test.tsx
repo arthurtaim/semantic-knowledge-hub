@@ -308,6 +308,52 @@ describe("Document assistant panel", () => {
     expect(second?.history).toEqual([{ question: "Где ещё требуется стабильный ID?", answer: supportedAnswer.answer }]);
   });
 
+  it("M5.7: shows system facts compact under the panel's answer and sends their referent with a follow-up", async () => {
+    const referent = { tool: "catalog_query", operation: "count", filters: {}, document_ids: [], value: 83 };
+    const withFact: AskResponse = {
+      ...supportedAnswer,
+      mode: "internal_api",
+      warnings: [],
+      citations: [],
+      answer: "В доступном вам каталоге SKH — 83 уникальных документов [F1].",
+      system_facts: [
+        {
+          ref: "F1",
+          tool: "catalog_query",
+          operation: "count",
+          label: "Документы в доступном каталоге SKH",
+          value: 83,
+          unit: "documents",
+          effective_filters: {},
+          definition: null,
+          access_scope: "visible_to_request_context",
+          source: "skh_document_registry",
+          generation: "g1",
+          as_of: "2026-11-24T09:00:00Z",
+          items: [],
+          truncated: false,
+          breakdown: null,
+        },
+      ],
+      conversation_context: [referent],
+    };
+    const calls = mockApi(routes([streamOf(withFact)]));
+    renderAt(`/documents/${DOC_ID}`, "/documents/:id", <DocumentPage />, withMode("internal_api"));
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    const field = within(panel()).getByRole("textbox", { name: "Вопрос по документу" });
+    await userEvent.type(field, "Сколько документов в базе?{Enter}");
+    const block = await within(panel()).findByRole("region", { name: "Данные системы SKH" });
+    expect(block).toHaveClass("facts--compact");
+    expect(block).toHaveTextContent("83 документа");
+    expect(within(panel()).getByRole("link", { name: "Данные системы С1" })).toHaveAttribute("href", "#fact-1-F1");
+
+    await userEvent.type(field, "А сколько из них утверждено?{Enter}");
+    await waitFor(() => expect(asks(calls)).toHaveLength(2));
+    expect((asks(calls)[1]?.body as { history: unknown[] }).history).toEqual([
+      { question: "Сколько документов в базе?", answer: withFact.answer, context: [referent] },
+    ]);
+  });
+
   it("deletes the files attached in the panel when the document is left (the conversation ends with the visit)", async () => {
     const attachment = attachmentReady({ id: "ATT-00000000000000aa" });
     const calls = mockApi(

@@ -24,9 +24,17 @@ from app.domain.schema import FrontmatterError, load_frontmatter, split_frontmat
 logger = logging.getLogger("skh.instructions")
 
 DEFAULT_INSTRUCTIONS_DIR = Path(__file__).resolve().parents[1] / "assistant_instructions"
-Task = Literal["answer", "edit", "authoring"]
-ORDER = ("role", "retrieval_grounding", "citation_policy", "document_authoring", "template_policy")
+Task = Literal["answer", "edit", "authoring", "tools"]
+ORDER = (
+    "role",
+    "retrieval_grounding",
+    "citation_policy",
+    "tool_policy",
+    "document_authoring",
+    "template_policy",
+)
 REQUIRED = frozenset(ORDER)
+TASKS = ("answer", "edit", "authoring", "tools")  # tools: the M5.7 tool loop (docs/AI_NATIVE_TOOLS.md)
 MAX_FILE_BYTES = 16 * 1024
 
 FALLBACK_POLICY = (
@@ -100,8 +108,8 @@ def load_instructions(directory: Path = DEFAULT_INSTRUCTIONS_DIR) -> RuntimeInst
                 applies = meta.get("applies_to")
                 if file_id not in REQUIRED or not isinstance(version, int) or version < 1:
                     raise ValueError("нужны id из списка и целая version")
-                if not isinstance(applies, list) or not set(applies) <= {"answer", "edit", "authoring"}:
-                    raise ValueError("applies_to — список из answer / edit / authoring")
+                if not isinstance(applies, list) or not set(applies) <= set(TASKS):
+                    raise ValueError("applies_to — список из answer / edit / authoring / tools")
                 text = body.strip()
                 if not text:
                     raise ValueError("пустой текст")

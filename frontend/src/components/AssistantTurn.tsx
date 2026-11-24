@@ -4,10 +4,12 @@ import type { AiMode, AskRequest, AskResponse, AskSkillRef, ExternalRetrievalSum
 import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeLabel, scopeOfSources } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
 import { useSession } from "../lib/session";
-import { AnswerActions, AnswerText, DemoAnswerText, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
+import { failedChecks, proposalCardId, toolChecksFailed } from "../lib/systemFacts";
+import { AnswerActions, AnswerText, DemoAnswerText, factRefsOf, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
 import { AnswerSources } from "./AnswerSources";
 import { AskProposal } from "./AskProposal";
 import { ErrorState, Notice } from "./Feedback";
+import { ChecksInsufficient, FailedChecks, SystemFacts } from "./SystemFacts";
 import { Chip } from "./ui/Chip";
 
 /*
@@ -41,6 +43,8 @@ export interface Turn {
   provider: AiMode | null;
   /** PRELIMINARY model text (not validated); shown only while the turn runs. */
   preliminary: string;
+  /** M5.7: what the backend is checking for the model right now («Проверяю каталог…»), until the next round. */
+  activity?: string | null;
   response: AskResponse | null;
   error: ApiError | null;
 }
@@ -56,6 +60,7 @@ const STAGES: { phase: TurnPhase; label: string }[] = [
 ];
 
 function statusText(turn: Turn): string {
+  if (turn.phase === "generating" && turn.activity) return turn.activity;
   if (turn.phase === "generating") {
     const action = turn.provider === "claude_cli" ? "Формулирую ответ с Claude Code CLI…" : "Формулирую ответ…";
     if (turn.passages === null) return action;
@@ -194,8 +199,13 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
   const labels = citationLabels(answer.citations);
   const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
   const demoExcerpts = answer.mode === "mock" && !answer.proposal;
-  const textProps = { citations: answer.citations, labels, turnNo, question };
+  const facts = factRefsOf(answer);
+  const textProps = { citations: answer.citations, labels, turnNo, question, facts };
   const showText = !insufficient || Boolean(answer.proposal);
+  // M5.7: system tools were used and some did not work out — an answer that could not be confirmed says what could
+  // not be checked instead of «В базе знаний нет ответа» with near matches (a metric is not a document).
+  const checksFailedOnly = insufficient && toolChecksFailed(answer);
+  const failed = insufficient ? [] : failedChecks(answer);
   const { text, notFound } = splitServerNotes(answer);
   const unsupported = notFound ?? (answer.unmatched_terms.length > 0 ? answer.unmatched_terms.map((term) => `«${term}»`).join(", ") : null);
   const Heading = compact ? "h3" : "h2";
@@ -210,6 +220,11 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
           Ассистент
         </Heading>
         <SupportBadge confidence={answer.confidence} />
+        {answer.general_knowledge ? (
+          <span className="answer__general" title="Объяснение модели из общих знаний: это не документы и не данные SKH">
+            Общие знания, не данные SKH
+          </span>
+        ) : null}
         {generated ? (
           <span className="ai-label" title="Текст сформирован языковой моделью; цитаты сверены сервером">
             ИИ
@@ -230,7 +245,9 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
       </div>
       <CorporateGap answer={answer} asked={request.sources} />
       {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
-      {insufficient ? (
+      {checksFailedOnly ? (
+        <ChecksInsufficient steps={failedChecks(answer, true)} question={question} compact={compact} onRefine={onRefine} />
+      ) : insufficient ? (
         compact ? (
           <CompactInsufficient answer={answer} question={question} onRefine={onRefine} />
         ) : (
@@ -259,6 +276,9 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
         </p>
       ) : null}
 
+      <SystemFacts answer={answer} labels={facts.labels} turnNo={turnNo} compact={compact} />
+      <FailedChecks steps={failed} />
+
       {answer.warnings.length > 0 ? (
         <Notice tone="warning">
           <ul>
@@ -270,7 +290,13 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
       ) : null}
 
       {answer.proposal ? (
-        <AskProposal reference={answer.proposal} mode={answer.mode} primary={answer.proposal.status === "suggested"} compact={compact} />
+        <AskProposal
+          reference={answer.proposal}
+          mode={answer.mode}
+          primary={answer.proposal.status === "suggested"}
+          compact={compact}
+          anchorId={proposalCardId(turnNo)}
+        />
       ) : null}
 
       {insufficient || compact ? null : (

@@ -168,6 +168,10 @@ class MockAIProvider:
     mode: AIMode = "mock"
     supports_edit_suggestions = False
     supports_authoring = True
+    # M5.7: the deterministic mock does not understand language, so it does not take part in the tool loop — a
+    # keyword "intent router" in product code is exactly what M5.7 forbids. It keeps the content-only RAG answer;
+    # natural-language questions about SKH state need a model (docs/AI_NATIVE_TOOLS.md §Mock).
+    supports_tools = False
 
     async def answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions

@@ -53,6 +53,7 @@ import type {
   TemplateComparison,
   TemplateDetail,
   TemplateSummary,
+  ToolStepInfo,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
@@ -212,7 +213,23 @@ function parseStreamEvent(line: string, requestId: string | null): AskStreamEven
         stage: value.stage,
         passages: typeof value.passages === "number" ? value.passages : undefined,
         provider: typeof value.provider === "string" ? (value.provider as AiMode) : undefined,
+        // M5.7: the model round of a tool loop (each round starts a new preliminary text).
+        round: typeof value.round === "number" ? value.round : undefined,
       };
+    // M5.7: the backend runs an allowlisted tool for the model / reports how it ended (no payloads). A malformed
+    // tool event is skipped like an unknown one: it only feeds a progress line, never the answer.
+    case "tool_call":
+      if (typeof value.tool !== "string" || typeof value.call_id !== "string") return null;
+      return {
+        type: "tool_call",
+        call_id: value.call_id,
+        round: typeof value.round === "number" ? value.round : 1,
+        tool: value.tool,
+        operation: typeof value.operation === "string" ? value.operation : null,
+      };
+    case "tool_result":
+      if (typeof value.call_id !== "string" || !isRecord(value.step)) return null;
+      return { type: "tool_result", call_id: value.call_id, step: value.step as unknown as ToolStepInfo };
     case "delta":
       if (typeof value.text !== "string") throw invalidStream(requestId);
       return { type: "delta", text: value.text };

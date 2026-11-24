@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.skills import SKILL_BY_ID
 
@@ -331,6 +332,94 @@ def _default_scopes() -> list[SearchScope]:
     return ["team"]
 
 
+# --- M5.7: system facts of an AI-native answer (docs/AI_NATIVE_TOOLS.md) ---------------------------------------
+SystemFactSource = Literal[
+    "skh_document_registry", "skh_knowledge_graph", "skh_template_registry", "skh_ai_proposals"
+]
+ToolOutcome = Literal[
+    "ok", "invalid", "unknown_tool", "not_found", "denied", "unavailable", "timeout", "error"
+]
+MAX_CONTEXT_FILTER_KEYS = 12
+MAX_CONTEXT_FILTER_CHARS = 1000
+
+
+class SystemFactItem(BaseModel):
+    """One visible object of a structured observation: a document, a template, a relation or a proposal."""
+
+    id: str
+    title: str
+    kind: Literal["document", "template", "relation", "proposal"]
+    status: str | None = None
+    detail: str | None = (
+        None  # e.g. "владелец не назначен", "references · WikiLink, строка 12", "v2 · active"
+    )
+    app_path: str | None = None
+
+
+class SystemFact(BaseModel):
+    """An authoritative, server-computed observation of SKH state (registry, graph, templates, proposals).
+
+    It is the evidence of a system claim the way a verified Citation is the evidence of a document claim: the UI
+    renders `value`/`items` from here, never from the model's text. Everything is computed from the reader's own
+    snapshot (`access_scope`), so totals never include what the reader cannot see."""
+
+    ref: str  # "F1" — the marker the answer text may use ([F1])
+    tool: str
+    operation: str
+    label: str  # human Russian label, e.g. «Документы в доступном каталоге»
+    value: int | None = None  # the authoritative number (count / total); null for lists without a number
+    unit: str | None = None  # "documents" | "templates" | "relations" | "versions"
+    effective_filters: dict[str, Any] = Field(default_factory=dict)
+    definition: str | None = None  # how the number is defined (e.g. a text match is NOT a system tag)
+    access_scope: Literal["visible_to_request_context"] = "visible_to_request_context"
+    source: SystemFactSource
+    generation: str | None = None  # index generation of the snapshot the fact was computed from
+    as_of: datetime
+    items: list[SystemFactItem] = Field(default_factory=list)  # bounded; `truncated` when more exist
+    truncated: bool = False
+    breakdown: dict[str, dict[str, int]] | None = None  # facets: {"status": {"approved": 73, …}, …}
+
+
+class ToolStepInfo(BaseModel):
+    """One executed (or refused) tool call of an answer, without payloads: what was checked and how it ended."""
+
+    call_id: str  # T1, T2, … in call order
+    round: int
+    tool: str
+    operation: str | None = None
+    outcome: ToolOutcome
+    duration_ms: int
+    result_count: int | None = None
+    fact_ref: str | None = None
+    error_code: str | None = None
+    message: str | None = None  # sanitized Russian text for a failed step
+
+
+class TurnFactContext(BaseModel):
+    """Minimal referent of an earlier answer («а из них…»): the filters and visible IDs of a system fact. The client
+    echoes `AskResponse.conversation_context` back in `history[-1].context`. Context only — never an access grant:
+    every ID is re-checked against the reader's snapshot and every tool call re-checks access."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    tool: str = Field(min_length=1, max_length=40)
+    operation: str = Field(min_length=1, max_length=40)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    document_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        default_factory=list, max_length=20
+    )
+    value: int | None = Field(default=None, ge=0, le=10_000_000)
+
+    @field_validator("filters")
+    @classmethod
+    def _bounded_filters(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(value) > MAX_CONTEXT_FILTER_KEYS:
+            raise ValueError("too many filters")
+        if len(json.dumps(value, ensure_ascii=False, default=str)) > MAX_CONTEXT_FILTER_CHARS:
+            raise ValueError("filters are too large")
+        return value
+
+
 class ConversationTurnIn(BaseModel):
     """A previous turn of the same conversation, sent back by the client (the server keeps no chat state)."""
 
@@ -338,6 +427,8 @@ class ConversationTurnIn(BaseModel):
 
     question: str = Field(min_length=1, max_length=2000)
     answer: str = Field(max_length=4000)
+    # M5.7 (optional): `conversation_context` of that answer, echoed back for follow-ups. Context, not evidence.
+    context: list[TurnFactContext] = Field(default_factory=list, max_length=5)
 
 
 class AskSelection(BaseModel):
@@ -420,6 +511,13 @@ class AskResponse(BaseModel):
     # proposal the dialog shows as a card with a link (null otherwise). Nothing is ever applied by /ask.
     skill: SkillRef | None = None
     proposal: ProposalRef | None = None
+    # M5.7 (additive; docs/AI_NATIVE_TOOLS.md): authoritative structured observations the answer relies on
+    # ([F1] markers in `answer`), the tool steps that were executed, whether the text relies on the model's general
+    # knowledge (never internal evidence), and the referent a follow-up question can use.
+    system_facts: list[SystemFact] = Field(default_factory=list)
+    tool_steps: list[ToolStepInfo] = Field(default_factory=list)
+    general_knowledge: bool = False
+    conversation_context: list[TurnFactContext] = Field(default_factory=list)
 
 
 IntegrationTarget = Literal["none", "local", "mock", "real"]

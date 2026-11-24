@@ -625,3 +625,32 @@ Checks of the merged round (this tree, real runs):
 - Frontend: `tsc`, `eslint` clean; `vitest` 346 → 391 (33 files).
 - E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 55 passed, 1 skipped → 65 passed,
   1 skipped.
+
+### 6.10 M5.7 — system facts in the answer (2026-11-24)
+
+Minimal changes to the existing answer view for the AI-native tool loop (`docs/AI_NATIVE_TOOLS.md` «UI»); no new
+screen, ribbon, chat framework or debug view; mock mode is unchanged (it does not use tools).
+
+- **«Данные системы SKH»** (`components/SystemFacts.tsx`, `lib/systemFacts.ts`): a block of its own under the answer
+  text, apart from «Источники» (whose three groups are unchanged). One row per `system_facts` entry: «По данным реестра
+  SKH — {label}», the value with its unit from the observation (`83 документа`, never re-read from the text), the
+  filters really applied in words («Фильтр: статус: утверждён · тег: aris»; a text match is «текст содержит «ARIS»»
+  and its definition says it is not a tag), «Весь доступный вам каталог, без фильтров» when there are none, items as
+  links (`app_path`) with status, «Показаны первые N из M» when `truncated`, quietly the scope, index generation and
+  time. A zero says «Нет совпадений в этой области — это ноль, а не ошибка проверки».
+- **Markers**: `[F1]` becomes «С1» — outlined (border `--line-field`, surface background), where citation markers are
+  filled (1 / К1 / Ф1). A link with a tooltip on hover and focus; Enter or a click moves focus to its row (`tabindex
+  -1`, `:focus` wash = the same as a source row reached from its marker). A proposal fact (`drafts_propose`) has no row:
+  its marker leads to the existing proposal card (`AskProposal`, anchor `proposal-N`).
+- **General knowledge**: `general_knowledge: true` adds a quiet dashed tag «Общие знания, не данные SKH» to the answer
+  head (the server's warning stays).
+- **Honest states**: tools were used and the answer could not be confirmed → «Не удалось проверить данные системы» with
+  each failed check and its own outcome (source unavailable / no answer in time / no access / not found in your scope /
+  request refused) and «Уточнить вопрос» — instead of «В базе знаний нет ответа» with lexical near matches. Next to an
+  answer that stands, checks that did not work out and that its text does not already report are listed the same way.
+- **Conversation**: follow-ups send `history[i].context` = the answer's `conversation_context`; the stream client now
+  passes `status.round`, `tool_call` and `tool_result` on; a new model round starts a new preliminary text; one short
+  status line names the running check («Проверяю каталог…», «Ищу в документах…», «Смотрю граф связей…», «Смотрю
+  шаблоны…», «Готовлю предложение…»).
+- Tokens only (no new colour), one primary button per view kept (the cards have none), 1440 / 390 and both themes
+  checked on screenshots (`reports/m57/TEST_RESULTS.md`).

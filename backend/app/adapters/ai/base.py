@@ -242,3 +242,66 @@ class StreamingAIProvider(Protocol):
     def stream_answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
     ) -> AsyncGenerator[AnswerStreamEvent, None]: ...
+
+
+# --- M5.7: one round of the bounded model → tool → model loop (docs/AI_NATIVE_TOOLS.md) -------------------------
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """An allowlisted SKH tool offered to the model: its name and a compact, trusted description (code)."""
+
+    name: str
+    description: str
+
+
+@dataclass(frozen=True)
+class ToolExchangeEntry:
+    """One call of an earlier round and the bounded JSON result the BACKEND returned for it."""
+
+    call_id: str
+    name: str
+    arguments_json: str
+    result_json: str
+
+
+@dataclass(frozen=True)
+class ToolExchange:
+    round: int
+    entries: tuple[ToolExchangeEntry, ...]
+
+
+@dataclass(frozen=True)
+class ToolTurnRequest:
+    """Everything one model round sees. Only `tools` (and the protocol in code) are instructions; the question,
+    history, previous-turn context, passages and tool results are DATA. An empty `tools` means: answer now."""
+
+    question: str
+    passages: tuple[ContextPassage, ...] = ()
+    history: tuple[ConversationTurn, ...] = ()
+    tools: tuple[ToolSpec, ...] = ()
+    exchanges: tuple[ToolExchange, ...] = ()
+    context_note: str = ""  # JSON of the previous answer's referent (re-checked IDs), data only
+    repair: str = ""  # server note: why the previous reply was rejected (at most one repair per answer)
+    max_calls: int = 4
+    rounds_left: int = 0
+
+
+@dataclass(frozen=True)
+class ToolTurnReply:
+    """The raw text of one model round; the loop parses it (strict envelope, app/adapters/ai/tool_protocol.py)."""
+
+    text: str
+
+
+ToolTurnEvent = AnswerDelta | ToolTurnReply
+
+
+class ToolCallingAIProvider(Protocol):
+    """Optional capability: one round of the tool loop. The PROVIDER never executes anything — it only returns the
+    model's reply; the backend validates and executes allowlisted calls. Preliminary deltas are optional (never
+    for a tool request); the last event is ToolTurnReply; errors are AIProviderError; cancelling stops the model."""
+
+    supports_tools: bool
+
+    def tool_turn(self, request: ToolTurnRequest) -> AsyncGenerator[ToolTurnEvent, None]: ...
