@@ -39,7 +39,7 @@ from app.domain.models import (
     UserContext,
 )
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
-from app.domain.text import QueryTerm, term_matches_text, tokenize
+from app.domain.text import QueryTerm, reportable_terms, term_matches_text, tokenize
 from app.services.attachments import Unit, format_locator
 from app.services.discovery import DiscoveryStore, SourceLink, acl_scope_key
 from app.services.external import ExternalEvidenceService, ExternalRetrieval
@@ -634,7 +634,8 @@ class AssistantService:
     def _no_passages_message(terms: list[QueryTerm], unmatched: list[QueryTerm]) -> str:
         if not terms:
             return "Вопрос не содержит значимых слов для поиска. Переформулируйте вопрос."
-        missing = [t for t in unmatched if t.is_entity_like] or unmatched
+        # Function words («через», «который») are never named: their absence says nothing about the topic.
+        missing = [t for t in unmatched if t.is_entity_like] or reportable_terms(unmatched)
         listed = ", ".join(f"«{t.original}»" for t in missing[:6])
         return (
             "Недостаточно данных: в доступных источниках не найдено подтверждённых сведений по вопросу"
@@ -814,5 +815,5 @@ class AssistantService:
             warnings=deduped,
             excluded_sources=excluded,
             scopes=scopes,
-            unmatched_terms=[t.original for t in unmatched],
+            unmatched_terms=[t.original for t in reportable_terms(unmatched)],
         )

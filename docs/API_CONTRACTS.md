@@ -298,6 +298,14 @@ not a row, an empty cell is `""`). Several pieces of a quote joined by « … »
 or no confident match (e.g. a redacted fragment) → `null`, and the UI shows `excerpt` as before. Set for ask answers
 and for the evidence citations of workflow skills; never for Confluence pages or attachments.
 
+**Not found terms (`unmatched_terms`, round 2).** Words of the question that no allowed source contains — never
+function words (prepositions, conjunctions, particles, pronouns, auxiliary verb forms: `FUNCTION_WORDS` in
+`app/domain/text.py`, a documented RU + EN superset of the search stop words). The same filter applies to the demo
+provider's note «В процитированных фрагментах не встречаются: …» and to the «не встречаются» lists of insufficient
+answers. An empty list means nothing meaningful is missing: the UI then shows no «Не найдено в документах» line.
+Search terms, coverage counting and answer decisions are unchanged (function words still count; they are only never
+named).
+
 **Skills and AI modes.** `internal_api`, `claude_cli`: all available. `mock`: all except `improve_section`
 (`unavailable_reason`: «В демо-режиме нет языковой модели: переписать раздел нельзя.» — the mock can only normalize
 layout). `disabled`: none available, reason «ИИ отключён». `draft_document` additionally needs a provider with

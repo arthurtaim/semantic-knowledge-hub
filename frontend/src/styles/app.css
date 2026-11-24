@@ -5004,7 +5004,7 @@ dd a.button {
   display: block;
 }
 
-/* «Нет подтверждения в источниках»: amber, only for what the server reports (unmatched terms). */
+/* «Не найдено в документах»: amber, only for what the server reports (unmatched terms, never function words). */
 .answer__unsupported {
   margin: 0;
   padding-left: var(--space-3);

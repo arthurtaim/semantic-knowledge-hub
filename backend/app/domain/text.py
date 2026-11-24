@@ -31,6 +31,39 @@ _EN_STOPWORDS = (
 )
 STOPWORDS = frozenset((_RU_STOPWORDS + " " + _EN_STOPWORDS).split())
 
+# Function words: prepositions, conjunctions, particles, pronouns and auxiliary verb forms (RU + EN), folded (ё → е).
+# Their absence from the evidence says nothing about the topic, so they are never REPORTED as words of a question
+# that the sources lack («Не найдено в документах», `AskResponse.unmatched_terms`). A superset of STOPWORDS used
+# only for that report: retrieval keeps STOPWORDS (which words become search terms is a retrieval change that needs
+# a before/after evaluation, docs/SEARCH_SYNC_TEMPLATES.md).
+_RU_FUNCTION_WORDS = (
+    # prepositions
+    "близ вдоль вместо вне внутри возле вокруг вследствие из-за из-под изо ко кроме между мимо насчет около ото "
+    "обо перед передо подо после посреди против ради сверх сквозь со согласно среди через "
+    # conjunctions
+    "будто ибо зато пока поэтому потому притом причем словно чтоб "
+    # particles
+    "ведь вон именно лишь неужели нибудь пусть разве уж "
+    # pronouns: personal, possessive, reflexive, demonstrative, relative, interrogative, negative, adverbial
+    "вся всю всем всеми всей ему ей ими кого кому кем ком чему какого какому каком какими каково который "
+    "которая которое которые которого которой которому котором которым которых которыми мой моя мое мои моего "
+    "моей моих нас нам ней нем ним ними нею сам сама само сами самого самой самим себя себе собой свой своя "
+    "свое свои своего своей своих твой тот та тех теми этого этой этому этим этом этих никто ничто ничего "
+    "нечто куда откуда туда сюда тут оттуда отсюда насколько отчего "
+    # auxiliary verb forms
+    "будет будут буду будем будешь будете являлся является являются являться"
+)
+_EN_FUNCTION_WORDS = (
+    "above after again against all also am any anyone anything before being below between both during each "
+    "either every everything few further he her here hers herself him himself his itself just may might more "
+    "most must myself neither nor nothing off once only other ourselves out over own per same shall she some "
+    "someone something such themselves through too under until up upon us very via whether while whose "
+    "within without yourself"
+)
+# Second parts of Russian hyphenated particles: «кто-то», «что-нибудь», «какой-либо», «всё-таки».
+_PARTICLE_SUFFIXES = frozenset(("то", "либо", "нибудь", "таки"))
+FUNCTION_WORDS = STOPWORDS | frozenset((_RU_FUNCTION_WORDS + " " + _EN_FUNCTION_WORDS).split())
+
 # Longest endings first; a stem keeps at least 4 letters (3 for short words).
 _RU_ENDINGS = sorted(
     [
@@ -161,6 +194,22 @@ class QueryTerm:
             return True
         letters = [ch for ch in o if ch.isalpha()]
         return bool(len(letters) >= 2 and all(ch.isupper() for ch in letters))
+
+
+def is_function_word(term: QueryTerm) -> bool:
+    """A function word of the question (FUNCTION_WORDS, or «кто-то»-like particles): nothing to report when the
+    evidence lacks it. Identifiers, acronyms and names are never function words."""
+    if term.identifier or term.is_entity_like:
+        return False
+    if term.token in FUNCTION_WORDS:
+        return True
+    head, _, tail = term.token.partition("-")
+    return bool(tail) and head in FUNCTION_WORDS and tail in _PARTICLE_SUFFIXES
+
+
+def reportable_terms(terms: list[QueryTerm]) -> list[QueryTerm]:
+    """The terms worth naming as «not found»: every term except function words."""
+    return [t for t in terms if not is_function_word(t)]
 
 
 def analyze_query(text: str, *, keep_stopwords: bool = False) -> list[QueryTerm]:

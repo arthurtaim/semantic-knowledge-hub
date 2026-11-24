@@ -129,7 +129,7 @@ describe("Answer: support, text and markers", () => {
     expect(within(text).getByRole("link", { name: "Источник 1" })).toBeInTheDocument();
     expect(within(text).getByRole("link", { name: "Источник Ф1" })).toHaveTextContent("Ф1");
     // Server notes go where they belong: not-found words in amber, excluded documents under «Источники».
-    expect(screen.getByText("Нет подтверждения в источниках:").parentElement).toHaveTextContent("«aris_comment»");
+    expect(screen.getByText("Не найдено в документах:").parentElement).toHaveTextContent("«aris_comment»");
     expect(text).not.toHaveTextContent("Исключены из доказательной базы");
   });
 

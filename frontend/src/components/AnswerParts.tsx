@@ -201,7 +201,7 @@ const NOT_FOUND_NOTE = /\n*^В процитированных фрагмента
 /**
  * Notes the server appends to an answer, shown where they belong instead of inside the text: the excluded
  * documents are the «N документов не использованы» line under «Источники»; the words of the question that no
- * quote contains are the amber «Нет подтверждения в источниках» line.
+ * quote contains are the amber «Не найдено в документах» line (the server never lists function words there).
  */
 export function splitServerNotes(answer: AskResponse): { text: string; notFound: string | null } {
   let text = answer.answer;

@@ -255,7 +255,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
 
       {!insufficient && unsupported ? (
         <p className="answer__unsupported">
-          <span className="answer__unsupported-label">Нет подтверждения в источниках:</span> {unsupported}
+          <span className="answer__unsupported-label">Не найдено в документах:</span> {unsupported}
         </p>
       ) : null}
 
