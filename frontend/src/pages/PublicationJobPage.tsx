@@ -304,7 +304,7 @@ export function PublicationJobPage() {
     <div className="publication-job">
       <PageToolbar
         crumbs={[
-          { label: "Документы", to: "/documents" },
+          { label: "Публикации", to: "/publications" },
           { label: job.document_id, to: `/documents/${encodeURIComponent(job.document_id)}` },
           { label: "Публикация" },
         ]}

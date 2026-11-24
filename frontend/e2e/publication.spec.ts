@@ -127,6 +127,43 @@ test("@gitlab E2E-23/24/25/26/27 merged document → dry-run without writes → 
   expect(state.pages.filter((p) => p.title === title).map((p) => p.version)).toEqual([2]);
 });
 
+test("@gitlab E2E-37 «Публикации» lists the prepared job, then the published one, and a row opens the job page", async ({ page, request }) => {
+  const title = `Список публикаций E2E ${Date.now().toString(36)}`;
+  const id = await mergedDocument(page, request, title);
+
+  // The merge prepared a job (a dry-run, nothing written): it is in the list with its state.
+  await page.goto("/publications");
+  await expect(page.getByRole("heading", { level: 1, name: "Публикации" })).toBeVisible();
+  const row = page.getByRole("table", { name: "Задания публикации в Confluence" }).getByRole("row").filter({ hasText: title });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator(".pub-state")).toHaveText("Предпросмотр готов");
+  await expect(row.getByRole("link", { name: `${id}, открыть документ` })).toHaveAttribute("href", `/documents/${id}`);
+  expect((await confluence(request)).write_requests).toBe(0);
+
+  await row.getByRole("link", { name: title }).click();
+  await expect(page).toHaveURL(/\/publications\/[0-9a-f]{32}$/);
+  const jobUrl = page.url();
+  await expect(page.getByRole("heading", { name: "Публикация в Confluence", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "Опубликовать в Confluence" }).click();
+  await expect(page.getByText("Опубликовано в Confluence").first()).toBeVisible();
+  const pageId = (await confluence(request)).pages.find((p) => p.title === title)?.id ?? "";
+  expect(pageId).not.toBe("");
+
+  // Back through the path: the same job, now published, with the page it created.
+  await page.getByRole("navigation", { name: "Путь" }).getByRole("link", { name: "Публикации" }).click();
+  await expect(page).toHaveURL(/\/publications$/);
+  await expect(row.locator(".pub-state")).toHaveText("Опубликовано");
+  await expect(row).toContainText(`Страница ${pageId}, версия 1`);
+  const current = page.getByRole("navigation", { name: "Основная навигация" }).locator('[aria-current="page"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveAccessibleName("Публикации");
+
+  // The whole row opens the job, not only its title.
+  await row.locator("td").last().click();
+  await expect(page).toHaveURL(jobUrl);
+  await expect(page.getByText("Опубликовано в Confluence").first()).toBeVisible();
+});
+
 test("@gitlab E2E-28 manual edit in Confluence → conflict, the page is not overwritten", async ({ page, request }) => {
   const title = `Ручная правка E2E ${Date.now().toString(36)}`;
   const id = await mergedDocument(page, request, title);

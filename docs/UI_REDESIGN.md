@@ -451,7 +451,8 @@ Shell
   ревью» except the reader's own proposals (owner's decision; the API still has no reviewer assignment «на мне»). In
   the single-user demo it is usually 0, so no badge. The proposals page shows it as «Ревью» with a «Кроме моих»
   toggle after the status chips.
-- «Публикации» opens the Confluence publisher row of the integrations page: there is no publications list page.
+- «Публикации» opens its own list page `/publications` (§6.11). Until then it opened the Confluence publisher row of
+  the integrations page, so after a click «Интеграции» became current while «Публикации» still looked selected.
 - «Предложения» counts and opens the open proposals (`/proposals?open_only=true`: draft, ready for review, being
   sent, in a GitLab MR, sending failed — not merged, rejected or conflict), owner's decision; the page has an
   «Открытые» chip next to «Все».
@@ -654,3 +655,25 @@ screen, ribbon, chat framework or debug view; mock mode is unchanged (it does no
   шаблоны…», «Готовлю предложение…»).
 - Tokens only (no new colour), one primary button per view kept (the cards have none), 1440 / 390 and both themes
   checked on screenshots (`reports/m57/TEST_RESULTS.md`).
+
+### 6.11 «Публикации» — the list of publication jobs (2026-11-24)
+
+Branch `feature/publications-page`. No backend change, no new dependency, existing routes and API unchanged.
+- `/publications` (`pages/PublicationsPage.tsx`) lists `GET /api/publications/jobs` — newest first, at most 50 (the
+  endpoint has no other filter or paging; at 50 the page says only the newest are shown, so no state chips). Columns:
+  document (its title from `GET /api/documents/{id}`, one lookup per document; a document the reader cannot open
+  keeps only its ID), state (the existing `PUBLICATION_JOB_STATE_LABEL` and `.pub-state` tones for all nine job
+  states), the Confluence page the job reports (`page_id`, `version_after`; a job carries no space), revision,
+  «Обновлено». The title opens `/publications/:jobId`, the ID the document; the whole row opens the job. Card rows
+  below 720 px, as in the proposals list.
+- Empty states come from `GET /api/integrations/status` (`confluence_publisher`): disabled → «Публикация в Confluence
+  выключена», the server's message, what publication needs (Confluence REST target, GitLab as the source of merged
+  revisions, opt-in) and «Интеграции» → the publisher row; enabled → «Публикаций пока нет» and how a publication
+  starts («История» → «Публикация в Confluence» → «Подготовить публикацию», or after a merge); check failed → the
+  server's message. Without that status (another permission) the session's `confluence_publish` decides.
+- Sidebar: «Публикации» → `/publications`, current on `/publications` and `/publications/:jobId` only; «Интеграции»
+  only on `/integrations`. The job page's path starts at «Публикации» → `/publications`. `PUBLICATIONS_HREF` is
+  removed; the hash link survives as `PUBLISHER_INTEGRATION_HREF` for the empty state. Checklist and keyboard (§6.2,
+  §6.3) are unaffected.
+- Checks: `vitest` 391 → 402; E2E 65 passed, 1 skipped → 68 passed, 1 skipped (`publications.spec.ts` desktop and
+  mobile, `publication.spec.ts` E2E-37 on gitlab-mock, `/publications` in F-01).
