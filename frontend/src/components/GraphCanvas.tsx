@@ -256,6 +256,16 @@ interface DragParts {
   edges: { edge: GraphEdge; path: SVGPathElement | null; label: SVGTextElement | null }[];
 }
 
+/** Pointer capture keeps a drag going outside the element; if the browser refuses it, the drag still works. */
+function capture(element: Element, pointerId: number, on: boolean) {
+  try {
+    if (on) element.setPointerCapture?.(pointerId);
+    else if (element.hasPointerCapture?.(pointerId)) element.releasePointerCapture(pointerId);
+  } catch {
+    // An inactive pointer id (a synthetic event): no capture.
+  }
+}
+
 const requestFrame = (callback: () => void): number =>
   typeof window.requestAnimationFrame === "function" ? window.requestAnimationFrame(callback) : window.setTimeout(callback, 16);
 const cancelFrame = (handle: number) => {
@@ -703,7 +713,7 @@ export function GraphCanvas({
     if (nodeElement && id && origin) {
       // The node takes the pointer: the background does not start panning.
       event.stopPropagation();
-      nodeElement.setPointerCapture?.(event.pointerId);
+      capture(nodeElement, event.pointerId, true);
       gesture.current = {
         kind: "node",
         pointer: event.pointerId,
@@ -720,7 +730,7 @@ export function GraphCanvas({
       return;
     }
     gesture.current = { kind: "pan", pointer: event.pointerId, startX: event.clientX, startY: event.clientY, view: viewRef.current, next: null };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    capture(event.currentTarget, event.pointerId, true);
   }
 
   function onPointerMove(event: PointerEvent<SVGSVGElement>) {
@@ -756,11 +766,11 @@ export function GraphCanvas({
     gesture.current = null;
     flushFrame();
     if (g.kind === "pan") {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      capture(event.currentTarget, event.pointerId, false);
       setView(cancelled ? g.view : (g.next ?? g.view));
       return;
     }
-    g.element.releasePointerCapture?.(event.pointerId);
+    capture(g.element, event.pointerId, false);
     if (!g.dragging) return; // a click: the click event selects the node
     svgRef.current?.classList.remove("is-dragging");
     if (cancelled) {

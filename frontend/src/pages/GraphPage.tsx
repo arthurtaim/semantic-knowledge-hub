@@ -437,7 +437,6 @@ export function GraphPage() {
           ) : null}
         </div>
         <form className="graph-search" role="search" onSubmit={(e) => void onSearch(e)}>
-          <Icon name="search" size={14} className="graph-search__icon" />
           <input
             id="graph-search"
             type="search"
@@ -448,9 +447,7 @@ export function GraphPage() {
             autoComplete="off"
             placeholder="Найти узел: название или ID"
           />
-          <Button type="submit" size="sm">
-            Найти
-          </Button>
+          <IconButton type="submit" icon="search" label="Найти" size="sm" className="graph-search__submit" />
         </form>
         {merged && !graph.error ? (
           <p className="graph-bar__count">

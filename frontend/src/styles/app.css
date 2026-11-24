@@ -5160,9 +5160,10 @@ h1 a:hover {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  flex: 0 1 19rem;
-  min-width: 12rem;
+  /* A small base size so that the count stays on the bar's line; it grows into free space up to 16 rem. */
+  flex: 1 1 10rem;
+  min-width: 9rem;
+  max-width: 16rem;
   margin-left: auto;
 }
 
@@ -5171,15 +5172,14 @@ h1 a:hover {
   min-width: 0;
   min-height: var(--control-height-sm);
   padding-block: 0.1875rem;
-  padding-left: 1.75rem;
+  padding-right: 2rem;
   font-size: var(--fs-small);
 }
 
-.graph-search__icon {
+/* The submit button sits inside the field, at its end. */
+.graph-search__submit {
   position: absolute;
-  left: 0.5625rem;
-  color: var(--text-tertiary);
-  pointer-events: none;
+  right: 2px;
 }
 
 .graph-bar__count {
@@ -5766,20 +5766,18 @@ h1 a:hover {
   color: var(--text-secondary);
 }
 
-/* "Why linked" is one compact run of facts: Указано в · Поле · Файл · Ревизия. */
+/* "Why linked": Указано в · Поле · Где объявлено · Файл · Ревизия, one aligned row each. */
 .graph-why__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--space-3);
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.125rem var(--space-2);
   margin: 0;
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
 }
 
 .graph-why__facts div {
-  display: flex;
-  gap: var(--space-1);
-  min-width: 0;
+  display: contents;
 }
 
 .graph-why__path {
