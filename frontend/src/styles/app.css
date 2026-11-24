@@ -7166,6 +7166,20 @@ a.source__title:hover {
   opacity: 0.2;
 }
 
+/* «Вся база»: an edge is almost transparent until one of its nodes is hovered or selected — the regions of the kinds
+   carry the overview; the lit edges of a node stand out against the rest (which fade further). */
+.graph-edges--quiet .graph-edge {
+  opacity: 0.18;
+}
+
+.graph-edges--quiet .graph-edge.is-lit {
+  opacity: 1;
+}
+
+.graph-edges--quiet .graph-edge.is-faded {
+  opacity: 0.08;
+}
+
 .graph-arrow {
   fill: var(--graph-edge);
 }

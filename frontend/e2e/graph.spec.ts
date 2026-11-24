@@ -166,6 +166,30 @@ test("E2E-MAP-3 the background pans, the wheel zooms, nodes stay where they are"
   expect(await translate(graphNode(page, "doc:DEMO-INT-001"))).toEqual(nodeBefore);
 });
 
+test("E2E-MAP-5 «Вся база»: edges stay faint until one of their nodes is hovered or selected", async ({ page }) => {
+  const problems = watch(page);
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  const opacity = (selector: string) =>
+    expect.poll(() => page.locator(selector).first().evaluate((element) => Number(getComputedStyle(element).opacity)));
+  await expect(page.locator(".graph-edges .graph-edge.is-lit")).toHaveCount(0);
+  await opacity(".graph-edges .graph-edge").toBeLessThanOrEqual(0.25);
+  const point = await grip(page, "doc:DEMO-INT-001");
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator(".graph-edges .graph-edge.is-lit").first()).toBeAttached();
+  await opacity(".graph-edges .graph-edge.is-lit").toBe(1);
+  await opacity(".graph-edges .graph-edge.is-faded").toBeLessThan(0.15);
+  // The relation of a highlighted edge is named on it.
+  await expect(page.locator("[data-edge-label]").first()).toBeVisible();
+  await page.mouse.move(2, 2);
+  await expect(page.locator(".graph-edges .graph-edge.is-lit")).toHaveCount(0);
+  await page.mouse.click(point.x, point.y);
+  await expect(details(page).getByRole("heading", { name: "ARIS → Catalog: обзор потока (демо)" })).toBeVisible();
+  await page.mouse.move(2, 2);
+  await opacity(".graph-edges .graph-edge.is-lit").toBe(1);
+  expect(problems).toEqual([]);
+});
+
 test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and «Граф ответа» from an assistant answer", async ({ page }) => {
   const session = (await (await page.request.get("/api/session", { headers: { "X-SKH-Client": "web" } })).json()) as {
     features: { ai_mode: string };

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Profiler, useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import css from "../styles/app.css?raw";
 import type { GraphEdge, GraphNode, GraphNodeKind } from "../api/types";
 import { DRAG_THRESHOLD, GraphCanvas, MOVE_STEP, MOVE_STEP_LARGE } from "../components/GraphCanvas";
 import { graphLabels, nodeExtent, type Layout, type Point } from "../lib/graph";
@@ -94,10 +95,11 @@ interface HarnessProps {
   onMove?: (id: string, point: Point) => void;
   selectedId?: string | null;
   onRender?: () => void;
+  overview?: boolean;
 }
 
 /** The canvas with its manual positions held like the page holds them. */
-function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, onRender }: HarnessProps) {
+function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, onRender, overview }: HarnessProps) {
   const [overrides, setOverrides] = useState<Map<string, Point>>(new Map());
   const [layout] = useState(() => fixedLayout());
   const canvas = (
@@ -117,6 +119,7 @@ function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, on
       labels={graphLabels(null)}
       onSelect={onSelect}
       focusRequest={null}
+      overview={overview}
     />
   );
   return <MemoryRouter>{onRender ? <Profiler id="canvas" onRender={onRender}>{canvas}</Profiler> : canvas}</MemoryRouter>;
@@ -282,5 +285,56 @@ describe("Knowledge map: dragging nodes", () => {
     fireEvent.click(reset);
     expect(translate(nodeElement("A"))).toEqual({ x: 0, y: 0 });
     expect(reset).toBeDisabled();
+  });
+});
+
+/** The declarations of one CSS rule of `app.css`, by its exact selector. */
+function cssRule(selector: string): string {
+  const start = css.indexOf(`\n${selector} {`);
+  if (start < 0) throw new Error(`no rule ${selector}`);
+  return css.slice(start, css.indexOf("}", start));
+}
+
+const opacityOf = (selector: string) => Number(/opacity:\s*([\d.]+)/.exec(cssRule(selector))?.[1]);
+
+describe("Knowledge map: edges of the whole base", () => {
+  const edgeClasses = () =>
+    Object.fromEntries(
+      Array.from(document.querySelectorAll<SVGPathElement>(".graph-edges [data-edge-id]")).map((path) => [
+        path.dataset.edgeId,
+        path.classList.contains("is-lit") ? "lit" : path.classList.contains("is-faded") ? "faded" : "rest",
+      ]),
+    );
+
+  it("keeps every edge faint until one of its nodes is hovered or selected", () => {
+    const { rerender } = render(<Harness overview />);
+    expect(document.querySelector(".graph-edges")).toHaveClass("graph-edges--quiet");
+    expect(edgeClasses()).toEqual({ "edge:A:B": "rest", "edge:B:C": "rest" });
+    // Hover: the node's edges are fully visible, the others fade further; leaving the canvas puts them back.
+    fireEvent.pointerOver(nodeElement("A"));
+    expect(edgeClasses()).toEqual({ "edge:A:B": "lit", "edge:B:C": "faded" });
+    // The highlighted edge keeps its relation label.
+    expect(document.querySelector('[data-edge-label="edge:A:B"]')).toHaveTextContent("зависит от");
+    fireEvent.pointerLeave(svg());
+    expect(edgeClasses()).toEqual({ "edge:A:B": "rest", "edge:B:C": "rest" });
+    expect(document.querySelector("[data-edge-label]")).toBeNull();
+    // Selection: the same, for as long as the node is selected.
+    rerender(<Harness overview selectedId="B" />);
+    expect(edgeClasses()).toEqual({ "edge:A:B": "lit", "edge:B:C": "lit" });
+  });
+
+  it("draws the edges of a neighbourhood or an answer graph as before (no faint resting state)", () => {
+    render(<Harness />);
+    expect(document.querySelector(".graph-edges")).not.toHaveClass("graph-edges--quiet");
+  });
+
+  it("styles a resting edge almost transparent, a lit one fully visible, and keeps unconfirmed edges dashed", () => {
+    const rest = opacityOf(".graph-edges--quiet .graph-edge");
+    expect(rest).toBeGreaterThan(0);
+    expect(rest).toBeLessThanOrEqual(0.25);
+    expect(opacityOf(".graph-edges--quiet .graph-edge.is-lit")).toBe(1);
+    expect(opacityOf(".graph-edges--quiet .graph-edge.is-faded")).toBeLessThan(rest);
+    // Confirmed vs unconfirmed stays visible when lit: the dash is on the edge itself, whatever its state.
+    expect(cssRule(".graph-edge--unconfirmed")).toContain("stroke-dasharray");
   });
 });

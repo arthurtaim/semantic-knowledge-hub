@@ -232,6 +232,11 @@ export interface GraphCanvasProps {
   focusRequest: { id: string; nonce: number } | null;
   /** The legend, drawn over the canvas in the bottom-left corner. */
   legend?: ReactNode;
+  /**
+   * The whole base («Вся база»): edges stay faint until one of their nodes is hovered or selected. A neighbourhood
+   * or an answer graph is small and always has its centre selected, so its edges are drawn as before.
+   */
+  overview?: boolean;
 }
 
 type Gesture =
@@ -293,6 +298,7 @@ export function GraphCanvas({
   onSelect,
   focusRequest,
   legend,
+  overview = false,
 }: GraphCanvasProps) {
   const uid = useId().replace(/:/g, "");
   const svgRef = useRef<SVGSVGElement>(null);
@@ -529,7 +535,7 @@ export function GraphCanvas({
   const markerLit = `arrow-lit-${uid}`;
   const edgeLayer = useMemo(
     () => (
-      <g className="graph-edges">
+      <g className={`graph-edges${overview ? " graph-edges--quiet" : ""}`}>
         {edges.map((edge) => {
           const g = geometry.get(edge.id);
           if (!g) return null;
@@ -550,7 +556,7 @@ export function GraphCanvas({
         })}
       </g>
     ),
-    [edges, geometry, active, byId, labels, marker, markerLit],
+    [edges, geometry, active, byId, labels, marker, markerLit, overview],
   );
 
   const edgeLabelLayer = useMemo(

@@ -576,6 +576,7 @@ export function GraphPage() {
                       labels={labels}
                       onSelect={(id) => select(id)}
                       focusRequest={focusRequest}
+                      overview={mode.kind === "global"}
                       legend={
                         <GraphLegendView
                           labels={labels}
