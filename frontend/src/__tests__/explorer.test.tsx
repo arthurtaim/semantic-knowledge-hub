@@ -1,48 +1,25 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DocumentPage, DocumentSummary } from "../api/types";
-import { activeFilters, graphHref, groupDocuments, toggleValue } from "../lib/catalog";
-import { formatWhen } from "../lib/labels";
+import type { DocumentPage, DocumentTree } from "../api/types";
+import { graphHref } from "../lib/catalog";
+import { toggled } from "../lib/docsTable";
 import { ExplorerPage } from "../pages/ExplorerPage";
 import { demoTree } from "./docsTreeFixture";
 import { arisSummary, documentPage, emptyPage, facets, staleSync } from "./fixtures";
 import { memoryStorage, mockApi, mockViewport, renderAt, renderRoutes } from "./helpers";
 
-const doc = (overrides: Partial<DocumentSummary>): DocumentSummary => ({ ...arisSummary, ...overrides });
-/** Three sections, two statuses: enough to see grouping. */
-const catalog: DocumentPage = {
-  items: [
-    doc({
-      id: "DEMO-INT-001",
-      title: "ARIS → Catalog: обзор потока",
-      status: "approved",
-      type: "integration",
-      owner: "demo-integration-team",
-      link_count: 12,
-      metadata_updated_at: "2026-09-30",
-    }),
-    doc({ id: "DEMO-INT-018", title: "Ночная полная выгрузка ARIS", status: "deprecated", type: "integration", owner: "demo-integration-team", link_count: 0 }),
-    doc({ id: "DEMO-SRC-010", title: "Archive Store: исторические снимки", status: "in_review", type: "source", owner: "demo-semantic-team", link_count: 3 }),
-    // An older backend without `link_count`: the catalog says «—», it does not invent a number.
-    doc({ id: "DEMO-SEM-009", title: "Датасет Process Overview", status: "approved", type: "dataset", owner: "demo-semantic-team" }),
-  ],
-  total: 4,
-  page: 1,
-  size: 100,
-};
-const allFacets = {
-  ...facets,
-  types: [
-    { value: "source", count: 1 },
-    { value: "dataset", count: 1 },
-    { value: "integration", count: 2 },
-  ],
-  statuses: [
-    { value: "approved", count: 2 },
-    { value: "in_review", count: 1 },
-    { value: "deprecated", count: 1 },
-  ],
+/** The small demo tree with one more document from GitLab: the table then says the source on every row. */
+const mixedTree: DocumentTree = {
+  ...demoTree,
+  total: demoTree.total + 1,
+  sections: demoTree.sections.map((section) =>
+    section.key === "overview" ? { ...section, count: section.count + 1, doc_ids: [...section.doc_ids, "SEM-GL-001"] } : section,
+  ),
+  documents: {
+    ...demoTree.documents,
+    "SEM-GL-001": { ...(demoTree.documents["SEM-OVERVIEW-001"] as DocumentTree["documents"][string]), title: "GitLab document", source: "gitlab" },
+  },
 };
 
 const location = () => screen.getByTestId("location").textContent ?? "";
@@ -134,7 +111,7 @@ describe("Список: search results", () => {
   it("shows the source on every row when the results mix sources (list and table)", async () => {
     const gitlabDoc = { ...arisSummary, id: "SEM-GL-001", title: "GitLab document", source: "gitlab" as const };
     mockApi([
-      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/documents/tree", body: mixedTree },
       { path: "/api/knowledge/facets", body: facets },
       { path: /\/api\/documents\?/, body: { ...documentPage, items: [arisSummary, gitlabDoc], total: 2 } },
     ]);
@@ -143,8 +120,12 @@ describe("Список: search results", () => {
     expect(screen.queryByText(/^Источник:/)).toBeNull();
     expect(within(link).getByText("GitLab")).not.toHaveClass("visually-hidden");
     await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    // «Таблица» keeps the search's rows (the server answers, the tree gives the row) and says the source on each
     const tableRow = (await screen.findByRole("link", { name: "GitLab document" })).closest("tr") as HTMLElement;
     expect(within(tableRow).getByText("GitLab")).toBeInTheDocument();
+    const arisRow = screen.getByRole("link", { name: "ARIS integration — questions for discovery" }).closest("tr") as HTMLElement;
+    expect(within(arisRow).getByText("Локальный workspace")).toBeInTheDocument();
+    expect(screen.getAllByRole("row")).toHaveLength(3); // the header and the two results
   });
 
   it("marks an overdue review: the date in amber, said as «проверка устарела»", async () => {
@@ -201,50 +182,49 @@ describe("Список: search results", () => {
   });
 });
 
+/*
+ * «Документы» v2, slice 6: «Таблица» is built from the tree (GET /api/documents/tree) with its own filters, header
+ * sort and grouping (docsTable.test.tsx). These tests replace the old catalog table's (the «Вид» menu, «Обновлён»,
+ * «+ Фильтр» and its chips are gone — spec §3 names the columns and filters); what the old table kept stays tested
+ * here: a search narrows the rows, the stale-index notice and mark, a press anywhere on a row, the remembered view,
+ * storage refused, «Карта», old links with filters, the phone's cards and sheet.
+ */
 describe("Таблица: a search", () => {
-  // Round 2: «Обновлён» is the document's own date (`metadata_updated_at`), not the revision / load time. The «Вид»
-  // sort belongs to «Таблица» now («Список» lists a search by relevance and a branch by its own order menu).
-  it("sorts through the «Вид» menu (URL-backed) and shows the document's own update date", async () => {
-    const dated = { ...documentPage, items: [{ ...arisSummary, metadata_updated_at: "2026-10-05" }] };
+  it("keeps the rows the search finds; the query is a chip and «Сбросить фильтры» clears it", async () => {
     const calls = mockApi([
+      { path: "/api/documents/tree", body: demoTree },
       { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: dated },
+      { path: "/api/documents?query=ARIS&page=1&size=100", body: documentPage },
     ]);
-    renderAt("/documents?view=table&query=ARIS", "/documents", <ExplorerPage />);
+    renderRoutes("/documents?view=table&query=ARIS", { "/documents": <ExplorerPage /> });
     const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
-    const cells = within(link.closest("tr") as HTMLElement).getAllByRole("cell");
-    expect(cells[cells.length - 2]).toHaveTextContent(formatWhen("2026-10-05").text);
-    expect(cells[cells.length - 2]).not.toHaveTextContent(formatWhen(arisSummary.updated_at).text);
-
-    await userEvent.click(screen.getByRole("button", { name: "Вид" }));
-    const menu = screen.getByRole("menu", { name: "Вид списка" });
-    expect(within(menu).getByRole("menuitemradio", { name: "Релевантность" })).toHaveAttribute("aria-checked", "true");
-    await userEvent.click(within(menu).getByRole("menuitemradio", { name: "Сначала новые" }));
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=100&sort=updated")).toBe(true));
-    await userEvent.click(screen.getByRole("button", { name: "Вид" }));
-    expect(screen.getByRole("menuitemradio", { name: "Сначала новые" })).toHaveAttribute("aria-checked", "true");
+    expect(link.closest("table")).not.toBeNull();
+    expect(screen.getAllByRole("row")).toHaveLength(2);
+    expect(screen.getByText("1 из 11")).toBeInTheDocument();
+    expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=100")).toBe(true);
+    expect(screen.getByText("Запрос: «ARIS»")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Сбросить фильтры" }));
+    expect(location()).toBe("/documents?view=table");
+    expect(await screen.findByText("11 из 11")).toBeInTheDocument();
   });
 
-  it("restores the sort from the URL and offers relevance only with a query", async () => {
-    const calls = mockApi([
+  it("reads the sort of an old link (`sort=status` → Состояние; `sort=updated` → the default) and marks a stale row", async () => {
+    const staleTree: DocumentTree = {
+      ...demoTree,
+      documents: { ...demoTree.documents, "DEMO-INT-001": { ...(demoTree.documents["DEMO-INT-001"] as DocumentTree["documents"][string]), index_state: "stale" } },
+    };
+    mockApi([
+      { path: "/api/documents/tree", body: staleTree },
       { path: "/api/knowledge/facets", body: facets },
-      // The revision time is known (the file was just loaded), the document's own date is not: «—».
-      {
-        path: /\/api\/documents\?/,
-        body: { ...documentPage, items: [{ ...arisSummary, index_state: "stale", updated_at: new Date().toISOString(), link_count: 2 }] },
-      },
     ]);
-    renderAt("/documents?sort=status", "/documents", <ExplorerPage />);
-    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
-    const tableRow = link.closest("tr") as HTMLElement;
-    expect(within(tableRow).getByText("Версия может быть устаревшей")).toBeInTheDocument();
-    expect(within(tableRow).getAllByRole("cell").map((cell) => cell.textContent).slice(-2)).toEqual(["—", "2"]);
-    expect(within(tableRow).queryByText(/только что|сегодня/)).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Вид" }));
-    expect(screen.getByRole("menuitemradio", { name: "Статус" })).toHaveAttribute("aria-checked", "true");
-    expect(screen.queryByRole("menuitemradio", { name: "Релевантность" })).toBeNull();
-    expect(screen.getByRole("menuitemradio", { name: "По разделам" })).toBeInTheDocument();
-    expect(calls.some((c) => c.url === "/api/documents?page=1&size=100&sort=status")).toBe(true);
+    const { unmount } = renderAt("/documents?sort=status", "/documents", <ExplorerPage />);
+    const header = await screen.findByRole("columnheader", { name: "Состояние" });
+    expect(header).toHaveAttribute("aria-sort", "ascending");
+    const row = screen.getByRole("link", { name: "ARIS → Catalog: обзор потока (демо)" }).closest("tr") as HTMLElement;
+    expect(within(row).getByText("Версия может быть устаревшей")).toBeInTheDocument();
+    unmount();
+    renderAt("/documents?sort=updated", "/documents", <ExplorerPage />);
+    expect(await screen.findByRole("columnheader", { name: "Проверен" })).toHaveAttribute("aria-sort", "ascending");
   });
 
   it("says when the listed documents come from a stale index", async () => {
@@ -265,88 +245,18 @@ describe("Таблица: a search", () => {
 describe("Catalog: the table", () => {
   function catalogRoutes() {
     return mockApi([
-      { path: "/api/knowledge/facets", body: allFacets },
-      { path: /\/api\/documents\?/, body: catalog },
+      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/knowledge/facets", body: facets },
     ]);
   }
-
-  // Round 2 (decision 7): «Связи» is a column now — the API's `link_count`, never a number the UI makes up.
-  // «Документы» v2: the table is the «Таблица» view (`?view=table`); «Список» is the default now.
-  it("«Таблица»: Название + ID, Статус, Владелец, Обновлён, Связи", async () => {
-    const calls = catalogRoutes();
-    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
-    const table = await screen.findByRole("table");
-    expect(screen.getByRole("button", { name: "Таблица" })).toHaveAttribute("aria-pressed", "true");
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
-      "Название",
-      "Статус",
-      "Владелец",
-      "Обновлён",
-      "Связи",
-    ]);
-    const row = within(table).getByRole("link", { name: "Archive Store: исторические снимки" }).closest("tr") as HTMLElement;
-    expect(within(row).getByText("DEMO-SRC-010")).toBeInTheDocument();
-    expect(within(row).getByText("На ревью")).toBeInTheDocument();
-    expect(within(row).getByText("demo-semantic-team")).toBeInTheDocument();
-    const linksCell = (title: string) => {
-      const cells = within(within(table).getByRole("link", { name: title }).closest("tr") as HTMLElement).getAllByRole("cell");
-      return cells[cells.length - 1] as HTMLElement;
-    };
-    expect(linksCell("Archive Store: исторические снимки")).toHaveTextContent(/^3$/);
-    expect(linksCell("Archive Store: исторические снимки")).toHaveClass("catalog-table__num");
-    expect(linksCell("ARIS → Catalog: обзор потока")).toHaveTextContent(/^12$/);
-    expect(linksCell("Ночная полная выгрузка ARIS")).toHaveTextContent(/^0$/);
-    expect(linksCell("Датасет Process Overview")).toHaveTextContent(/^—$/);
-    // «Обновлён»: the document's own date; «—» without one — never the revision (load) time every row has.
-    const updatedCell = (title: string) => {
-      const cells = within(within(table).getByRole("link", { name: title }).closest("tr") as HTMLElement).getAllByRole("cell");
-      return cells[cells.length - 2] as HTMLElement;
-    };
-    expect(updatedCell("ARIS → Catalog: обзор потока")).toHaveTextContent(formatWhen("2026-09-30").text);
-    expect(updatedCell("Archive Store: исторические снимки")).toHaveTextContent(/^—$/);
-    // the table loads up to the API maximum so the groups are whole
-    expect(calls.some((c) => c.url === "/api/documents?page=1&size=100")).toBe(true);
-    expect(screen.getByRole("heading", { level: 1, name: "Документы" })).toBeInTheDocument();
-  });
-
-  it("groups by section with real counts, in the knowledge base order, and collapses a group", async () => {
-    catalogRoutes();
-    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
-    const table = await screen.findByRole("table");
-    const headers = within(table).getAllByRole("rowheader");
-    expect(headers.map((h) => h.textContent)).toEqual(["Системы-источники1 документ", "Датасеты1 документ", "Интеграции2 документа"]);
-    const integrations = within(table).getByRole("button", { name: /Интеграции/ });
-    expect(integrations).toHaveAttribute("aria-expanded", "true");
-    await userEvent.click(integrations);
-    expect(integrations).toHaveAttribute("aria-expanded", "false");
-    expect(integrations).toHaveFocus();
-    expect(within(table).queryByRole("link", { name: "Ночная полная выгрузка ARIS" })).toBeNull();
-    expect(within(table).getByRole("link", { name: "Archive Store: исторические снимки" })).toBeInTheDocument();
-    await userEvent.click(integrations);
-    expect(within(table).getByRole("link", { name: "Ночная полная выгрузка ARIS" })).toBeInTheDocument();
-  });
-
-  it("changes the grouping from «Группировка» and remembers it", async () => {
-    catalogRoutes();
-    const { unmount } = renderAt("/documents?view=table", "/documents", <ExplorerPage />);
-    await screen.findByRole("table");
-    await userEvent.click(screen.getByRole("button", { name: "Группировка: Раздел" }));
-    await userEvent.click(screen.getByRole("menuitemradio", { name: "Статус" }));
-    const headers = within(screen.getByRole("table")).getAllByRole("rowheader").map((h) => h.textContent);
-    expect(headers).toEqual(["Утверждён2 документа", "На ревью1 документ", "Устарел1 документ"]);
-    expect(localStorage.getItem("skh.catalog.group")).toBe("status");
-    unmount();
-    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
-    expect(await screen.findByRole("button", { name: "Группировка: Статус" })).toBeInTheDocument();
-  });
 
   it("opens a document by a press anywhere on its row; the title stays a real link", async () => {
     catalogRoutes();
     renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
-    const link = await screen.findByRole("link", { name: "Датасет Process Overview" });
-    expect(link).toHaveAttribute("href", "/documents/DEMO-SEM-009");
+    const link = await screen.findByRole("link", { name: "CDC и full refresh: сравнение" });
+    expect(link).toHaveAttribute("href", "/documents/DEMO-INT-010");
     await userEvent.click(within(link.closest("tr") as HTMLElement).getByText("Утверждён"));
-    expect(location()).toBe("/documents/DEMO-SEM-009");
+    expect(location()).toBe("/documents/DEMO-INT-010");
   });
 
   // «Документы» v2: a new key (`skh.documents.view`) — the old catalog's «list» was a list of snippets.
@@ -382,6 +292,10 @@ describe("Catalog: the table", () => {
     expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
     expect(await screen.findByRole("table")).toBeInTheDocument();
+    // hiding a column still works for this page
+    await userEvent.click(screen.getByRole("button", { name: "Колонки" }));
+    await userEvent.click(screen.getByRole("menuitemcheckbox", { name: "Системы" }));
+    expect(screen.queryByRole("columnheader", { name: "Системы" })).toBeNull();
   });
 
   it("«Карта» opens the map with the filters the map has", async () => {
@@ -391,97 +305,65 @@ describe("Catalog: the table", () => {
   });
 });
 
-describe("Catalog: filter chips", () => {
-  it("adds filters from «+ Фильтр», shows them as chips and removes them", async () => {
+describe("Catalog: filters from old links", () => {
+  it("reads a single-value filter and a tag from an old link and resets all filters", async () => {
     const calls = mockApi([
-      { path: "/api/knowledge/facets", body: allFacets },
-      { path: /\/api\/documents\?/, body: catalog },
-    ]);
-    renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
-    await screen.findByRole("table");
-    const add = screen.getByRole("button", { name: "Фильтр" });
-    await userEvent.click(add);
-    expect(add).toHaveAttribute("aria-expanded", "true");
-    const status = screen.getByRole("group", { name: "Статус" });
-    await userEvent.click(within(status).getByRole("button", { name: /Утверждён/ }));
-    await userEvent.click(within(status).getByRole("button", { name: /На ревью/ }));
-    expect(within(status).getByRole("button", { name: /Утверждён/ })).toHaveAttribute("aria-pressed", "true");
-    expect(location()).toBe("/documents?view=table&status=approved%2Cin_review");
-    await waitFor(() => expect(calls.some((c) => c.url.includes("status=approved%2Cin_review"))).toBe(true));
-
-    const chips = screen.getByRole("list", { name: "Активные фильтры" });
-    expect(within(chips).getByText("Статус: Утверждён, На ревью")).toBeInTheDocument();
-    await userEvent.keyboard("{Escape}");
-    await userEvent.click(within(chips).getByRole("button", { name: "Убрать фильтр: Статус" }));
-    expect(location()).toBe("/documents?view=table");
-    expect(within(chips).queryByText(/Статус:/)).toBeNull();
-  });
-
-  it("reads a single-value filter from an old link and resets all filters", async () => {
-    mockApi([
-      { path: "/api/knowledge/facets", body: allFacets },
-      { path: /\/api\/documents\?/, body: catalog },
+      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/knowledge/facets", body: facets },
+      {
+        path: "/api/documents?tag=aris&page=1&size=100",
+        body: { ...documentPage, items: [{ ...arisSummary }, { ...arisSummary, id: "DEMO-INT-001" }, { ...arisSummary, id: "DEMO-SRC-002" }], total: 3 },
+      },
     ]);
     renderRoutes("/documents?type=integration&tag=aris", { "/documents": <ExplorerPage /> });
-    const chips = await screen.findByRole("list", { name: "Активные фильтры" });
-    expect(within(chips).getByText("Раздел: Интеграции")).toBeInTheDocument();
-    expect(within(chips).getByText("Тег: aris")).toBeInTheDocument();
-    // «Документы» v2: a link with filters opens «Таблица»; resetting keeps the view, the URL names it
-    await userEvent.click(within(chips).getByRole("button", { name: "Сбросить фильтры" }));
+    // a link with filters opens «Таблица»; the tag is answered by the server, the section by the tree
+    expect(await screen.findByRole("button", { name: "Раздел: Интеграции" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Тег: aris" })).toBeInTheDocument();
+    expect(await screen.findByText("2 из 11")).toBeInTheDocument();
+    expect(calls.some((c) => c.url === "/api/documents?tag=aris&page=1&size=100")).toBe(true);
+    await userEvent.click(screen.getByRole("button", { name: "Сбросить фильтры" }));
     expect(location()).toBe("/documents?view=table");
+    expect(screen.getByRole("button", { name: "Раздел: все" })).toBeInTheDocument();
   });
 
   describe("on a phone", () => {
-    it("shows card rows instead of the table and the filters in a sheet", async () => {
+    it("shows cards instead of the table and the filters in a sheet", async () => {
       mockViewport(390);
       mockApi([
-        { path: "/api/knowledge/facets", body: allFacets },
-        { path: /\/api\/documents\?/, body: catalog },
+        { path: "/api/documents/tree", body: demoTree },
+        { path: "/api/knowledge/facets", body: facets },
       ]);
       renderRoutes("/documents?status=approved", { "/documents": <ExplorerPage /> });
-      await screen.findByRole("link", { name: "Датасет Process Overview" });
+      const card = (await screen.findByRole("link", { name: "CDC и full refresh: сравнение" })).closest("li") as HTMLElement;
       expect(screen.queryByRole("table")).toBeNull();
-      expect(screen.getByRole("region", { name: "Раздел: Датасеты" })).toBeInTheDocument();
-      // The card says the link count in words; a card without a reported count says nothing about links.
-      const card = (title: string) => screen.getByRole("link", { name: title }).closest("li") as HTMLElement;
-      expect(within(card("ARIS → Catalog: обзор потока")).getByText("12 связей")).toBeInTheDocument();
-      expect(within(card("Archive Store: исторические снимки")).getByText("3 связи")).toBeInTheDocument();
-      expect(within(card("Ночная полная выгрузка ARIS")).getByText("нет связей")).toBeInTheDocument();
-      expect(within(card("Датасет Process Overview")).queryByText(/связ/)).toBeNull();
-      // A card shows the document's own date when it has one and nothing (not the load time) otherwise.
-      expect(within(card("ARIS → Catalog: обзор потока")).getByText(formatWhen("2026-09-30").text)).toBeInTheDocument();
-      expect(card("Датасет Process Overview").querySelector("time")).toBeNull();
+      // a card: title, state, review date (and the ID)
+      expect(within(card).getByText("Утверждён")).toBeInTheDocument();
+      expect(within(card).getByText("18 сент. 2026")).toBeInTheDocument();
+      expect(within(card).getByText("DEMO-INT-010")).toBeInTheDocument();
+      expect(screen.getByText("8 из 11")).toBeInTheDocument();
 
-      const open = screen.getByRole("button", { name: "Фильтр (1)" });
+      const open = screen.getByRole("button", { name: "Фильтры (1)" });
       await userEvent.click(open);
       const sheet = screen.getByRole("dialog", { name: "Фильтры" });
       expect(within(sheet).getByRole("button", { name: "Закрыть: Фильтры" })).toHaveFocus();
-      expect(within(within(sheet).getByRole("group", { name: "Статус" })).getByRole("button", { name: /Утверждён/ })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      const status = within(sheet).getByRole("group", { name: "Состояние: статус" });
+      expect(within(status).getByRole("button", { name: /Утверждён/ })).toHaveAttribute("aria-pressed", "true");
+      await userEvent.click(within(sheet).getByRole("button", { name: /Только требующие внимания/ }));
+      expect(location()).toBe("/documents?status=approved&view=table&attention=1");
       await userEvent.keyboard("{Escape}");
       expect(screen.queryByRole("dialog", { name: "Фильтры" })).toBeNull();
-      expect(open).toHaveFocus();
+      expect(screen.getByRole("button", { name: "Фильтры (2)" })).toHaveFocus();
+      expect(screen.getByText("1 из 11")).toBeInTheDocument();
     });
   });
 });
 
-describe("lib/catalog", () => {
+describe("lib/catalog and filter values", () => {
   it("toggles comma-separated filter values", () => {
-    expect(toggleValue([], "draft")).toBe("draft");
-    expect(toggleValue(["approved"], "in_review")).toBe("approved,in_review");
-    expect(toggleValue(["approved", "in_review"], "approved")).toBe("in_review");
-    expect(toggleValue(["draft"], "draft")).toBeNull();
-  });
-
-  it("labels active filters in the order of the facets", () => {
-    const params = new URLSearchParams("source=local&status=approved,in_review&owner=demo-team");
-    expect(activeFilters(params).map((f) => f.label)).toEqual([
-      "Статус: Утверждён, На ревью",
-      "Владелец: demo-team",
-      "Источник: Локальный workspace",
-    ]);
+    expect(toggled([], "draft")).toBe("draft");
+    expect(toggled(["approved"], "in_review")).toBe("approved,in_review");
+    expect(toggled(["approved", "in_review"], "approved")).toBe("in_review");
+    expect(toggled(["draft"], "draft")).toBeNull();
   });
 
   it("maps only the filters the map understands", () => {
@@ -489,18 +371,5 @@ describe("lib/catalog", () => {
     expect(graphHref(new URLSearchParams("type=source&status=draft"))).toBe("/graph?kind=source_system&status=draft");
     // a section without its own node kind, several statuses, an owner: no map equivalent
     expect(graphHref(new URLSearchParams("type=architecture&status=approved,draft&owner=x"))).toBe("/graph");
-  });
-
-  it("groups owners alphabetically with «не назначен» last and keeps the server order inside a group", () => {
-    const items = [
-      doc({ id: "A", owner: "zeta" }),
-      doc({ id: "B", owner: "", owner_missing: true }),
-      doc({ id: "C", owner: "alpha" }),
-      doc({ id: "D", owner: "zeta" }),
-    ];
-    const groups = groupDocuments(items, "owner");
-    expect(groups.map((g) => g.label)).toEqual(["alpha", "zeta", "не назначен"]);
-    expect(groups[1]?.items.map((d) => d.id)).toEqual(["A", "D"]);
-    expect(groupDocuments(items, "none")).toHaveLength(1);
   });
 });

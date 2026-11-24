@@ -104,6 +104,87 @@ test("V2-03 the toolbar search lists results in the middle column; the tree stay
   await expect(page.getByRole("region", { name: "Системы-источники" })).toBeVisible();
 });
 
+interface TreeEntry {
+  status: string;
+  type: string;
+  attention: boolean;
+  review_state: string;
+  owner_missing: boolean;
+}
+
+/** The API's documents of a section with a status (what an overview cell counts). */
+function countOf(api: { documents: Record<string, TreeEntry> }, type: string | null, test: (d: TreeEntry) => boolean): number {
+  return Object.values(api.documents).filter((d) => (type === null || d.type === type) && test(d)).length;
+}
+
+test("V2-05 «Обзор»: the API's totals; the cell «Интеграции / Черновики» opens exactly those rows in «Таблица»", async ({ page }) => {
+  const problems = watch(page);
+  await fresh(page);
+  const api = await (await page.request.get("/api/documents/tree")).json();
+  const approved = countOf(api, null, (d) => d.status === "approved");
+  await page.goto("/documents?view=overview");
+  const overview = page.getByRole("region", { name: new RegExp(`^${api.total} документ.*, ${approved} утвержден`) });
+  await expect(overview).toBeVisible();
+  // «Требуют внимания» = the API's attention_total (12 on the demo base until 7 Dec 2026)
+  await expect(overview.getByRole("link", { name: `${api.attention_total} требуют внимания` })).toBeVisible();
+  if (Date.now() < Date.parse("2026-12-07")) expect(api.attention_total).toBe(12);
+
+  const drafts = countOf(api, "integration", (d) => d.status === "draft");
+  if (Date.now() < Date.parse("2026-12-07")) expect(drafts).toBe(2);
+  const cell = overview.getByRole("link", { name: new RegExp(`^Интеграции: ${drafts} черновик`) });
+  await expect(cell).toHaveText(String(drafts));
+  await cell.click();
+  await expect(page).toHaveURL(/view=table&type=integration&status=draft$/);
+  const table = page.getByRole("table");
+  await expect(table.locator(".docs-table__row")).toHaveCount(drafts);
+  await expect(page.getByText(`${drafts} из ${api.total}`)).toBeVisible();
+  for (const state of await table.locator(".docs-table__row .status-mark").allTextContents()) expect(state).toBe("Черновик");
+
+  // a section opens «Список» with it open in the tree
+  await page.goBack();
+  await overview.getByRole("link", { name: "Интеграции", exact: true }).click();
+  await expect(page).toHaveURL(/view=list&node=integration$/);
+  await expect(page.getByRole("treeitem", { name: /^Интеграции, / })).toHaveAttribute("aria-expanded", "true");
+  expect(problems).toEqual([]);
+});
+
+test("V2-06 «Таблица»: «Только требующие внимания» = the API's count, a filter menu, a header sort", async ({ page }) => {
+  const problems = watch(page);
+  await fresh(page);
+  const api = await (await page.request.get("/api/documents/tree")).json();
+  await page.goto("/documents?view=table");
+  const table = page.getByRole("table");
+  await expect(table.locator(".docs-table__row")).toHaveCount(api.total);
+  await page.getByRole("button", { name: "Только требующие внимания" }).click();
+  await expect(page).toHaveURL(/attention=1/);
+  await expect(table.locator(".docs-table__row")).toHaveCount(api.attention_total);
+  await expect(page.getByText(`${api.attention_total} из ${api.total}`)).toBeVisible();
+
+  // Состояние → Без владельца (a checkbox menu: it stays open; Esc closes it)
+  await page.getByRole("button", { name: "Состояние: все" }).click();
+  await page.getByRole("menuitemcheckbox", { name: /Без владельца/ }).click();
+  await page.keyboard.press("Escape");
+  const ownerless = countOf(api, null, (d) => d.attention && d.owner_missing);
+  await expect(table.locator(".docs-table__row")).toHaveCount(ownerless);
+  await expect(table.locator(".docs-table__no-owner")).toHaveCount(ownerless);
+
+  // header sort: «Название» ascending, then descending
+  await page.getByRole("button", { name: "Сбросить фильтры" }).click();
+  const name = table.getByRole("columnheader", { name: "Название" });
+  await name.getByRole("button").click();
+  await expect(name).toHaveAttribute("aria-sort", "ascending");
+  const ascending = await table.locator(".docs-table__title").allTextContents();
+  await name.getByRole("button").click();
+  await expect(name).toHaveAttribute("aria-sort", "descending");
+  const descending = await table.locator(".docs-table__title").allTextContents();
+  expect(descending).toEqual([...ascending].reverse());
+  expect(ascending).toEqual([...ascending].sort((a, b) => a.localeCompare(b, "ru", { sensitivity: "base" })));
+  // the header stays while the rows scroll
+  await table.locator(".docs-table__row").last().scrollIntoViewIfNeeded();
+  await expect(name).toBeInViewport();
+  expect(problems).toEqual([]);
+});
+
 test("@mobile V2-04 phone: the tree, then the branch, then the document page", async ({ page }) => {
   await fresh(page);
   await page.goto("/documents");

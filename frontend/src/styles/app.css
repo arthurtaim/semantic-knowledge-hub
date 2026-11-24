@@ -1002,6 +1002,14 @@ button.chip__body {
   color: var(--text-secondary);
 }
 
+/* A count at the end of an item (filters). */
+.menu__meta {
+  flex: none;
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
 .menu__check {
   visibility: hidden;
   color: var(--accent-text);
@@ -3303,64 +3311,7 @@ h1 a:hover {
   margin-bottom: var(--space-3);
 }
 
-/* The filter row: active filters as chips, «+ Фильтр», then grouping and «Вид» on the right. */
-.catalog-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2) var(--space-4);
-  margin: 0 calc(-1 * var(--space-6));
-  padding: var(--space-2) var(--space-6);
-  border-bottom: 1px solid var(--line);
-}
-
-/* Right under the toolbar when the switch and the search are in it (design-05). */
-.catalog-bar--flush {
-  margin-top: calc(-1 * var(--space-6));
-}
-
-.catalog-bar__chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.catalog-bar__chips .chip {
-  min-height: var(--control-height-sm);
-}
-
-.catalog-bar__add {
-  border-style: dashed;
-}
-
-.catalog-bar__end {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.catalog-bar__menu {
-  color: var(--text);
-}
-
-.catalog-bar__menu .icon {
-  color: var(--text-secondary);
-}
-
-.facet-popover {
-  width: min(20rem, calc(100vw - 2 * var(--space-4)));
-  max-height: min(32rem, 70vh);
-  overflow-y: auto;
-  padding: var(--space-2);
-}
-
+/* The filters of a sheet (the table's on a phone): toggle buttons per filter. */
 .facet-groups {
   display: grid;
   gap: var(--space-3);
@@ -3381,252 +3332,13 @@ h1 a:hover {
   color: var(--text-secondary);
 }
 
-.catalog .results {
-  margin-top: var(--space-4);
-}
-
-.catalog .results__bar {
-  margin-bottom: var(--space-2);
-}
-
-/* Browsing the table: the summary is for screen readers only, the table starts right under the filter row. */
-.catalog .results--quiet {
-  margin-top: 0;
-}
-
-.catalog .results--quiet .results__bar {
-  margin: 0;
-}
-
-/* The table runs edge to edge of the work area, like design-05. */
-.catalog-table-wrap {
-  margin: 0 calc(-1 * var(--space-6)) var(--space-5);
-  overflow-x: auto;
-}
-
-.catalog-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-ui);
-  line-height: var(--lh-ui);
-}
-
-.catalog-table__col-status {
-  width: 11rem;
-}
-
-.catalog-table__col-owner {
-  width: 14rem;
-}
-
-.catalog-table__col-updated {
-  width: 8.5rem;
-}
-
-.catalog-table__col-links {
-  width: 5.5rem;
-}
-
-/* Numbers line up in a column: tabular figures, right-aligned under a right-aligned heading. */
-.catalog-table th.catalog-table__num,
-.catalog-table td.catalog-table__num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.catalog-row__none {
-  color: var(--text-tertiary);
-}
-
-.catalog-table th,
-.catalog-table td {
-  padding: 0 var(--space-4);
-  text-align: left;
-  vertical-align: middle;
-}
-
-.catalog-table th:first-child,
-.catalog-table td:first-child {
-  padding-left: var(--space-6);
-}
-
-.catalog-table thead th:last-child,
-.catalog-row td:last-child {
-  padding-right: var(--space-6);
-}
-
-.catalog-table thead th {
-  height: 2.25rem;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--fs-small);
-  font-weight: 400;
-  color: var(--text-secondary);
-}
-
-.catalog-group th {
-  height: var(--group-row-height);
-  padding: 0 var(--space-4) 0 var(--space-5);
-  background: var(--bg-subtle);
-  border-bottom: 1px solid var(--line);
-}
-
-.catalog-group__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 1.75rem;
-  padding: 0 var(--space-1);
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--fs-small);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.catalog-group__toggle:hover {
-  background: var(--bg-hover);
-}
-
-.catalog-group__chevron {
-  color: var(--text-secondary);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-
-.catalog-group__toggle[aria-expanded="false"] .catalog-group__chevron {
-  transform: rotate(-90deg);
-}
-
-.catalog-group__count {
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-tertiary);
-}
-
-.catalog-row {
-  height: var(--row-height);
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-}
-
-.catalog-row:hover {
-  background: var(--bg-hover);
-}
-
-.catalog-row__name {
-  padding-block: var(--space-2);
-}
-
-.catalog__title {
-  margin-right: var(--space-2);
-  color: var(--text);
-  font-weight: 500;
-  text-decoration: none;
-}
-
-.catalog__title:hover {
-  color: var(--accent-text);
-  text-decoration: underline;
-}
-
-.catalog__id {
-  display: inline-flex;
-  gap: var(--space-2);
-  margin-right: var(--space-2);
-  font-size: var(--fs-small);
-}
-
-.catalog__source {
-  color: var(--text-tertiary);
-}
-
-.catalog-row__status {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-}
-
-.catalog-row .when {
-  color: var(--text-secondary);
-}
-
-/* Phones: each document is a card row; groups stay, with the same counts and collapse. */
-.catalog-cards {
-  margin: 0 0 var(--space-5);
-}
-
-.catalog-group--card {
-  margin: 0;
-  padding: var(--space-1) 0;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-subtle);
-}
-
-.catalog-cards__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.catalog-card {
-  display: grid;
-  gap: var(--space-1);
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
-}
-
-.catalog-card .catalog__id {
-  margin: 0;
-}
-
-.catalog-card__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-3);
-  font-size: var(--fs-small);
-  color: var(--text-secondary);
-}
-
-@media (max-width: 959.98px) {
-  .catalog-bar {
-    margin-inline: calc(-1 * var(--space-4));
-    padding-inline: var(--space-4);
-  }
-
-  .catalog-table-wrap {
-    margin-inline: calc(-1 * var(--space-4));
-  }
-
-  .catalog-table th:first-child,
-  .catalog-table td:first-child {
-    padding-left: var(--space-4);
-  }
-
-  .catalog-table thead th:last-child,
-  .catalog-row td:last-child {
-    padding-right: var(--space-4);
-  }
-}
-
 @media (max-width: 719.98px) {
-  .catalog-bar {
-    margin-top: 0;
-  }
-
   .catalog__top .view-switch {
     flex: none;
   }
 
   .catalog-search {
     width: 100%;
-  }
-
-  .catalog-group--card .catalog-group__toggle {
-    margin-left: calc(-1 * var(--space-1));
   }
 }
 
@@ -7216,7 +6928,6 @@ a.source__title:hover {
   font-size: inherit;
 }
 
-
 .graph-search-status p {
   margin: 0;
   padding: 0 var(--space-5) var(--space-2);
@@ -9713,7 +9424,6 @@ a.source__title:hover {
   }
 }
 
-
 /* ---------- «Документы» v2 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md) ---------- */
 
 /* «Обзор» (DocsOverview, design docs-03): the totals, the matrix «разделы × состояние» and «Что сделать» on the
@@ -10150,6 +9860,418 @@ a.source__title:hover {
 
   .docs-todo {
     padding-inline: var(--space-2);
+  }
+}
+
+/* «Таблица» (DocsTable, design docs-04): the filter row, then one table under a sticky header in its own scroll
+   area (the view fills the work area); rows of 38 px. On a phone: a «Фильтры» button, a sheet and cards. */
+.content:has(> .content__inner > .docs--table) {
+  padding: 0;
+}
+
+.docs--table {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--toolbar-height));
+  height: calc(100dvh - var(--toolbar-height));
+}
+
+.docs--table .catalog__top {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-table-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-table-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0.625rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+/* The filters wrap among themselves; the count, «Группировка» and «Колонки» keep the right end of the first line. */
+.docs-table-bar__filters {
+  flex: 1 1 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 14rem;
+}
+
+.docs-table-bar__end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.docs-table-bar__count {
+  margin-right: var(--space-2);
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* A filter: a compact menu button; with a choice (or pressed) on the green wash, never the primary fill. */
+.docs-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 18rem;
+  min-height: var(--control-height-sm);
+  padding: 0 0.625rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.docs-filter:hover {
+  background: var(--bg-hover);
+}
+
+.docs-filter .icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.docs-filter__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docs-filter--on,
+.docs-filter--on:hover {
+  border-color: var(--accent-wash-border);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.docs-filter--on .icon {
+  color: var(--accent-text);
+}
+
+.docs-filter--quiet {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Long lists (owners, systems, tags) scroll inside the menu. */
+.docs-filter-menu .menu {
+  max-height: min(24rem, 60vh);
+  overflow-y: auto;
+}
+
+.docs-table__notice,
+.docs-table__notes {
+  margin: var(--space-3) 1.25rem 0;
+}
+
+.docs-table-view > .feedback {
+  margin: var(--space-5) 1.25rem;
+}
+
+.docs-table-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.docs-table {
+  width: 100%;
+  min-width: 50rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+}
+
+.docs-table__col-type {
+  width: 10.25rem;
+}
+
+.docs-table__col-status {
+  width: 8rem;
+}
+
+.docs-table__col-owner {
+  width: 11.5rem;
+}
+
+.docs-table__col-systems {
+  width: 9rem;
+}
+
+.docs-table__col-reviewed {
+  width: 9rem;
+}
+
+.docs-table__col-links {
+  width: 4.5rem;
+}
+
+.docs-table th,
+.docs-table td {
+  padding: 0 0.875rem 0 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docs-table th:first-child,
+.docs-table td:first-child {
+  padding-left: 1.25rem;
+}
+
+.docs-table th:last-child,
+.docs-table td:last-child {
+  padding-right: 1.25rem;
+}
+
+/* The header stays while the rows scroll. */
+.docs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 2.25rem;
+  background: var(--bg-surface);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.docs-table .docs-table__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-table td.docs-table__num {
+  color: var(--text-secondary);
+}
+
+.docs-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.docs-table__sort:hover,
+.docs-table th[aria-sort] .docs-table__sort {
+  color: var(--text);
+}
+
+.docs-table__sort-icon--desc {
+  transform: rotate(180deg);
+}
+
+.docs-table__row {
+  height: 2.375rem;
+  cursor: pointer;
+}
+
+.docs-table__row:hover > td {
+  background: var(--bg-subtle);
+}
+
+.docs-table__row:has(.docs-table__title:focus-visible) > td {
+  background: var(--bg-hover);
+}
+
+.docs-table__name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  min-width: 0;
+}
+
+.docs-table__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 3px;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.docs-table__title:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.docs-table__title:focus-visible {
+  outline-offset: 0;
+}
+
+.docs-table__row--deprecated .docs-table__title {
+  color: var(--status-deprecated);
+  text-decoration: line-through;
+}
+
+.docs-table__id,
+.docs-table__source {
+  flex: none;
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+}
+
+.docs-table__name-line .stale-mark {
+  flex: none;
+}
+
+.docs-table__status {
+  font-size: var(--fs-small);
+}
+
+.docs-table__no-owner {
+  color: var(--danger-text);
+}
+
+.docs-table__review {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.docs-table__review--warn {
+  color: var(--status-draft-text);
+}
+
+.docs-table__review--muted {
+  color: var(--text-tertiary);
+}
+
+.docs-table__group th {
+  height: var(--group-row-height);
+  padding-left: var(--space-4);
+  background: var(--bg-subtle);
+}
+
+.docs-table__group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 1.75rem;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.docs-table__group-toggle:hover {
+  background: var(--bg-hover);
+}
+
+.docs-table__group-chevron {
+  color: var(--text-secondary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.docs-table__group-toggle[aria-expanded="false"] .docs-table__group-chevron {
+  transform: rotate(-90deg);
+}
+
+.docs-table__group-count {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+/* Phones: a card per document — title, state, review date, ID. */
+.docs-cards__group {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-subtle);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.docs-cards__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.docs-card__title {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.docs-card--deprecated .docs-card__title {
+  color: var(--status-deprecated);
+  text-decoration: line-through;
+}
+
+.docs-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 719.98px) {
+  .docs--table {
+    height: auto;
+  }
+
+  .docs-table-bar {
+    padding-inline: var(--space-4);
+  }
+
+  .docs-table__notice,
+  .docs-table__notes {
+    margin-inline: var(--space-4);
   }
 }
 

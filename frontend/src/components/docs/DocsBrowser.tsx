@@ -13,7 +13,7 @@ import {
   type ListOrder,
   type TreeIndex,
 } from "../../lib/docTree";
-import { DOC_PARAM, NODE_PARAM, ORDER_PARAM, queryOf, searchChanges, withParams } from "../../lib/docsView";
+import { askAboutResults, DOC_PARAM, NODE_PARAM, ORDER_PARAM, queryOf, searchChanges, withParams } from "../../lib/docsView";
 import { pluralRu } from "../../lib/labels";
 import { useSession } from "../../lib/session";
 import { useAsync } from "../../lib/useAsync";
@@ -23,7 +23,6 @@ import { EmptyState, ErrorState, Loading, Notice } from "../Feedback";
 import { SidePanel, useSidePanelMode } from "../shell/SidePanel";
 import { Button, buttonClass, IconButton } from "../ui/Button";
 import { Icon } from "../ui/Icon";
-import { askAboutResults } from "./DocsCatalog";
 import { BranchList, type BranchRowData } from "./BranchList";
 import { DocPreview } from "./DocPreview";
 import { DocTree } from "./DocTree";

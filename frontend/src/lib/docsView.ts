@@ -1,4 +1,4 @@
-import { FILTER_KEYS } from "./catalog";
+import { TABLE_KEYS } from "./docsTable";
 import { readPreference, writePreference } from "./storage";
 
 /*
@@ -10,7 +10,7 @@ import { readPreference, writePreference } from "./storage";
  *   doc    the document shown in the preview (its ID)
  *   q      the search of the toolbar field (`query` — the older name — is read too)
  *   order  the order of the branch list (`attention` by default, `title`, `reviewed`)
- *   type, status, owner, tag, source, sort, page — the table's filters, sort and page
+ *   type, status, flag, owner, system, source, tag, attention, sort, group — the table's (lib/docsTable.ts)
  */
 
 export type DocsView = "overview" | "list" | "table";
@@ -29,8 +29,8 @@ export const QUERY_PARAM = "q";
 /** The name links from the palette, the assistant field and the map still use. */
 export const LEGACY_QUERY_PARAM = "query";
 export const ORDER_PARAM = "order";
-/** The table's own keys: a link that carries one of them (and no view) opens the table. */
-export const TABLE_PARAMS: readonly string[] = [...FILTER_KEYS, "sort", "page"];
+/** The table's own keys: a link that carries one of them (and no view) opens the table (`page`: old links). */
+export const TABLE_PARAMS: readonly string[] = [...TABLE_KEYS, "page"];
 
 /** The view chosen in this browser (a new key: the catalog's old «list» was a list of snippets). */
 export const DOCS_VIEW_KEY = "skh.documents.view";
@@ -79,4 +79,11 @@ export function withParams(params: URLSearchParams, changes: Record<string, stri
 /** The URL change of a new search: `q` set (or removed), the older `query` and the table's page dropped. */
 export function searchChanges(text: string): Record<string, string | null> {
   return { [QUERY_PARAM]: text.trim() || null, [LEGACY_QUERY_PARAM]: null, page: null };
+}
+
+/** «Спросить ИИ об этих документах»: the assistant page with a question about the query and the top results. */
+export function askAboutResults(query: string, ids: string[]): string {
+  const top = ids.slice(0, 5);
+  const question = `Что говорят документы по запросу «${query.slice(0, 200)}»${top.length ? ` (${top.join(", ")})` : ""}? Ответь со ссылками на источники.`;
+  return `/ask?q=${encodeURIComponent(question)}`;
 }

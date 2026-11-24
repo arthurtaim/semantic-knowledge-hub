@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import { DocsBrowser } from "../components/docs/DocsBrowser";
-import { DocsCatalog } from "../components/docs/DocsCatalog";
 import { DocsOverview } from "../components/docs/DocsOverview";
+import { DocsTable } from "../components/docs/DocsTable";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { buttonClass } from "../components/ui/Button";
@@ -150,7 +150,7 @@ export function ExplorerPage() {
       ) : view === "list" ? (
         <DocsBrowser tree={tree} notice={notice} />
       ) : (
-        <DocsCatalog flush={!compact} notice={notice} />
+        <DocsTable tree={tree} notice={notice} />
       )}
     </div>
   );

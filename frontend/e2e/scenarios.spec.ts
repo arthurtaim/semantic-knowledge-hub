@@ -44,12 +44,13 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   // «Документы» v2: the results are rows of «Список»
   await expect(page.locator(".docs-row").first()).toBeVisible();
 
-  // UI v2: the sort of the catalog table is in the «Вид» menu («Документы» v2: the table is the «Таблица» view).
+  // «Документы» v2: «Таблица» sorts by a header click (the «Вид» menu and «Обновлён» of the old table are gone).
   await page.goto("/documents?view=table");
-  await page.getByRole("button", { name: "Вид" }).click();
-  await page.getByRole("menuitemradio", { name: "Сначала новые" }).click();
-  await expect(page).toHaveURL(/sort=updated/);
-  await expect(page.getByRole("table")).toContainText("Обновлён");
+  const reviewed = page.getByRole("columnheader", { name: "Проверен" });
+  await expect(reviewed).toHaveAttribute("aria-sort", "ascending");
+  await reviewed.getByRole("button").click();
+  await expect(page).toHaveURL(/sort=-reviewed/);
+  await expect(reviewed).toHaveAttribute("aria-sort", "descending");
   await page.goto("/documents?query=квазизвездный");
   await expect(page.getByText("По запросу «квазизвездный» ничего не найдено")).toBeVisible();
   expect(problems).toEqual([]);
