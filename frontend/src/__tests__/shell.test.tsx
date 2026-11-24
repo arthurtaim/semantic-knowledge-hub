@@ -32,7 +32,8 @@ describe("Application shell", () => {
       "Карта знаний": "/graph",
       Шаблоны: "/templates",
       Предложения: "/proposals?open_only=true",
-      Публикации: "/integrations#integration-confluence_publisher",
+      // A page of its own since the «Публикации» list (was the publisher row of /integrations, which lit up both items).
+      Публикации: "/publications",
       Интеграции: "/integrations",
     };
     await within(nav).findByRole("link", { name: "Ассистент" }); // the label follows the session's AI mode

@@ -148,6 +148,25 @@ describe("Sidebar", () => {
     expect(within(nav()).getByRole("link", { name: "Публикации" })).toHaveAttribute("aria-current", "page");
   });
 
+  it("lights exactly one item for the publications list, a publication job and the integrations page", () => {
+    // «Публикации» used to open the publisher row of /integrations: after a click both items looked current.
+    const cases: [string, string][] = [
+      ["/publications", "Публикации"],
+      ["/publications/job-1", "Публикации"],
+      ["/integrations", "Интеграции"],
+      ["/integrations#integration-confluence_publisher", "Интеграции"],
+    ];
+    for (const [path, item] of cases) {
+      const { unmount } = renderShell(path);
+      const current = nav().querySelectorAll('[aria-current="page"]');
+      expect(current, path).toHaveLength(1);
+      expect(current[0], path).toHaveAccessibleName(item);
+      expect(nav().querySelectorAll(".sidebar__link.is-active"), path).toHaveLength(1);
+      expect(within(nav()).getByRole("link", { name: "Публикации" })).toHaveAttribute("href", "/publications");
+      unmount();
+    }
+  });
+
   it("opens the search palette from «Поиск» and returns focus to it", async () => {
     renderShell("/documents");
     const search = screen.getByRole("button", { name: "Поиск" });
@@ -240,6 +259,7 @@ describe("Route map", () => {
       ["/proposals", "proposals", "Предложения", "wide"],
       ["/proposals/new", "proposals", "Предложения / Новое предложение", "default"],
       ["/proposals/p-1", "proposals", "Предложения / Предложение", "default"],
+      ["/publications", "publications", "Публикации", "wide"],
       ["/publications/job-1", "publications", "Публикации / Публикация", "default"],
       ["/integrations", "integrations", "Интеграции", "default"],
       ["/corporate/200101", null, "Корпоративная страница", "default"],
@@ -252,6 +272,7 @@ describe("Route map", () => {
     }
     expect(defaultCrumbs("/", false)[0]?.label).toBe("Главная");
     expect(documentTitle("/graph", true)).toBe("Карта знаний — база знаний семантического слоя");
+    expect(defaultCrumbs("/publications/job-1", true)[0]?.to).toBe("/publications");
     expect(initials("Демо-пользователь (localhost)")).toBe("ДП");
   });
 });

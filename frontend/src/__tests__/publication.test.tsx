@@ -182,6 +182,9 @@ describe("Publication job page", () => {
     ]);
     const { container } = renderJob();
     expect(await screen.findByRole("heading", { level: 1, name: "Публикация в Confluence" })).toBeInTheDocument();
+    // The path starts at the «Публикации» list (the sidebar's item for this page), then the document.
+    const path = screen.getByRole("navigation", { name: "Путь" });
+    expect(within(path).getByRole("link", { name: "Публикации" })).toHaveAttribute("href", "/publications");
     expect(screen.getByRole("link", { name: "SEM-INT-ARIS-001" })).toHaveAttribute("href", "/documents/SEM-INT-ARIS-001");
     expect(screen.getByText("Предпросмотр готов", { selector: ".pub-state" })).toBeInTheDocument();
     expect(screen.getByTestId("publication-action")).toHaveTextContent("Будет создана новая страница");

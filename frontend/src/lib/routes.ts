@@ -41,13 +41,9 @@ export function isReviewList(pathname: string, search: string): boolean {
 }
 
 /**
- * There is no list of publications: a publication is a step of a document (its page) and a job page
- * (/publications/:jobId). The one global place where publishing is visible is the Confluence publisher on the
- * integrations page (its mode and whether it is connected).
+ * The Confluence publisher's row on the integrations page (its state, target and the server's message): the
+ * «Публикации» page links there when publication is off or its check failed.
  */
-export const PUBLICATIONS_HREF = "/integrations#integration-confluence_publisher";
-
-/** The Confluence publisher's row on the integrations page (its state, target and the server's message). */
 export const PUBLISHER_INTEGRATION_HREF = "/integrations#integration-confluence_publisher";
 
 export function navGroups(askAvailable: boolean): NavGroup[] {
@@ -77,7 +73,7 @@ export function navGroups(askAvailable: boolean): NavGroup[] {
       label: "Работа",
       items: [
         { id: "proposals", label: "Предложения", icon: "proposals", to: PROPOSALS_HREF },
-        { id: "publications", label: "Публикации", icon: "publications", to: PUBLICATIONS_HREF },
+        { id: "publications", label: "Публикации", icon: "publications", to: "/publications" },
       ],
     },
     {
@@ -127,7 +123,7 @@ export function defaultCrumbs(pathname: string, askAvailable: boolean): Crumb[] 
   if (pathname === "/proposals/new") return [{ label: "Предложения", to: "/proposals" }, { label: "Новое предложение" }];
   if (pathname.startsWith("/proposals/")) return [{ label: "Предложения", to: "/proposals" }, { label: "Предложение" }];
   if (pathname === "/publications") return [{ label: "Публикации" }];
-  if (pathname.startsWith("/publications/")) return [{ label: "Публикации", to: PUBLICATIONS_HREF }, { label: "Публикация" }];
+  if (pathname.startsWith("/publications/")) return [{ label: "Публикации", to: "/publications" }, { label: "Публикация" }];
   if (pathname === "/integrations") return [{ label: "Интеграции" }];
   if (pathname.startsWith("/corporate/")) return [{ label: "Корпоративная страница" }];
   return [{ label: "Страница не найдена" }];

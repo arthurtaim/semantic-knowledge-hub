@@ -445,8 +445,8 @@ export function IntegrationsPage() {
   const off = sorted.filter((item) => item.state === "disabled");
   const { hash } = useLocation();
 
-  // A link to one integration (the sidebar's «Публикации» → the Confluence publisher) scrolls to its row once the
-  // list is there; client-side navigation does not do that by itself.
+  // A link to one integration («Интеграции» on the «Публикации» page → the Confluence publisher) scrolls to its row
+  // once the list is there; client-side navigation does not do that by itself.
   useEffect(() => {
     if (!data || !hash.startsWith("#integration-")) return;
     document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ block: "start" });
