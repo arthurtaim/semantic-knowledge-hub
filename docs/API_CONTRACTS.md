@@ -24,6 +24,57 @@ These are proposed MVP HTTP contracts. Claude Code may refine field details but 
     meaning: the time of the source revision (commit date / file mtime), shown on the document page as «Дата
     ревизии». A front-matter value that is not a date is a warning `invalid_updated_at` (kept in `extra_metadata`),
     never a load error.
+  - *«Документы» v2 (additive).* Each item also carries `summary: str | null` (the document's `summary`: the
+    front-matter value, else its first meaningful paragraph — the same value as `DocumentDetail.summary`) and
+    `systems: list[str]` (the systems the document is about, rule below). Other routes that return a
+    `DocumentSummary` leave both `null`; `DocumentDetail` keeps its `summary` and also fills `systems`.
+- `GET /api/documents/tree` (*«Документы» v2, new*, `read_knowledge`) -> the whole visible base as sections → groups →
+  documents in one response, no paging. Spec: `docs/ui-v2/documents/specs/DOCUMENTS_V2.md` §4; code:
+  `app/domain/doc_tree.py` (rule and order), `services/knowledge.py` `document_tree`; tests `tests/test_doc_tree.py`.
+
+  ```json
+  {
+    "total": 83,
+    "attention_total": 12,
+    "sections": [
+      { "key": "integration", "label": "Интеграции", "count": 19, "attention": 3, "doc_ids": [],
+        "groups": [ { "key": "integration/aris", "label": "ARIS", "count": 8, "attention": 3,
+                      "doc_ids": ["SEM-INT-ARIS-001", "DEMO-INT-018", "…"] } ] }
+    ],
+    "documents": {
+      "DEMO-INT-001": { "title": "ARIS → Catalog: обзор потока (демо)", "type": "integration", "status": "approved",
+        "review_state": "ok", "reviewed_at": "2026-10-16", "owner": "demo-integration-team", "owner_missing": false,
+        "summary": "…", "systems": ["ARIS", "Data Catalog"], "link_count": 11, "is_demo": true, "source": "local",
+        "index_state": "current", "group": "integration/aris", "attention": false }
+    }
+  }
+  ```
+
+  - **Visibility.** Built from the reader's snapshot, exactly like `GET /api/documents` (same service, no bypass):
+    a document the reader cannot see is neither an entry nor counted, and a source system document the reader
+    cannot see names no group and no system. `link_count` is the catalog's (§2 above).
+  - **`review_state` / `reviewed_at`.** The catalog's values, unchanged: `reviewed_at` is the front-matter date;
+    `review_state` is `ok`, `stale` (the review is older than `REVIEW_STALE_DAYS`, 180 by default — the catalog's
+    «Проверка устарела»), `never_reviewed` (approved or in review without `reviewed_at`) or `not_required` (a draft or
+    a deprecated document without `reviewed_at`). It depends on today's date.
+  - **`attention`** (per document; `attention` of a section / group and `attention_total` count them): `status` ∈
+    {`in_review`, `draft`, `deprecated`} **or** `review_state` ∈ {`stale`, `never_reviewed`} **or** `owner_missing`.
+  - **Groups (computed; no `parent` field yet).** A section is a document type. Source systems are the `source`
+    documents whose title has «:» — the system's name is the part before it, its key comes from the document's
+    `sys-<key>` tag. `integration`: the system of the first `consumes` target that is a source system document, else
+    the system named by the first tag equal to a system key (`<key>` or `sys-<key>`), else «Общие правила»
+    (`integration/_common`). `standard`: a `template` / `шаблон` tag → «Шаблоны документов» (`standard/templates`),
+    else «Регламенты и качество» (`standard/rules`). Other sections have no groups: their documents are in the
+    section's `doc_ids`, and each document's `group` is `null`. A one-document group is kept. Group keys are
+    `<section>/<system key>` (a system without a key: `<section>/<lower-cased document id>`); non-system groups start
+    with `_` or are fixed words. An explicit `parent` can later become the first resolver of `GROUP_RESOLVERS`.
+  - **`systems`.** The systems of the document's `consumes` / `produces` targets that are source system documents,
+    then the systems its tags name (`<key>` or `sys-<key>`; so a system's own profile names it), without repeats, in
+    that order.
+  - **Order.** Sections: Продукт, Архитектура, Домен, Системы-источники, Интеграции, Датасеты, Процессы, Решения,
+    Стандарты, Руководства, Глоссарий (a type outside this list last); empty sections are left out. Groups by name,
+    «Общие правила» last. Documents in a group or section: those needing attention first, then by title.
+  - Declared before `GET /api/documents/{id}`: the path `tree` is never read as a document ID.
 - `GET /api/documents/{id}` -> `DocumentDetail` with rendered-safe markdown/source content, frontmatter metadata and revision.
 - `GET /api/search?q=...&source=team,corporate&limit=10` -> ranked `SearchResult[]`.
 

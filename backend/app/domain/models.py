@@ -193,6 +193,10 @@ class DocumentSummary(BaseModel):
     link_count: int | None = None
     # `updated_at` from the document's own front matter (YYYY-MM-DD) — the catalog's «Обновлён»; null without one.
     metadata_updated_at: date | None = None
+    # «Документы» v2 (additive): the front-matter `summary` and the systems the document is about
+    # (app/domain/doc_tree.py `document_systems`). Set by `GET /api/documents` and the document detail; null elsewhere.
+    summary: str | None = None
+    systems: list[str] | None = None
 
 
 class RelatedLink(BaseModel):
@@ -225,6 +229,55 @@ class DocumentPage(BaseModel):
     page: int
     size: int
     notes: list[str] = Field(default_factory=list)  # e.g. an ambiguous abbreviation in the query
+
+
+class DocumentTreeEntry(BaseModel):
+    """One document of `GET /api/documents/tree`: what the tree, the branch list, the overview and the table show."""
+
+    title: str
+    type: DocType
+    status: DocStatus
+    review_state: ReviewState
+    reviewed_at: date | None
+    owner: str
+    owner_missing: bool
+    summary: str | None
+    systems: list[str]
+    link_count: int
+    is_demo: bool
+    source: SourceType
+    index_state: IndexState = "current"
+    group: (
+        str | None
+    )  # full group key (`integration/aris`); null when the document sits directly in its section
+    # status in_review / draft / deprecated, or review_state stale / never_reviewed, or owner_missing
+    attention: bool
+
+
+class DocumentTreeGroup(BaseModel):
+    key: str
+    label: str
+    count: int
+    attention: int
+    doc_ids: list[str]
+
+
+class DocumentTreeSection(BaseModel):
+    key: str  # the document type
+    label: str
+    count: int
+    attention: int
+    groups: list[DocumentTreeGroup]
+    doc_ids: list[str]  # documents directly in the section (none when every document is in a group)
+
+
+class DocumentTree(BaseModel):
+    """`GET /api/documents/tree`: the whole visible base in one response (docs/ui-v2/documents/specs §4)."""
+
+    total: int
+    attention_total: int
+    sections: list[DocumentTreeSection]
+    documents: dict[str, DocumentTreeEntry]
 
 
 class FacetCount(BaseModel):
