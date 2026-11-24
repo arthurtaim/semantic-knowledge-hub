@@ -146,10 +146,7 @@ export function ExplorerPage() {
       ) : null}
 
       {view === "overview" ? (
-        <>
-          {notice}
-          <DocsOverview tree={tree} />
-        </>
+        <DocsOverview tree={tree} notice={notice} />
       ) : view === "list" ? (
         <DocsBrowser tree={tree} notice={notice} />
       ) : (

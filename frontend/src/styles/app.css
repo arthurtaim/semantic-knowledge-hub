@@ -9716,63 +9716,441 @@ a.source__title:hover {
 
 /* ---------- «Документы» v2 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md) ---------- */
 
-/* «Обзор» until the matrix: the totals and the sections with their counts, all from GET /api/documents/tree. */
-.docs-overview {
-  max-width: 40rem;
+/* «Обзор» (DocsOverview, design docs-03): the totals, the matrix «разделы × состояние» and «Что сделать» on the
+   right (below it when the work area is narrow); the work area's padding is the view's own. */
+.content:has(> .content__inner > .docs--overview) {
+  padding: 0;
 }
 
-.docs-overview__title {
+.docs--overview .catalog__top {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-overview {
+  container: docs-overview / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  min-height: calc(100dvh - var(--toolbar-height));
+}
+
+.docs-overview__main {
+  position: relative;
+  flex: 999 1 38.75rem;
+  min-width: 0;
+  padding: 1.625rem 1.75rem;
+}
+
+.docs-overview__main > .notice {
+  margin-bottom: var(--space-4);
+}
+
+.docs-overview__head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-2) var(--space-3);
-  margin: 0 0 var(--space-4);
-  font-size: var(--fs-section);
-  line-height: var(--lh-section);
+  gap: var(--space-1) 0.875rem;
+  margin-bottom: var(--space-1);
+}
+
+.docs-overview__title {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.75rem;
   font-weight: 600;
+  letter-spacing: var(--tracking-title);
 }
 
 .docs-overview__attention {
   font-size: var(--fs-ui);
-  font-weight: 500;
   color: var(--demo-text);
+  text-decoration: none;
 }
 
-.docs-overview__table {
-  width: 100%;
-  border-collapse: collapse;
+.docs-overview__attention:hover {
+  color: var(--demo-text);
+  text-decoration: underline;
+}
+
+.docs-overview__calm {
   font-size: var(--fs-ui);
-}
-
-.docs-overview__table th,
-.docs-overview__table td {
-  height: var(--row-height);
-  padding: 0 var(--space-3);
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-}
-
-.docs-overview__table thead th {
-  font-size: var(--fs-small);
-  font-weight: 500;
   color: var(--text-secondary);
 }
 
-.docs-overview__table tbody th {
-  font-weight: 500;
+.docs-overview__hint {
+  max-width: var(--text-max);
+  margin: 0 0 1.375rem;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--text-secondary);
 }
 
-.docs-overview__table tbody th a {
-  color: var(--text);
+/* The matrix: rows 40 px, numbers centred in tabular figures; zero is a pale dash, a number a chip of its tone. */
+.docs-matrix-wrap {
+  overflow-x: auto;
 }
 
-.docs-overview__table .docs-overview__num {
-  text-align: right;
+.docs-matrix {
+  width: 100%;
+  min-width: 42rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
 }
 
-.docs-overview__none {
+.docs-matrix__col-section {
+  width: 22%;
+}
+
+.docs-matrix__col-total {
+  width: 4.25rem;
+}
+
+.docs-matrix__col-approved {
+  width: 20%;
+}
+
+.docs-matrix th,
+.docs-matrix td {
+  height: 2.5rem;
+  padding: 0 var(--space-1);
+  border-top: 1px solid var(--line);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.docs-matrix thead th {
+  height: auto;
+  padding: 0 0.375rem 0.625rem;
+  border-top: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: 500;
+  color: var(--text-secondary);
+  vertical-align: bottom;
+}
+
+.docs-matrix th:first-child {
+  padding-left: var(--space-3);
+  text-align: left;
+  font-weight: 500;
+}
+
+.docs-matrix tbody tr:hover > * {
+  background: var(--bg-subtle);
+}
+
+.docs-matrix tfoot th,
+.docs-matrix tfoot td {
+  height: 2.75rem;
+  border-top-color: var(--line-strong);
+  font-weight: 600;
+}
+
+.docs-matrix__section {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.docs-matrix__section:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.docs-matrix__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 1.625rem;
+  padding: 0 0.375rem;
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.docs-matrix__num:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.docs-matrix__approved {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.docs-matrix__approved-num {
+  flex: none;
+  min-width: 2rem;
+  text-align: right;
+}
+
+.docs-matrix__bar {
+  display: inline-block;
+  flex: 0 1 5.625rem;
+  min-width: 2rem;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.docs-matrix__bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--status-approved);
+}
+
+.docs-matrix__chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.125rem;
+  height: 1.625rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-chip);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.docs-matrix__chip:hover {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.docs-matrix__chip--in_review,
+.docs-matrix__chip--in_review:hover {
+  background: var(--status-review-bg);
+  color: var(--status-review-text);
+}
+
+.docs-matrix__chip--draft,
+.docs-matrix__chip--draft:hover {
+  background: var(--status-draft-bg);
+  color: var(--status-draft-text);
+}
+
+.docs-matrix__chip--deprecated,
+.docs-matrix__chip--deprecated:hover {
+  background: var(--status-deprecated-bg);
+  color: var(--status-deprecated);
+}
+
+.docs-matrix__chip--needs_review,
+.docs-matrix__chip--needs_review:hover {
+  background: var(--demo-bg);
+  color: var(--demo-text);
+}
+
+.docs-matrix__chip--no_owner,
+.docs-matrix__chip--no_owner:hover {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.docs-matrix__zero {
+  color: var(--line-field);
+  font-weight: 400;
+}
+
+/* Phones: one item per section, the non-zero states as chips that wrap. */
+.docs-matrix-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-matrix-list__item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line);
+}
+
+.docs-matrix-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.docs-matrix-list__approved {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.docs-matrix-list__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* «Что сделать»: the same documents grouped by action, up to three per group, «Ещё N» to the table. */
+.docs-todo {
+  flex: 1 1 21.25rem;
+  min-width: 0;
+  max-width: 25rem;
+  padding: 1.375rem var(--space-4) var(--space-6);
+  border-left: 1px solid var(--line);
+  background: var(--bg-subtle);
+}
+
+.docs-todo__title {
+  margin: 0 0 var(--space-1) 0.625rem;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  font-weight: 600;
+}
+
+.docs-todo__lead {
+  margin: 0 0 var(--space-1) 0.625rem;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.docs-todo__group-title {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0.875rem 0.625rem var(--space-1);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.docs-todo__count {
+  font-weight: 400;
   color: var(--text-tertiary);
+}
+
+.docs-todo__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.docs-todo__row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.25rem;
+  padding: var(--space-2) 0.625rem;
+  border-radius: 9px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.docs-todo__row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.docs-todo__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.docs-todo__note {
+  flex: none;
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+}
+
+.docs-todo__status {
+  gap: var(--space-1);
+}
+
+.docs-todo__more {
+  display: inline-block;
+  padding: var(--space-2) 0.625rem;
+  font-size: var(--fs-small);
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.docs-todo__more:hover {
+  text-decoration: underline;
+}
+
+/* The group's shape: a dot in review, a red dot without an owner, an amber ring to recheck; drafts and deprecated
+   documents by their status shape (a dashed circle, a dash). */
+.docs-todo__shape {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.docs-todo__shape--review {
+  background: var(--status-review);
+}
+
+.docs-todo__shape--owner {
+  background: var(--danger);
+}
+
+.docs-todo__shape--recheck {
+  border: 2px solid var(--status-draft);
+}
+
+.docs-todo__shape--draft {
+  width: 10px;
+  height: 10px;
+  border: 1.5px dashed var(--status-draft);
+}
+
+.docs-todo__shape--deprecated {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--status-deprecated);
+}
+
+.docs-todo__shape--in_review {
+  background: var(--status-review);
+}
+
+.docs-todo__shape--approved {
+  border: 2px solid var(--status-approved);
+}
+
+/* A narrow work area: «Что сделать» goes under the matrix, full width. */
+@container docs-overview (max-width: 60rem) {
+  .docs-todo {
+    flex-basis: 100%;
+    max-width: none;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 719.98px) {
+  .docs-overview__main {
+    padding: var(--space-4);
+  }
+
+  .docs-todo {
+    padding-inline: var(--space-2);
+  }
 }
 
 /* The documents tree (DocTree, design docs-01 / docs-02): 28 px rows, sections → groups → documents, counts on the

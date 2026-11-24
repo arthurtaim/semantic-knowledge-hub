@@ -121,20 +121,22 @@ describe("Документы: the views", () => {
     expect(screen.getByRole("button", { name: "Обзор" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  // Slice 5: the interim table (section, total, attention) became the matrix «разделы × состояние» — its numbers are
+  // checked in docsOverview.test.tsx; here only that «Обзор» is built from the one tree request.
   it("«Обзор»: the totals and sections from the tree API; a section opens «Список» on it; no search field", async () => {
     const calls = routes();
     renderPage("/documents?view=overview");
-    const overview = await screen.findByRole("region", { name: /11 документов/ });
+    const overview = await screen.findByRole("region", { name: "11 документов, 8 утверждены" });
     expect(within(overview).getByRole("link", { name: "4 требуют внимания" })).toHaveAttribute(
       "href",
-      "/documents?view=list&node=attention",
+      "/documents?view=table&attention=1",
     );
-    const rows = within(overview).getAllByRole("row").slice(1);
-    expect(rows.map((r) => Array.from(r.children).map((c) => c.textContent))).toEqual([
-      ["Продукт", "1", "—"],
-      ["Системы-источники", "3", "2"],
-      ["Интеграции", "5", "2"],
-      ["Стандарты", "2", "—"],
+    const rows = within(overview).getAllByRole("row").slice(1, -1);
+    expect(rows.map((r) => within(r).getByRole("rowheader").textContent)).toEqual([
+      "Продукт",
+      "Системы-источники",
+      "Интеграции",
+      "Стандарты",
     ]);
     expect(within(overview).getByRole("link", { name: "Интеграции" })).toHaveAttribute("href", "/documents?view=list&node=integration");
     expect(screen.queryByRole("searchbox")).toBeNull();
