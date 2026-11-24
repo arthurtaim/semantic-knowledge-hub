@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from "react";
-import { ApiError, api, isCancelled } from "../api/client";
-import type { AskRequest, AskResponse, AskStreamEvent, ConversationTurn } from "../api/types";
+import { useEffect, useRef } from "react";
+import type { ApiError } from "../api/client";
+import type { AskRequest, AskResponse, ConversationTurn } from "../api/types";
 import type { Turn, TurnDisplay } from "../components/AssistantTurn";
-import { toolActivity } from "./systemFacts";
+import { clearSavedQuestion } from "./conversation";
+import { cancelTurn, isBusy, runTurn, setHandlers, toApiError, useConversation } from "./conversationStore";
 import type { ComposerController, ComposerMessage } from "./useComposer";
 
 /*
  * The turns of one assistant conversation and how a message becomes one (POST /api/assistant/ask/stream): the
  * stages the stream reports, the preliminary text, the validated answer, an error or a cancellation. Used by the
- * dialog (/ask) and the assistant panel of a document; each owns its own conversation.
+ * dialog (/ask) and the assistant panel of a document; each shows its own conversation. The turns and the request
+ * in flight live in the conversation store (lib/conversationStore.ts), not in the component: leaving the page
+ * neither cancels the request nor loses the dialog.
  */
 
 /** Limits of POST /api/assistant/ask(/stream) `history` (backend AskRequest). */
@@ -42,9 +45,7 @@ export function historyFrom(turns: Turn[]): ConversationTurn[] {
     });
 }
 
-export function toApiError(err: unknown): ApiError {
-  return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
-}
+export { toApiError };
 
 export function displayOf(message: ComposerMessage): TurnDisplay {
   return {
@@ -56,13 +57,13 @@ export function displayOf(message: ComposerMessage): TurnDisplay {
 }
 
 interface UseAssistantTurnsOptions {
+  /** The conversation shown (the composer's dialog id). */
+  conversationId: string;
   /** The field the question comes from: cleared after an answer, the question put back after a failure. */
   composer: ComposerController;
-  /** Completed turns to start from (the dialog restores them after a visit to a cited document). */
-  initial?: () => Turn[];
-  /** A request starts (the dialog remembers it among the recent dialogs). */
+  /** A request starts (the dialog remembers it among the recent dialogs of this browser). */
   onStart?: (request: AskRequest, display: TurnDisplay) => void;
-  /** A validated answer arrived. */
+  /** A validated answer arrived (also when the page has been left meanwhile). */
   onAnswer?: (request: AskRequest, display: TurnDisplay, response: AskResponse) => void;
   /** The request failed (not when it was cancelled) — e.g. an attached file the server no longer has. */
   onError?: (request: AskRequest, display: TurnDisplay, error: ApiError) => void;
@@ -70,7 +71,7 @@ interface UseAssistantTurnsOptions {
 
 export interface AssistantTurns {
   turns: Turn[];
-  /** A request is running (one at a time). */
+  /** A request is running (one at a time per conversation). */
   pending: boolean;
   /** Earlier completed turns as the context of the next request. */
   history: ConversationTurn[];
@@ -78,97 +79,64 @@ export interface AssistantTurns {
   run: (request: AskRequest, display: TurnDisplay) => Promise<void>;
   /** Cancels the running request (on the server too). */
   cancel: () => void;
-  /** Forgets the conversation (unless a request is running). */
-  clear: () => void;
   /** A request is running right now (synchronous, for event handlers). */
   busy: () => boolean;
 }
 
-export function useAssistantTurns({ composer, initial, onStart, onAnswer, onError }: UseAssistantTurnsOptions): AssistantTurns {
-  const [turns, setTurns] = useState<Turn[]>(() => initial?.() ?? []);
-  const [pending, setPending] = useState(false);
-  const inFlight = useRef(false);
-  const nextId = useRef(turns.reduce((max, turn) => Math.max(max, turn.id), 0));
-  const abortRef = useRef<AbortController | null>(null);
+export function useAssistantTurns({ conversationId, composer, onStart, onAnswer, onError }: UseAssistantTurnsOptions): AssistantTurns {
+  const state = useConversation(conversationId);
+  const field = useRef(composer);
+  field.current = composer;
+  const effects = useRef({ onStart, onAnswer, onError });
+  effects.current = { onStart, onAnswer, onError };
 
-  // Leaving the page cancels a running generation on the server.
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // While this view is mounted, the outcome of a request reaches its field: cleared after the answer (only if it
+  // still holds this question — the next one may already be typed), the question put back after a failure or a
+  // cancellation, a file the server no longer has greyed out.
+  useEffect(
+    () =>
+      setHandlers(conversationId, {
+        onAnswer: (request) => {
+          const composer = field.current;
+          if (request.question && composer.message().question === request.question) composer.setText("");
+        },
+        onError: (request, _display, error) => {
+          const composer = field.current;
+          if (error.code === "attachment_not_found") {
+            // The server names the file it could not find; without a name every file of the request is suspect.
+            const named = typeof error.details.attachment_id === "string" ? [error.details.attachment_id] : [];
+            composer.markUnavailable(named.length > 0 ? named : (request.attachment_ids ?? []));
+          }
+          // The question is never lost: put it back unless something else has been typed meanwhile.
+          const current = composer.message().question;
+          if (request.question && (current === "" || current === request.question)) composer.setText(request.question);
+        },
+        onCancel: (request) => {
+          const composer = field.current;
+          const current = composer.message().question;
+          if (request.question && (current === "" || current === request.question)) composer.setText(request.question);
+          composer.focus();
+        },
+      }),
+    [conversationId],
+  );
 
-  function patchTurn(id: number, patch: Partial<Turn> | ((turn: Turn) => Partial<Turn>)) {
-    setTurns((list) =>
-      list.map((turn) => (turn.id === id ? { ...turn, ...(typeof patch === "function" ? patch(turn) : patch) } : turn)),
-    );
-  }
-
-  function onStreamEvent(id: number, event: AskStreamEvent) {
-    if (event.type === "status") {
-      patchTurn(id, (turn) =>
-        event.stage === "generating"
-          ? {
-              phase: "generating",
-              passages: event.passages ?? null,
-              provider: event.provider ?? null,
-              activity: null,
-              // M5.7: every model round after the first starts a NEW preliminary text — never glue rounds together.
-              preliminary: (event.round ?? 1) > 1 ? "" : turn.preliminary,
-            }
-          : { phase: event.stage, activity: null },
-      );
-    } else if (event.type === "delta") {
-      patchTurn(id, (turn) => ({ preliminary: turn.preliminary + event.text }));
-    } else if (event.type === "tool_call") {
-      // One short line of what is being checked («Проверяю каталог…»); no payloads, no debug view.
-      patchTurn(id, { activity: toolActivity(event.tool) });
-    }
-  }
-
-  async function run(request: AskRequest, display: TurnDisplay) {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    onStart?.(request, display);
-    const id = ++nextId.current;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setPending(true);
-    setTurns((list) => [
-      ...list.filter((turn) => turn.phase === "done"),
-      { id, request, display, phase: "retrieving", passages: null, provider: null, preliminary: "", activity: null, response: null, error: null },
-    ]);
-    try {
-      const response = await api.askStream(request, {
-        signal: controller.signal,
-        onEvent: (event) => onStreamEvent(id, event),
-      });
-      // The validated answer replaces the preliminary text.
-      patchTurn(id, { phase: "done", response, preliminary: "", activity: null });
-      onAnswer?.(request, display, response);
-      // Clear the field only if it still holds this question (the next one may already be typed there).
-      if (request.question && composer.message().question === request.question) composer.setText("");
-    } catch (err) {
-      const error = toApiError(err);
-      const cancelled = isCancelled(error);
-      patchTurn(id, cancelled ? { phase: "cancelled", preliminary: "" } : { phase: "error", error, preliminary: "" });
-      if (!cancelled) onError?.(request, display, error);
-      // The question is never lost: put it back unless something else has been typed meanwhile.
-      const current = composer.message().question;
-      if (request.question && (current === "" || current === request.question)) composer.setText(request.question);
-      if (cancelled) composer.focus();
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      inFlight.current = false;
-      setPending(false);
-    }
-  }
-
+  const persistKey = composer.persistKey;
   return {
-    turns,
-    pending,
-    history: historyFrom(turns),
-    run,
-    cancel: () => abortRef.current?.abort(),
-    clear: () => {
-      if (!inFlight.current) setTurns([]);
-    },
-    busy: () => inFlight.current,
+    turns: state.turns,
+    pending: state.running,
+    history: historyFrom(state.turns),
+    run: (request, display) =>
+      runTurn(conversationId, request, display, {
+        onStart: (...args) => effects.current.onStart?.(...args),
+        onAnswer: (...args) => {
+          // Answered while the page was left: the remembered field must not offer the answered question again.
+          if (persistKey && args[0].question) clearSavedQuestion(persistKey, conversationId, args[0].question);
+          effects.current.onAnswer?.(...args);
+        },
+        onError: (...args) => effects.current.onError?.(...args),
+      }),
+    cancel: () => cancelTurn(conversationId),
+    busy: () => isBusy(conversationId),
   };
 }

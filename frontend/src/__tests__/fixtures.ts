@@ -15,6 +15,8 @@ import type {
   ProposalSummary,
   PublicationJobDetail,
   SessionResponse,
+  StoredConversation,
+  StoredTurn,
   SyncStatus,
 } from "../api/types";
 
@@ -612,3 +614,55 @@ export const attachmentReady = (overrides: Partial<AssistantAttachment> = {}): A
   expires_at: "2026-11-25T10:00:00Z",
   ...overrides,
 });
+
+// --- chat history (docs/API_CONTRACTS.md v0.7) ---
+
+/** A completed turn as GET /api/assistant/conversations/{id} returns it (the question «Какие слои у архитектуры?»). */
+export function storedTurn(overrides: Partial<StoredTurn> = {}): StoredTurn {
+  return {
+    seq: 1,
+    status: "done",
+    created_at: "2026-11-24T10:00:00Z",
+    completed_at: "2026-11-24T10:00:02Z",
+    request: {
+      question: "Какие слои у архитектуры?",
+      skill: null,
+      sources: ["team"],
+      include_drafts: false,
+      include_deprecated: false,
+      search_external: false,
+      documents: [],
+      attachments: [],
+      selection: null,
+    },
+    response: { ...supportedAnswer, index_generation: "g3" },
+    error: null,
+    withheld: null,
+    notes: [],
+    answer_generation: "g3",
+    generation_changed: false,
+    ...overrides,
+  };
+}
+
+export const STORED_CONVERSATION_ID = "conv-0123456789abcdef01234567";
+
+export function storedConversation(turns: StoredTurn[] = [storedTurn()], overrides: Partial<StoredConversation> = {}): StoredConversation {
+  return {
+    id: STORED_CONVERSATION_ID,
+    title: turns[0]?.request.question ?? "Диалог",
+    origin: "dialog",
+    document: null,
+    turn_count: turns.length,
+    created_at: "2026-11-24T10:00:00Z",
+    updated_at: "2026-11-24T10:00:02Z",
+    last_status: turns[turns.length - 1]?.status ?? null,
+    last_skill: null,
+    last_sources: 1,
+    context: null,
+    index_generation: "g3",
+    turns,
+    ...overrides,
+  };
+}
+

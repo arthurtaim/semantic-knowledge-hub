@@ -2,16 +2,19 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AskResponse, AskStreamEvent } from "../api/types";
-import { clearConversation } from "../lib/conversation";
+import { clearConversation, dialogKey, freshDialogId, saveDraft } from "../lib/conversation";
+import { EMPTY_DRAFT } from "../lib/useComposer";
 import { readRecentDialogs } from "../lib/recentQuestions";
 import { AskPage } from "../pages/AskPage";
 import { HomePage } from "../pages/HomePage";
-import { freshSync, proposalSummary, skills, supportedAnswer } from "./fixtures";
+import { attachmentReady, freshSync, proposalSummary, skills, supportedAnswer } from "./fixtures";
 import { memoryStorage, mockApi, ndjsonStream, renderRoutes, type MockRoute, type RecordedCall } from "./helpers";
 
 /*
  * Round 2, decision 8: a recent dialog reopens with its skill, its files and its dialog id — a live file as a chip
  * that is sent, an expired or deleted one as a grey chip that is not; a skill run without a question reopens too.
+ * Since the chat history (docs/API_CONTRACTS.md v0.7) these entries of the browser are the OFFLINE FALLBACK of
+ * «Недавние диалоги» (here the server's list is unavailable): a row opens its dialog and never asks again.
  */
 
 const KEY = "skh.recent-questions.v1:local-demo-user";
@@ -68,10 +71,12 @@ const file = (id: string, name: string, expires: string) => ({
   gone: false,
 });
 
-async function reopen(name: RegExp) {
+async function reopen(name: RegExp, location: RegExp = new RegExp(`^/ask\\?c=${DIALOG}$`)) {
   const recent = (await screen.findByRole("heading", { name: "Недавние диалоги" })).closest("section") as HTMLElement;
   await userEvent.click(within(recent).getByRole("link", { name }));
-  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/ask$/));
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(location));
+  // The dialog is looked up in the history (not there: an entry of this browser only) and shown with its field.
+  await screen.findByLabelText("Вопрос");
 }
 
 /** The field's chips (a sent message repeats its chips in the dialog above, under the same name). */
@@ -129,21 +134,26 @@ describe("Reopening a recent dialog", () => {
     remember([{ question: "", at: "2026-11-24T09:00:00Z", skill: "Найти связи", sources: null, context: null }]);
     const calls = mockApi(routes([streamRoute()]));
     renderRoutes("/", pages);
-    await reopen(/Найти связи/);
+    await reopen(/Найти связи/, /^\/ask$/);
     expect(await screen.findByRole("button", { name: "Убрать навык «Найти связи»" })).toBeInTheDocument();
     expect(screen.getByLabelText("Вопрос")).toHaveValue("");
     expect(screen.getByLabelText("Вопрос")).toHaveFocus();
     expect(posts(calls)).toHaveLength(0);
   });
 
-  it("asks a plain question again at once, as before", async () => {
-    remember([{ question: "Что отправляет ARIS в каталог?", at: null, skill: null, sources: 3, context: null }]);
+  it("puts a plain question back into the field of its dialog and waits — never asks it again by itself", async () => {
+    remember([{ question: "Что отправляет ARIS в каталог?", at: null, skill: null, sources: 3, context: null, conversation_id: DIALOG }]);
     const calls = mockApi(routes([streamRoute()]));
     renderRoutes("/", pages);
     await reopen(/Что отправляет ARIS в каталог\?/);
+    expect(screen.getByLabelText("Вопрос")).toHaveValue("Что отправляет ARIS в каталог?");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(posts(calls)).toHaveLength(0);
+    // The history has no such dialog, but the entry was this browser's own: no «not found» notice.
+    expect(screen.queryByText(/Этого диалога нет в истории/)).toBeNull();
+    await userEvent.type(screen.getByLabelText("Вопрос"), "{Enter}");
     await waitFor(() => expect(posts(calls)).toHaveLength(1));
-    expect(posts(calls)[0]?.body).toMatchObject({ question: "Что отправляет ARIS в каталог?" });
-    expect(posts(calls)[0]?.body).not.toHaveProperty("attachment_ids");
+    expect(posts(calls)[0]?.body).toMatchObject({ question: "Что отправляет ARIS в каталог?", conversation_id: DIALOG });
   });
 
   it("greys a file out when the server answers attachment_not_found, and does not send it again", async () => {
@@ -199,7 +209,7 @@ describe("Reopening a recent dialog", () => {
     expect(posts(calls)[1]?.body).not.toHaveProperty("attachment_ids");
   });
 
-  it("«Новый диалог» deletes the dialog's files on the server; the recent dialog then shows them as unavailable", async () => {
+  it("«Новый диалог» keeps the files of a dialog the history keeps; a dialog never asked loses its files", async () => {
     remember([
       {
         question: "Сверить выгрузку",
@@ -217,8 +227,26 @@ describe("Reopening a recent dialog", () => {
     await reopen(/Сверить выгрузку/);
     await screen.findByRole("button", { name: "Убрать навык «Сравнить с файлом»" });
     await userEvent.click(screen.getByRole("button", { name: "Новый диалог" }));
-    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith(LIVE))).toBe(true));
-    expect(readRecentDialogs("local-demo-user")[0]?.attachments[0]?.gone).toBe(true);
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(/^\/ask$/));
+    expect(screen.getByLabelText("Вопрос")).toHaveValue("");
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    expect(readRecentDialogs("local-demo-user")[0]?.attachments[0]?.gone).toBe(false);
+  });
+
+  it("«Новый диалог» deletes the files of a dialog that was never asked anything (nothing keeps them)", async () => {
+    const calls = mockApi(routes([streamRoute()]));
+    const fresh = freshDialogId();
+    saveDraft(dialogKey(fresh), {
+      conversationId: fresh,
+      draft: {
+        ...EMPTY_DRAFT,
+        files: [{ key: "f1", name: "draft.csv", size: 10, status: "ready", attachment: attachmentReady({ id: EXPIRED, conversation_id: fresh }), error: null }],
+      },
+    });
+    renderRoutes("/ask", pages);
+    expect(await screen.findByRole("button", { name: "Убрать файл «draft.csv»" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Новый диалог" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith(EXPIRED))).toBe(true));
   });
 
   it("remembers the dialog id, the skill's id and the attached file's details when a message is sent", async () => {

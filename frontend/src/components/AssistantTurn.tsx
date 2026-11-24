@@ -1,7 +1,16 @@
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { ApiError } from "../api/client";
-import type { AiMode, AskRequest, AskResponse, AskSkillRef, ExternalRetrievalSummary, SearchScope } from "../api/types";
+import type {
+  AiMode,
+  AskRequest,
+  AskResponse,
+  AskSkillRef,
+  ExternalRetrievalSummary,
+  SearchScope,
+  StoredTurn,
+  StoredTurnRequest,
+} from "../api/types";
 import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeLabel, scopeOfSources } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
 import { showsSourceOrigins } from "../lib/provenance";
@@ -23,7 +32,8 @@ import { Chip } from "./ui/Chip";
  * assistant panel of a document (design-04), so both show answers by the same rules.
  */
 
-export type TurnPhase = "retrieving" | "generating" | "validating" | "done" | "error" | "cancelled";
+/** `interrupted`: a stored turn that never completed (the page was reloaded or closed mid-answer). */
+export type TurnPhase = "retrieving" | "generating" | "validating" | "done" | "error" | "cancelled" | "interrupted";
 
 /** What the user attached to a message — shown as chips above it. Names only, never contents. */
 export interface TurnDisplay {
@@ -37,7 +47,22 @@ export interface TurnDisplay {
 
 export const NOTHING_ATTACHED: TurnDisplay = { skill: null, files: [], documents: [], selection: null };
 
-/** One message of the dialog and what became of it. Lives in memory only (never stored). */
+/** What the chat history says about a stored turn (docs/API_CONTRACTS.md v0.7). */
+export interface StoredTurnInfo {
+  seq: number;
+  status: StoredTurn["status"];
+  /** Neutral server notes: the index generation changed, a file is gone, why the answer is hidden. */
+  notes: string[];
+  withheld: StoredTurn["withheld"];
+  /** The request can be sent again as it was (not for a selection: only its reference is stored). */
+  resendable: boolean;
+  request: StoredTurnRequest;
+}
+
+/**
+ * One message of the dialog and what became of it. While the app is open it lives in the conversation store
+ * (lib/conversationStore.ts); completed turns are also in the server's chat history (`stored` when loaded from it).
+ */
 export interface Turn {
   id: number;
   request: AskRequest;
@@ -51,6 +76,7 @@ export interface Turn {
   activity?: string | null;
   response: AskResponse | null;
   error: ApiError | null;
+  stored?: StoredTurnInfo;
 }
 
 export const isRunning = (turn: Turn) =>
@@ -364,6 +390,38 @@ function TurnError({ error, onRetry }: { error: ApiError; onRetry?: () => void }
   );
 }
 
+/**
+ * A stored turn without a shown answer (docs/API_CONTRACTS.md v0.7): it never completed (the page was reloaded or
+ * closed mid-answer — it is never re-run by itself), or its answer is withheld (its sources are no longer visible
+ * to the reader, or it was too large to keep). The server's notes say why; asking again is the reader's choice.
+ */
+function StoredGap({ turn, onResend }: { turn: Turn; onResend?: () => void }) {
+  const stored = turn.stored;
+  const interrupted = turn.phase === "interrupted";
+  const text = interrupted
+    ? stored?.status === "pending"
+      ? "Ответ ещё не получен: он формируется в другой вкладке или был прерван."
+      : "Ответ не был получен: запрос прервался до конца (страница была закрыта или обновлена)."
+    : null;
+  return (
+    <div className="turn__gap" role="status">
+      {text ? <p className="turn__status turn__status--stopped">{text}</p> : null}
+      {stored?.withheld
+        ? stored.notes.map((note) => (
+            <p key={note} className="turn__gap-note">
+              {note}
+            </p>
+          ))
+        : null}
+      {onResend ? (
+        <button type="button" className="button button--secondary button--sm" onClick={onResend}>
+          {interrupted ? "Повторить запрос" : "Задать вопрос заново"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 interface TurnViewProps {
   turn: Turn;
   turnNo: number;
@@ -371,10 +429,12 @@ interface TurnViewProps {
   onAskCorporate: (request: AskRequest, display: TurnDisplay) => void;
   /** Only the last failed turn offers a retry (a new question replaces it). */
   onRetry?: () => void;
+  /** A stored turn without an answer (interrupted, withheld): ask the same again — only on the reader's click. */
+  onResend?: () => void;
   compact?: boolean;
 }
 
-export function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate, compact = false }: TurnViewProps) {
+export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorporate, compact = false }: TurnViewProps) {
   const running = isRunning(turn);
   const { display } = turn;
   // A quick action names itself in the bubble; its skill chip would only repeat it.
@@ -450,6 +510,16 @@ export function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate, comp
         </p>
       ) : null}
       {turn.phase === "error" && turn.error ? <TurnError error={turn.error} onRetry={onRetry} /> : null}
+      {turn.phase === "interrupted" || (turn.phase === "done" && !turn.response && turn.stored) ? (
+        <StoredGap turn={turn} onResend={onResend} />
+      ) : null}
+      {turn.response && turn.stored && turn.stored.notes.length > 0 ? (
+        <ul className="turn__notes" aria-label="Об ответе из истории">
+          {turn.stored.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
       {turn.response ? (
         <AnswerView
           answer={turn.response}

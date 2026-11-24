@@ -1,7 +1,7 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocumentSummary, ProposalSummary } from "../api/types";
+import type { ConversationSummary, DocumentSummary, ProposalSummary } from "../api/types";
 import { Composer } from "../components/Composer";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { PageToolbar } from "../components/shell/PageToolbar";
@@ -11,9 +11,10 @@ import { When } from "../components/When";
 import { canAsk } from "../lib/aiMode";
 import { askHref, QUICK_SKILL_IDS } from "../lib/assistant";
 import { handOff } from "../lib/conversation";
+import { forgetAllConversations } from "../lib/conversationStore";
 import { OPERATION_LABEL, pluralRu, TYPE_LABEL } from "../lib/labels";
 import { REVIEW_HREF } from "../lib/routes";
-import { clearRecentQuestions, readRecentDialogs, rerunsAtOnce, type RecentDialog } from "../lib/recentQuestions";
+import { clearRecentQuestions, readRecentDialogs, type RecentDialog } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { useComposer, type ComposerDraft, type ComposerMessage } from "../lib/useComposer";
@@ -32,91 +33,175 @@ export interface HomeHandOff {
   message: ComposerMessage;
 }
 
-/** A recent dialog reopened from the home page: the dialog page restores its field (lib/recentQuestions.ts). */
+/** A recent dialog of this browser (offline fallback) reopened from the home page: the dialog restores its field. */
 export interface RecentHandOff {
   recent: RecentDialog;
 }
 
 const REVIEW_LIMIT = 3;
+const RECENT_LIMIT = 5;
 
 function sourcesText(n: number): string {
   return `${n} ${pluralRu(n, "источник", "источника", "источников")}`;
 }
 
-/** «Ответ по базе, 3 источника» / «Сравнить с файлом, aris_export.csv». */
+/** «Ответ по базе, 3 источника» / «Сравнить с файлом, aris_export.csv» (a remembered entry of this browser). */
 function dialogDetail(item: RecentDialog): string {
   const what = item.skill?.name ?? "Ответ по базе";
   const detail = item.context ?? (item.sources !== null ? sourcesText(item.sources) : null);
   return detail ? `${what}, ${detail}` : what;
 }
 
-/** Where a row points without the hand-off (a new tab): a plain question is asked again, anything else is put back. */
+/** «Ответ по базе, 3 источника · 2 вопроса», «По документу «ARIS» · Объяснить», «…, ответ не получен». */
+function conversationDetail(item: ConversationSummary): string {
+  const what = item.last_skill?.name ?? "Ответ по базе";
+  const unanswered = item.last_status === "failed" || item.last_status === "interrupted";
+  const detail = unanswered
+    ? "ответ не получен"
+    : (item.context ?? (item.last_status === "done" && item.last_sources !== null ? sourcesText(item.last_sources) : null));
+  const parts = [detail ? `${what}, ${detail}` : what];
+  if (item.origin === "document" && item.document) parts.unshift(`По документу «${item.document.title}»`);
+  if (item.turn_count > 1) parts.push(`${item.turn_count} ${pluralRu(item.turn_count, "вопрос", "вопроса", "вопросов")}`);
+  return parts.join(" · ");
+}
+
+export function conversationHref(id: string): string {
+  return `/ask?${new URLSearchParams({ c: id }).toString()}`;
+}
+
+/** Where a remembered entry points: its dialog (the stored turns, if the server has them) — never a new question. */
 function recentHref(item: RecentDialog): string {
-  if (rerunsAtOnce(item)) return askHref(item.question);
+  if (item.conversationId) return conversationHref(item.conversationId);
   return item.question ? `/ask?${new URLSearchParams({ q: item.question }).toString()}` : "/ask";
 }
 
+type RecentState =
+  | { kind: "loading" }
+  | { kind: "server"; items: ConversationSummary[]; retentionDays: number }
+  | { kind: "local"; items: RecentDialog[]; reason: "unavailable" | "disabled" };
+
 /**
- * The user's recent dialogs (this browser only). Reopening one restores its field on the dialog page — the skill,
- * the files (grey when the server no longer has them), the chosen documents, in the same dialog; a plain question
- * opens its answer again. A skill run without a question opens too, with an empty field.
+ * The user's recent dialogs in THIS browser (the server's chat history, docs/API_CONTRACTS.md v0.7). A row opens
+ * the stored conversation — its answers as they were, never asked again. When the history cannot be read (or the
+ * server keeps none), the entries this browser remembered stand in: a row then puts the question, skill, files and
+ * documents back into the field of its dialog and waits for Enter.
  */
 function RecentDialogs() {
   const session = useSession();
   const navigate = useNavigate();
   const userId = session?.user.user_id;
-  const [items, setItems] = useState(() => readRecentDialogs(userId));
-  useEffect(() => setItems(readRecentDialogs(userId)), [userId]);
-  if (items.length === 0) return null;
+  const [state, setState] = useState<RecentState>({ kind: "loading" });
+  const [confirm, setConfirm] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api
+      .conversations({ limit: RECENT_LIMIT })
+      .then((list) => {
+        if (!live) return;
+        setState(
+          list.enabled
+            ? { kind: "server", items: list.items, retentionDays: list.retention_days }
+            : { kind: "local", items: readRecentDialogs(userId), reason: "disabled" },
+        );
+      })
+      .catch(() => {
+        if (live) setState({ kind: "local", items: readRecentDialogs(userId), reason: "unavailable" });
+      });
+    return () => {
+      live = false;
+    };
+  }, [userId]);
+  if (state.kind === "loading" || state.items.length === 0) return null;
 
   function reopen(event: MouseEvent<HTMLAnchorElement>, item: RecentDialog) {
     // A new tab or window keeps the plain link (the hand-off lives in this tab's memory only).
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     handOff<RecentHandOff>({ recent: item });
-    navigate("/ask");
+    navigate(recentHref(item));
   }
+
+  async function clear() {
+    setFailed(false);
+    if (state.kind === "server") {
+      try {
+        await api.clearConversations();
+      } catch {
+        setFailed(true);
+        return;
+      }
+      forgetAllConversations();
+    }
+    clearRecentQuestions(userId);
+    setConfirm(false);
+    setState((current) => (current.kind === "loading" ? current : { ...current, items: [] }) as RecentState);
+  }
+
+  const row = (title: string, detail: string, at: string | null) => (
+    <>
+      <span className="assistant-home__row-text">
+        <span className="assistant-home__row-title">{title}</span>
+        <span className="assistant-home__row-meta">{detail}</span>
+      </span>
+      {at ? (
+        <span className="assistant-home__row-time">
+          <When value={at} />
+        </span>
+      ) : null}
+    </>
+  );
+
+  const note =
+    state.kind === "server"
+      ? `Хранятся на сервере для этого браузера ${state.retentionDays} ${pluralRu(state.retentionDays, "день", "дня", "дней")}.`
+      : state.reason === "unavailable"
+        ? "История на сервере недоступна — показаны записи этого браузера."
+        : "Хранятся только в этом браузере.";
 
   return (
     <section className="assistant-home__list" aria-labelledby="recent-dialogs-title">
       <h2 id="recent-dialogs-title">Недавние диалоги</h2>
       <ul>
-        {items.map((item, index) => {
-          const body = (
-            <>
-              <span className="assistant-home__row-text">
-                <span className="assistant-home__row-title">{item.question || item.skill?.name}</span>
-                <span className="assistant-home__row-meta">{dialogDetail(item)}</span>
-              </span>
-              {item.at ? (
-                <span className="assistant-home__row-time">
-                  <When value={item.at} />
-                </span>
-              ) : null}
-            </>
-          );
-          return (
-            <li key={`${index}-${item.question}-${item.skill?.name ?? ""}`}>
-              <Link to={recentHref(item)} className="assistant-home__row" onClick={(event) => reopen(event, item)}>
-                {body}
-              </Link>
-            </li>
-          );
-        })}
+        {state.kind === "server"
+          ? state.items.map((item) => (
+              <li key={item.id}>
+                <Link to={conversationHref(item.id)} className="assistant-home__row">
+                  {row(item.title, conversationDetail(item), item.updated_at)}
+                </Link>
+              </li>
+            ))
+          : state.items.map((item, index) => (
+              <li key={`${index}-${item.question}-${item.skill?.name ?? ""}`}>
+                <Link to={recentHref(item)} className="assistant-home__row" onClick={(event) => reopen(event, item)}>
+                  {row(item.question || item.skill?.name || "Диалог", dialogDetail(item), item.at)}
+                </Link>
+              </li>
+            ))}
       </ul>
-      <p className="assistant-home__note">
-        Хранятся только в этом браузере.{" "}
-        <button
-          type="button"
-          className="button button--quiet button--sm"
-          onClick={() => {
-            clearRecentQuestions(userId);
-            setItems([]);
-          }}
-        >
-          Очистить
-        </button>
-      </p>
+      {confirm ? (
+        <div className="assistant-home__confirm" role="group" aria-labelledby="recent-clear-text">
+          <p id="recent-clear-text">
+            {state.kind === "server"
+              ? "Удалить всю историю диалогов этого браузера? Ответы и файлы диалогов будут удалены."
+              : "Забыть недавние диалоги этого браузера?"}
+          </p>
+          <Button variant="danger" size="sm" onClick={() => void clear()}>
+            Очистить историю
+          </Button>
+          <Button variant="quiet" size="sm" onClick={() => setConfirm(false)}>
+            Отмена
+          </Button>
+        </div>
+      ) : (
+        <p className="assistant-home__note">
+          {note}{" "}
+          <button type="button" className="button button--quiet button--sm" onClick={() => setConfirm(true)}>
+            Очистить историю
+          </button>
+        </p>
+      )}
+      {failed ? <p className="assistant-home__note" role="alert">Не удалось очистить историю. Повторите попытку.</p> : null}
     </section>
   );
 }
