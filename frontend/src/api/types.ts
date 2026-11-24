@@ -279,6 +279,99 @@ export interface ConversationTurn {
   question: string;
   /** The validated answer of that turn, at most 4000 characters. */
   answer: string;
+  /** M5.7: `conversation_context` of that answer, echoed back so «а из них…» keeps its referent (≤ 5). */
+  context?: TurnFactContext[];
+}
+
+// --- M5.7: system facts of an AI-native answer (docs/AI_NATIVE_TOOLS.md) -------------------------------------------
+
+export type SystemFactSource =
+  | "skh_document_registry"
+  | "skh_knowledge_graph"
+  | "skh_template_registry"
+  | "skh_ai_proposals";
+
+/** One visible object of a structured observation. `app_path` is an in-app link when the app can open it. */
+export interface SystemFactItem {
+  id: string;
+  title: string;
+  kind: "document" | "template" | "relation" | "proposal";
+  status: string | null;
+  /** e.g. «guide · владелец не назначен · обновлён 2026-11-21», «references · body:12», «v2 · действующая». */
+  detail: string | null;
+  app_path: string | null;
+}
+
+/**
+ * An authoritative, server-computed observation of SKH state — the evidence of a system claim, the way a verified
+ * Citation is the evidence of a document claim. Render `value` / `items` from here, never from the answer text.
+ * `[F1]` markers in `AskResponse.answer` refer to `ref`.
+ */
+export interface SystemFact {
+  ref: string;
+  /** catalog_query | graph_inspect | templates_inspect | drafts_propose */
+  tool: string;
+  /** count | list | facets | get_metadata | links | neighbours | path | get | draft_from_prompt | … */
+  operation: string;
+  /** Russian label, e.g. «Документы в доступном каталоге SKH». */
+  label: string;
+  /** The number (count / total / version); null for a list without one. 0 is a real «no matches in this scope». */
+  value: number | null;
+  /** "documents" | "templates" | "relations" | "version" | "items" */
+  unit: string | null;
+  /** The filters really applied (e.g. {status: ["approved"], tags: ["aris"]}); {} = the whole visible catalog. */
+  effective_filters: Record<string, unknown>;
+  /** How the number is defined, e.g. a text match is NOT a system tag. */
+  definition: string | null;
+  access_scope: "visible_to_request_context";
+  source: SystemFactSource;
+  /** Index generation of the snapshot it was computed from (e.g. "g3"), or the template registry label. */
+  generation: string | null;
+  as_of: string;
+  /** Bounded; `truncated` when more exist (`value` is then the full total). */
+  items: SystemFactItem[];
+  truncated: boolean;
+  /** facets: {status: {approved: 73, …}, type: {…}, owner: {…}, tag: {…}}. */
+  breakdown: Record<string, Record<string, number>> | null;
+}
+
+/** ok · invalid (schema/limit/duplicate) · unknown_tool · not_found (unknown and hidden look the same) · denied ·
+ *  unavailable · timeout · error. Zero results are `ok` with value 0. */
+export type ToolOutcome =
+  | "ok"
+  | "invalid"
+  | "unknown_tool"
+  | "not_found"
+  | "denied"
+  | "unavailable"
+  | "timeout"
+  | "error";
+
+/** One executed (or refused) tool call of an answer, without payloads. */
+export interface ToolStepInfo {
+  /** T1, T2, … in call order. */
+  call_id: string;
+  round: number;
+  tool: string;
+  operation: string | null;
+  outcome: ToolOutcome;
+  duration_ms: number;
+  result_count: number | null;
+  /** The SystemFact this step produced (only for `ok`). */
+  fact_ref: string | null;
+  error_code: string | null;
+  /** Sanitized Russian text for a failed step («Реестр документов сейчас недоступен…»). */
+  message: string | null;
+}
+
+/** Minimal referent of an answer for a follow-up: filters + visible IDs (re-checked by the server every time). */
+export interface TurnFactContext {
+  tool: string;
+  operation: string;
+  filters: Record<string, unknown>;
+  /** ≤ 20 document IDs. */
+  document_ids: string[];
+  value: number | null;
 }
 
 /** A fragment selected in a document (UI v2). The server checks that `text` really is in that document/section. */
@@ -366,8 +459,16 @@ export interface AskResponse {
   external?: ExternalRetrievalSummary | null;
   /** UI v2: the skill used (null for a plain question). */
   skill?: AskSkillRef | null;
-  /** UI v2: the proposal a workflow skill created — show it as a card with a link. */
+  /** UI v2: the proposal a workflow skill created — show it as a card with a link. M5.7: also a drafts_propose step. */
   proposal?: AskProposalRef | null;
+  /** M5.7: authoritative structured observations the answer relies on (`[F1]` markers in `answer`). */
+  system_facts?: SystemFact[];
+  /** M5.7: the tool steps executed for this answer (what was checked and how it ended). */
+  tool_steps?: ToolStepInfo[];
+  /** M5.7: the text relies (partly) on the model's general knowledge — label it, it is not SKH evidence. */
+  general_knowledge?: boolean;
+  /** M5.7: send back as `history[i].context` of this turn so a follow-up keeps its referent. */
+  conversation_context?: TurnFactContext[];
 }
 
 // --- UI v2: assistant skills and conversation attachments (docs/ui-v2/specs/02_ASSISTANT.md §3–§5) ---
@@ -421,12 +522,31 @@ export interface AssistantAttachment {
 
 export type AskStreamStage = "retrieving" | "generating" | "validating";
 
-/** `generating` carries the number of retrieved passages and the provider; absent when nothing was found. */
+/** `generating` carries the number of retrieved passages and the provider; absent when nothing was found.
+ *  M5.7 tool loop: one `generating` per model round with `round` (1, 2, …); a new round starts a NEW preliminary
+ *  text (discard earlier deltas). */
 export interface AskStreamStatusEvent {
   type: "status";
   stage: AskStreamStage;
   passages?: number;
   provider?: AiMode;
+  round?: number;
+}
+
+/** M5.7: the backend is about to execute an allowlisted tool the model asked for. */
+export interface AskStreamToolCallEvent {
+  type: "tool_call";
+  call_id: string;
+  round: number;
+  tool: string;
+  operation: string | null;
+}
+
+/** M5.7: the outcome of that call (no payload). */
+export interface AskStreamToolResultEvent {
+  type: "tool_result";
+  call_id: string;
+  step: ToolStepInfo;
 }
 
 /** PRELIMINARY model text: NOT validated, may contain raw markers like [C1]. Only streaming providers send it. */
@@ -449,7 +569,13 @@ export interface AskStreamErrorEvent {
   status: number;
 }
 
-export type AskStreamEvent = AskStreamStatusEvent | AskStreamDeltaEvent | AskStreamFinalEvent | AskStreamErrorEvent;
+export type AskStreamEvent =
+  | AskStreamStatusEvent
+  | AskStreamDeltaEvent
+  | AskStreamFinalEvent
+  | AskStreamErrorEvent
+  | AskStreamToolCallEvent
+  | AskStreamToolResultEvent;
 
 /**
  * Where an integration points: `none` not configured · `local` built into this app (fixtures, demo) ·
