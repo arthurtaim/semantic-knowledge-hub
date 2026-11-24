@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SKH — документы, таблица</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#17663F}a:hover{color:#11512F}
+.app *{box-sizing:border-box}
+.app button,.app input{font-family:inherit}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid #D7DCD8;background:#FFFFFF;color:#1A1F1C;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.seg{height:26px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:#4C5550;font-size:12.5px;cursor:pointer}
+.seg.on{background:#FFFFFF;color:#1A1F1C;font-weight:500;box-shadow:0 1px 2px rgba(16,24,20,.08),0 0 0 1px rgba(16,24,20,.06)}
+.fb{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid #D7DCD8;background:#FFFFFF;font-size:12.5px;color:#2B322E;cursor:pointer}
+.fb.on{background:#E7F2EB;border-color:#CFE5D8;color:#14603A;font-weight:500}
+.tr{display:grid;grid-template-columns:minmax(300px,2.4fr) 130px 120px 170px 120px 128px 56px;align-items:center;gap:14px;height:38px;padding:0 20px;border-bottom:1px solid #F0F2EF;font-size:13.5px}
+.tr:hover{background:#F8FAF8}
+.th{height:36px;font-size:12px;color:#5E6862;font-weight:500;border-bottom:1px solid #E3E7E3;background:#FFFFFF}
+.sort{display:inline-flex;align-items:center;gap:4px;border:0;background:transparent;padding:0;font:inherit;color:inherit;cursor:pointer}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sys{display:inline-flex;align-items:center;height:22px;padding:0 7px;border-radius:6px;background:#F0F2EF;font-size:12px;color:#3A423D;margin-right:4px}
+input::placeholder{color:#7D8680}
+</style>
+</helmet>
+<div class="app" style="display: flex; flex-wrap: wrap; min-height: 900px; width: 100%; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 20px; color: #1A1F1C; background: #FFFFFF; -webkit-font-smoothing: antialiased">
+  <div style="flex: 0 0 248px; display: flex">
+    <dc-import name="Sidebar" active="docs" hint-size="248px,900px"></dc-import>
+  </div>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+    <header style="height: 52px; display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid #EBEEEA">
+      <h2 style="margin: 0; font-size: 14px; font-weight: 600">Документы</h2>
+      <div role="tablist" aria-label="Вид" style="display: inline-flex; gap: 2px; padding: 3px; border-radius: 8px; background: #F0F2EF; margin-left: 4px">
+        <button role="tab" aria-selected="false" class="seg">Обзор</button>
+        <button role="tab" aria-selected="false" class="seg">Список</button>
+        <button role="tab" aria-selected="true" class="seg on">Таблица</button>
+        <button role="tab" aria-selected="false" class="seg">Карта</button>
+      </div>
+      <span style="flex: 1"></span>
+      <label style="display: flex; align-items: center; gap: 8px; height: 32px; width: 260px; padding: 0 10px; border: 1px solid #C9D0CB; border-radius: 8px; color: #6B746E">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m20.5 20.5-4-4"></path></svg>
+        <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Фильтр таблицы</span>
+        <input placeholder="Название, ID, тег или система" style="border: 0; outline: none; flex: 1; font-size: 13px; background: transparent; color: #1A1F1C; min-width: 0">
+      </label>
+      <button class="btn" style="background: #1C7A4C; border-color: #1C7A4C; color: #FFFFFF">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Создать документ</button>
+    </header>
+
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 20px; border-bottom: 1px solid #EBEEEA">
+      <button class="fb">Раздел: все<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="fb">Состояние: все<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="fb">Владелец<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="fb">Система<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="fb on" aria-pressed="true">Только требующие внимания</button>
+      <span style="flex: 1"></span>
+      <span style="font-size: 12.5px; color: #6B746E">12 из 83</span>
+      <button class="fb" style="border-color: transparent">Группировка: нет</button>
+      <button class="fb" style="border-color: transparent">Колонки</button>
+    </div>
+
+    <div role="table" aria-label="Документы" style="overflow-x: auto">
+      <div role="row" class="tr th">
+        <span role="columnheader"><button class="sort">Название</button></span>
+        <span role="columnheader"><button class="sort">Раздел</button></span>
+        <span role="columnheader"><button class="sort">Состояние</button></span>
+        <span role="columnheader"><button class="sort">Владелец</button></span>
+        <span role="columnheader">Системы</span>
+        <span role="columnheader" aria-sort="ascending"><button class="sort" style="color: #1A1F1C">Проверен
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button></span>
+        <span role="columnheader" style="text-align: right">Связи</span>
+      </div>
+      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="12">
+        <div role="row" class="tr">
+          <span role="cell" class="ell" style="display: flex; align-items: baseline; gap: 10px; min-width: 0">
+            <a href="#" class="ell" style="color: {{ r.titleColor }}; text-decoration: {{ r.strike }}; font-weight: 500">{{ r.title }}</a>
+            <span style="font-size: 12px; color: #6B746E; white-space: nowrap">{{ r.id }}</span>
+          </span>
+          <span role="cell" class="ell" style="color: #3A423D">{{ r.section }}</span>
+          <span role="cell" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: {{ r.stColor }}">
+            <sc-if value="{{ r.isOk }}" hint-placeholder-val="{{ true }}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E8B57" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.3 1.7 2.9-.1.9 2.7 2.3 1.7-.8 2.8.8 2.8-2.3 1.7-.9 2.7-2.9-.1L12 21.2l-2.3-1.7-2.9.1-.9-2.7-2.3-1.7.8-2.8-.8-2.8 2.3-1.7.9-2.7 2.9.1Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+            </sc-if>
+            <sc-if value="{{ r.hasDot }}" hint-placeholder-val="{{ false }}">
+              <span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: {{ r.dot }}; flex: none"></span>
+            </sc-if>
+            {{ r.st }}
+          </span>
+          <span role="cell" class="ell" style="color: {{ r.ownerColor }}">{{ r.owner }}</span>
+          <span role="cell" class="ell">{{ r.systems }}</span>
+          <span role="cell" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: {{ r.dateColor }}; font-variant-numeric: tabular-nums">
+            <sc-if value="{{ r.stale }}" hint-placeholder-val="{{ false }}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>
+            </sc-if>
+            {{ r.date }}
+          </span>
+          <span role="cell" style="text-align: right; color: #5E6862; font-variant-numeric: tabular-nums">{{ r.links }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const S = {
+      ok: { st: 'Утверждён', stColor: '#1A1F1C', isOk: true, hasDot: false, dot: '', titleColor: '#1A1F1C', strike: 'none' },
+      review: { st: 'На ревью', stColor: '#4E3A9E', isOk: false, hasDot: true, dot: '#6A50C2', titleColor: '#1A1F1C', strike: 'none' },
+      draft: { st: 'Черновик', stColor: '#8A5300', isOk: false, hasDot: true, dot: '#C27A0E', titleColor: '#1A1F1C', strike: 'none' },
+      old: { st: 'Устарел', stColor: '#5F665F', isOk: false, hasDot: true, dot: '#8A918C', titleColor: '#5F665F', strike: 'line-through' }
+    };
+    const r = (title, id, section, s, owner, systems, date, stale, links) => ({
+      title, id, section, owner: owner || 'не назначен', ownerColor: owner ? '#3A423D' : '#8E2A20',
+      systems, date, stale, dateColor: stale ? '#8A5300' : '#5E6862', links, ...S[s]
+    });
+    return {
+      rows: [
+        r('Устаревший порядок согласования правок по почте', 'SEM-PROC-OLD-001', 'Процессы', 'old', '', '', '1 июня 2024', true, '2'),
+        r('Стандарт оформления документов базы знаний', 'SEM-STD-001', 'Стандарты', 'ok', 'demo-team', '', '15 янв. 2025', true, '6'),
+        r('Ревизии по дате в имени файла', 'DEMO-GOV-013', 'Стандарты', 'old', 'demo-governance-team', '', '20 нояб. 2025', true, '3'),
+        r('Ночная полная выгрузка ARIS', 'DEMO-INT-018', 'Интеграции', 'old', 'demo-integration-team', 'ARIS, Catalog', '10 дек. 2025', true, '4'),
+        r('CRM: карточки и идентификаторы', 'DEMO-SRC-004', 'Источники', 'ok', 'demo-source-owners', 'CRM', '2 марта 2026', true, '5'),
+        r('Archive Store: исторические снимки', 'DEMO-SRC-010', 'Источники', 'review', '', 'Archive Store', '12 нояб. 2026', false, '3'),
+        r('Правила разрешения неоднозначных сущностей', 'DEMO-SEM-012', 'Домен', 'review', 'demo-semantic-team', '', '10 нояб. 2026', false, '4'),
+        r('Тестовый процесс согласования', 'DEMO-GOV-012', 'Стандарты', 'review', 'demo-governance-team', '', '12 нояб. 2026', false, '2'),
+        r('Шаблон описания предметной области', 'SEM-DOM-001', 'Домен', 'review', 'demo-team', '', 'не проверялся', true, '1'),
+        r('Расписание обновления метаданных v2', 'DEMO-INT-017', 'Интеграции', 'draft', 'demo-integration-team', 'ARIS, Catalog', 'не требуется', false, '2'),
+        r('ARIS integration — questions for discovery', 'SEM-INT-ARIS-001', 'Интеграции', 'draft', 'demo-team', 'ARIS', 'не требуется', false, '3'),
+        r('External Registry: внешний справочник', 'DEMO-SRC-009', 'Источники', 'draft', 'demo-source-owners', 'External Registry', 'не требуется', false, '2')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
