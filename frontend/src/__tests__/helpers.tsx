@@ -152,3 +152,18 @@ export function renderRoutes(
     </SessionContext.Provider>,
   );
 }
+
+/** An in-memory localStorage (jsdom on this Node has none); stub it with `vi.stubGlobal("localStorage", …)`. */
+export function memoryStorage(): Storage {
+  const data = new Map<string, string>();
+  return {
+    get length() {
+      return data.size;
+    },
+    clear: () => data.clear(),
+    getItem: (key) => data.get(key) ?? null,
+    key: (index) => Array.from(data.keys())[index] ?? null,
+    removeItem: (key) => void data.delete(key),
+    setItem: (key, value) => void data.set(key, String(value)),
+  };
+}
