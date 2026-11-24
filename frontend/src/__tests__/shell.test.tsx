@@ -46,7 +46,8 @@ describe("Application shell", () => {
     expect(screen.getByRole("button", { name: "Поиск" })).toHaveAttribute("aria-keyshortcuts", "Meta+K Control+K /");
     expect(await screen.findByText(/Confluence не подключён/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent("Демо-данные.");
-    expect(await screen.findByRole("heading", { name: "Разделы" })).toBeInTheDocument();
+    // UI v2 phase C: the start page is the assistant.
+    expect(await screen.findByRole("heading", { level: 1, name: "Что нужно найти или подготовить?" })).toBeInTheDocument();
   });
 
   it("is keyboard navigable from the skip link", async () => {

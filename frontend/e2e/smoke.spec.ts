@@ -14,12 +14,14 @@ test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ p
   const problems = watch(page);
   await page.goto("/");
   await expect(page.getByRole("note")).toContainText("Демо-данные.");
-  await expect(page.getByRole("heading", { name: "Разделы" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Что нужно найти или подготовить?", level: 1 })).toBeVisible();
 
-  // The hero is «Спросить или найти»: switch it to search, then search.
-  await page.getByRole("button", { name: "Найти в документах" }).click();
-  await page.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ARIS");
-  await page.getByRole("button", { name: "Найти", exact: true }).click();
+  // UI v2: the home field is the assistant; search is the sidebar's «Поиск» (the ⌘K palette).
+  await page.getByRole("button", { name: "Поиск" }).click();
+  const palette = page.getByRole("dialog", { name: "Спросить или найти" });
+  await palette.getByRole("button", { name: "Найти в документах" }).click();
+  await palette.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ARIS");
+  await palette.getByRole("button", { name: "Найти", exact: true }).click();
   const result = page.getByRole("link", { name: "ARIS integration — questions for discovery" });
   await expect(result).toBeVisible();
   // 83-document demo base: other ARIS documents may rank first, so check the row of this document.

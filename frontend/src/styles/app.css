@@ -2711,216 +2711,168 @@ label {
   padding: var(--space-5);
 }
 
-.home__intro {
-  padding: var(--space-4) 0 var(--space-6);
-  margin-bottom: var(--space-5);
-  border-bottom: 1px solid var(--line);
-}
+/* ── Assistant: home (pages/HomePage.tsx; docs/ui-v2/specs/02_ASSISTANT.md §1, design-01/02) ── */
 
-.home__intro h1 {
-  font-size: var(--fs-title);
-  line-height: var(--lh-title);
-  max-width: 28ch;
-}
-
-.home__actions {
+.assistant-home {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-5);
-  align-items: center;
-  margin-top: var(--space-4);
-  max-width: 46rem;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 47.5rem; /* 760: the field and the lists */
+  margin: 0 auto;
+  padding-top: clamp(var(--space-4), 8vh, 4.5rem);
 }
 
-/* Tertiary links under the hero line up with the field's left edge. */
-.home__actions .button--quiet {
-  padding-inline: 0;
-}
-
-.quick-find--hero {
-  max-width: 46rem;
-  margin-top: var(--space-5);
-}
-
-.quick-find__scope {
-  margin-top: var(--space-1);
-}
-
-.quick-find__scope legend {
-  font-size: var(--fs-small);
-  color: var(--text-secondary);
-  margin-bottom: 0;
-  align-self: center;
-}
-
-.quick-find__scope .segmented__option span {
-  padding: 0 var(--space-3);
-  min-height: 2rem;
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--fs-small);
-}
-
-/* The user's recent questions under the hero (this browser only). */
-.recent-questions {
-  max-width: 46rem;
-  margin-top: var(--space-5);
-}
-
-.recent-questions h2 {
-  font-size: var(--fs-ui);
+.assistant-home__intro h1 {
   margin-bottom: var(--space-2);
 }
 
-.recent-questions ul {
-  list-style: none;
+.assistant-home__lead {
+  max-width: 62ch;
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.375rem;
+  color: var(--text-secondary);
+}
+
+.assistant-home__skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.assistant-home__skill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.125rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.assistant-home__skill .icon {
+  color: var(--accent-text);
+}
+
+.assistant-home__skill:hover {
+  background: var(--bg-subtle);
+  border-color: var(--line-field);
+}
+
+.assistant-home__skill[aria-pressed="true"] {
+  background: var(--accent-wash);
+  border-color: var(--accent-wash-border);
+  color: var(--accent-text);
+}
+
+/* Two borderless lists side by side (one column on narrow screens). */
+.assistant-home__lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18.75rem, 100%), 1fr));
+  gap: var(--space-5) var(--space-6);
+  padding-top: var(--space-2);
+}
+
+.assistant-home__list h2 {
+  margin: 0 0 6px var(--space-3);
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--text-secondary);
+}
+
+.assistant-home__list ul {
+  display: grid;
+  gap: 2px;
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--line);
+  list-style: none;
 }
 
-.recent-questions li {
-  border-bottom: 1px solid var(--line);
-}
-
-.recent-questions__link {
-  display: block;
-  padding: var(--space-2) 0;
+.assistant-home__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 2.75rem;
+  padding: 10px var(--space-3);
+  border-radius: 10px;
   color: var(--text);
   text-decoration: none;
-  min-height: 1.5rem;
 }
 
-.recent-questions__link:hover {
+a.assistant-home__row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.assistant-home__row--more {
   color: var(--accent-text);
-  text-decoration: underline;
-}
-
-.recent-questions__note {
-  margin: var(--space-2) 0 0;
   font-size: var(--fs-small);
 }
 
-.home__grid .feedback {
-  padding: var(--space-4);
-}
-
-/* Two unequal columns instead of a wall of identical boxes: what changed on the left, reference on the right. */
-.home__grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 21rem;
-  gap: var(--space-7);
-  align-items: start;
-}
-
-.home__main,
-.home__side {
+.assistant-home__row-text {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: 2px;
   min-width: 0;
 }
 
-.home-section > h2 {
-  font-size: var(--fs-ui);
-  font-weight: 600;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 0;
+.assistant-home__row-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
-.home__side .home-section > h2 {
-  font-size: var(--fs-ui);
+.assistant-home__row-meta,
+.assistant-home__note {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
 }
 
-.home-section .feedback {
-  margin-top: var(--space-3);
-}
-
-.index-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.index-list li {
-  break-inside: avoid;
-}
-
-.index-list__link {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--text);
-  text-decoration: none;
-}
-
-.index-list__link:hover span:first-child {
-  color: var(--accent-text);
-  text-decoration: underline;
-}
-
-.index-list__count {
-  font-variant-numeric: tabular-nums;
+.assistant-home__row-time {
+  flex: none;
+  font-size: var(--fs-caption);
   color: var(--text-tertiary);
 }
 
-.doc-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.assistant-home__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
 }
 
-.doc-row {
-  padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+.assistant-home__dot--review {
+  background: var(--status-review);
 }
 
-.home__side .doc-row:last-child,
-.home__side .integration-mini li:last-child {
-  border-bottom: 0;
+.assistant-home__dot--owner {
+  background: var(--status-draft);
 }
 
-.doc-row__title {
-  font-weight: 500;
-  font-size: var(--fs-ui);
-  color: var(--text);
-  text-decoration: none;
+.assistant-home__note {
+  margin: var(--space-1) 0 0 var(--space-3);
 }
 
-.doc-row__title:hover {
-  color: var(--accent-text);
-  text-decoration: underline;
+.assistant-home__note .button {
+  min-height: 0;
+  padding: 0 var(--space-1);
+  font-size: inherit;
 }
 
-.doc-row__meta {
+.assistant-home__links {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
-  align-items: center;
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
 }
 
-.integration-mini {
-  list-style: none;
-  margin: 0 0 var(--space-2);
-  padding: 0;
-}
-
-.integration-mini li {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) 0;
-  border-bottom: 1px solid var(--line);
-  font-size: var(--fs-small);
-}
+/* ── end Assistant: home ── */
 
 /* ---------- explorer ---------- */
 
@@ -5155,14 +5107,6 @@ h1 a:hover {
   }
 }
 
-@media (max-width: 520px) {
-  .composer__scope legend {
-    float: none;
-    width: 100%;
-    margin-bottom: var(--space-1);
-  }
-}
-
 @media (max-width: 700px) {
   .authoring__grid {
     grid-template-columns: minmax(0, 1fr);
@@ -6291,13 +6235,6 @@ h1 a:hover {
   }
 }
 
-
-@media (max-width: 1180px) {
-  .home__grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-6);
-  }
-}
 
 @media (max-width: 860px) {
   :root {

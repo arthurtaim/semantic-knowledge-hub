@@ -139,8 +139,11 @@ export interface ComposerController {
   /** Backspace in an empty field: removes the last chip (selection, documents, files, skill). */
   removeLast: () => boolean;
   message: () => ComposerMessage;
-  /** «Новый диалог»: an empty field, a new dialog id; the files of the old dialog are deleted. */
-  reset: () => void;
+  /**
+   * «Новый диалог»: an empty field and a new dialog id; the files of the old dialog are deleted — unless they were
+   * handed over with the message (`{ handedOver: true }`: the home field after sending to the dialog).
+   */
+  reset: (options?: { handedOver?: boolean }) => void;
   focus: () => void;
 }
 
@@ -364,8 +367,13 @@ export function useComposer({ persistKey, initial, defaults }: UseComposerOption
           includeDeprecated: current.includeDeprecated,
         };
       },
-      reset: () => {
-        discardAll();
+      reset: (options) => {
+        if (options?.handedOver) {
+          for (const controller of uploads.current.values()) controller.abort();
+          uploads.current.clear();
+        } else {
+          discardAll();
+        }
         const keep = draftRef.current;
         const next: ComposerDraft = {
           ...EMPTY_DRAFT,

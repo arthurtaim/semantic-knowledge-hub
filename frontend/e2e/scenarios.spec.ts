@@ -14,16 +14,19 @@ function watch(page: Page): string[] {
   return problems;
 }
 
-test("E2E-01 home: ask-or-search field, sections, recent documents, proposals, sources", async ({ page }) => {
+test("E2E-01 home: the assistant field, quick skills and what waits for a decision", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
   await expect(page.getByRole("note")).toContainText("Демо-данные.");
-  // AI-first entry: the hero is «Спросить или найти» with the team scope by default.
-  await expect(page.getByRole("combobox", { name: "Спросить или найти" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Команда" })).toBeChecked();
-  for (const heading of ["Разделы", "Недавно обновлённые", "Предложения, требующие действия", "Источники и интеграции"]) {
-    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  // UI v2 phase C: the start page is the assistant; the team scope is the default.
+  await expect(page.getByRole("heading", { name: "Что нужно найти или подготовить?", level: 1 })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Вопрос" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Где искать: Команда" })).toBeVisible();
+  const quick = page.getByRole("group", { name: "Быстрые навыки" });
+  for (const name of ["Черновик документа", "Проверить актуальность", "Найти связи", "Сравнить с файлом"]) {
+    await expect(quick.getByRole("button", { name })).toBeVisible();
   }
+  await expect(page.getByRole("heading", { name: "Ждёт вашего решения" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
   expect(problems).toEqual([]);
@@ -32,9 +35,11 @@ test("E2E-01 home: ask-or-search field, sections, recent documents, proposals, s
 test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Найти в документах" }).click();
-  await page.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ревизия");
-  await page.getByRole("button", { name: "Найти", exact: true }).click();
+  await page.getByRole("button", { name: "Поиск" }).click();
+  const palette = page.getByRole("dialog", { name: "Спросить или найти" });
+  await palette.getByRole("button", { name: "Найти в документах" }).click();
+  await palette.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ревизия");
+  await palette.getByRole("button", { name: "Найти", exact: true }).click();
   await expect(page).toHaveURL(/\/documents\?query=/);
   await expect(page.locator(".result").first()).toBeVisible();
 
