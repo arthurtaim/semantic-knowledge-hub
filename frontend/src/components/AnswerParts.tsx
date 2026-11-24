@@ -1,13 +1,15 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState } from "../api/types";
+import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState, SystemFact } from "../api/types";
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { CONFIDENCE_LABEL, shortRevision } from "../lib/labels";
+import { factLabels, factPlainText } from "../lib/systemFacts";
 import { useAsync } from "../lib/useAsync";
 import { CardExcerpt, excerptText } from "./CitationExcerpt";
 import { Highlighted } from "./Highlighted";
 import { StatusStamp } from "./StatusStamp";
+import { FactMarker, useFitInWindow } from "./SystemFacts";
 import { buttonClass } from "./ui/Button";
 import { Icon, type IconName } from "./ui/Icon";
 import { StatusMark } from "./ui/StatusMark";
@@ -72,28 +74,12 @@ interface CitationMarkerProps {
  */
 export function CitationMarker({ citation, label, turnNo, question }: CitationMarkerProps) {
   const [open, setOpen] = useState(false);
-  const [shift, setShift] = useState(0);
   const cardId = useId();
   const cardRef = useRef<HTMLSpanElement>(null);
   const group = citationGroup(citation);
   const href = citationHref(citation, turnNo);
-
   // Keep the card inside the window (a marker near the right edge on a phone).
-  useLayoutEffect(() => {
-    if (!open) {
-      setShift(0);
-      return;
-    }
-    const card = cardRef.current;
-    if (!card) return;
-    const rect = card.getBoundingClientRect();
-    const width = document.documentElement.clientWidth;
-    const margin = 12;
-    let dx = 0;
-    if (rect.right > width - margin) dx = width - margin - rect.right;
-    if (rect.left + dx < margin) dx = margin - rect.left;
-    setShift(dx);
-  }, [open]);
+  const shift = useFitInWindow(open, cardRef);
 
   const meta: string[] = [];
   if (citation.section) meta.push(`Раздел «${citation.section}»`);
@@ -148,29 +134,62 @@ export function CitationMarker({ citation, label, turnNo, question }: CitationMa
   );
 }
 
+/** M5.7: the system facts of an answer — `[F1]` markers in its text become «С1» markers leading to their cards. */
+export interface FactRefs {
+  facts: SystemFact[];
+  /** «F1» → «С1» (lib/systemFacts.ts `factLabels`). */
+  labels: Map<string, string>;
+  /** The answer shows a proposal card: a proposal fact's marker leads there. */
+  hasProposal: boolean;
+}
+
+export const NO_FACTS: FactRefs = { facts: [], labels: new Map(), hasProposal: false };
+
+export function factRefsOf(answer: AskResponse): FactRefs {
+  const facts = answer.system_facts ?? [];
+  return { facts, labels: factLabels(facts), hasProposal: Boolean(answer.proposal) };
+}
+
 interface TextProps {
   citations: Citation[];
   labels: Map<number, string>;
   turnNo: number;
   question: string;
+  facts?: FactRefs;
 }
 
-/** A line of answer text with its «[n]» markers turned into citation markers (only for verified citations). */
-function MarkedLine({ line, citations, labels, turnNo, question }: TextProps & { line: string }) {
+/**
+ * A line of answer text with its «[n]» markers turned into citation markers (only for verified citations) and its
+ * «[F1]» markers into markers of system data (only for facts the server produced).
+ */
+function MarkedLine({ line, citations, labels, turnNo, question, facts = NO_FACTS }: TextProps & { line: string }) {
   const byRef = new Map(citations.map((c) => [c.ref, c]));
+  const factByRef = new Map(facts.facts.map((f) => [f.ref, f]));
   const parts: ReactNode[] = [];
   let last = 0;
-  for (const match of line.matchAll(/\s?\[(\d{1,3})\]/g)) {
-    const citation = byRef.get(Number(match[1]));
+  for (const match of line.matchAll(/\s?\[(\d{1,3}|F\d{1,3})\]/g)) {
+    const ref = match[1] ?? "";
     const index = match.index ?? 0;
     parts.push(line.slice(last, index));
-    parts.push(
-      citation ? (
-        <CitationMarker key={index} citation={citation} label={labels.get(citation.ref) ?? String(citation.ref)} turnNo={turnNo} question={question} />
-      ) : (
-        match[0]
-      ),
-    );
+    if (ref.startsWith("F")) {
+      const fact = factByRef.get(ref);
+      parts.push(
+        fact ? (
+          <FactMarker key={index} fact={fact} label={facts.labels.get(ref) ?? ref} turnNo={turnNo} hasProposal={facts.hasProposal} />
+        ) : (
+          match[0]
+        ),
+      );
+    } else {
+      const citation = byRef.get(Number(ref));
+      parts.push(
+        citation ? (
+          <CitationMarker key={index} citation={citation} label={labels.get(citation.ref) ?? String(citation.ref)} turnNo={turnNo} question={question} />
+        ) : (
+          match[0]
+        ),
+      );
+    }
     last = index + match[0].length;
   }
   parts.push(line.slice(last));
@@ -276,7 +295,12 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
 
 /** Plain text of the answer with its sources, for «Копировать с источниками». */
 export function answerWithSources(answer: AskResponse, labels: Map<number, string>, demo: boolean): string {
-  const relabel = (line: string) => line.replace(/\[(\d{1,3})\]/g, (whole, ref: string) => (labels.has(Number(ref)) ? `[${labels.get(Number(ref))}]` : whole));
+  const facts = answer.system_facts ?? [];
+  const factLabel = factLabels(facts);
+  const relabel = (line: string) =>
+    line
+      .replace(/\[(\d{1,3})\]/g, (whole, ref: string) => (labels.has(Number(ref)) ? `[${labels.get(Number(ref))}]` : whole))
+      .replace(/\[(F\d{1,3})\]/g, (whole, ref: string) => (factLabel.has(ref) ? `[${factLabel.get(ref)}]` : whole));
   const body = demo ? demoRemainder(answer).map(relabel).join("\n") : relabel(splitServerNotes(answer).text);
   const sources = answer.citations.map((c) => {
     const label = labels.get(c.ref) ?? String(c.ref);
@@ -289,7 +313,14 @@ export function answerWithSources(answer: AskResponse, labels: Map<number, strin
           : `${c.document_id}${c.section ? `, раздел «${c.section}»` : ""}, ред. ${shortRevision(c.revision)}`;
     return `[${label}] ${citationTitle(c)} — ${where}\n«${excerptText(c)}»`;
   });
-  return [body.trim(), sources.length > 0 ? `Источники:\n${sources.join("\n")}` : ""].filter(Boolean).join("\n\n");
+  const system = facts.map((fact) => factPlainText(fact, factLabel.get(fact.ref) ?? fact.ref));
+  return [
+    body.trim(),
+    system.length > 0 ? `Данные системы SKH:\n${system.join("\n")}` : "",
+    sources.length > 0 ? `Источники:\n${sources.join("\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 interface AnswerActionsProps {
@@ -342,7 +373,7 @@ export function AnswerActions({ answer, question, labels, demo, hasProposal, onR
         </Link>
       ) : null}
       {primary !== "propose" ? propose : null}
-      {answer.citations.length > 0 ? (
+      {answer.citations.length > 0 || (answer.system_facts ?? []).length > 0 ? (
         <button type="button" className={buttonClass("secondary")} onClick={() => void copy()}>
           Копировать с источниками
         </button>

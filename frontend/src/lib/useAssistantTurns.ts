@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError, api, isCancelled } from "../api/client";
 import type { AskRequest, AskResponse, AskStreamEvent, ConversationTurn } from "../api/types";
 import type { Turn, TurnDisplay } from "../components/AssistantTurn";
+import { toolActivity } from "./systemFacts";
 import type { ComposerController, ComposerMessage } from "./useComposer";
 
 /*
@@ -13,6 +14,8 @@ import type { ComposerController, ComposerMessage } from "./useComposer";
 /** Limits of POST /api/assistant/ask(/stream) `history` (backend AskRequest). */
 export const MAX_HISTORY_TURNS = 6;
 const MAX_HISTORY_ANSWER_CHARS = 4000;
+/** `history[i].context` (M5.7): at most 5 referents per turn. */
+const MAX_HISTORY_CONTEXT = 5;
 
 /** Cuts by code points (as the backend counts), never splitting a surrogate pair. */
 function truncate(text: string, max: number): string {
@@ -20,15 +23,23 @@ function truncate(text: string, max: number): string {
   return Array.from(text).slice(0, max).join("");
 }
 
-/** Context for a follow-up: the last completed turns with a question and a validated answer, oldest first. */
+/**
+ * Context for a follow-up: the last completed turns with a question and a validated answer, oldest first. M5.7: a
+ * turn whose answer relied on system facts also sends their referent back (`conversation_context`: the filters and
+ * visible IDs), so «А сколько из них утверждено?» keeps «из них». The server re-checks every ID and every call.
+ */
 export function historyFrom(turns: Turn[]): ConversationTurn[] {
   return turns
     .filter((turn) => turn.response !== null && turn.request.question.trim().length > 0)
     .slice(-MAX_HISTORY_TURNS)
-    .map((turn) => ({
-      question: turn.request.question,
-      answer: truncate(turn.response?.answer ?? "", MAX_HISTORY_ANSWER_CHARS),
-    }));
+    .map((turn) => {
+      const context = (turn.response?.conversation_context ?? []).slice(0, MAX_HISTORY_CONTEXT);
+      return {
+        question: turn.request.question,
+        answer: truncate(turn.response?.answer ?? "", MAX_HISTORY_ANSWER_CHARS),
+        ...(context.length > 0 ? { context } : {}),
+      };
+    });
 }
 
 export function toApiError(err: unknown): ApiError {
@@ -91,14 +102,23 @@ export function useAssistantTurns({ composer, initial, onStart, onAnswer, onErro
 
   function onStreamEvent(id: number, event: AskStreamEvent) {
     if (event.type === "status") {
-      patchTurn(
-        id,
+      patchTurn(id, (turn) =>
         event.stage === "generating"
-          ? { phase: "generating", passages: event.passages ?? null, provider: event.provider ?? null }
-          : { phase: event.stage },
+          ? {
+              phase: "generating",
+              passages: event.passages ?? null,
+              provider: event.provider ?? null,
+              activity: null,
+              // M5.7: every model round after the first starts a NEW preliminary text — never glue rounds together.
+              preliminary: (event.round ?? 1) > 1 ? "" : turn.preliminary,
+            }
+          : { phase: event.stage, activity: null },
       );
     } else if (event.type === "delta") {
       patchTurn(id, (turn) => ({ preliminary: turn.preliminary + event.text }));
+    } else if (event.type === "tool_call") {
+      // One short line of what is being checked («Проверяю каталог…»); no payloads, no debug view.
+      patchTurn(id, { activity: toolActivity(event.tool) });
     }
   }
 
@@ -112,7 +132,7 @@ export function useAssistantTurns({ composer, initial, onStart, onAnswer, onErro
     setPending(true);
     setTurns((list) => [
       ...list.filter((turn) => turn.phase === "done"),
-      { id, request, display, phase: "retrieving", passages: null, provider: null, preliminary: "", response: null, error: null },
+      { id, request, display, phase: "retrieving", passages: null, provider: null, preliminary: "", activity: null, response: null, error: null },
     ]);
     try {
       const response = await api.askStream(request, {
@@ -120,7 +140,7 @@ export function useAssistantTurns({ composer, initial, onStart, onAnswer, onErro
         onEvent: (event) => onStreamEvent(id, event),
       });
       // The validated answer replaces the preliminary text.
-      patchTurn(id, { phase: "done", response, preliminary: "" });
+      patchTurn(id, { phase: "done", response, preliminary: "", activity: null });
       onAnswer?.(request, display, response);
       // Clear the field only if it still holds this question (the next one may already be typed there).
       if (request.question && composer.message().question === request.question) composer.setText("");
