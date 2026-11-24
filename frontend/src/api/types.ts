@@ -733,6 +733,8 @@ export interface SessionResponse {
     corporate_search: IntegrationState;
     gitlab_proposals: boolean;
     confluence_publish: boolean;
+    /** M6 Work Management mode (details: GET /api/work/capabilities). Optional for older backends. */
+    work_management?: WorkAccessMode;
   };
 }
 
@@ -1826,4 +1828,436 @@ export interface AiProposalRequest {
   title?: string;
   template_id?: string;
   goal?: string;
+}
+
+// --- M6: native Work Management (docs/WORK_MANAGEMENT.md, docs/API_CONTRACTS.md «v0.7») ---------------------------
+// Dates are project-local `YYYY-MM-DD`; a scheduled task occupies [start_date, end_exclusive). Show `last_day`
+// (the last occupied working day), never `end_exclusive`, as «по …». A milestone is a point: start == end.
+
+export type WorkAccessMode = "local_operator" | "read_only" | "membership" | "disabled";
+export type TaskStatus = "todo" | "in_progress" | "review" | "done";
+export type TaskPriority = "low" | "medium" | "high" | "critical";
+export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
+export type ProjectRole = "admin" | "member" | "viewer";
+export type ScheduleMode = "only_this_task" | "shift_successors" | "resolve_violations";
+export type TaskSort = "key" | "title" | "status" | "priority" | "start_date" | "due_date" | "updated_at" | "sort_order";
+
+export interface WorkCalendar {
+  id: string; // "mon_fri_v1"
+  kind: "mon_fri";
+  workdays: number[]; // ISO weekday numbers, 1 = Monday
+  holidays: string[]; // P0: always empty
+  timezone: string;
+  interval: "[start_date, end_exclusive)";
+}
+
+export interface WorkCapabilities {
+  enabled: boolean;
+  mode: WorkAccessMode;
+  /** e.g. «Локальная демонстрация — один оператор» — show it; never present the demo as a team. */
+  label: string;
+  can_write: boolean;
+  can_view_audit: boolean;
+  read_only_reason: string | null;
+  /** Always false until a real identity provider + ProjectMember RBAC are integrated. */
+  team_ready: boolean;
+  identity: { user_id: string; display_name: string; kind: "local_operator" | "member" | "anonymous" };
+  calendar: WorkCalendar;
+  statuses: TaskStatus[];
+  priorities: TaskPriority[];
+  project_statuses: ProjectStatus[];
+  schedule_modes: ScheduleMode[];
+  link_relations: string[];
+  limits: {
+    max_depth: number;
+    title_max: number;
+    description_max: number;
+    page_max: number;
+    preview_changes_max: number;
+    preview_dependencies_max: number;
+    max_tasks_per_project: number;
+    preview_ttl_seconds: number;
+  };
+  /** Feature flags the later stages switch on (document links, AI proposals); CPM stays off (no fake path). */
+  features: { critical_path: boolean; comments: boolean; document_links: boolean; ai_proposals: boolean; lag: boolean };
+}
+
+export interface AssigneeRef {
+  id: string;
+  display_name: string;
+  /** fixture = a synthetic demo role, NOT an account; member = a project member of a real identity provider. */
+  kind: "operator" | "fixture" | "member" | "unknown";
+}
+
+export interface MilestoneRef {
+  task_id: string;
+  key: string;
+  title: string;
+  date: string;
+}
+
+export interface ProjectStats {
+  total: number;
+  by_status: Record<TaskStatus, number>;
+  open: number;
+  blocked: number;
+  overdue: number;
+  milestones: number;
+  unscheduled: number;
+  next_milestone: MilestoneRef | null;
+}
+
+export interface WorkProject {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  status: ProjectStatus;
+  timezone: string;
+  calendar: string;
+  start_date: string | null;
+  target_date: string | null;
+  is_demo: boolean;
+  /** Row version for PATCH (`expected_version`). */
+  version: number;
+  /** Monotonic data revision of the project's plan: every task/dependency/schedule change increments it. */
+  plan_revision: number;
+  created_by: string;
+  created_at: string;
+  updated_by: string;
+  updated_at: string;
+  archived_at: string | null;
+  stats: ProjectStats | null;
+  /** local_operator | read_only | admin | member | viewer | none */
+  my_role: string;
+}
+
+export interface WorkProjectList {
+  items: WorkProject[];
+  total: number;
+}
+
+export interface ProjectCreate {
+  key: string; // ^[A-Z][A-Z0-9]{1,9}$, immutable
+  title: string;
+  description?: string;
+  status?: ProjectStatus;
+  timezone?: string; // IANA; default from the server
+  start_date?: string | null;
+  target_date?: string | null;
+  client_request_id?: string; // idempotency, 8–80 chars [A-Za-z0-9._:-]
+}
+
+export interface ProjectUpdate {
+  expected_version: number;
+  title?: string;
+  description?: string;
+  status?: ProjectStatus;
+  timezone?: string;
+  start_date?: string | null;
+  target_date?: string | null;
+}
+
+export interface ProjectMembers {
+  project_id: string;
+  mode: string;
+  members: { user_id: string; display_name: string; role: ProjectRole; active: boolean }[];
+  note: string;
+}
+
+export interface WorkTask {
+  id: string;
+  project_id: string;
+  key: string; // e.g. "ARIS-12" — also accepted in every /api/tasks/{task_id} path
+  number: number;
+  parent_task_id: string | null;
+  depth: number; // 1..4
+  title: string;
+  description: string; // Markdown (render with the existing sanitizing renderer)
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee_id: string | null;
+  assignee: AssigneeRef | null;
+  reporter_id: string | null;
+  estimate_workdays: number | null;
+  start_date: string | null;
+  end_exclusive: string | null;
+  /** Last occupied working day (inclusive) — what the UI shows; null for milestones and unscheduled tasks. */
+  last_day: string | null;
+  duration_workdays: number | null;
+  /** Inclusive deadline, independent of the planned interval. */
+  due_date: string | null;
+  is_milestone: boolean;
+  date_locked: boolean;
+  scheduled: boolean;
+  sort_order: number;
+  is_demo: boolean;
+  version: number;
+  created_by: string;
+  created_at: string;
+  updated_by: string;
+  updated_at: string;
+  archived_at: string | null;
+  /** Unfinished FS predecessors (computed; there is no «blocked» status). */
+  blocked_by: string[];
+  is_blocked: boolean;
+  overdue: boolean;
+  late: boolean;
+  child_count: number;
+  link_count: number;
+}
+
+export interface WorkTaskPage {
+  project_id: string;
+  plan_revision: number;
+  items: WorkTask[];
+  total: number;
+  limit: number;
+  offset: number;
+  today: string;
+}
+
+export interface WorkTaskQuery {
+  status?: TaskStatus[];
+  priority?: TaskPriority[];
+  /** an assignee id or "none" */
+  assignee?: string;
+  /** a task id or "root" */
+  parent?: string;
+  q?: string;
+  milestone?: boolean;
+  scheduled?: boolean;
+  overdue?: boolean;
+  blocked?: boolean;
+  include_archived?: boolean;
+  sort?: TaskSort;
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+/** Schedule input: both dates, or start_date + duration_workdays (0 for a milestone), or nothing (unscheduled). */
+export interface TaskCreate {
+  title: string;
+  description?: string;
+  parent_task_id?: string | null;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  assignee_id?: string | null;
+  estimate_workdays?: number | null;
+  start_date?: string | null;
+  end_exclusive?: string | null;
+  duration_workdays?: number | null;
+  due_date?: string | null;
+  is_milestone?: boolean;
+  date_locked?: boolean;
+  sort_order?: number;
+  expected_plan_revision?: number;
+  client_request_id?: string;
+}
+
+/** PATCH: only the given fields change; `null` clears a nullable field; start_date + end_exclusive = null unschedules. */
+export interface TaskUpdate {
+  expected_version: number;
+  title?: string;
+  description?: string;
+  parent_task_id?: string | null;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  assignee_id?: string | null;
+  estimate_workdays?: number | null;
+  start_date?: string | null;
+  end_exclusive?: string | null;
+  duration_workdays?: number;
+  due_date?: string | null;
+  is_milestone?: boolean;
+  date_locked?: boolean;
+  sort_order?: number;
+}
+
+export interface TaskArchiveResult {
+  archived: WorkTask[];
+  removed_dependency_ids: string[];
+  plan_revision: number;
+}
+
+export interface WorkDependency {
+  id: string;
+  project_id: string;
+  predecessor_id: string;
+  successor_id: string;
+  kind: "FS";
+  lag_workdays: number;
+  created_by: string;
+  created_at: string;
+  /** FS satisfied by the stored dates; null when an end is unscheduled. */
+  satisfied: boolean | null;
+}
+
+export interface TaskBrief {
+  id: string;
+  key: string;
+  title: string;
+  status: TaskStatus;
+  start_date: string | null;
+  end_exclusive: string | null;
+  is_milestone: boolean;
+}
+
+export interface TaskDependencies {
+  task_id: string;
+  plan_revision: number;
+  predecessors: { dependency: WorkDependency; task: TaskBrief }[];
+  successors: { dependency: WorkDependency; task: TaskBrief }[];
+}
+
+export interface DependencyCreate {
+  /** exactly one of the two; the path task is the other end */
+  predecessor_task_id?: string;
+  successor_task_id?: string;
+  kind?: "FS";
+  lag_workdays?: 0;
+  expected_plan_revision?: number;
+}
+
+export interface ScheduleViolation {
+  dependency_id: string;
+  predecessor_id: string;
+  successor_id: string;
+  earliest_start: string;
+  actual_start: string;
+}
+
+export interface WorkGantt {
+  project_id: string;
+  project_key: string;
+  plan_revision: number;
+  snapshot_at: string;
+  today: string;
+  calendar: WorkCalendar;
+  /** Tree order: parents before children, siblings by sort_order. */
+  tasks: WorkTask[];
+  dependencies: WorkDependency[];
+  unscheduled_task_ids: string[];
+  violations: ScheduleViolation[];
+  range_start: string | null;
+  range_end_exclusive: string | null;
+  /** P1 (CPM): always null now — never draw a critical path. */
+  critical_path: string[] | null;
+  features: { critical_path: boolean; dependency_kinds: string[]; lag: boolean };
+}
+
+export interface TaskDateChange {
+  task_id: string;
+  start_date: string;
+  /** exactly one of end_exclusive / duration_workdays */
+  end_exclusive?: string;
+  duration_workdays?: number;
+}
+
+export interface SchedulePreviewRequest {
+  mode?: ScheduleMode; // default shift_successors
+  changes?: TaskDateChange[];
+  add_dependencies?: { predecessor_task_id: string; successor_task_id: string; kind?: "FS"; lag_workdays?: 0 }[];
+  base_plan_revision?: number;
+}
+
+export interface ScheduleInterval {
+  start_date: string | null;
+  end_exclusive: string | null;
+  last_day: string | null;
+  duration_workdays: number | null;
+}
+
+export interface ScheduleOperation {
+  task_id: string;
+  key: string;
+  title: string;
+  change: "requested" | "shifted";
+  before: ScheduleInterval;
+  after: ScheduleInterval;
+  shift_workdays: number;
+  reason: "requested" | "fs_predecessor";
+  because_of: string[];
+  version: number;
+}
+
+export interface ScheduleConflict {
+  /** task_locked | locked_successor | successor_violation | requested_violates_predecessor */
+  code: string;
+  task_id: string;
+  key: string;
+  related_task_ids: string[];
+  message: string;
+}
+
+export interface ScheduleWarning {
+  code: "due_date_exceeded" | string;
+  task_id: string;
+  key: string;
+  due_date: string | null;
+  last_day: string | null;
+  message: string;
+}
+
+export interface SchedulePreview {
+  preview_id: string;
+  project_id: string;
+  mode: ScheduleMode;
+  base_plan_revision: number;
+  calendar: string;
+  input_hash: string;
+  operations: ScheduleOperation[];
+  added_dependencies: { predecessor_task_id: string; successor_task_id: string; kind: "FS"; lag_workdays: number }[];
+  conflicts: ScheduleConflict[];
+  warnings: ScheduleWarning[];
+  blocked_tasks: { task_id: string; key: string; reason: "unscheduled" | "predecessor_unscheduled"; related_task_ids: string[]; message: string }[];
+  unchanged: string[];
+  /** false when there are conflicts — keep «Применить» disabled */
+  can_apply: boolean;
+  critical_path: string[] | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ScheduleApplyRequest {
+  preview_id: string;
+  expected_plan_revision: number; // = preview.base_plan_revision
+  client_request_id: string; // idempotency key: reuse it on a retry of the SAME confirmation
+  accept_warnings?: boolean; // required when preview.warnings is not empty
+}
+
+export interface ScheduleApplyResult {
+  preview_id: string;
+  project_id: string;
+  applied: boolean;
+  plan_revision: number;
+  changed_tasks: WorkTask[];
+  added_dependencies: WorkDependency[];
+  correlation_id: string;
+  replayed: boolean;
+}
+
+export interface WorkActivityEvent {
+  seq: number;
+  id: string;
+  at: string;
+  actor_id: string;
+  actor_display: string;
+  /** project_created | project_updated | task_created | task_updated | task_archived | task_restored |
+   *  dependency_added | dependency_removed | schedule_applied */
+  operation: string;
+  entity_type: string;
+  entity_id: string;
+  project_id: string;
+  task_id: string | null;
+  task_key: string | null;
+  correlation_id: string | null;
+  /** {field: {before, after}}; a description change is only {changed: true} */
+  changes: Record<string, unknown>;
+}
+
+export interface WorkActivityPage {
+  items: WorkActivityEvent[];
+  next_before_seq: number | null;
 }
