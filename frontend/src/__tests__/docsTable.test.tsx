@@ -108,6 +108,25 @@ describe("lib/docsTable", () => {
     expect(pass("attention=1")).toHaveLength(12);
   });
 
+  it("Система matches a document by ANY of its systems; grouping by Система uses the first one (the tree's group)", () => {
+    const pass = (search: string) =>
+      Object.entries(documents)
+        .filter(([, entry]) => matchesFilters(entry, readFilters(new URLSearchParams(search))))
+        .map(([id]) => id)
+        .sort();
+    // DEMO-INT-001 is «ARIS, Data Catalog» (its tree group is ARIS), DEMO-INT-004 «CATIA, Data Catalog»
+    expect(documents["DEMO-INT-001"]?.systems).toEqual(["ARIS", "Data Catalog"]);
+    expect(documents["DEMO-INT-004"]?.systems).toEqual(["CATIA", "Data Catalog"]);
+    expect(pass("system=Data Catalog")).toEqual(["DEMO-INT-001", "DEMO-INT-004", "DEMO-INT-008", "DEMO-SRC-007"]);
+    expect(pass("system=ARIS")).toContain("DEMO-INT-001");
+    expect(pass("system=CATIA")).toContain("DEMO-INT-004");
+    // every document is in exactly one group of «Группировка: Система»: its first system
+    const systems = groupIds(sortIdsBy(Object.keys(documents), documents, { key: "title", dir: "asc" }), index, "system");
+    expect(systems.find((g) => g.label === "Data Catalog")?.ids.sort()).toEqual(["DEMO-INT-008", "DEMO-SRC-007"]);
+    expect(systems.find((g) => g.label === "ARIS")?.ids).toContain("DEMO-INT-001");
+    expect(systems.find((g) => g.label === "CATIA")?.ids).toContain("DEMO-INT-004");
+  });
+
   it("groups by section in the tree's order, owners with «не назначен» last, systems with «Без системы» last", () => {
     const all = sortIdsBy(Object.keys(documents), documents, { key: "title", dir: "asc" });
     expect(groupIds(all, index, "type").map((g) => [g.label, g.ids.length])).toEqual(index.sections.map((s) => [s.label, s.count]));
@@ -273,6 +292,18 @@ describe("Таблица: filters", () => {
     await userEvent.click(within(screen.getByRole("menu", { name: "Система" })).getByRole("menuitemcheckbox", { name: /^ARIS/ }));
     expect(titleLinks()).toHaveLength(13);
     expect(screen.getByText("13 из 83")).toBeInTheDocument();
+  });
+
+  it("Система «Data Catalog» lists every document about it, also those whose first system (tree group) is another", async () => {
+    renderTable();
+    await screen.findByRole("table");
+    await userEvent.click(screen.getByRole("button", { name: "Система" }));
+    const catalog = within(screen.getByRole("menu", { name: "Система" })).getByRole("menuitemcheckbox", { name: /^Data Catalog/ });
+    expect(catalog).toHaveTextContent(/^Data Catalog4$/); // the menu counts a document under each of its systems
+    await userEvent.click(catalog);
+    expect(location()).toBe("/documents?view=table&system=Data+Catalog");
+    expect(ids().sort()).toEqual(["DEMO-INT-001", "DEMO-INT-004", "DEMO-INT-008", "DEMO-SRC-007"]);
+    expect(within(rowOf("ARIS → Catalog: обзор потока (демо)")).getByText("ARIS, Data Catalog")).toBeInTheDocument();
   });
 });
 
