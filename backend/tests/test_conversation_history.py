@@ -496,6 +496,29 @@ def test_an_oversized_answer_is_not_stored_and_says_so(client_factory: Callable[
     assert turn["notes"] == ["Ответ не сохранён в истории: он больше допустимого размера."]
 
 
+def test_a_storage_failure_never_breaks_the_answer(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    store: Any = client.app.state.container.conversations.store  # type: ignore[attr-defined]
+
+    def locked(*args: Any, **kwargs: Any) -> Any:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(store, "begin_turn", locked)
+    with caplog.at_level("WARNING", logger="skh.history"):
+        sent = ask(client)
+        events = stream(client)
+    assert sent["answer"] and events[-1]["type"] == "final"
+    assert "history turn not recorded: OperationalError" in caplog.text
+    assert QUESTION not in caplog.text  # never the question or the answer in the log
+
+    monkeypatch.undo()
+    monkeypatch.setattr(store, "finish_turn", locked)
+    assert ask(client)["answer"]
+    [turn] = conversation(client)["turns"]
+    assert turn["status"] == "pending"  # the answer was sent; only its record failed
+
+
 def test_history_can_be_switched_off(client_factory: Callable[..., TestClient]) -> None:
     client = client_factory(assistant_history_enabled=False)
     ask(client)

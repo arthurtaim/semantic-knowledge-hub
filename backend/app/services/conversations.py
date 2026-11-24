@@ -684,6 +684,8 @@ class ConversationService:
         return round(self.limits.retention_seconds / 86400)
 
     # --- recording ------------------------------------------------------------------------------------------------
+    # The history never breaks an answer: a storage failure (locked or full disk, a broken file) is logged and the
+    # answer goes on unrecorded.
     def begin(self, user: UserContext, browser: str | None, plan: AskPlan) -> TurnHandle | None:
         """Starts recording a turn — only with history on, a valid browser id and a conversation id."""
         req = plan.request
@@ -692,15 +694,19 @@ class ConversationService:
         request = _request_of(plan)
         subject = plan.subject
         chosen = [d.id for d in plan.documents] + ([plan.selection.document.id] if plan.selection else [])
-        handle = self._begin(
-            user,
-            browser,
-            req.conversation_id,
-            request,
-            origin=req.origin,
-            document_id=subject.id if req.origin == "document" and subject is not None else None,
-            title=req.question.strip() or (plan.skill.name if plan.explicit_skill else "") or "Диалог",
-        )
+        try:
+            handle = self._begin(
+                user,
+                browser,
+                req.conversation_id,
+                request,
+                origin=req.origin,
+                document_id=subject.id if req.origin == "document" and subject is not None else None,
+                title=req.question.strip() or (plan.skill.name if plan.explicit_skill else "") or "Диалог",
+            )
+        except sqlite3.Error as exc:
+            logger.warning("history turn not recorded: %s", type(exc).__name__)
+            return None
         handle.snapshot = plan.snapshot
         handle.chosen = chosen
         return handle
@@ -751,40 +757,55 @@ class ConversationService:
             return
         text = json.dumps(response, ensure_ascii=False)
         too_large = len(text) > self.limits.max_answer_chars
-        stored = self.store.finish_turn(
-            handle.actor,
-            handle.browser,
-            handle.conversation_id,
-            handle.seq,
-            response_json=None if too_large else text,
-            evidence=evidence_of(response, handle.snapshot, handle.chosen),
-            sources=len(response.get("citations") or []),
-            omitted="too_large" if too_large else None,
-            now=self.clock(),
-        )
+        try:
+            stored = self.store.finish_turn(
+                handle.actor,
+                handle.browser,
+                handle.conversation_id,
+                handle.seq,
+                response_json=None if too_large else text,
+                evidence=evidence_of(response, handle.snapshot, handle.chosen),
+                sources=len(response.get("citations") or []),
+                omitted="too_large" if too_large else None,
+                now=self.clock(),
+            )
+        except sqlite3.Error as exc:
+            logger.warning("history turn seq=%d answer not recorded: %s", handle.seq, type(exc).__name__)
+            return
         logger.info("history turn seq=%d done stored=%s chars=%d", handle.seq, stored, len(text))
 
     def fail(self, handle: TurnHandle | None, code: str, message: str, status: int) -> None:
         if handle is None:
             return
-        self.store.fail_turn(
-            handle.actor,
-            handle.browser,
-            handle.conversation_id,
-            handle.seq,
-            code=code[:64],
-            message=message[:500],
-            status=status,
-            now=self.clock(),
-        )
+        try:
+            self.store.fail_turn(
+                handle.actor,
+                handle.browser,
+                handle.conversation_id,
+                handle.seq,
+                code=code[:64],
+                message=message[:500],
+                status=status,
+                now=self.clock(),
+            )
+        except sqlite3.Error as exc:
+            logger.warning("history turn seq=%d failure not recorded: %s", handle.seq, type(exc).__name__)
+            return
         logger.info("history turn seq=%d failed code=%s", handle.seq, code)
 
     def interrupt(self, handle: TurnHandle | None) -> None:
         if handle is None:
             return
-        if self.store.interrupt_turn(
-            handle.actor, handle.browser, handle.conversation_id, handle.seq, now=self.clock()
-        ):
+        try:
+            closed = self.store.interrupt_turn(
+                handle.actor, handle.browser, handle.conversation_id, handle.seq, now=self.clock()
+            )
+        except sqlite3.Error as exc:
+            logger.warning(
+                "history turn seq=%d interruption not recorded: %s", handle.seq, type(exc).__name__
+            )
+            return
+        if closed:
             logger.info("history turn seq=%d interrupted", handle.seq)
 
     # --- reading ----------------------------------------------------------------------------------------------------
