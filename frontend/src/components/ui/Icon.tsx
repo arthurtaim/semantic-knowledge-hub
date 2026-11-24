@@ -174,6 +174,36 @@ const PATHS = {
       <path d="M8.5 20h7M12 16.5V20" />
     </>
   ),
+  // M6 «Работа»: projects, the three views of a project, a pinned schedule, a milestone, a dependency.
+  projects: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+      <path d="M9.5 4.5v15M15 4.5v15" />
+      <path d="M5.8 8.5h1.6M11.6 8.5h1.6M11.6 12h1.6M17.2 8.5h1.4" />
+    </>
+  ),
+  list: <path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01" />,
+  board: (
+    <>
+      <rect x="3.5" y="4.5" width="5" height="15" rx="1.5" />
+      <rect x="9.5" y="4.5" width="5" height="10" rx="1.5" />
+      <rect x="15.5" y="4.5" width="5" height="12.5" rx="1.5" />
+    </>
+  ),
+  gantt: <path d="M4 6.5h8M8 12h9M12 17.5h8" />,
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2" />
+      <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+    </>
+  ),
+  milestone: <path d="M12 4.5 19.5 12 12 19.5 4.5 12Z" />,
+  dependency: (
+    <>
+      <path d="M4 7h6v10h7" />
+      <path d="m14.5 14.5 2.5 2.5-2.5 2.5" />
+    </>
+  ),
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof PATHS;
