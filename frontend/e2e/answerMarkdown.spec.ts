@@ -69,6 +69,16 @@ test("a Markdown answer renders formatted, with working citation and system-data
   await page.keyboard.press("Enter");
   await expect(page.getByRole("region", { name: "Данные системы SKH" }).getByRole("listitem").first()).toBeFocused();
 
+  // A marker in a table cell: its card is not clipped by the table's scroll frame (it opens below the frame).
+  const frame = text.locator(".answer-md__frame--table");
+  await text.locator("td").getByRole("link", { name: "Источник 1" }).hover();
+  const tableCard = page.getByRole("tooltip").filter({ hasText: "Документы команды" });
+  await expect(tableCard).toBeVisible();
+  const [frameBox, cardBox] = [await frame.boundingBox(), await tableCard.boundingBox()];
+  expect(frameBox && cardBox && cardBox.y + cardBox.height > frameBox.y + frameBox.height).toBeTruthy();
+  expect(await frame.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+  await page.mouse.move(0, 0);
+
   // The numbering matches «Источники»; the citation opens the cited document.
   await expect(page.getByRole("region", { name: "Источники" })).toBeVisible();
   await noPageOverflow(page);
