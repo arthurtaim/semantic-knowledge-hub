@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { TemplateSummary } from "../api/types";
+import type { StudioOptions, TemplateSummary } from "../api/types";
+import { TemplateAiPanel } from "../components/studio/TemplateAiPanel";
+import { Button, buttonClass } from "../components/ui/Button";
+import { Icon } from "../components/ui/Icon";
 import { EmptyState, ErrorState, Loading } from "../components/Feedback";
 import { pluralRu, TEMPLATE_STATUS_LABEL, TYPE_LABEL, TYPE_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
@@ -39,6 +42,13 @@ function TemplateTile({ t }: { t: TemplateSummary }) {
         ) : null}
       </p>
       <p className="template-tile__desc">{t.description}</p>
+      {t.status === "draft" || t.has_draft || t.shipped_update || t.source === "studio" ? (
+        <p className="template-tile__studio">
+          {t.status === "draft" ? <span>ещё не активирован</span> : t.has_draft ? <span>есть черновик изменений</span> : null}
+          {t.shipped_update ? <span>в поставке v{t.shipped_update}</span> : null}
+          {t.source === "studio" ? <span className="muted">создан в студии</span> : null}
+        </p>
+      ) : null}
       {deprecated ? (
         <p className="template-tile__deprecated">
           Не используется для новых документов. Документы и черновики, созданные по нему, открываются по своей версии.
@@ -93,6 +103,11 @@ export function TemplatesPage() {
   const all = useAsync(() => api.templateCatalogue(), "templates-all");
   const filtered = useAsync(() => (active.length > 0 ? api.templateCatalogue(filters) : Promise.resolve(null)), `templates-${key}`);
   const [draftQuery, setDraftQuery] = useState(filters.q);
+  const [aiOpen, setAiOpen] = useState(false);
+  // Template Studio rights and AI availability; an older backend simply shows no studio actions.
+  const studio = useAsync<StudioOptions | null>(() => api.studioOptions().catch(() => null), "studio-options");
+  const canCreate = studio.data?.permissions.create ?? false;
+  const ai = studio.data?.ai;
 
   useEffect(() => setDraftQuery(filters.q), [filters.q]);
 
@@ -123,6 +138,27 @@ export function TemplatesPage() {
       <PageToolbar
         title="Шаблоны"
         meta={all.data ? <span className="page-toolbar__count">{all.data.length}</span> : null}
+        actionsInContentOnPhone
+        actions={
+          canCreate ? (
+            <>
+              {ai && ai.mode !== "disabled" ? (
+                <Button
+                  onClick={() => setAiOpen(true)}
+                  disabled={!ai.available}
+                  aria-describedby={ai.available ? undefined : "templates-ai-why"}
+                  aria-expanded={aiOpen}
+                >
+                  Создать с помощью AI
+                </Button>
+              ) : null}
+              <Link to="/templates/new" className={buttonClass("primary", "md", "button--with-icon")}>
+                <Icon name="plus" />
+                <span className="button__label">Создать шаблон</span>
+              </Link>
+            </>
+          ) : null
+        }
       />
       <div className="page-head">
         <h1>Шаблоны</h1>
@@ -130,6 +166,11 @@ export function TemplatesPage() {
           Один версионированный реестр для людей и для ИИ: структура документа, обязательные поля, правила проверки,
           указания и пример. Новый документ закрепляет версию шаблона — следующие версии на него не влияют.
         </p>
+        {canCreate && ai && ai.mode !== "disabled" && !ai.available ? (
+          <p id="templates-ai-why" className="muted templates__ai-why">
+            «Создать с помощью AI»: {ai.reason}
+          </p>
+        ) : null}
       </div>
 
       <form className="template-filters" role="search" aria-label="Поиск шаблонов" onSubmit={onSearch}>
@@ -145,7 +186,7 @@ export function TemplatesPage() {
               maxLength={100}
               autoComplete="off"
             />
-            <button type="submit" className="button button--primary">
+            <button type="submit" className="button button--secondary">
               Найти
             </button>
           </div>
@@ -222,6 +263,7 @@ export function TemplatesPage() {
           ))}
         </ul>
       ) : null}
+      {aiOpen && ai ? <TemplateAiPanel mode={ai.mode} onClose={() => setAiOpen(false)} /> : null}
     </div>
   );
 }

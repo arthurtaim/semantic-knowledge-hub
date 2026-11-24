@@ -26,6 +26,10 @@
 | `sync_knowledge` | `POST /api/index/sync` | администратор или сервис |
 | `prepare_publication` | `POST /api/documents/{id}/publication/prepare`, `POST /api/publications/jobs/{id}/dry-run`, `…/reconcile` | право готовить публикацию документа; в Confluence — только чтение |
 | `publish_confluence` | `POST /api/publications/jobs/{id}/publish`, `…/acknowledge-manual-edit` | роль «публикатор» для целевого пространства; запись выполняется учётной записью публикации — нужна атрибуция пользователя в журнале событий (PB-18) |
+| `view_templates` | `GET /api/templates*`, `GET /api/templates/{id}/studio*`, `POST /api/templates/studio/validate`, `GET /api/templates/studio/options` | читать каталог шаблонов, версии, черновики студии и проверки |
+| `create_template` | `POST /api/templates/studio`; вместе с `create_proposal` — `POST /api/ai/proposals` с `kind: draft_template` | создавать новые шаблоны (черновик), в том числе из предложения ИИ |
+| `edit_template` | `PUT`/`DELETE /api/templates/{id}/studio/draft`, `POST …/acknowledge-shipped` | менять черновик шаблона; на корпоративном стенде — владелец шаблона или методолог |
+| `activate_template` | `POST /api/templates/{id}/studio/activate` | делать черновик или версию действующей — отдельная роль, чтобы правка и выпуск шаблона были разными шагами |
 
 ## 2. Аутентификация (SSO)
 - Корпоративный IdP по OIDC или SAML, терминируемый на reverse proxy или в приложении. Решение за ИБ.
@@ -39,11 +43,13 @@
 
 | Роль | Права |
 |---|---|
-| Читатель | `read_knowledge`, `ask_assistant`, `view_system` (без деталей) |
+| Читатель | `read_knowledge`, `ask_assistant`, `view_system` (без деталей), `view_templates` |
 | Читатель корпоративных источников | + `read_corporate` (при наличии пользовательского ACL Confluence) |
 | Редактор раздела | + `create_proposal`, `review_proposal` для своих разделов |
 | Публикатор | + `submit_proposal`, `prepare_publication`, `publish_confluence` |
 | Администратор | + `sync_knowledge`, детали интеграций |
+| Методолог шаблонов | + `create_template`, `edit_template` (просмотр `view_templates` есть у читателя) |
+| Владелец шаблонов | + `activate_template` |
 
 Права на разделы берутся из GitLab: CODEOWNERS или участники проекта. Приложение не должно стать вторым,
 расходящимся источником прав.

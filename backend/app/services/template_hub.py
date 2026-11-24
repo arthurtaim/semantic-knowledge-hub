@@ -9,16 +9,26 @@ documents the reader can see and the reader's own drafts. The AI gets the SAME o
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from typing import Literal
 
 from pydantic import BaseModel
 
 from app.domain.markdown import render_html
 from app.domain.models import DocStatus, DocType, UserContext
-from app.domain.template_registry import TemplateRegistry
+from app.domain.proposals import DiffResult
+from app.domain.template_registry import StudioRecord, TemplateRegistry
+from app.domain.template_studio import (
+    TemplateSpec,
+    changed_fields,
+    loose_template,
+    render_template_source,
+    spec_from_template,
+)
 from app.domain.templates import DocumentTemplate, missing_sections
 from app.services.authoring import AuthoringService, template_hints
 from app.services.knowledge import KnowledgeService
+from app.services.proposals import compute_diff
 
 TemplateStatus = Literal["draft", "active", "deprecated", "archived"]
 
@@ -54,6 +64,12 @@ class TemplateSummary(BaseModel):
     required_sections: int
     optional_sections: int
     documents: int  # visible documents created with this template (any version)
+    # Template Studio (additive): where the template lives and what is pending
+    source: Literal["shipped", "studio"] = "shipped"  # a file of the release / created in the studio
+    has_draft: bool = False  # an open, not yet activated draft (a new version or catalogue corrections)
+    shipped_update: int | None = (
+        None  # a release shipped this version of an adopted template: not current yet
+    )
 
 
 class TemplateUsage(BaseModel):
@@ -99,6 +115,48 @@ class TemplateComparison(BaseModel):
     breaking: bool
     migration: str
     changes: str
+    # Template Studio (additive): every changed field and the line diff of the template source
+    fields_changed: list[str] = []
+    source_diff: DiffResult | None = None
+    to_draft: bool = False
+
+
+def template_source(template: DocumentTemplate) -> str:
+    """The source text of a stored version (the shipped file format), for line diffs."""
+    return render_template_source(
+        spec_from_template(template),
+        version=template.version,
+        order=template.order,
+        listed=template.listed,
+        updated=template.updated,
+    )
+
+
+def compare_templates(
+    old: DocumentTemplate, new: DocumentTemplate, *, to_draft: bool = False
+) -> TemplateComparison:
+    old_all = [*old.sections, *old.optional_sections]
+    new_all = [*new.sections, *new.optional_sections]
+    return TemplateComparison(
+        template_id=new.id,
+        from_version=old.version,
+        to_version=new.version,
+        sections_added=[s for s in new_all if s not in old_all],
+        sections_removed=[s for s in old_all if s not in new_all],
+        became_required=[s for s in new.sections if s in old.optional_sections],
+        became_optional=[s for s in new.optional_sections if s in old.sections],
+        metadata_required_added=[f for f in new.required_metadata if f not in old.required_metadata],
+        metadata_required_removed=[f for f in old.required_metadata if f not in new.required_metadata],
+        validation_added=[v for v in new.validation if v not in old.validation],
+        validation_removed=[v for v in old.validation if v not in new.validation],
+        status_change=f"{old.status} → {new.status}" if old.status != new.status else None,
+        breaking=new.breaking and (to_draft or new.version > old.version),
+        migration=new.migration,
+        changes=new.changes,
+        fields_changed=changed_fields(spec_from_template(old), spec_from_template(new)),
+        source_diff=compute_diff(template_source(old), template_source(new), f"{new.id}.md"),
+        to_draft=to_draft,
+    )
 
 
 def sections_of(template: DocumentTemplate) -> list[TemplateSection]:
@@ -122,7 +180,14 @@ class TemplateHubService:
         snapshot = await self._knowledge.snapshot(user)
         return Counter(d.template_id for d in snapshot.documents.values() if d.template_id)
 
-    def _summary(self, t: DocumentTemplate, usage: Counter[str]) -> TemplateSummary:
+    def _summary(
+        self,
+        t: DocumentTemplate,
+        usage: Counter[str],
+        record: StudioRecord | None = None,
+        *,
+        draft_only: bool = False,
+    ) -> TemplateSummary:
         return TemplateSummary(
             id=t.id,
             title=t.title,
@@ -133,13 +198,27 @@ class TemplateHubService:
             labels=list(t.labels),
             status=t.status,
             version=t.version,
-            versions=[v.version for v in self._registry.versions(t.id)],
+            versions=[] if draft_only else [v.version for v in self._registry.versions(t.id)],
             updated=t.updated,
             listed=t.listed,
             required_sections=len(t.sections),
             optional_sections=len(t.optional_sections),
             documents=usage.get(t.id, 0),
+            source="studio" if record is not None and record.kind == "created" else "shipped",
+            has_draft=record is not None and record.draft_json is not None,
+            shipped_update=self._registry.shipped_update(t.id) if record is not None else None,
         )
+
+    def _drafts_only(self) -> dict[str, tuple[DocumentTemplate, StudioRecord]]:
+        """Templates created in the studio and never activated: shown in the catalogue as «Черновик» (status draft),
+        never offered to documents or to the AI."""
+        result = {}
+        for tid, record in self._registry.studio_records().items():
+            if record.active_version is None and record.draft_json is not None:
+                spec = TemplateSpec.model_validate_json(record.draft_json)
+                draft = loose_template(spec, version=1)
+                result[tid] = (replace(draft, status="draft"), record)
+        return result
 
     async def catalogue(
         self,
@@ -155,7 +234,11 @@ class TemplateHubService:
         usage = await self._usage(user)
         needle = q.strip().casefold()
         rows = []
-        for t in self._registry.active().values():
+        records = self._registry.studio_records()
+        drafts = self._drafts_only()
+        candidates = [(t, records.get(t.id), False) for t in self._registry.active().values()]
+        candidates += [(t, record, True) for t, record in drafts.values()]
+        for t, record, draft_only in candidates:
             if (not t.listed and not include_hidden) or (t.status == "archived" and status != "archived"):
                 continue
             if (status and t.status != status) or (doc_type and t.doc_type.value != doc_type):
@@ -165,7 +248,7 @@ class TemplateHubService:
             haystack = f"{t.id} {t.title} {t.description} {t.category} {' '.join(t.labels)}".casefold()
             if needle and needle not in haystack:
                 continue
-            rows.append(self._summary(t, usage))
+            rows.append(self._summary(t, usage, record, draft_only=draft_only))
         return rows
 
     async def detail(
@@ -173,6 +256,12 @@ class TemplateHubService:
     ) -> TemplateDetail | None:
         current = self._registry.get(template_id)
         t = self._registry.get(template_id, version) if version is not None else current
+        record = self._registry.studio_record(template_id)
+        draft_only = False
+        if t is None and version is None:
+            pending = self._drafts_only().get(template_id)
+            if pending is not None:
+                t, draft_only = pending[0], True
         if t is None:
             return None
         snapshot = await self._knowledge.snapshot(user)
@@ -192,7 +281,7 @@ class TemplateHubService:
             if row["author"] == user.user_id and row["template_id"] == t.id:
                 drafts[f"v{row['template_version'] or 1}"] += 1
         history = []
-        for info in self._registry.versions(t.id):
+        for info in [] if draft_only else self._registry.versions(t.id):
             stored = self._registry.get(t.id, info.version)
             history.append(
                 TemplateVersionRow(
@@ -204,7 +293,7 @@ class TemplateHubService:
                     breaking=stored.breaking if stored else False,
                 )
             )
-        summary = self._summary(t, usage)
+        summary = self._summary(t, usage, record, draft_only=draft_only)
         return TemplateDetail(
             **summary.model_dump(),
             id_prefix=t.id_prefix,
@@ -231,25 +320,7 @@ class TemplateHubService:
         new = self._registry.get(template_id, to_version)
         if old is None or new is None:
             return None
-        old_all = [*old.sections, *old.optional_sections]
-        new_all = [*new.sections, *new.optional_sections]
-        return TemplateComparison(
-            template_id=template_id,
-            from_version=from_version,
-            to_version=to_version,
-            sections_added=[s for s in new_all if s not in old_all],
-            sections_removed=[s for s in old_all if s not in new_all],
-            became_required=[s for s in new.sections if s in old.optional_sections],
-            became_optional=[s for s in new.optional_sections if s in old.sections],
-            metadata_required_added=[f for f in new.required_metadata if f not in old.required_metadata],
-            metadata_required_removed=[f for f in old.required_metadata if f not in new.required_metadata],
-            validation_added=[v for v in new.validation if v not in old.validation],
-            validation_removed=[v for v in old.validation if v not in new.validation],
-            status_change=f"{old.status} → {new.status}" if old.status != new.status else None,
-            breaking=new.breaking and to_version > from_version,
-            migration=new.migration,
-            changes=new.changes,
-        )
+        return compare_templates(old, new)
 
     # --- the same registry for the runtime AI (read-only; active, listed, reviewed templates only) ---------
     def for_ai(self) -> list[DocumentTemplate]:

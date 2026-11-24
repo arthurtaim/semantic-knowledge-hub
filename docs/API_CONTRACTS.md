@@ -553,3 +553,48 @@ document was demo — also on non-demo deployments). Provenance is now typed met
   per-source badge from `Citation.provenance` when the sources differ (`mixed`; otherwise the indicator covers
   them), and nothing when `overall` is `none`. The mode label (`mode: mock` — «без языковой модели») is a separate
   concept from synthetic content. Implemented in `docs/UI_REDESIGN.md` «Происхождение источников и режим ИИ».
+
+## Implemented contract (v0.6, Template Studio)
+
+Additive only: every earlier route, field and behaviour is unchanged, except that the Template Hub routes
+(`GET /api/templates*`) now declare the new `view_templates` right instead of `read_knowledge` (the local demo
+operator has both). Design and rules: `docs/TEMPLATE_HUB.md` «Template Studio»; AI proposals:
+`docs/AI_WORKFLOWS.md` «Template proposals».
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/templates/studio/options` | `view_templates` | — | `StudioOptions {doc_types, metadata_fields, statuses, reserved_ids, prefixes {PREFIX: template_id}, template_id_pattern, id_prefix_pattern, max_sections, permissions {view, create, edit, activate}, ai {available, mode, reason}, defaults: TemplateSpec}` | — |
+| `POST /api/templates/studio/validate` | `view_templates` | `{spec: TemplateSpec, template_id?}` (`template_id` = the template being edited; absent = a new one) | `StudioCheck` (below); nothing stored | `422 validation_failed` (bounds) |
+| `POST /api/templates/studio` | `create_template` | `{spec, ai_proposal_id? ("AIP-…")}` | `201 StudioSaveResult {state, check}`: the template exists as a DRAFT only (status `draft` in the catalogue, not offered to documents or the AI). With `ai_proposal_id` this is the Accept of a `draft_template` proposal: it becomes `applied`, `result_template_id` set | `422 template_invalid` (`details.issues` — ID invalid / taken / reserved), `409 template_id_taken` (race), `409 ai_proposal_closed`, `404 ai_proposal_not_found` |
+| `GET /api/templates/{id}/studio` | `view_templates` | — | `StudioState` (below) | `404 template_not_found` |
+| `PUT /api/templates/{id}/studio/draft` | `edit_template` | `{spec, expected_revision}` | `200 StudioSaveResult`. The current version stays current. A draft may keep errors (returned in `check.issues`); only activation needs a clean check. The first write to a shipped template adopts it (`kind: adopted`, `expected_revision: 0`) | `409 template_conflict` (`details.current_revision`), `422 template_invalid` (`template_id_changed`), `404` |
+| `DELETE /api/templates/{id}/studio/draft?expected_revision=` | `edit_template` | — | `200 StudioState` without the draft; `204` when a never-activated template disappears with it | `409 template_conflict`, `409 template_draft_missing` |
+| `POST /api/templates/{id}/studio/activate` | `activate_template` | `{expected_revision, version?}` | `StudioActivation {action: activated \| info_updated \| reactivated, version, state}`. Without `version`: the open draft — a new schema is the next free version; the same schema corrects the catalogue text of the current version in place (no new version); the schema of an older version makes that version current again. With `version`: an existing version becomes current (a rollback, or a version a release shipped). Documents and drafts keep their pinned version | `409 template_conflict`, `409 template_draft_missing`, `409 template_version_active`, `422 template_invalid` (`details.issues`), `404 template_version_not_found` |
+| `POST /api/templates/{id}/studio/acknowledge-shipped` | `edit_template` | `{expected_revision}` | `StudioState`: the studio version stays current; `shipped_update` is cleared (the shipped version stays readable) | `409 template_conflict`, `409 template_no_shipped_update` |
+| `GET /api/templates/{id}/studio/compare?from=N&to=M\|draft` | `view_templates` | — | `TemplateComparison` (below) | `404 template_version_not_found\|template_draft_missing` |
+| `POST /api/ai/proposals` | `create_proposal` **and** `create_template` for `kind: draft_template` | `{kind: "draft_template", prompt (10–2000)}` | `201 AiProposal`: items `template` (the proposed `TemplateSpec`, applicable) and `similar` (note: existing templates with a score and a reason); `warnings` name similar templates and every value the server replaced | `403 forbidden`, `503 ai_template_unavailable` (mock: no language model; disabled), `502 ai_invalid_response`, `422` |
+| `POST /api/ai/proposals/{id}/accept` | `create_proposal` | — | unchanged for other kinds | `409 ai_proposal_use_editor` for `draft_template` (accepted only by saving it in the editor) |
+
+- `TemplateSpec` = `{template_id, title, description, category, doc_type, id_prefix, owner, labels[], default_tags[],
+  sections[{title, required, hint, content}], required_metadata[], optional_metadata[], validation[], instructions,
+  ai_guidance, example, changes, breaking, migration, status: active|deprecated|archived}`; bounded by size (`422`).
+- `StudioIssue` = `{field, code, message, severity: error|warning}`; `field` names a spec field or an item:
+  `title`, `id_prefix`, `sections`, `sections.2.title`, `sections.0.content`, `validation.1`, `required_metadata`,
+  `migration`, `source` (the file parser). Codes: `template_id_invalid|reserved|taken|changed`, `title_missing`,
+  `doc_type_invalid`, `id_prefix_invalid|reserved|taken`, `tag_invalid`, `sections_missing`,
+  `required_section_missing`, `section_title_missing|invalid|too_long|duplicate`, `section_content_heading`,
+  `metadata_unknown|title_required|both`, `rule_empty|too_long|duplicate`, `migration_missing`, `header_too_large`,
+  `template_too_large`, `template_invalid`; warnings: `description_missing`, `category_missing`, `owner_missing`.
+- `StudioCheck` = `{valid, issues[], activation: new_template|new_version|info_update|reactivate|no_change,
+  next_version, schema_changed, changed_fields[], source (the template file), preview {document_id (a sample),
+  markdown (the new document's file), html (sanitized), sections[{title, required, hint}]}}`.
+- `StudioState` = `{template_id, kind: shipped|created|adopted, revision, current_version|null, current: TemplateSpec|null,
+  draft: {spec, base_version, saved_by, saved_at, check}|null, versions[{version, status, current, source:
+  shipped|studio, first_seen, changes, breaking, activated_by, activated_at, documents}], events[{at, actor, action,
+  version, revision, summary}], shipped_version, shipped_update, updated_by, updated_at, ai_proposal_id}`.
+- `TemplateComparison` gains `fields_changed[]` (spec field names), `source_diff: DiffResult` (the template source)
+  and `to_draft`; also on `GET /api/templates/{id}/compare`.
+- `TemplateSummary` / `TemplateDetail` gain `source: shipped|studio`, `has_draft`, `shipped_update`. A template that
+  was never activated is listed with `status: "draft"` and `versions: []`; `GET /api/templates/{id}` returns its
+  draft (status `draft`, no history); `/versions/{v}` is `404` for it.
+- `AiProposal.kind` gains `draft_template`; `AiProposal.result_template_id`.

@@ -22,6 +22,7 @@ import { ProposalsPage } from "./pages/ProposalsPage";
 import { PublicationJobPage } from "./pages/PublicationJobPage";
 import { PublicationsPage } from "./pages/PublicationsPage";
 import { TemplateDetailPage } from "./pages/TemplateDetailPage";
+import { TemplateEditorPage } from "./pages/TemplateEditorPage";
 import { TemplatesPage } from "./pages/TemplatesPage";
 
 /** The browser tab names the page as the toolbar does (lib/routes.ts). */
@@ -51,7 +52,9 @@ export function App() {
           <Route path="/documents/:id" element={<DocumentPage />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/templates/new" element={<TemplateEditorPage />} />
           <Route path="/templates/:id" element={<TemplateDetailPage />} />
+          <Route path="/templates/:id/edit" element={<TemplateEditorPage />} />
           <Route path="/ask" element={<AskPage />} />
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalEditorPage />} />

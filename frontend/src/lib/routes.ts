@@ -118,6 +118,8 @@ export function defaultCrumbs(pathname: string, askAvailable: boolean): Crumb[] 
   if (pathname.startsWith("/documents/")) return [DOCS, { label: "Документ" }];
   if (pathname === "/graph") return [{ label: "Карта знаний" }];
   if (pathname === "/templates") return [{ label: "Шаблоны" }];
+  if (pathname === "/templates/new") return [{ label: "Шаблоны", to: "/templates" }, { label: "Новый шаблон" }];
+  if (/^\/templates\/[^/]+\/edit$/.test(pathname)) return [{ label: "Шаблоны", to: "/templates" }, { label: "Редактор шаблона" }];
   if (pathname.startsWith("/templates/")) return [{ label: "Шаблоны", to: "/templates" }, { label: "Шаблон" }];
   if (pathname === "/proposals") return [{ label: "Предложения" }];
   if (pathname === "/proposals/new") return [{ label: "Предложения", to: "/proposals" }, { label: "Новое предложение" }];

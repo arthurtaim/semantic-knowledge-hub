@@ -546,6 +546,7 @@ export const AI_PROPOSAL_KIND_LABEL: Record<AiProposalKind, string> = {
   find_related: "Связанные документы",
   explain_relation: "Объяснение связи",
   impact_analysis: "Анализ влияния",
+  draft_template: "Шаблон по запросу",
 };
 
 /** Metadata field names in AI proposals and the metadata panel. */
@@ -562,6 +563,8 @@ export const METADATA_FIELD_LABEL: Record<string, string> = {
   template: "Шаблон",
   template_version: "Версия шаблона",
   aliases: "Синонимы",
+  relations: "Типизированные связи",
+  version: "Версия документа",
   created_at: "Создан",
   updated_at: "Обновлён",
   origin: "Происхождение",
@@ -574,6 +577,68 @@ export const AI_PROPOSAL_ERROR_TITLE: Record<string, string> = {
   ai_proposal_not_found: "Предложение не найдено",
   template_not_active: "Шаблон не используется для новых документов",
   no_active_template: "Нет активного шаблона",
+  ai_template_unavailable: "Проектирование шаблона с ИИ недоступно",
+  ai_proposal_use_editor: "Предложение шаблона принимается в редакторе",
+};
+
+// --- Template Studio ---------------------------------------------------------------------------------------
+
+/** Fields of a template spec (validation messages, «Что изменилось»). */
+export const TEMPLATE_FIELD_LABEL: Record<string, string> = {
+  template_id: "ID шаблона",
+  title: "Название",
+  description: "Описание",
+  category: "Категория",
+  doc_type: "Тип документа",
+  id_prefix: "Префикс ID",
+  owner: "Владелец",
+  labels: "Метки",
+  default_tags: "Теги по умолчанию",
+  sections: "Разделы",
+  required_metadata: "Обязательные поля",
+  optional_metadata: "Необязательные поля",
+  validation: "Правила проверки",
+  instructions: "Инструкции для автора",
+  ai_guidance: "Указания для ИИ",
+  example: "Пример",
+  changes: "Что изменилось",
+  breaking: "Несовместимая версия",
+  migration: "Переход на версию",
+  status: "Статус",
+  source: "Шаблон целиком",
+};
+
+/** What «Активировать» does with the draft (the server's `activation`). */
+export const ACTIVATION_TEXT: Record<string, (version: number) => string> = {
+  new_template: (v) => `Шаблон станет действующим как v${v}: по нему можно будет создавать документы.`,
+  new_version: (v) => `Будет создана версия v${v}. Новые документы получат её; созданные раньше остаются на своей версии.`,
+  info_update: (v) =>
+    `Изменены только информационные поля: они обновятся в действующей v${v}, новая версия не нужна. Документы не меняются.`,
+  reactivate: (v) => `Структура совпадает с версией v${v}: действующей снова станет v${v}.`,
+  no_change: (v) => `Отличий от действующей v${v} нет.`,
+};
+
+/** Events of the template history (who did what and when). */
+export const STUDIO_EVENT_LABEL: Record<string, string> = {
+  created: "Создан черновик",
+  adopted: "Взят в студию из поставки",
+  draft_saved: "Черновик сохранён",
+  draft_discarded: "Черновик удалён",
+  deleted: "Черновик нового шаблона удалён",
+  activated: "Активирована версия",
+  reactivated: "Снова действует версия",
+  info_updated: "Обновлены информационные поля",
+  shipped_acknowledged: "Версия из поставки просмотрена",
+};
+
+export const STUDIO_ERROR_TITLE: Record<string, string> = {
+  template_conflict: "Шаблон уже изменил кто-то другой",
+  template_invalid: "Шаблон не прошёл проверку",
+  template_id_taken: "Такой ID шаблона уже есть",
+  template_draft_missing: "Открытого черновика нет",
+  template_version_active: "Эта версия уже действует",
+  template_no_shipped_update: "Новой версии из поставки нет",
+  forbidden: "Недостаточно прав",
 };
 
 /** Edge provenance in words: "body:12" → «в тексте, строка 12». */

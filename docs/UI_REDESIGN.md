@@ -981,3 +981,46 @@ mode-line filter test; tests that pinned «ИИ: демо», «Демо-режи
 Playwright `e2e/answerProvenance.spec.ts` on the scripted projects («Какая у нас модель данных?» → «нам интересны
 демо-файлы», «Это реальные данные банка?», phone); E2E-04 and the document panel check the line and the absence of a
 warning notice on the mock stack.
+
+## Template Studio (2026-11-24)
+
+Templates are created and edited in the app (`docs/TEMPLATE_HUB.md` «Template Studio»; API
+`docs/API_CONTRACTS.md` v0.6). UI v2 rules hold: tokens only (`tokens.test.ts`), `components/ui/*`, `PageToolbar`,
+one primary per view, light and dark, phones without sideways scroll.
+
+- **`/templates`**: the toolbar has «Создать шаблон» (primary) and «Создать с помощью AI» (secondary) for people with
+  `create_template`. The search form's «Найти» became secondary (one primary per view). AI: hidden with
+  `AI_PROVIDER=disabled`, disabled with the one-line reason under the lead without a language model (`mock`). Tiles say
+  «ещё не активирован», «есть черновик изменений», «в поставке vN», «создан в студии».
+- **«Создать с помощью AI»** is a sheet (`SidePanel`, bottom sheet on phones): a prompt with «Подставить пример»,
+  the proposal (summary, warnings incl. «Похоже на существующий шаблон», sections with required/optional, rules),
+  «Открыть в редакторе» (primary) or «Отклонить». Nothing is created in the sheet.
+- **`/templates/:id`**: «Редактировать» (secondary, with `edit_template`); notices for an open draft and for a
+  shipped update, each with a link into the editor.
+- **Editor** (`/templates/new`, `?proposal=AIP-…`; `/templates/:id/edit`, `?tab=history`): toolbar «Проверить»,
+  «Активировать» (secondary; disabled with the reason as its description — unsaved edits, no draft, errors, no
+  right), «Сохранить черновик» (primary). Under the title: current version, who saved the draft and when,
+  «несохранённые изменения», where the template comes from, and what activation will do. Tabs: «Свойства»
+  (main fields, metadata usage per field, completeness rules, guidance and example, «Эта версия»), «Разделы» (the
+  builder), «Markdown», «Предпросмотр» (the server-rendered new document, its file and the template source),
+  «История» (versions with who activated and how many documents are pinned, compare incl. «Черновик» with the line
+  diff, the event log, «Сделать действующей»). A tab shows its error count; the issue summary links take you to the
+  field. Errors sit under their fields (`aria-invalid`, `aria-describedby`).
+- **Section builder**: each section is a framed row (dashed when optional): title, «Обязательный», ↑ / ↓ / ✕ icon
+  buttons, «Подсказка автору», a collapsible «Заготовка текста». Keyboard: Alt+↑ / Alt+↓ anywhere inside a section
+  moves it and keeps the focus on the same control; moves and deletions are announced in a live region.
+- **Markdown**: the same sections as text. Text that cannot be mapped is reported under the field and on the
+  builder tab («Вернуть Markdown по конструктору»), saving is blocked until it maps.
+- **Activation** is a sheet: the outcome in one sentence, changed fields, the comparison with the current version,
+  «документы остаются на своей версии», «Активировать vN» (primary) / «Отмена». A 409 conflict keeps the person's
+  edits and offers «Загрузить сохранённое» or «Оставить мои правки и сохранить поверх».
+
+Deviations: the editor uses tabs rather than a side-by-side builder and Markdown, so the page works at 390 px; the
+metadata usage is a select per field (required / optional / not used) rather than two multi-selects; «Удалить
+черновик» sits at the end of the editor with an inline confirmation.
+
+Checks (this branch, real runs): backend `ruff`, `ruff format --check`, `mypy` clean; `pytest` 816 → 856 passed,
+6 skipped; deterministic eval unchanged (cases=200 pass=191 R@1=0.9487 R@5=0.9744 MRR=0.9647 leaks=0). Frontend
+`tsc`, `eslint` clean; `vitest` 504 → 521 (42 files). E2E desktop + mobile (`E2E_DISABLED_URL` set): 76 passed,
+1 skipped (the Confluence scenario), 5 of them new (`e2e/templateStudio.spec.ts`); scripted-model projects:
+`e2e/templateStudioAi.spec.ts` 2 passed.

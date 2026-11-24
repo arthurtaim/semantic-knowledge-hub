@@ -31,6 +31,7 @@ from app.adapters.ai.base import (
     ContextPassage,
     ConversationTurn,
     ProviderAnswer,
+    TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
     ToolTurnRequest,
@@ -361,6 +362,8 @@ class OpenAICompatibleAIProvider:
     # M5.7: the tool loop through the constrained text envelope (tool_protocol.py). Native `tools` is not used:
     # the internal endpoint's function-calling support is not verified (docs/AI_NATIVE_TOOLS.md).
     supports_tools = True
+    # Template Studio «Создать с помощью AI»: the model-agnostic JSON protocol of template_protocol.py.
+    supports_template_drafting = True
 
     def __init__(
         self,
@@ -522,6 +525,20 @@ class OpenAICompatibleAIProvider:
         if not isinstance(data, dict) or not isinstance(data.get("body"), str):
             raise AIProviderError("ai_invalid_response", "Ответ модели не содержит текста черновика.")
         return authoring_draft_from(data["body"], data, request)
+
+    async def draft_template(self, request: TemplateDraftRequest) -> str:
+        """A template PROPOSAL: the raw reply; the backend parses and validates it (template_protocol.py)."""
+        from app.adapters.ai.template_protocol import TEMPLATE_PROMPT, build_template_message
+
+        return await self._post_chat(
+            [
+                {
+                    "role": "system",
+                    "content": compose(self._instructions.for_task("authoring"), TEMPLATE_PROMPT),
+                },
+                {"role": "user", "content": build_template_message(request, self._max_context_chars)},
+            ]
+        )
 
     async def status(self) -> IntegrationStatus:
         base = {"name": "ai_provider", "title": "AI-провайдер", "kind": "ai"}

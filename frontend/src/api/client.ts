@@ -54,8 +54,14 @@ import type {
   StagingItem,
   Subgraph,
   SuggestResponse,
+  StudioActivation,
+  StudioCheck,
+  StudioOptions,
+  StudioSaveResult,
+  StudioState,
   SyncStatus,
   TemplateComparison,
+  TemplateSpec,
   TemplateDetail,
   TemplateSummary,
   ToolStepInfo,
@@ -576,6 +582,48 @@ export const api = {
     request<TemplateDetail>(`/templates/${encodeURIComponent(id)}/versions/${version}`),
   templateCompare: (id: string, from: number, to: number) =>
     request<TemplateComparison>(`/templates/${encodeURIComponent(id)}/compare${query({ from, to })}`),
+
+  // --- Template Studio: create / edit / check / activate (separate rights; every write names its revision) ---
+  studioOptions: () => request<StudioOptions>("/templates/studio/options"),
+  /** «Проверить»: field-bound issues, what «Активировать» would do, the source and a new document's preview. */
+  studioValidate: (spec: TemplateSpec, templateId?: string | null, options: { signal?: AbortSignal } = {}) =>
+    request<StudioCheck>("/templates/studio/validate", {
+      method: "POST",
+      body: json({ spec, ...(templateId ? { template_id: templateId } : {}) }),
+      signal: options.signal,
+    }),
+  /** A new template as a DRAFT; with `aiProposalId` it is the Accept of a `draft_template` AI proposal. */
+  studioCreate: (spec: TemplateSpec, aiProposalId?: string | null) =>
+    request<StudioSaveResult>("/templates/studio", {
+      method: "POST",
+      body: json({ spec, ...(aiProposalId ? { ai_proposal_id: aiProposalId } : {}) }),
+    }),
+  studioState: (id: string) => request<StudioState>(`/templates/${encodeURIComponent(id)}/studio`),
+  /** 409 `template_conflict` (someone saved first: `details.current_revision`). */
+  studioSaveDraft: (id: string, spec: TemplateSpec, expectedRevision: number) =>
+    request<StudioSaveResult>(`/templates/${encodeURIComponent(id)}/studio/draft`, {
+      method: "PUT",
+      body: json({ spec, expected_revision: expectedRevision }),
+    }),
+  /** null: a never-activated template disappeared with its draft. */
+  studioDiscardDraft: (id: string, expectedRevision: number) =>
+    request<StudioState | null>(
+      `/templates/${encodeURIComponent(id)}/studio/draft${query({ expected_revision: expectedRevision })}`,
+      { method: "DELETE" },
+    ),
+  /** The open draft (no `version`) or an existing version; 422 `template_invalid` with `details.issues`. */
+  studioActivate: (id: string, expectedRevision: number, version?: number) =>
+    request<StudioActivation>(`/templates/${encodeURIComponent(id)}/studio/activate`, {
+      method: "POST",
+      body: json({ expected_revision: expectedRevision, ...(version ? { version } : {}) }),
+    }),
+  studioAcknowledgeShipped: (id: string, expectedRevision: number) =>
+    request<StudioState>(`/templates/${encodeURIComponent(id)}/studio/acknowledge-shipped`, {
+      method: "POST",
+      body: json({ expected_revision: expectedRevision }),
+    }),
+  studioCompare: (id: string, from: number, to: number | "draft") =>
+    request<TemplateComparison>(`/templates/${encodeURIComponent(id)}/studio/compare${query({ from, to })}`),
 
   // --- M5.6.3: links (WikiLinks, backlinks, `[[` autocomplete) ---
   documentLinks: (id: string) => request<DocumentLinks>(`/documents/${encodeURIComponent(id)}/links`),
