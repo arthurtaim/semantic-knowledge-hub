@@ -167,3 +167,26 @@ export function memoryStorage(): Storage {
     setItem: (key, value) => void data.set(key, String(value)),
   };
 }
+
+/**
+ * Pretends the window is `width` px wide for `useMediaQuery` (jsdom has no matchMedia: by default the app takes
+ * the wide layout). Evaluates min-/max-width; any other feature (prefers-*) does not match.
+ */
+export function mockViewport(width: number) {
+  vi.stubGlobal("matchMedia", (query: string) => {
+    const max = /max-width:\s*([\d.]+)px/.exec(query);
+    const min = /min-width:\s*([\d.]+)px/.exec(query);
+    const sized = Boolean(max || min);
+    const matches = sized && (!max || width <= Number(max[1])) && (!min || width >= Number(min[1]));
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    };
+  });
+}

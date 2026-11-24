@@ -8,7 +8,7 @@ import { documentPage, facets, freshSync, integrations, session, staleSync } fro
 import { mockApi, renderAt } from "./helpers";
 
 describe("Application shell", () => {
-  it("shows navigation and a conspicuous demo notice", async () => {
+  it("shows the sidebar navigation and a conspicuous demo notice", async () => {
     mockApi([
       { path: "/api/session", body: session },
       { path: "/api/knowledge/facets", body: facets },
@@ -23,10 +23,27 @@ describe("Application shell", () => {
         <App />
       </MemoryRouter>,
     );
+    // UI v2: one sidebar replaces the two top bars; the items and groups follow docs/ui-v2/specs/03_SCREENS.md §1.
     const nav = screen.getByRole("navigation", { name: "Основная навигация" });
-    for (const name of ["Главная", "База знаний", "Спросить", "Предложения", "Интеграции"]) {
-      expect(within(nav).getByRole("link", { name })).toBeInTheDocument();
+    const hrefs: Record<string, string> = {
+      Ассистент: "/",
+      Ревью: "/proposals?status=ready_for_review",
+      Документы: "/documents",
+      "Карта знаний": "/graph",
+      Шаблоны: "/templates",
+      Предложения: "/proposals",
+      Публикации: "/integrations#integration-confluence_publisher",
+      Интеграции: "/integrations",
+    };
+    await within(nav).findByRole("link", { name: "Ассистент" }); // the label follows the session's AI mode
+    for (const [name, href] of Object.entries(hrefs)) {
+      expect(within(nav).getByRole("link", { name })).toHaveAttribute("href", href);
     }
+    for (const group of ["Знания", "Работа", "Система"]) {
+      expect(within(nav).getByRole("list", { name: group })).toBeInTheDocument();
+    }
+    expect(within(nav).getByRole("link", { name: "Ассистент" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "Поиск" })).toHaveAttribute("aria-keyshortcuts", "Meta+K Control+K /");
     expect(await screen.findByText(/Confluence не подключён/)).toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent("Демо-данные.");
     expect(await screen.findByRole("heading", { name: "Разделы" })).toBeInTheDocument();
@@ -42,7 +59,7 @@ describe("Application shell", () => {
     await userEvent.tab();
     expect(screen.getByRole("link", { name: "Перейти к содержимому" })).toHaveFocus();
     await userEvent.tab();
-    expect(screen.getByRole("link", { name: /Semantic Knowledge Hub/ })).toHaveFocus();
+    expect(screen.getByRole("link", { name: /Knowledge Hub/ })).toHaveFocus();
   });
 });
 

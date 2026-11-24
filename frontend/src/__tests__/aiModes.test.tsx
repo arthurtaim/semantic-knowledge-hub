@@ -90,14 +90,16 @@ describe("Four AI modes: no dead controls", () => {
     expect(screen.getByRole("combobox", { name: "Поиск по базе знаний" })).toBeInTheDocument();
   });
 
-  it("disabled: the main navigation has no «Спросить»; other modes keep it", () => {
+  // UI v2: the sidebar's first item is the assistant (the start page); without AI it is the start page by name.
+  it("disabled: the main navigation has no «Ассистент»; other modes keep it", () => {
     const { unmount } = renderAt("/documents", "/documents", <Layout>x</Layout>, withMode("disabled"));
     const nav = screen.getByRole("navigation", { name: "Основная навигация" });
-    expect(within(nav).queryByRole("link", { name: "Спросить" })).toBeNull();
-    expect(within(nav).getByRole("link", { name: "База знаний" })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: "Ассистент" })).toBeNull();
+    expect(within(nav).getByRole("link", { name: "Главная" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "Документы" })).toHaveAttribute("aria-current", "page");
     unmount();
     renderAt("/documents", "/documents", <Layout>x</Layout>, withMode("mock"));
-    expect(within(screen.getByRole("navigation", { name: "Основная навигация" })).getByRole("link", { name: "Спросить" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "Основная навигация" })).getByRole("link", { name: "Ассистент" })).toBeInTheDocument();
   });
 
   it("disabled: the explorer does not offer «Спросить ИИ об этих документах»", async () => {

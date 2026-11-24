@@ -120,7 +120,7 @@ test("@mobile E2E-12 phone: home, menu, document and proposal pages fit the scre
   expect(proseOverflow, "document body wider than its box").toBeLessThanOrEqual(0);
   await page.goto("/");
   await page.getByRole("button", { name: "Меню" }).click();
-  await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "База знаний" }).click();
+  await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Документы" }).click();
   await expect(page.getByRole("heading", { name: "База знаний", level: 1 })).toBeVisible();
 });
 

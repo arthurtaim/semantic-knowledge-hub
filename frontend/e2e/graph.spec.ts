@@ -20,7 +20,7 @@ const details = (page: Page) => page.getByRole("complementary", { name: "Све�
 test("M5.6 graph: navigation, global graph and its list view", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
-  await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Граф" }).click();
+  await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Карта знаний" }).click();
   await expect(page).toHaveURL(/\/graph$/);
   await expect(page.getByRole("heading", { name: "Граф знаний", level: 1 })).toBeVisible();
   await expect(page.getByRole("group", { name: /Схема графа: \d+ узл/ })).toBeVisible();

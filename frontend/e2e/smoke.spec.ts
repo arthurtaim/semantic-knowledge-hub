@@ -111,7 +111,10 @@ test("@mobile phone layout has no horizontal scroll and a working menu", async (
   await expect(page.getByRole("complementary", { name: "Паспорт документа" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+  // UI v2: «Меню» in the page toolbar opens the sidebar as a drawer; a link closes it.
   await page.getByRole("button", { name: "Меню" }).click();
-  await page.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Спросить" }).click();
-  await expect(page.getByRole("heading", { name: "Спросить базу знаний" })).toBeVisible();
+  const drawer = page.getByRole("dialog", { name: "Меню" });
+  await drawer.getByRole("navigation", { name: "Основная навигация" }).getByRole("link", { name: "Предложения" }).click();
+  await expect(page.getByRole("heading", { name: "Предложения изменений", level: 1 })).toBeVisible();
+  await expect(drawer).toBeHidden();
 });

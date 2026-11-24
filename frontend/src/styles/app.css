@@ -1363,43 +1363,59 @@ kbd {
   margin-top: var(--space-4);
 }
 
-/* ---------- shell: a compact top bar; the page gets the full width ---------- */
+/* ---------- shell: left sidebar, 52 px page toolbar, content (docs/ui-v2/specs/03_SCREENS.md §1) ---------- */
 
 .shell {
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  background: var(--bg-surface);
 }
 
-.topbar {
+.shell--rail {
+  grid-template-columns: var(--sidebar-rail-width) minmax(0, 1fr);
+}
+
+.shell--drawer {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Sidebar: grey-green surface, 30 px items with icons; the active item is a grey surface, never green. */
+.sidebar {
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: 30;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) 0.625rem;
   background: var(--bg-sidebar);
+  border-right: 1px solid var(--line);
   color: var(--text);
-  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
+  line-height: var(--lh-ui);
 }
 
-.topbar__inner {
-  max-width: calc(78rem + 2 * var(--gutter));
-  margin: 0 auto;
-  padding: 0 var(--gutter);
-  min-height: var(--toolbar-height);
+.sidebar__head {
   display: flex;
   align-items: center;
-  gap: var(--space-5);
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0.375rem 0 var(--space-3) var(--space-2);
 }
 
-.brand {
+.sidebar__brand {
   display: flex;
+  align-items: center;
   gap: 0.625rem;
-  align-items: center;
+  min-width: 0;
+  border-radius: var(--radius-nav);
   color: var(--text);
   text-decoration: none;
-  flex: none;
 }
 
-.brand:hover {
+.sidebar__brand:hover {
   color: var(--text);
   text-decoration: none;
 }
@@ -1431,111 +1447,398 @@ kbd {
   background: var(--accent-wash-border);
 }
 
-.brand__text {
+.sidebar__workspace {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   line-height: 1rem;
 }
 
-.brand__name {
+.sidebar__product {
   font-weight: 600;
   font-size: 0.84375rem;
 }
 
-.brand__team {
+.sidebar__team {
   font-size: var(--fs-caption);
   color: var(--text-secondary);
 }
 
-.menu-toggle {
-  display: none;
-  margin-left: auto;
+.sidebar__collapse,
+.sidebar__close {
+  flex: none;
+}
+
+/* «Поиск Ctrl K»: looks like a field, opens the ⌘K palette. */
+.sidebar__search {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
   min-height: var(--control-height);
+  margin-bottom: var(--space-2);
+  padding: 0 0.625rem;
+  border: 1px solid var(--line-popover);
+  border-radius: var(--radius-nav);
   background: var(--bg-surface);
-  border: 1px solid var(--line-strong);
-  color: var(--text);
-  border-radius: var(--radius-control);
-  padding: 0 var(--space-3);
-  font-weight: 500;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.nav {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  min-width: 0;
+.sidebar__search:hover {
+  border-color: var(--line-field);
+  color: var(--text);
 }
 
-.nav ul {
+.sidebar__search-text {
+  flex: 1;
+}
+
+.sidebar__keys {
+  font-size: 0.71875rem;
+}
+
+.sidebar__nav {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* room for focus outlines inside the scroll box */
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.sidebar__group ul {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
+  flex-direction: column;
   gap: 2px;
 }
 
-.nav__link {
+.sidebar__group-label {
+  margin: 0;
+  padding: var(--space-4) 0.625rem var(--space-1);
+  font-size: var(--fs-caption);
+  color: var(--text-tertiary);
+}
+
+.sidebar__link {
   display: flex;
   align-items: center;
+  gap: 0.625rem;
   min-height: var(--nav-item-height);
   padding: 0 0.625rem;
   border-radius: var(--radius-nav);
-  color: var(--text-secondary);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.nav__link:hover {
-  background: var(--bg-hover);
   color: var(--text);
   text-decoration: none;
 }
 
-.nav__link.active {
+.sidebar__link .icon {
+  color: var(--text-secondary);
+}
+
+.sidebar__link:hover {
+  background: color-mix(in srgb, var(--bg-selected) 55%, transparent);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.sidebar__link.is-active {
   background: var(--bg-selected);
+  font-weight: 500;
+}
+
+.sidebar__link.is-active .icon {
+  color: var(--text);
+}
+
+.sidebar__link:focus-visible,
+.sidebar__brand:focus-visible,
+.sidebar__search:focus-visible,
+.sidebar__user:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.sidebar__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__count {
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.sidebar__badge {
+  padding: 0 0.375rem;
+  border-radius: 6px;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 1.125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar__foot {
+  margin-top: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.sidebar__user {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.375rem var(--space-2);
+  border: 0;
+  border-radius: var(--radius-nav);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__user:hover,
+.sidebar__user[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--bg-selected) 55%, transparent);
+}
+
+.sidebar__avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 50%;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.sidebar__user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1rem;
+}
+
+.sidebar__user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__user-mode {
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.sidebar__foot .menu-popup {
+  bottom: calc(100% + var(--space-1));
+}
+
+.menu__header-name,
+.menu__header-meta {
+  display: block;
+}
+
+.menu__header-name {
   color: var(--text);
   font-weight: 500;
 }
 
-.nav__identity {
-  margin: 0 0 0 auto;
+.menu__header-meta {
+  font-size: var(--fs-caption);
+}
+
+/* Icon rail: icons only; names stay for assistive technology and appear as tooltips. */
+.sidebar--rail {
+  padding-inline: var(--space-2);
+}
+
+.sidebar--rail .sidebar__head {
+  flex-direction: column;
+  padding: 0.375rem 0 var(--space-3);
+}
+
+.sidebar--rail .sidebar__nav {
+  overflow: visible;
+}
+
+.sidebar--rail .tooltip-anchor {
+  display: flex;
+  width: 100%;
+}
+
+.sidebar--rail .tooltip-anchor > a,
+.sidebar--rail .tooltip-anchor > button {
+  flex: 1;
+}
+
+.sidebar--rail .sidebar__search,
+.sidebar--rail .sidebar__link,
+.sidebar--rail .sidebar__user {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.sidebar--rail .sidebar__group + .sidebar__group {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+/* Below 960 px: a slide-over drawer with a scrim (focus trap, Esc and focus return in Layout/Sidebar). */
+.sidebar--drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 60;
+  width: min(18rem, 86vw);
+  height: 100%;
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform var(--duration-panel) var(--ease-out), visibility var(--duration-panel);
+}
+
+.sidebar--drawer .sidebar__keys {
+  display: none;
+}
+
+.sidebar--drawer.is-open {
+  transform: none;
+  visibility: visible;
+  box-shadow: var(--shadow-popover);
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: var(--scrim);
+  animation: layer-fade var(--duration-panel) var(--ease-out);
+}
+
+/* The work area: white, with the 52 px page toolbar on top. */
+.workspace {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  font-size: var(--fs-caption);
-  line-height: 1rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.nav__user {
-  color: var(--text);
-}
-
-/* Tool row under the bar: the AI mode and the demo status. */
-.toolbar {
-  border-bottom: 1px solid var(--line);
   background: var(--bg-surface);
 }
 
-.toolbar__inner {
-  max-width: calc(78rem + 2 * var(--gutter));
-  margin: 0 auto;
-  padding: var(--space-2) var(--gutter);
+.page-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 2.75rem;
+  min-height: var(--toolbar-height);
+  padding: var(--space-2) var(--space-5);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--line);
 }
 
-.toolbar__status {
-  margin-left: auto;
+.page-toolbar__lead {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.page-toolbar__slot {
+  display: contents;
+}
+
+.page-toolbar__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  font-weight: 600;
+}
+
+.page-toolbar__end,
+.page-toolbar__status,
+.page-toolbar__actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex: none;
+}
+
+.page-toolbar__actions:empty {
+  display: none;
+}
+
+/* A page rendered without the shell (unit tests) shows its toolbar content inline. */
+.page-toolbar--inline {
+  position: static;
+  min-height: 0;
+  padding: 0;
+  margin-bottom: var(--space-3);
+  border: 0;
+}
+
+.crumbs {
+  min-width: 0;
+}
+
+.crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-ui);
+}
+
+.crumbs li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.crumbs li + li::before {
+  content: "/" / "";
+  color: var(--text-tertiary);
+}
+
+.crumbs a {
+  color: var(--text-secondary);
+}
+
+.crumbs a:hover {
+  color: var(--text);
+}
+
+.crumbs li:last-child {
+  flex: 1 1 auto;
+}
+
+.crumbs [aria-current="page"] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .header-status__item {
@@ -1548,6 +1851,7 @@ kbd {
   align-items: center;
   gap: 0.375rem;
   min-height: var(--control-height-sm);
+  max-width: 16rem;
   padding: 0 var(--space-2);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-chip);
@@ -1558,6 +1862,8 @@ kbd {
   font-weight: 500;
   line-height: var(--lh-small);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 
@@ -1615,22 +1921,35 @@ kbd {
   text-underline-offset: 0.2em;
 }
 
+/* Content: tables and the map use the full width, the dialog a text column, the rest a centred 80 rem column. */
 .content {
-  width: 100%;
-  max-width: calc(78rem + 2 * var(--gutter));
-  margin: 0 auto;
-  padding: var(--space-6) var(--gutter) var(--space-7);
   flex: 1;
+  min-width: 0;
+  padding: var(--space-6) var(--space-6) var(--space-7);
 }
 
 .content:focus {
   outline: none;
 }
 
+.content__inner {
+  max-width: 80rem;
+  margin: 0 auto;
+}
+
+.content--wide .content__inner {
+  max-width: none;
+}
+
+.content--text .content__inner {
+  max-width: var(--text-max);
+}
+
 .page-head {
   margin-bottom: var(--space-5);
 }
 
+/* Breadcrumbs left inside a page (the path itself lives in the toolbar). */
 .breadcrumbs {
   display: flex;
   flex-wrap: wrap;
@@ -1645,12 +1964,31 @@ kbd {
   color: var(--text-secondary);
 }
 
-.breadcrumbs a:hover {
-  color: var(--text);
-}
+@media (max-width: 959.98px) {
+  .page-toolbar {
+    gap: var(--space-2);
+    padding-inline: var(--space-3);
+  }
 
-.breadcrumbs [aria-current="page"] {
-  color: var(--text);
+  .content {
+    padding: var(--space-5) var(--space-4) var(--space-6);
+  }
+
+  /* «Демо» on narrow screens; the full word stays for screen readers. */
+  .demo-pill__rest {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ai-chip {
+    max-width: 8.5rem;
+    display: inline-block;
+    line-height: var(--control-height-sm);
+  }
 }
 
 /* ---------- controls ---------- */
@@ -3690,7 +4028,8 @@ h1 a:hover {
   border-top: 1px solid var(--line);
 }
 
-@media (min-width: 1100px) {
+/* Widths below count the sidebar (248 px): the content area is the viewport minus it. */
+@media (min-width: 1300px) {
   .proposal__layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 20rem;
@@ -4406,7 +4745,7 @@ h1 a:hover {
   line-height: 1;
 }
 
-@media (max-width: 1179px) {
+@media (max-width: 1279.98px) {
   .view-toggle {
     display: inline-flex;
   }
@@ -5372,7 +5711,7 @@ h1 a:hover {
   max-width: 60ch;
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .graph-layout {
     grid-template-columns: minmax(0, 1fr) 22rem;
   }
@@ -5547,7 +5886,7 @@ h1 a:hover {
 
 /* ---------- responsive ---------- */
 
-@media (max-width: 1100px) {
+@media (max-width: 1279.98px) {
   .document__layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5561,28 +5900,8 @@ h1 a:hover {
   }
 }
 
+
 @media (max-width: 1180px) {
-  .brand__team,
-  .nav__identity {
-    display: none;
-  }
-
-  /* «Демо» on narrow screens; the full word stays for screen readers. */
-  .demo-pill__rest {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .topbar__inner {
-    gap: var(--space-4);
-  }
-}
-
-@media (max-width: 960px) {
   .home__grid {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-6);
@@ -5594,16 +5913,6 @@ h1 a:hover {
     --gutter: var(--space-4);
   }
 
-  .topbar__inner {
-    flex-wrap: wrap;
-    min-height: 3.25rem;
-    gap: 0;
-  }
-
-  .brand__team {
-    display: block;
-  }
-
   .lifecycle {
     grid-template-columns: minmax(0, 1fr);
     border-top: 0;
@@ -5612,7 +5921,7 @@ h1 a:hover {
 
   .lifecycle__step {
     border-top: 0;
-    border-left: 4px solid transparent;
+    border-left: 2px solid transparent;
     margin: 0 0 0 -1px;
     padding: var(--space-2) var(--space-3);
   }
@@ -5627,44 +5936,6 @@ h1 a:hover {
 
   .lifecycle__step--failed {
     border-left-color: var(--danger-text);
-  }
-
-  .menu-toggle {
-    display: inline-block;
-  }
-
-  .nav {
-    display: none;
-    flex-basis: 100%;
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--space-3);
-    padding: var(--space-2) 0 var(--space-4);
-    border-top: 1px solid var(--bar-hover);
-  }
-
-  .nav--open {
-    display: flex;
-  }
-
-  .nav ul {
-    flex-direction: column;
-  }
-
-  .nav__link {
-    line-height: 1.4;
-    padding: var(--space-3) var(--space-3);
-  }
-
-  .nav__link.active {
-    background: var(--bar-hover);
-  }
-
-  .nav__identity {
-    display: flex;
-    margin: 0;
-    align-items: flex-start;
-    padding: 0 var(--space-3);
   }
 
   .content {
@@ -5787,8 +6058,9 @@ h1 a:hover {
 /* Print: the document itself. No app chrome; prose on the full width; the passport (provenance and the demo
    caveat) after the prose; status and ID stay under the title. Interactive controls are not printed. */
 @media print {
-  .topbar,
-  .toolbar,
+  .sidebar,
+  .page-toolbar,
+  .scrim,
   .skip-link,
   .document__actions,
   .tabs,
@@ -7224,7 +7496,7 @@ h1 a:hover {
   padding: var(--space-4) var(--space-5);
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1279.98px) {
   .template-detail__layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -7235,17 +7507,6 @@ h1 a:hover {
 
   .template-filters__search {
     grid-column: 1 / -1;
-  }
-}
-
-/* The top bar carries seven sections: keep them on one line down to the phone menu. */
-@media (min-width: 861px) and (max-width: 1180px) {
-  .nav__link {
-    padding: 0 var(--space-2);
-  }
-
-  .topbar__inner {
-    gap: var(--space-3);
   }
 }
 
@@ -7279,9 +7540,3 @@ h1 a:hover {
   }
 }
 
-@media (min-width: 861px) and (max-width: 960px) {
-  .nav__link {
-    padding: 0 var(--space-1);
-    font-size: var(--fs-small);
-  }
-}

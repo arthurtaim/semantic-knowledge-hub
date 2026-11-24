@@ -34,15 +34,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+// UI v2: the trigger is the sidebar's «Поиск» (it replaced the field-like button in the old tool row).
 async function openPalette() {
-  await userEvent.click(screen.getByRole("button", { name: /Спросить или найти…|Найти в базе знаний…/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Поиск" }));
   return screen.getByRole("dialog");
 }
 
-describe("«Спросить или найти» in the header", () => {
+describe("«Спросить или найти»: the ⌘K palette from the sidebar", () => {
   it("opens from a visible trigger as a dialog with a combobox, announces the shortcut, and returns focus on Esc", async () => {
     renderRoutes("/documents", routes);
-    const trigger = screen.getByRole("button", { name: /Спросить или найти…/ });
+    const trigger = screen.getByRole("button", { name: "Поиск" });
     expect(trigger).toHaveAttribute("aria-keyshortcuts", "Meta+K Control+K /");
     expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
     const dialog = await openPalette();
@@ -128,7 +129,7 @@ describe("«Спросить или найти» in the header", () => {
   it("is a search field only when AI is disabled — no mode switch, no ask option", async () => {
     mockApi([{ path: /^\/api\/documents\?query=/, body: matches }]);
     renderRoutes("/documents", routes, withMode("disabled"));
-    const trigger = screen.getByRole("button", { name: /Найти в базе знаний…/ });
+    const trigger = screen.getByRole("button", { name: "Поиск" });
     await userEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Найти в базе знаний" });
     const input = within(dialog).getByRole("combobox", { name: "Поиск по базе знаний" });

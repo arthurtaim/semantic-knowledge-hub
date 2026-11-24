@@ -3,6 +3,8 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api/client";
 import type { SessionResponse } from "./api/types";
 import { Layout } from "./components/Layout";
+import { canAsk } from "./lib/aiMode";
+import { documentTitle } from "./lib/routes";
 import { SessionContext } from "./lib/session";
 import { AskPage } from "./pages/AskPage";
 import { CorporatePage } from "./pages/CorporatePage";
@@ -21,34 +23,17 @@ import { PublicationJobPage } from "./pages/PublicationJobPage";
 import { TemplateDetailPage } from "./pages/TemplateDetailPage";
 import { TemplatesPage } from "./pages/TemplatesPage";
 
-const TITLES: [RegExp, string][] = [
-  [/^\/$/, "Главная"],
-  [/^\/documents\/new$/, "Новый документ"],
-  [/^\/documents\/import$/, "Импорт Markdown"],
-  [/^\/documents\/[^/]+/, "Документ"],
-  [/^\/documents/, "База знаний"],
-  [/^\/graph/, "Граф знаний"],
-  [/^\/templates\/.+/, "Шаблон"],
-  [/^\/templates/, "Шаблоны"],
-  [/^\/ask/, "Спросить"],
-  [/^\/proposals\/new/, "Новое предложение"],
-  [/^\/proposals\/.+/, "Предложение"],
-  [/^\/proposals/, "Предложения"],
-  [/^\/publications\//, "Публикация"],
-  [/^\/integrations/, "Интеграции"],
-];
-
-function useDocumentTitle() {
+/** The browser tab names the page as the toolbar does (lib/routes.ts). */
+function useDocumentTitle(askAvailable: boolean) {
   const { pathname } = useLocation();
   useEffect(() => {
-    const title = TITLES.find(([pattern]) => pattern.test(pathname))?.[1] ?? "Semantic Knowledge Hub";
-    document.title = `${title} — база знаний семантического слоя`;
-  }, [pathname]);
+    document.title = documentTitle(pathname, askAvailable);
+  }, [pathname, askAvailable]);
 }
 
 export function App() {
   const [session, setSession] = useState<SessionResponse | null>(null);
-  useDocumentTitle();
+  useDocumentTitle(canAsk(session?.features.ai_mode));
 
   useEffect(() => {
     api.session().then(setSession).catch(() => setSession(null));
