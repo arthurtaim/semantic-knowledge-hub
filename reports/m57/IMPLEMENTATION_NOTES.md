@@ -1,7 +1,9 @@
 # M5.7 — AI-native system awareness & natural tool use: implementation notes
 
-Branch `feature/m57-ai-native-tools-final`, worktree `semantic-knowledge-hub-m57`. Stages 0–2 (backend, provider
-protocol, scripted model double). Stages 3–4 (UI v2 attribution, E2E, evaluation, final reports) follow.
+Branch `feature/m57-ai-native-tools-final`, worktree `semantic-knowledge-hub-m57`, base `b9ebaf3` (= `main`). Stages 0–2
+(backend, provider protocol, scripted model double) and Stages 3–4 (UI v2 attribution, E2E, evaluation, reports).
+Test results and measurements: `reports/m57/TEST_RESULTS.md`; summary in Russian: `reports/m57/FINAL_REPORT_RU.md`.
+Nothing was deployed, pushed or merged.
 
 ## Stage 0 — inspected base
 
@@ -139,14 +141,14 @@ Observed latency (E2E smoke, scripted model = zero model time, demo base, local 
 end to end with 2 model rounds; composite (count + search) 19 ms; content question 9 ms; tool execution 0–2 ms.
 With a real model the cost is dominated by model rounds: a count takes 2 rounds where the old path took 1.
 
-## Response contract for Stages 3–4 (UI)
+## Response contract used by the UI (Stages 3–4)
 
 `AskResponse` (additive): `system_facts[]`, `tool_steps[]`, `general_knowledge`, `conversation_context[]`;
 request `history[i].context` = the previous response's `conversation_context`. Stream: `tool_call`, `tool_result`,
 `status.round`. TypeScript: `frontend/src/api/types.ts` (`SystemFact`, `SystemFactItem`, `ToolStepInfo`,
 `TurnFactContext`, `AskStreamToolCallEvent`, `AskStreamToolResultEvent`). Exact shapes: `docs/API_CONTRACTS.md` v0.5.
 
-What the UI must do (Stage 3):
+What the UI does (Stage 3 — done, see below):
 1. Render `system_facts` as cards «По данным реестра SKH …» with `value`, `label`, `effective_filters`/`definition`
    when non-empty, `items` as links (`app_path`), `truncated`; turn `[F1]` markers in `answer` into chips/links to the
    card (today they show as plain text). Keep `[n]` citations as they are.
@@ -163,6 +165,40 @@ What the UI must do (Stage 3):
 were verified end to end on 2026-11-24 with the demo base (results above). For Playwright, start Vite with
 `SKH_BACKEND_URL` pointing at that backend.
 
+## Stage 3 — UI v2, minimal changes (commits `4fd43e6`, `eac5b6f`)
+
+| File | Change |
+|---|---|
+| `frontend/src/lib/systemFacts.ts` (new) | pure helpers: marker labels `F1 → С1`, value with unit (`83 документа`), effective filters in words, source titles «По данным реестра SKH / графа связей / реестра шаблонов», proposal-fact detection, copy text, tool progress labels, failed-check selection (`duplicate_call` is not a failure) |
+| `frontend/src/components/SystemFacts.tsx` (new) | `SystemFacts` («Данные системы SKH» block, one row per fact: source + label, value, zero note, filters, definition, breakdown, item links, truncation, scope · generation · time), `FactMarker` (outlined «С1» link + tooltip; click/Enter focuses its row), `FailedChecks`, `ChecksInsufficient`, `useFitInWindow` (shared with citation cards) |
+| `frontend/src/components/AnswerParts.tsx` | `[F\d]` markers in `MarkedLine` (citations unchanged), facts in «Копировать с источниками», copy button also for fact-only answers; citation card uses the shared `useFitInWindow` |
+| `frontend/src/components/AssistantTurn.tsx` | facts block under the text, failed checks next to a standing answer, «Не удалось проверить данные системы» instead of the lexical «нет ответа» card when tool checks failed, general-knowledge tag, progress line from `Turn.activity`, proposal anchor |
+| `frontend/src/components/AskProposal.tsx` | optional `anchorId` (target of a `drafts_propose` fact marker) |
+| `frontend/src/api/client.ts` | the stream parser passed neither `round` nor `tool_call` / `tool_result` (it dropped unknown events) — now it does; malformed tool events are skipped |
+| `frontend/src/lib/useAssistantTurns.ts` | `history[i].context = conversation_context` (≤ 5); `generating` with `round > 1` resets the preliminary text; `tool_call` sets one progress line |
+| `frontend/src/styles/app.css` | `.facts`, `.fact*`, `.fact-ref` / `.fact-pill`, `.answer__general`, `.checks*`, `.insufficient--checks`; tokens only (no new colour) |
+| `backend/app/services/assistant.py` | the server-composed limit / insufficient texts no longer list `duplicate_call` (its message «используй его результат выше» is model guidance; the check was done) |
+
+Decisions:
+- **Marker «С1»** («система»): «Ф1» is already the attachment marker; facts are outlined, citations filled — visibly
+  different, same size and keyboard behaviour. Facts are numbered in the order of `system_facts`.
+- **The value is rendered from the observation**, never parsed from the answer text; the server's
+  `FACT_NUMBER_WARNING` still flags a text that disagrees.
+- **A proposal fact has no second card**: the existing `AskProposal` card is the evidence; Accept/Reject unchanged.
+- **Honest states**: with tool steps that failed and an unconfirmed answer the lexical «Ближайшие совпадения» card is
+  not shown (it would read as «no documents» for a metric that simply was not available). An unconfirmed answer
+  WITHOUT failed steps (e.g. the model declined to answer) keeps the existing card.
+- **The general-knowledge tag** is added next to the support level; the server's warning is kept (server text is never
+  hidden by the client).
+- No change to mock mode, explicit skills, the sources panel groups, or the composer.
+
+## Stage 4 — regression, evaluation, report (commits `946f100`, `7cc9f66`, this report)
+
+- E2E against the scripted double: `frontend/e2e/m57.spec.ts`, projects `scripted` / `scripted-mobile`, selected only
+  when `E2E_SCRIPTED_URL` is set (the ordinary projects ignore the file). Every number is compared with the catalog
+  API (`GET /api/documents?…` total) — an oracle independent of the tool code.
+- Results, commands, latency: `reports/m57/TEST_RESULTS.md`.
+
 ## Tests and evaluation (Stages 0–2)
 
 - Backend before: `670 passed, 6 skipped`. After: see `reports/m57/TEST_RESULTS.md` (Stage 4) — at the end of Stage 2
@@ -172,6 +208,15 @@ were verified end to end on 2026-11-24 with the demo base (results above). For P
   leaks=0` — identical to the base.
 
 ## Deviations and open points
+
+- Stage 3–4: F23 (registry outage) is not reproducible in a running stack with the scripted double (the outage is the
+  backend's, the double only plays the model); it is covered by `test_registry_timeout_or_outage_is_honest` (backend)
+  and the «unavailable» UI tests (Vitest). The E2E honest-state scenarios use the double's refused tool and model
+  failure instead.
+- Stage 3: the client stream parser dropped `round` and the tool events (found while testing the round reset) — fixed
+  in `api/client.ts`; without it the round reset could not work in the real app.
+- Composite answers keep the server's «Не найдено в документах: «утверждённых»» line when a document is cited (the
+  registry fact covers the word, the lexical coverage check does not know facts) — cosmetic, server-side, left as is.
 
 - `test_unknown_question_never_reaches_claude` now runs with `AI_TOOLS_ENABLED=false`: in the tool loop a question
   without passages must reach the model (a system question has no lexical passage). The invariant still holds for
