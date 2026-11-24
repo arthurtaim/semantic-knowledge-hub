@@ -1,9 +1,10 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CorporatePage as CorporatePageData, TemplateDetail } from "../api/types";
+import type { CorporatePage as CorporatePageData, ImportPreview, TemplateDetail } from "../api/types";
 import { Layout } from "../components/Layout";
 import { CorporatePage } from "../pages/CorporatePage";
+import { ImportPage } from "../pages/ImportPage";
 import { IntegrationsPage } from "../pages/IntegrationsPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { ProposalsPage } from "../pages/ProposalsPage";
@@ -131,6 +132,53 @@ describe("Other pages in the new system", () => {
     const updated = cards[1] as HTMLElement;
     expect(within(updated).getByText("Изменение документа")).toBeInTheDocument();
     expect(within(updated).getByRole("link", { name: /Открыть MR в GitLab/ })).toHaveAttribute("href", "https://gitlab.example.test/mr/7");
+  });
+
+  it.each([
+    [1440, "table"],
+    [390, "list"],
+  ] as const)("Импорт at %i px: the metadata fields with their origin as a %s (one column on a phone)", async (width, shape) => {
+    mockViewport(width);
+    const preview: ImportPreview = {
+      state: "needs_metadata_review",
+      has_frontmatter: false,
+      document_id: "SEM-DQ-001",
+      title: "Тестовый документ",
+      fields: [
+        { field: "id", value: "SEM-DQ-001", origin: "system", note: "выделит сервер при создании", evidence: [] },
+        { field: "owner", value: null, origin: "missing", note: "владелец неизвестен: укажите его", evidence: [] },
+      ],
+      missing: ["owner"],
+      templates: [],
+      issues: [],
+      body: "Текст.",
+      preview_html: "<p>Текст.</p>",
+      content: "# Тестовый документ\n\nТекст.\n",
+      source_path: null,
+      keeps_original_metadata: false,
+    };
+    mockApi([
+      { path: "/api/documents/import/staging", body: [] },
+      { method: "POST", path: "/api/documents/import/preview", body: preview },
+      { path: "/api/templates", body: [] },
+      { path: /^\/api\/templates\?/, body: [] },
+      { path: "/api/document-types", body: [] },
+    ]);
+    renderAt("/documents/import", "/documents/import", <ImportPage />);
+    await userEvent.type(screen.getByRole("textbox", { name: "Или вставьте текст" }), "# Тестовый документ");
+    await userEvent.click(screen.getByRole("button", { name: "Показать предпросмотр" }));
+    await screen.findByRole("heading", { name: "Предпросмотр импорта: «Тестовый документ»" });
+    if (shape === "table") {
+      const table = screen.getByRole("table", { name: "Поля метаданных и их происхождение" });
+      expect(within(table).getByRole("rowheader", { name: "ID" })).toBeInTheDocument();
+    } else {
+      expect(screen.queryByRole("table", { name: "Поля метаданных и их происхождение" })).toBeNull();
+      expect(screen.getByRole("heading", { name: "Поля метаданных и их происхождение" })).toHaveClass("visually-hidden");
+      const owner = screen.getByText("владелец неизвестен: укажите его").closest(".import-fields-list__row") as HTMLElement;
+      expect(within(owner).getByRole("term")).toHaveTextContent("Владелец");
+      expect(within(owner).getAllByRole("definition")[0]).toHaveTextContent("—");
+      expect(within(owner).getByText("не указано")).toHaveClass("origin-badge--missing");
+    }
   });
 
   it("Интеграции: H1 as in the sidebar, the list keeps its honest states", async () => {

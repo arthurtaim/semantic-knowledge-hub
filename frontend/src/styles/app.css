@@ -9350,6 +9350,37 @@ a.source__title:hover {
   min-width: 10rem;
 }
 
+/* Phones: one field per row — name, value, then where it came from and the note. */
+.import-fields-list {
+  margin: 0 0 var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.import-fields-list__row {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.import-fields-list dt {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.import-fields-list dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.import-fields-list__origin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--fs-small);
+}
+
 .origin-badge {
   display: inline-block;
   font-size: 0.75rem;
