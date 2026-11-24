@@ -1,12 +1,13 @@
 import type {
   AiDraftResponse,
+  DocType,
   DocumentTemplateInfo,
   NewDocumentMetadata,
   NewDocumentStatus,
   ProposalDetail,
   ProposalOrigin,
 } from "../api/types";
-import { NEW_DOCUMENT_STATUSES } from "./labels";
+import { NEW_DOCUMENT_STATUSES, TYPE_ORDER } from "./labels";
 
 /** Heading text used in the body until the author enters a title. */
 export const TITLE_PLACEHOLDER = "Название документа";
@@ -32,6 +33,8 @@ export interface EditorFields {
   reason: string;
   body: string;
   origin: ProposalOrigin;
+  /** Section of a BLANK document (no template), chosen by the author; null when a template decides it. */
+  type: DocType | null;
 }
 
 /** Splits a comma/newline separated list, trims items and drops empty and duplicate ones. */
@@ -99,6 +102,31 @@ export function fieldsFromTemplate(template: DocumentTemplateInfo, owner = ""): 
     reason: "",
     body: `${headingFor("")}\n\n${withTrailingNewline(template.skeleton.trim())}`,
     origin: "manual",
+    type: null,
+  };
+}
+
+/**
+ * «Пустой документ»: no template, no required sections — only the `# Title` heading to start writing under. The
+ * server allocates the `SEM-DOC-NNN` ID at the first save; the author chose the section (`type`).
+ */
+export function fieldsFromBlank(title: string, type: DocType, owner = ""): EditorFields {
+  return {
+    id: "",
+    manualId: false,
+    title: title.trim(),
+    status: "draft",
+    owner,
+    tags: "",
+    relatedIds: "",
+    sourceRefs: "",
+    summary: "",
+    path: "",
+    pathEdited: false,
+    reason: "",
+    body: `${headingFor(title)}\n\n`,
+    origin: "manual",
+    type,
   };
 }
 
@@ -147,6 +175,7 @@ export function fieldsFromProposal(p: ProposalDetail): EditorFields | null {
   const id = text(meta.id) || p.document_id;
   const path = p.document_path;
   const owner = text(meta.owner);
+  const type = text(meta.type);
   return {
     id,
     manualId: false,
@@ -162,6 +191,8 @@ export function fieldsFromProposal(p: ProposalDetail): EditorFields | null {
     reason: p.reason,
     body: p.new_document.body,
     origin: p.origin,
+    // A template draft takes the template's type; a draft without one keeps (and may change) its own section.
+    type: !p.template_id && (TYPE_ORDER as string[]).includes(type) ? (type as DocType) : null,
   };
 }
 
@@ -175,5 +206,6 @@ export function toMetadata(fields: EditorFields): NewDocumentMetadata {
     related_ids: splitList(fields.relatedIds),
     source_refs: splitList(fields.sourceRefs),
     summary: fields.summary.trim() || null,
+    ...(fields.type ? { type: fields.type } : {}),
   };
 }

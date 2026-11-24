@@ -76,7 +76,7 @@ function OriginBadge({ origin }: { origin: MetadataField["origin"] }) {
 
 // --- preview of one import --------------------------------------------------------------------------
 
-function PreviewView({ preview, onCreated }: { preview: ImportPreview; onCreated: (draftId: string, templateId: string | null) => void }) {
+function PreviewView({ preview, onCreated }: { preview: ImportPreview; onCreated: (draftId: string) => void }) {
   const phone = useMediaQuery(PHONE);
   const [d, setD] = useState<Decisions>(() => initialDecisions(preview));
   // One idempotency key per preview: a double click returns the same draft, a new preview gets a new key.
@@ -119,7 +119,7 @@ function PreviewView({ preview, onCreated }: { preview: ImportPreview; onCreated
               client_request_id: requestId,
             },
       );
-      onCreated(draft.id, draft.template_id);
+      onCreated(draft.id);
     } catch (err) {
       setError(toApiError(err));
     } finally {
@@ -504,9 +504,8 @@ export function ImportPage() {
         <PreviewView
           key={previewKey}
           preview={preview}
-          onCreated={(draftId, templateId) =>
-            navigate(templateId ? `/documents/new?draft=${encodeURIComponent(draftId)}` : `/proposals/${encodeURIComponent(draftId)}`)
-          }
+          // Every imported draft opens in the editor — also one without a template (it can get one later).
+          onCreated={(draftId) => navigate(`/documents/new?draft=${encodeURIComponent(draftId)}`)}
         />
       ) : null}
     </div>

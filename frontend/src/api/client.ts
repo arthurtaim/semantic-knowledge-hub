@@ -11,6 +11,7 @@ import type {
   AssistantSkill,
   AuthoringCheckRequest,
   AuthoringCheckResponse,
+  BlankDocumentInfo,
   ChangeDraftUpdate,
   CorporatePage,
   DocumentDetail,
@@ -465,6 +466,8 @@ export const api = {
   /** Persists a draft of a NEW document (proposal with operation=create). 409 when the ID/path is taken. */
   createNewDocumentDraft: (payload: NewDocumentDraftCreate) =>
     request<ProposalDetail>("/authoring/drafts", { method: "POST", body: json(payload) }),
+  /** «Пустой документ»: the ID prefix, a preview of the next ID / path and the default section. */
+  blankDocument: () => request<BlankDocumentInfo>("/authoring/blank"),
 
   // --- publication to Confluence (M5) ---
   documentPublication: (id: string) =>

@@ -169,6 +169,10 @@ export const AUTHORING_ERROR_TITLE: Record<string, string> = {
   import_invalid: "YAML документа некорректен",
   staged_file_not_found: "Файл не найден среди файлов без метаданных",
   staged_file_unreadable: "Файл нельзя прочитать с сервера",
+  template_type_mismatch: "Раздел документа задаёт шаблон",
+  template_version_changed: "Шаблон обновился после предпросмотра",
+  template_apply_no_change: "Шаблон уже применён",
+  template_apply_invalid_document: "Метаданные документа не разобрать",
 };
 
 /** Titles for AI provider errors (assistant answers and AI drafts); the server message is shown below the title. */

@@ -704,10 +704,16 @@ export interface NewDocumentMetadata {
   related_ids: string[];
   source_refs: string[];
   summary: string | null;
+  /**
+   * Catalogue section of a BLANK document (no template): an existing type only; empty → `guide` on creation, the
+   * draft's own type on a save. A document of a template takes the template's type (leave it out).
+   */
+  type?: DocType | null;
 }
 
 export interface AuthoringCheckRequest {
-  template_id: string;
+  /** Null / absent: a blank document (no template, free Markdown). */
+  template_id?: string | null;
   metadata: NewDocumentMetadata;
   body: string;
   path?: string | null;
@@ -771,7 +777,8 @@ export interface AiDraftResponse {
 }
 
 export interface NewDocumentDraftCreate {
-  template_id: string;
+  /** Null / absent: a blank document — `SEM-DOC-NNN`, no `template` in the YAML; a template can be applied later. */
+  template_id?: string | null;
   metadata: NewDocumentMetadata;
   body: string;
   path?: string | null;
@@ -798,6 +805,19 @@ export interface ChangeDraftUpdate {
   origin?: ProposalOrigin;
   proposed_content: string;
 }
+
+// --- «Пустой документ» (api/authoring.py) ---
+
+/** GET /api/authoring/blank: what the server generates for a document without a template. */
+export interface BlankDocumentInfo {
+  id_prefix: string;
+  /** Preview only: the ID is allocated once, at the first save. */
+  suggested_id: string;
+  suggested_path: string;
+  /** The general section when the author does not choose one. */
+  default_type: DocType;
+}
+
 
 // --- M5: publication of merged GitLab documents to Confluence (backend/app/domain/publications.py) ---
 

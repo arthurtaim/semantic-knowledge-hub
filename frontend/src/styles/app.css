@@ -6795,6 +6795,49 @@ a.source__title:hover {
   }
 }
 
+/* ---------- «Пустой документ» ---------- */
+
+.authoring__template-start {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.authoring__template-start h2,
+.blank-start h2 {
+  margin: 0;
+}
+
+.authoring__start-lead,
+.blank-start__lead {
+  margin: 0;
+  max-width: 75ch;
+}
+
+.blank-start {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-color: var(--line-strong);
+}
+
+.blank-start__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4) var(--space-5);
+}
+
+.blank-start .button-row,
+.blank-start > .muted:last-child {
+  margin: 0;
+}
+
+@media (max-width: 700px) {
+  .blank-start__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------- publication to Confluence (M5) ---------- */
 
 .pub-state {
