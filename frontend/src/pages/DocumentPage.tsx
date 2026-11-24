@@ -12,6 +12,7 @@ import { SafeHtml } from "../components/SafeHtml";
 import { StaleMark } from "../components/StaleMark";
 import { StatusStamp } from "../components/StatusStamp";
 import { WikiLinkPreviewArea } from "../components/WikiLinkPreview";
+import { PageToolbar } from "../components/shell/PageToolbar";
 import { formatDate, formatDateTime, REVIEW_LABEL, SOURCE_LABEL, TYPE_LABEL } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { onTabListKeyDown } from "../lib/tabs";
@@ -289,13 +290,13 @@ export function DocumentPage() {
 
   return (
     <article className="document">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/documents">База знаний</Link>
-        <span aria-hidden="true">/</span>
-        <Link to={`/documents?type=${doc.type}`}>{TYPE_LABEL[doc.type]}</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{doc.id}</span>
-      </nav>
+      <PageToolbar
+        crumbs={[
+          { label: "Документы", to: "/documents" },
+          { label: TYPE_LABEL[doc.type], to: `/documents?type=${doc.type}` },
+          { label: doc.title },
+        ]}
+      />
 
       <header className="document__head">
         <h1>{doc.title}</h1>

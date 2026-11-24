@@ -12,6 +12,7 @@ import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
 import { TemplateStatusBadge } from "./TemplatesPage";
 import { When } from "../components/When";
+import { PageToolbar } from "../components/shell/PageToolbar";
 
 function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
@@ -311,11 +312,7 @@ export function TemplateDetailPage() {
 
   return (
     <article className="template-detail">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/templates">Шаблоны</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{t.title}</span>
-      </nav>
+      <PageToolbar crumbs={[{ label: "Шаблоны", to: "/templates" }, { label: t.title }]} />
       <header className="template-detail__head">
         <h1>
           {t.title} <span className="version-badge version-badge--large">v{t.version}</span>

@@ -5,6 +5,7 @@ import type { DocumentDetail, ProposalDetail } from "../api/types";
 import { ChangeContentEditor } from "../components/ChangeContentEditor";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { StatusStamp } from "../components/StatusStamp";
+import { PageToolbar } from "../components/shell/PageToolbar";
 import { AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { useAsync } from "../lib/useAsync";
@@ -131,11 +132,13 @@ function ProposalEditor({ doc, basis, basisProblem, previousDraft, onReload }: E
 
   return (
     <div className="editor">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to={`/documents/${doc.id}`}>{doc.title}</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Новое предложение</span>
-      </nav>
+      <PageToolbar
+        crumbs={[
+          { label: "Документы", to: "/documents" },
+          { label: doc.title, to: `/documents/${doc.id}` },
+          { label: "Новое предложение" },
+        ]}
+      />
       <div className="page-head">
         <h1>Предложить изменение</h1>
         <p className="lead">
@@ -364,13 +367,13 @@ function ChangeDraftForm({ proposal: p, previousText, onReload }: ChangeDraftFor
 
   return (
     <div className="editor">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/proposals">Предложения</Link>
-        <span aria-hidden="true">/</span>
-        <Link to={back}>{p.document_id}</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Редактирование черновика</span>
-      </nav>
+      <PageToolbar
+        crumbs={[
+          { label: "Предложения", to: "/proposals" },
+          { label: p.document_id, to: back },
+          { label: "Редактирование черновика" },
+        ]}
+      />
       <div className="page-head">
         <h1>Редактирование черновика</h1>
         <p className="lead">

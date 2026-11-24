@@ -5,6 +5,7 @@ import type { GraphNode, Subgraph } from "../api/types";
 import { GraphCanvas } from "../components/GraphCanvas";
 import { GraphLegendView, GraphListView, NodeDetails } from "../components/GraphDetails";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
+import { PageToolbar } from "../components/shell/PageToolbar";
 import {
   filterGraph,
   graphFiltersFrom,
@@ -241,13 +242,17 @@ export function GraphPage() {
   return (
     <div className="graph-page">
       {mode.kind !== "global" ? (
-        <nav className="breadcrumbs" aria-label="Путь">
-          <Link to="/graph">Граф знаний</Link>
-          <span aria-hidden="true">/</span>
-          <span aria-current="page">
-            {mode.kind === "local" ? `Окружение ${focusNode ? nodeDisplayId(focusNode) : mode.focus.replace(/^doc:/, "")}` : "Граф ответа"}
-          </span>
-        </nav>
+        <PageToolbar
+          crumbs={[
+            { label: "Карта знаний", to: "/graph" },
+            {
+              label:
+                mode.kind === "local"
+                  ? `Окружение ${focusNode ? nodeDisplayId(focusNode) : mode.focus.replace(/^doc:/, "")}`
+                  : "Граф ответа",
+            },
+          ]}
+        />
       ) : null}
       <div className="page-head">
         <h1>{mode.kind === "trace" ? "Граф ответа" : "Граф знаний"}</h1>

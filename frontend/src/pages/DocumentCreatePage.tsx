@@ -5,6 +5,7 @@ import type { AiDraftResponse, DocumentTemplateInfo } from "../api/types";
 import { AI_MODE_LABEL } from "../components/AiSourcesPanel";
 import { AuthoringRoute, DocumentEditor } from "../components/DocumentEditor";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
+import { PageToolbar } from "../components/shell/PageToolbar";
 import {
   fieldsFromAi,
   fieldsFromProposal,
@@ -47,11 +48,7 @@ export function DocumentCreatePage() {
 
   return (
     <div className="authoring">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/documents">База знаний</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Новый документ</span>
-      </nav>
+      <PageToolbar crumbs={[{ label: "Документы", to: "/documents" }, { label: "Новый документ" }]} />
       <div className="page-head">
         <h1>Новый документ</h1>
         <p className="lead">

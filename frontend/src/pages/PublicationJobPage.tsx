@@ -20,6 +20,7 @@ import {
 } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
 import { When } from "../components/When";
+import { PageToolbar } from "../components/shell/PageToolbar";
 
 type JobAction = "dry_run" | "publish" | "reconcile" | "acknowledge" | "release";
 
@@ -301,13 +302,13 @@ export function PublicationJobPage() {
 
   return (
     <div className="publication-job">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/documents">База знаний</Link>
-        <span aria-hidden="true">/</span>
-        <Link to={`/documents/${encodeURIComponent(job.document_id)}`}>{job.document_id}</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Публикация</span>
-      </nav>
+      <PageToolbar
+        crumbs={[
+          { label: "Документы", to: "/documents" },
+          { label: job.document_id, to: `/documents/${encodeURIComponent(job.document_id)}` },
+          { label: "Публикация" },
+        ]}
+      />
       <div className="page-head">
         <h1>Публикация в Confluence</h1>
         <p className="lead">

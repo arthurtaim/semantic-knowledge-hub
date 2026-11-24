@@ -4,6 +4,7 @@ import { ApiError, api } from "../api/client";
 import type { ImportPreview, MetadataField, NewDocumentMetadata } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { SafeHtml } from "../components/SafeHtml";
+import { PageToolbar } from "../components/shell/PageToolbar";
 import { splitList } from "../lib/authoring";
 import {
   AUTHORING_ERROR_TITLE,
@@ -377,13 +378,13 @@ export function ImportPage() {
 
   return (
     <div className="import-page">
-      <nav className="breadcrumbs" aria-label="Путь">
-        <Link to="/documents">База знаний</Link>
-        <span aria-hidden="true">/</span>
-        <Link to="/documents/new">Новый документ</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">Импорт Markdown</span>
-      </nav>
+      <PageToolbar
+        crumbs={[
+          { label: "Документы", to: "/documents" },
+          { label: "Новый документ", to: "/documents/new" },
+          { label: "Импорт Markdown" },
+        ]}
+      />
       <div className="page-head">
         <h1>Импорт Markdown</h1>
         <p className="lead">
