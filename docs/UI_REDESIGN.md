@@ -482,7 +482,8 @@ Assistant
   answer cited only from attachments is capped at «Частично подтверждено».
 
 Document and catalog
-- No «Связи» column in the catalog: the list API has no per-document link count.
+- «Обновлён» is the document's own front-matter `updated_at`; the synthetic fixtures got `updated_at` = their
+  `reviewed_at` (79 documents), the 4 never-reviewed drafts have none and show «—» (§6.9).
 - «Вид» holds only the sort.
 - Group counts are per loaded page (≤ 100 rows).
 - The revision is shown short, `sha256:02b52b3c`.
@@ -518,8 +519,10 @@ Map
 6. ~~«Найти связи» needs a document or a question; the skills registry cannot express «one of»: extend it?~~
    **Decided: yes** — `requires.document_or_question`, `skill_input_missing` with `document_or_question`, the
    composer's send rule.
-7. A per-document link count in the list API (for the catalog's «Связи» column)?
-8. Should a recent dialog restore its skill and files, not only the question?
+7. ~~A per-document link count in the list API (for the catalog's «Связи» column)?~~ **Decided: yes** — optional
+   `link_count` in `GET /api/documents` and the «Связи» column (§6.9).
+8. ~~Should a recent dialog restore its skill and files, not only the question?~~ **Decided:** the skill always;
+   files while not expired, otherwise a grey «файл больше недоступен» chip that is never sent (§6.9).
 9. ~~Should the document's «Сведения» panel be remembered like the assistant panel?~~ **Decided: yes** — remembered
    per browser, docked only, mutually exclusive with the assistant.
 
@@ -540,7 +543,7 @@ section.
 
 ### 6.8 Review round — the owner's answers (2026-11-24)
 
-The owner answered open questions 1–6 and 9 (§6.6; 7 and 8 are handled separately) and asked to fold the
+The owner answered open questions 1–6 and 9 (§6.6; 7 and 8 are in §6.9) and asked to fold the
 document's AI block into the assistant panel. Commits on `feature/ui-v2-workspace`:
 
 | Item | What | Commits |
@@ -570,3 +573,55 @@ Checks (this tree, real runs):
 - Screenshots of home / document / proposals × `mock` / `disabled` × light / dark × 1440 / 390 px, and of the
   document panel with the moved actions, «Ждут решения», «Ревью», «Открытые», the «Найти связи» hint and the
   remembered «Сведения» — outside the repository.
+
+### 6.9 Review round — map, excerpts, catalog, recent dialogs (2026-11-24)
+
+Done in parallel on separate branches and merged into `feature/ui-v2-workspace` (merges c531103, c184554, f76600d).
+
+**Knowledge map, «Вся база»** (4202c48, 689a6ac, edf2eb5, 5ffb00b, de69f74, 5a35cc6, a25f516). Kinds form regions
+(`kindRegions`: plain documents in the middle, source systems, integrations, entities, datasets and templates around
+them; `forceX`/`forceY` towards the region, links between two kinds at 0.2 strength; still synchronous,
+deterministic, overlap-free, 200 nodes ≈ 100 ms CPU). Edges rest at opacity 0.18 and are fully drawn, with the
+relation's name, only for the hovered or selected node (the others fade to 0.08; unconfirmed edges stay dashed).
+Only the 15 most connected nodes, the selected and hovered node and their neighbours are named (`labelRank`; greedy
+collision hiding by that priority; hidden names stay in `title` and the accessible name). The legend is one line by
+default, expands on demand, is remembered in `localStorage`, and the map re-fits when it opens or closes unless the
+user moved the view. «Поколение графа» left the bar for «Сведения об узле» (nothing selected) and the tooltip of the
+node/edge count. «Вокруг узла» and «Граф ответа» keep their edges and name every node up to 40 (top 15 beyond).
+Measured: shape overlaps 0; label overlaps 0 at rest, on hover and on selection (1440 × 900: 15 labels at rest).
+
+**Evidence display** (ba719dc, a3e5b2e, b35cf14, d4bbb60). Excerpts from Markdown tables are readable:
+`Citation.excerpt_parts` (additive) carries the verified quote's prose and the table rows it touches with the header
+row, traced by the server word by word to the cited section's Markdown at the same revision. `excerpt` stays the
+verbatim quote; section text, the search index and the provider input are unchanged (eval identical on all 200
+cases). «Источники» shows a mini table (stacked «заголовок: значение» in a narrow column), the marker card shows rows
+of cells joined by « — », and «Копировать с источниками» copies readable rows. The amber line is now «Не найдено в
+документах: «…»» and never names function words (RU + EN `FUNCTION_WORDS`, a superset of the search stop words,
+applied by the server to `unmatched_terms` and the demo notes); with nothing meaningful missing the line is not shown.
+Follow-ups: a readable table input for LLM providers (needs a measured change of passage text); function words still
+count in coverage.
+
+**Catalog and recent dialogs** (a47868b, 9a26cc3, c42ce4d, 98a362d, 4faa8e0).
+- Decision 7: `GET /api/documents` items carry `link_count` — distinct documents linked to the row in the reader's
+  snapshot (declared relations, `related_ids` and inline links plus the documents pointing at it), the same number as
+  the document page's «Связи», computed once per snapshot. The catalog has a right-aligned tabular «Связи» column;
+  phone cards say «3 связи» / «нет связей».
+- «Обновлён» showed the revision time — for the seeded local workspace, the moment the files were loaded. It now
+  shows the document's own date, the optional front-matter `updated_at` (`metadata_updated_at` in the API), «—»
+  without one; «Сначала новые» sorts by the same date (undated last, by title); the document page keeps the revision
+  date as «Дата ревизии». No synthetic document carried `updated_at`, so 4faa8e0 sets it to the document's
+  `reviewed_at` (79 documents); the 4 never-reviewed drafts have none and show «—» (`make mock-kb-validate` OK, eval
+  unchanged).
+- Decision 8: a recent dialog stores the skill (id and name), the dialog id, the attached files (id, name, size,
+  summary, `expires_at`) and the chosen documents, additively in the same `localStorage` format. Reopening restores
+  the field in that dialog: the skill chip from the registry, live files as chips, expired or deleted ones as a grey
+  «файл больше недоступен» chip that is never sent (also after `attachment_not_found`); skill runs without a question
+  are links; a plain question is asked again at once, anything with a skill or files waits for Enter.
+
+Checks of the merged round (this tree, real runs):
+- Backend: `ruff`, `ruff format --check`, `mypy` (108 files) clean; `pytest` 597 passed, 6 skipped before the review
+  round → 670 passed, 6 skipped. Deterministic eval: cases=200 pass=191 R@1=0.9487 R@5=0.9744 MRR=0.9647 leaks=0
+  (unchanged; the excerpt and function-word changes were also compared case by case).
+- Frontend: `tsc`, `eslint` clean; `vitest` 346 → 391 (33 files).
+- E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 55 passed, 1 skipped → 65 passed,
+  1 skipped.
