@@ -77,6 +77,8 @@ test("C-01 a skill via «/», a document via «@», a csv → «Сравнить
 test("C-02 the field refuses an unsupported file without uploading it; a draft skill gives a proposal card", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/");
+  // The drop goes to the rendered form: on a cold dev server `querySelector` could still find nothing.
+  await expect(page.getByRole("textbox", { name: "Вопрос" })).toBeVisible();
   await page.evaluate(() => {
     const transfer = new DataTransfer();
     transfer.items.add(new File(["not a diagram"], "scheme.vsdx"));
