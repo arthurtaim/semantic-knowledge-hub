@@ -4077,6 +4077,57 @@ h1 a:hover {
   text-decoration: underline;
 }
 
+/* Phones: each proposal is a card row, like the catalog — no table scrolling sideways in its own box. */
+.proposal-cards {
+  margin: 0 0 var(--space-5);
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.proposal-card {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.proposal-card__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+  min-width: 0;
+}
+
+.proposal-card__title a {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.proposal-card__title a:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.proposal-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.proposal-card__reason {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 959.98px) {
   .proposals .table-wrap {
     margin-inline: calc(-1 * var(--space-4));

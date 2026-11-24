@@ -103,6 +103,36 @@ describe("Other pages in the new system", () => {
     expect(await within(bar).findByText("1")).toHaveClass("page-toolbar__count");
   });
 
+  it("Предложения on a phone: card rows with every column's facts instead of a table that scrolls sideways", async () => {
+    mockViewport(390);
+    mockApi([
+      {
+        path: "/api/drafts",
+        body: {
+          items: [
+            proposalSummary({ id: "p-new", operation: "create", document_id: "SEM-ARCH-002", document_title: "Витрина метрик", warning_count: 2 }),
+            proposalSummary({ id: "p-upd", merge_request_state: "opened", merge_request_url: "https://gitlab.example.test/mr/7" }),
+          ],
+          total: 2,
+        },
+      },
+    ]);
+    renderAt("/proposals", "/proposals", <ProposalsPage />);
+    const list = await screen.findByRole("list", { name: "Предложения изменений" });
+    expect(screen.queryByRole("table")).toBeNull();
+    const cards = within(list).getAllByRole("listitem");
+    expect(cards).toHaveLength(2);
+    const created = cards[0] as HTMLElement;
+    expect(within(created).getByRole("link", { name: "Витрина метрик" })).toHaveAttribute("href", "/proposals/p-new");
+    expect(within(created).getByText("SEM-ARCH-002")).toBeInTheDocument();
+    expect(within(created).getByText("Новый документ")).toBeInTheDocument();
+    expect(within(created).getByText("Предупреждений: 2")).toBeInTheDocument();
+    expect(within(created).getByText("Изменения:")).toHaveClass("visually-hidden");
+    const updated = cards[1] as HTMLElement;
+    expect(within(updated).getByText("Изменение документа")).toBeInTheDocument();
+    expect(within(updated).getByRole("link", { name: /Открыть MR в GitLab/ })).toHaveAttribute("href", "https://gitlab.example.test/mr/7");
+  });
+
   it("Интеграции: H1 as in the sidebar, the list keeps its honest states", async () => {
     mockApi([
       { path: "/api/integrations/status", body: integrations },

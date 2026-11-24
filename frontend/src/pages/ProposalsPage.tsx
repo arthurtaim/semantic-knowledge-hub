@@ -1,10 +1,12 @@
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import type { MouseEvent } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { ProposalStatus } from "../api/types";
+import type { ProposalStatus, ProposalSummary } from "../api/types";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { MergeRequestStateLabel, OperationBadge, ProposalStateLabel } from "../components/ProposalState";
 import { PROPOSAL_STATUS_LABEL, PROPOSAL_STATUS_ORDER } from "../lib/labels";
 import { useAsync } from "../lib/useAsync";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { When } from "../components/When";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { buttonClass } from "../components/ui/Button";
@@ -18,6 +20,74 @@ const FILTERS: { value: ProposalStatus | ""; label: string }[] = [
 const KNOWN = new Set<string>(PROPOSAL_STATUS_ORDER);
 const isHttpUrl = (value: string | null): value is string => Boolean(value && /^https?:\/\//i.test(value));
 
+/** Phones: card rows instead of the table, as in the catalog (docs/ui-v2/specs/03_SCREENS.md §6). */
+const PHONE = "(max-width: 719.98px)";
+
+function MergeRequestCell({ p }: { p: ProposalSummary }) {
+  if (!p.merge_request_url && !p.merge_request_state) return <span className="muted">—</span>;
+  return (
+    <span className="mr-cell">
+      {p.merge_request_state ? <MergeRequestStateLabel state={p.merge_request_state} /> : null}
+      {isHttpUrl(p.merge_request_url) ? (
+        <a href={p.merge_request_url} target="_blank" rel="noopener noreferrer" aria-label={`Открыть MR в GitLab: ${p.document_title}`}>
+          Открыть MR <span aria-hidden="true">↗</span>
+        </a>
+      ) : null}
+    </span>
+  );
+}
+
+function ChangesCell({ p }: { p: ProposalSummary }) {
+  return (
+    <>
+      <span className="diff__add">+{p.additions}</span> <span className="diff__del">−{p.deletions}</span>
+    </>
+  );
+}
+
+function CheckCell({ p }: { p: ProposalSummary }) {
+  if (p.error_count > 0) return <span className="flag">Ошибок: {p.error_count}</span>;
+  if (p.warning_count > 0) return <span>Предупреждений: {p.warning_count}</span>;
+  return <span>Пройдена</span>;
+}
+
+/** One proposal as a card row (phones): title and ID, then the facts of the table's columns, then the reason. */
+function ProposalCard({ p }: { p: ProposalSummary }) {
+  const navigate = useNavigate();
+  // The whole row opens the proposal for a pointer; the title link is the keyboard and screen-reader path.
+  const open = (event: MouseEvent<HTMLLIElement>) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if ((event.target as HTMLElement).closest("a, button")) return;
+    if (window.getSelection()?.toString()) return;
+    navigate(`/proposals/${p.id}`);
+  };
+  return (
+    <li className="proposal-card" onClick={open}>
+      <span className="proposal-card__title">
+        <Link to={`/proposals/${p.id}`}>{p.document_title}</Link>
+        <code className="doc-id">{p.document_id}</code>
+      </span>
+      <span className="proposal-card__meta">
+        <ProposalStateLabel status={p.status} />
+        <OperationBadge operation={p.operation} />
+        <span>
+          <span className="visually-hidden">Изменения: </span>
+          <ChangesCell p={p} />
+        </span>
+        <CheckCell p={p} />
+        <When value={p.created_at} />
+      </span>
+      {p.reason ? <span className="proposal-card__reason">{p.reason}</span> : null}
+      {p.merge_request_url || p.merge_request_state ? (
+        <span className="proposal-card__meta">
+          <span>Merge Request:</span>
+          <MergeRequestCell p={p} />
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
 function routeNotice(state: unknown): string | null {
   if (state && typeof state === "object" && "notice" in state && typeof state.notice === "string") return state.notice;
   return null;
@@ -29,6 +99,7 @@ export function ProposalsPage() {
   const notice = routeNotice(useLocation().state);
   const raw = params.get("status") ?? "";
   const status = (KNOWN.has(raw) ? raw : "") as ProposalStatus | "";
+  const phone = useMediaQuery(PHONE);
   const { data, error, loading, reload } = useAsync(
     () => api.drafts(status ? { status } : {}),
     `drafts-${status}`,
@@ -93,7 +164,14 @@ export function ProposalsPage() {
           </div>
         </EmptyState>
       ) : null}
-      {data && data.items.length > 0 ? (
+      {data && data.items.length > 0 && phone ? (
+        <ul className="proposal-cards" aria-label="Предложения изменений">
+          {data.items.map((p) => (
+            <ProposalCard key={p.id} p={p} />
+          ))}
+        </ul>
+      ) : null}
+      {data && data.items.length > 0 && !phone ? (
         <div className="table-wrap">
           <table className="data-table">
             <caption className="visually-hidden">Предложения изменений</caption>
@@ -124,35 +202,13 @@ export function ProposalsPage() {
                     <ProposalStateLabel status={p.status} />
                   </td>
                   <td>
-                    {p.merge_request_url || p.merge_request_state ? (
-                      <span className="mr-cell">
-                        {p.merge_request_state ? <MergeRequestStateLabel state={p.merge_request_state} /> : null}
-                        {isHttpUrl(p.merge_request_url) ? (
-                          <a
-                            href={p.merge_request_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`Открыть MR в GitLab: ${p.document_title}`}
-                          >
-                            Открыть MR <span aria-hidden="true">↗</span>
-                          </a>
-                        ) : null}
-                      </span>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
+                    <MergeRequestCell p={p} />
                   </td>
                   <td>
-                    <span className="diff__add">+{p.additions}</span> <span className="diff__del">−{p.deletions}</span>
+                    <ChangesCell p={p} />
                   </td>
                   <td>
-                    {p.error_count > 0 ? (
-                      <span className="flag">Ошибок: {p.error_count}</span>
-                    ) : p.warning_count > 0 ? (
-                      <span>Предупреждений: {p.warning_count}</span>
-                    ) : (
-                      <span>Пройдена</span>
-                    )}
+                    <CheckCell p={p} />
                   </td>
                   <td>
                     <When value={p.created_at} />
