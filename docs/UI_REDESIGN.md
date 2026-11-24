@@ -625,3 +625,130 @@ Checks of the merged round (this tree, real runs):
 - Frontend: `tsc`, `eslint` clean; `vitest` 346 → 391 (33 files).
 - E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 55 passed, 1 skipped → 65 passed,
   1 skipped.
+
+## 7. «Документы» v2 — tree, overview, table (2026-11-24)
+
+Task `docs/ui-v2/documents/TASK.md`, spec `docs/ui-v2/documents/specs/DOCUMENTS_V2.md`, mockups
+`docs/ui-v2/documents/screens/design/docs-01…04.png` (sources `design-source/Docs*.dc.html`). Branch
+`feature/documents-v2`. The only API change is the spec's §4 (additive: `GET /api/documents/tree`, optional `summary`
+and `systems` on list items); no new dependencies — the tree, the menus and the sheets are the app's own components.
+Paths without a prefix are under `frontend/src/`.
+
+### 7.1 What was done, by slice
+
+| Slice | What | Commits |
+|---|---|---|
+| 1. Data | `backend/app/domain/doc_tree.py`: the computed group rule (variant 1: source systems by title and `sys-<key>` tag; integrations by the first consumed source system, else a system tag, else «Общие правила»; standards split into templates and rules; a resolver chain so an explicit `parent` can later go first); `GET /api/documents/tree` through the existing service and visibility (counts, `attention`, per-document review state, owner, systems, link count, group); `summary` / `systems` on list items; `KnowledgeService.today` to pin dates in tests | 1d25fca |
+| 2. Views | `Обзор \| Список \| Таблица \| Карта` in the toolbar, the state in the URL (`lib/docsView.ts`: view, node, doc, q — the older `query` read too —, order, the table's keys), the view remembered (`skh.documents.view`), «Список» by default; one shared tree request (`lib/useDocumentTree.ts`) and the tree model (`lib/docTree.ts`) | b3d9233 |
+| 3. Tree | `components/docs/DocTree.tsx`: «Фильтр дерева», «Свернуть всё», «Все документы» / «Требуют внимания», sections → groups → documents with the API's counts and the yellow attention counter, status by icon shape; APG Tree View; open branches remembered (`skh.documents.tree`); opens to `doc=` / `node=` from the URL | 91885f5 |
+| 4. List and preview | `BranchList.tsx` (path, count, order menu, three-line rows, status only when not approved, no paging, `content-visibility` beyond 200 rows), the toolbar search in the middle column, `DocPreview.tsx` (status, ID, version, title, summary, actions, properties, tags, «Разделы документа»; skeleton, error with retry); the document page's path follows the tree | c45051e |
+| Owner's decision | One primary per view: «Открыть» in the preview is secondary, the preview's title is a link to the document; a double click or Enter on a row opens it (slice 4, kept and tested) | fb32e0f |
+| 5. Обзор | `lib/docsOverview.ts`, `components/docs/DocsOverview.tsx`: «N документов, M утверждены», «K требуют внимания» (→ the table with «Только требующие внимания»), the matrix sections × Всего / Утверждено (number + share bar) / На ревью / Черновики / Устарели / Нужна проверка / Без владельца with a total row (a real `<table>`: table / row / rowheader / cell), zero a pale «—» with words for assistive technology, a number a chip of its tone → «Таблица» filtered by section and state, a section → «Список» with it open; «Что сделать» by action (Завершить ревью, Назначить владельца, Перепроверить, Черновики и устаревшие), three documents each and «Ещё N» → the filtered table. Counted on the client from the tree | 71476f8 |
+| 6. Таблица | `lib/docsTable.ts`, `components/docs/DocsTable.tsx`: menu-button filters (Раздел, Состояние = Статус + «Проверка и владелец», Владелец with «не назначен», Система, Тег, Источник when the base has several), «Только требующие внимания», «N из M», «Группировка: нет / Раздел / Владелец / Система», «Колонки» (remembered, `skh.documents.columns`); columns Название + ID, Раздел, Состояние, Владелец, Системы, Проверен, Связи; header sort with `aria-sort` («Проверен ↑» by default), 38 px rows under a sticky header, the whole row opens the document, ↑↓ between rows, collapsible groups, no paging; every filter, the sort and the grouping in the URL; phones: cards and a filter sheet. `Menu` gained checkbox groups and a trailing count. The old catalog table (`DocsCatalog`, `CatalogTable`, «Вид», «Обновлён», «+ Фильтр») and its CSS are gone | 26919fc |
+| 7. Widths, accessibility | «Список»: the preview a right sheet below 1280 px; below 960 px the tree a left sheet behind «Разделы»; phones one screen at a time with «Назад» in the toolbar. «Таблица» below 1280 px: tighter columns, «Системы» hidden until the reader chooses columns. No sideways scroll at 390 / 360 px; dark theme from the tokens; keyboard tests for the overview and the table | 3ca3991 |
+| Fixes | «Таблица» never shows a previous search's rows while a new search loads; e2e R2-01 waits for the first header click before the second (a race under the full suite's load) | 1f6dc34, 55da64c |
+| 8. This section | — | this commit |
+
+URL keys of «Таблица» (`lib/docsTable.ts`): `type`, `status`, `flag` (`needs_review`, `no_owner`), `owner`
+(`unassigned` = every document without an owner), `system`, `source`, `tag`, `attention=1`, `sort` (`reviewed` by
+default, `-key` descending; an old `sort=updated` falls back to the default), `group` (`type`, `owner`, `system`).
+Values of one key combine with «или», keys with «и» — so «Перепроверить» is `status=approved&flag=needs_review`.
+A link with only table keys opens «Таблица» (old links like `/documents?owner=unassigned` or `?tag=aris` keep working).
+
+Demo numbers (synthetic base, 24 Nov 2026): 83 documents, 73 approved, 12 need attention. Matrix rows (Всего,
+Утверждено, На ревью, Черновики, Устарели, Нужна проверка, Без владельца): Продукт 1/1/–/–/–/–/–; Архитектура
+1/1/–/–/–/–/–; Домен 9/7/2/–/–/1/–; Системы-источники 12/10/1/1/–/1/1; Интеграции 19/16/–/2/1/1/–; Датасеты
+3/3/–/–/–/–/–; Процессы 7/6/–/–/1/1/1; Решения 5/5/–/–/–/–/–; Стандарты 19/17/1/–/1/2/–; Руководства 5/5/–/–/–/–/–;
+Глоссарий 2/2/–/–/–/–/–; total 83/73/4/3/3/6/2. «Что сделать»: 4 / 2 / 2 / 6. «Таблица»: «Только требующие внимания»
+12 of 83; «Интеграции / Черновики» 2 rows; «Владелец: не назначен» 2; «Система: ARIS» 13.
+
+### 7.2 Keyboard
+
+| Keys | Where | Does |
+|---|---|---|
+| ↑↓, → / ←, Home / End, Enter, letters | tree (APG Tree View) | move; open or enter / close or go to the parent; first / last; choose; type-ahead. Esc in «Фильтр дерева» clears it |
+| ↑↓, Home / End; Space; Enter or double click | branch list (one tab stop) | move between rows; show in the preview; open the document |
+| Tab, Enter | preview | the title is a link; «Открыть», «Спросить ассистента», «Предложить изменение» |
+| Tab, Enter | «Обзор» | the section (→ «Список»), then its non-zero numbers (→ «Таблица»); zero cells are text, not stops |
+| Enter / Space on a header | «Таблица» | sort by the column; again — the other direction (`aria-sort`) |
+| ↓ / Enter / Space, ↑↓, Space / Enter, Esc | filter menus, «Колонки» | open; move; toggle (the menu stays open); close and return to the button |
+| ↑↓, Home / End, Enter | «Таблица» rows (one tab stop) | move between rows; open the document |
+| Esc | tree and preview sheets, the filter sheet | close and return focus to «Разделы» / the row / «Фильтры» |
+
+### 7.3 Deviations from the mockups and the spec, with reasons
+
+- **One primary button per view (owner's decision).** docs-01 shows two green buttons — «Создать документ» in the
+  toolbar and «Открыть» in the preview. By the owner's decision «Открыть» is secondary, the preview's title is a link
+  to the document, and a double click or Enter on a list row opens it; the view's one primary is «Создать
+  документ» (fb32e0f).
+- **Search over the whole base uses `GET /api/documents?query=`**, not `/api/search` (spec §1 «Список ветки»): the
+  list shows documents, not passages, and this endpoint gives one row per document with the highlighted snippet and
+  «Почему найдено» the catalog already had; 100 per request, «Показать ещё». In «Таблица» the same search narrows
+  the rows (up to 500 found documents).
+- **List rows say a little more than the spec:** «без владельца» on the meta line, the status as shape + text, and
+  the source once under the list (on every row when sources mix) — catalog features kept (spec §5).
+- **«По названию» uses Russian collation** (Cyrillic before Latin, `localeCompare("ru")`), in the list and in the
+  table's «Название».
+- **The 12 is date-dependent.** «Требуют внимания» counts stale reviews (older than 180 days); DEMO-PROC-009 becomes
+  stale on 2026-12-07 and the count then rises to 13. Backend tests pin the date (`KnowledgeService.today`), unit tests
+  use a frozen copy of the demo tree (`__tests__/docsTreeDemo.json`), E2E compares the UI with the API's
+  `attention_total` and checks 12 only before that date.
+- **«Обзор»:** rows follow the tree's order (spec), not the mockup's order by size; the matrix is a real `<table>`
+  (implicit table / row / rowheader / cell roles) instead of a grid of `div`s; «12 требуют внимания» is a link to
+  «Таблица» with «Только требующие внимания»; the hint says the numbers open the documents «в таблице» (the mockup
+  said «списком»; the spec sends cells to «Таблица»); «Черновики и устаревшие» lists three documents and «Ещё N»
+  like the other groups (spec) instead of only «Показать списком»; «Перепроверить» shows the review date, the other
+  groups the section; a narrow work area puts «Что сделать» under the matrix, a phone shows the sections as a list
+  with chips (no mockup for these widths).
+- **«Таблица»:**
+  - «Состояние» uses the app's `StatusMark` — a draft is a dashed circle (visual system), not the mockup's filled
+    amber dot.
+  - «Проверен ↑» puts «не проверялся» first (the oldest of all, as the list's «По дате проверки»); the mockup lists it
+    after the dates.
+  - Filters «Тег» (the base's 30 most used tags; a tag is answered by the server, the tree has no tags) and «Источник»
+    (only when the base has several sources) keep the old catalog's facets (spec §5); the query is a removable chip;
+    «Сбросить фильтры»; «Спросить ИИ об этих документах» with a query.
+  - The old table's «Обновлён» column and «Вид» menu are gone: spec §3 names «Проверен» and header sorting, and the
+    tree has no update date.
+  - «Состояние» is one menu over two keys (`status`, `flag`), so «Перепроверить» (approved and overdue) is expressible.
+  - «Группировка: Система» puts a document under its first system (the one its tree group is named after), so every
+    document is counted once; groups collapse like the old table's.
+  - Below 1280 px «Системы» starts hidden (seven columns do not fit about 850 px without cutting «Название» and the
+    status); «Колонки» shows it, and an explicit choice holds at any width.
+  - The table is not an ARIA grid: rows are a roving set of title links (↑↓), cells are plain text.
+- **One search field.** docs-04 names the table's field «Фильтр таблицы»; the toolbar keeps one field «Найти в
+  документах» for «Список» and «Таблица» (the same `q` in the URL).
+- **Phones:** «Назад» is an icon button labelled «Назад» (with a tooltip), so «Документы» stays readable at 390 px;
+  the branch head puts the order menu under the branch's name.
+- **Below 960 px** the tree sheet stays open while a section with groups is opened, and closes on a branch to read or a
+  document (one tap fewer than closing it each time).
+- **Dark theme** has no mockups; it follows the tokens.
+
+### 7.4 Open questions
+
+1. «Группировка: Система»: a document under every one of its systems (it would then be counted in several groups),
+   or under its first system as now?
+2. «Проверен ↑»: never-reviewed documents first (now), or after the dated ones as in docs-04?
+3. «Тег» and «Источник» in the filter row: keep them as separate menus, or fold them into one «Ещё» menu?
+4. Should `GET /api/documents/tree` carry `tags` (and the document's `updated_at`)? Tag filtering would then need no
+   server round trip and «Обновлён» could come back as an optional column (an additive API change).
+5. Whole-base search: keep document-level `GET /api/documents?query=` (now), or switch to the passage-level
+   `/api/search` as the spec says?
+6. An explicit `parent` in the metadata as the first source of a document's group (the code is ready for it; spec §4
+   leaves it for later).
+7. «Таблица» below 1280 px: «Системы» hidden by default (now), or all seven columns with more «…»?
+
+### 7.5 Checks
+
+- Frontend: `tsc`, `eslint` clean; `vitest` 391 before «Документы» v2 → 427 after slice 4 → 453 after slice 7 and
+  the fix (38 files; new: `docsOverview.test.tsx`, `docsTable.test.tsx`; updated: `explorer.test.tsx`,
+  `docsList.test.tsx`, `documentsView.test.tsx`).
+- Backend (changed in slice 1 only): `pytest` 670 passed, 6 skipped → 696 passed, 6 skipped; `make lint` (ruff,
+  ruff format, mypy; tsc, eslint) clean.
+- E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 65 passed, 1 skipped before
+  «Документы» v2 → 69 passed, 1 skipped after slice 4 → 73 passed, 1 skipped (new: `documents.spec.ts` V2-05 to
+  V2-08; `catalog.spec.ts` R2-01 and `scenarios.spec.ts` E2E-02 rewritten for the new table). One full run before
+  55da64c had R2-01 fail once (the double header click race); after the fix three runs of the affected specs and a
+  full run passed.
+- Screenshots of «Обзор», «Список», «Таблица» × 1440 × 900, 1100 × 800, 390 × 844 × light / dark, the 900 px tree
+  and preview sheets, and an overflow check at 360 px — outside the repository.
