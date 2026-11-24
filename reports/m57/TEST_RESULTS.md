@@ -142,7 +142,22 @@ scripted stack (5186, `claude_cli` → double), full page, light/dark × 1440×9
 
 ## What was not run
 
-- Live model checks (`make knowledge-eval-live`, `tests/live`) — opt-in, not performed.
-- `gitlab-mock` / `gitlab-mock-mobile` E2E — reserved for the coordinator (port isolation).
+- `make knowledge-eval-live` / `tests/live` (opt-in suites) were not run; the owner-approved live check of M5.7 itself
+  is below.
 - The `AI_PROVIDER=disabled` and Confluence-dependent E2E scenarios — the stacks used here do not configure them
   (skipped before and after alike).
+
+## Coordinator runs (2026-11-24)
+
+- Full Playwright suite on this branch (desktop, mobile, gitlab-mock, gitlab-mock-mobile; mock stack 8020/5185,
+  disabled stack 8021/5186): `65 passed, 1 skipped (1.8m)` — the same as `main`.
+- Backend `ruff`, `ruff format --check`, `mypy` (112 files) clean; `pytest` `755 passed, 6 skipped`; Vitest `411 passed`.
+
+## Live check with Claude (owner-approved, synthetic data)
+
+Personal Hetzner stand, `AI_PROVIDER=claude_cli`, login-protected, deployed commit `7c85aec`. Twelve questions through
+`POST /api/assistant/ask`; registry/graph numbers compared with independent REST oracles: F01 83 = 83, F02 83 = 83,
+F03 (follow-up) 73 = 73, F05 52 = 52 (labelled a text match; 13 by tag), F08 2 = 2, F11 9 relations / 6 documents =
+9 / 6, F14 47 = 47 (approved, text match); F09/F12/F13 answered with verified document citations; F17 flagged
+`general_knowledge`; S05 (SQL / hidden documents) refused with no tool call. Latency 3.8–8.3 s per question, 17.4 s for
+the composite F14 (7 tool calls). Details in `FINAL_REPORT_RU.md`.
