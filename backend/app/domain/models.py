@@ -499,7 +499,8 @@ class TurnFactContext(BaseModel):
 
 
 class ConversationTurnIn(BaseModel):
-    """A previous turn of the same conversation, sent back by the client (the server keeps no chat state)."""
+    """A previous turn of the same conversation, sent back by the client. The answer never reads the stored chat
+    history (v0.7, app/services/conversations.py): the context of a follow-up is what the client sends here."""
 
     model_config = ConfigDict(extra="forbid")
 

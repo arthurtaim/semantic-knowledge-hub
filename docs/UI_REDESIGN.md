@@ -1024,3 +1024,57 @@ Checks (this branch, real runs): backend `ruff`, `ruff format --check`, `mypy` c
 `tsc`, `eslint` clean; `vitest` 504 → 521 (42 files). E2E desktop + mobile (`E2E_DISABLED_URL` set): 76 passed,
 1 skipped (the Confluence scenario), 5 of them new (`e2e/templateStudio.spec.ts`); scripted-model projects:
 `e2e/templateStudioAi.spec.ts` 2 passed.
+
+## История диалогов (2026-11-24)
+
+The owner's report: the history of a chat was not kept — clicking a recent dialog, or coming back to it from another
+section, generated the answer again. Root cause (reproduced by `frontend/src/__tests__/chatHistory.test.tsx` against
+the previous code): «Недавние диалоги» stored only the question in `localStorage` and reopening navigated to
+`/ask?q=…&run=1` (asked again); the turns lived in the page's React state (a plain-memory copy of completed turns
+only), the request was aborted when the page unmounted, and nothing survived a reload. The server kept no history.
+Now (API `docs/API_CONTRACTS.md` v0.7, security `docs/SECURITY.md` «Chat history»):
+
+- **The URL names the dialog**: `/ask?c=<conversation_id>` once it has a question. Opening it shows this tab's turns
+  or loads the stored ones and renders them with the live components (Markdown, markers, sources, provenance, fact
+  cards, proposal cards) — it never calls ask. `?q=…&run=1` (home, ⌘K) starts a NEW dialog once and the URL is
+  replaced by `?c=` at once, so Back, Forward, a remount or a reload never repeat it. Plain `/ask` (a link from another
+  section) continues this tab's last dialog.
+- **In flight across navigation**: turns and the request live in `lib/conversationStore.ts` (module level, keyed by
+  the conversation id, `useSyncExternalStore`); leaving the page never aborts the request — only «Отменить» does —
+  and coming back shows its progress or its answer. The field reacts to the outcome only while its page is mounted
+  (an answer that arrived meanwhile clears the remembered field).
+- **The composer continues** the conversation: follow-ups send the stored answers as history (as before), the field
+  keeps the last skill, the files the server still keeps (others grey, never sent) and the chosen documents. Each
+  dialog keeps its own unsent draft (`dialog:<id>`).
+- **Honest gaps**: a stored turn that never completed says «Ответ не был получен…» with «Повторить запрос»; one still
+  pending elsewhere says so; a failed turn keeps its error and retry; an answer withheld by the server (sources no
+  longer visible, too large) shows the server's neutral note with «Задать вопрос заново»; «Ответ дан по поколению gN;
+  база с тех пор обновлена» is a quiet note above the answer. Nothing is re-run by itself. A dialog the history does
+  not have (deleted, too old, another browser) says so in one notice.
+- **«Недавние диалоги»** come from the server for this browser (newest first, 5): title, «Ответ по базе, 3 источника
+  · 2 вопроса», «По документу «…»», «ответ не получен», time; «Хранятся на сервере для этого браузера 30 дней.»
+  The `localStorage` entries stay only as the offline fallback (shown when the list cannot be read or the history is
+  off) and never re-ask: a row opens its dialog and puts the question, skill, files and documents back in the field.
+- **Delete**: «Удалить диалог» (toolbar, quiet, trash icon; its label collapses on phones like «Новый диалог») and
+  «Очистить историю» (home) confirm inline (danger + quiet, tokens only) and delete on the server at once, with the
+  dialogs' files. «Новый диалог» no longer deletes the files of a dialog the history keeps (only of one never asked).
+- **The document panel** continues its document's conversation (origin «document»): in this tab, or the latest one
+  stored for this browser after a reload; «Новый разговор» starts another. Its files are no longer deleted when the
+  page is left (they belong to the stored conversation; TTL 24 h).
+- **Browser id**: `lib/browserId.ts`, 128 random bits in `localStorage` (`X-SKH-Browser` on assistant requests); a
+  convenience scope for one shared login, not authentication.
+
+Deviations: no list of all conversations beyond the five recent ones (the API pages up to 100; a «Все диалоги» page is
+a follow-up); a selection is stored as a reference only, so a stored selection turn offers no «Повторить»; the
+per-tab `lastDialogId` makes Forward to an empty new dialog continue the last one instead.
+
+Checks (this branch, real runs): root cause reproduced first — `chatHistory.test.tsx` against the previous code: a
+reopened recent dialog sent 1 ask request (expected 0), leaving `/ask` aborted the stream, `/ask?c=` restored nothing,
+`?run=1` kept `?q=` in the URL; the server answered `404` for `GET /api/assistant/conversations/{id}`. Backend `ruff`,
+`ruff format --check`, `mypy` clean; `pytest` 876 → 898 passed, 6 skipped (`tests/test_conversation_history.py`, 22).
+Frontend `tsc`, `eslint` clean; `vitest` 559 → 575 (`chatHistory.test.tsx` 11, document panel 2, home 1 more; tests
+that pinned re-asking, `?q=` after `run=1` or deleting the panel's files on leaving were rewritten to the new
+behaviour). E2E on fresh stacks (desktop, mobile, gitlab-mock, `E2E_DISABLED_URL` set): 87 → 94 passed, 1 skipped
+(`e2e/chatHistory.spec.ts` H-01…H-07; `recentDialogs.spec.ts` rewritten); scripted-model projects 17 → 19
+(`e2e/chatHistoryScripted.spec.ts`: the Markdown answer with markers, facts and provenance is the same markup after a
+reload). Deterministic eval unchanged: cases=216 pass=207 R@1=0.9487 R@5=0.9744 MRR=0.9647 leaks=0.
