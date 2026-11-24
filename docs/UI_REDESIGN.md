@@ -1024,3 +1024,29 @@ Checks (this branch, real runs): backend `ruff`, `ruff format --check`, `mypy` c
 `tsc`, `eslint` clean; `vitest` 504 → 521 (42 files). E2E desktop + mobile (`E2E_DISABLED_URL` set): 76 passed,
 1 skipped (the Confluence scenario), 5 of them new (`e2e/templateStudio.spec.ts`); scripted-model projects:
 `e2e/templateStudioAi.spec.ts` 2 passed.
+
+## M6 «Работа»: проекты, список, доска, Гант (2026-11-25)
+
+Work Management in the same shell (`docs/WORK_MANAGEMENT.md` §9): the sidebar group «Работа» gains «Проекты»
+(`/projects`, `/projects/:key?view=list|board|gantt`, `/tasks/:key`); no second app, no iframe. UI v2 rules hold:
+tokens only (no new colour token — bars, arrows, ghosts and the weekend shading reuse the accent, status, danger,
+edge and surface tokens; `tokens.test.ts` unchanged and green), `components/ui/*` (Button, SegmentedControl for the
+zoom, Chip for «Просроченные» / «Вехи», Menu for filters and the card's «Сменить статус», Icon with seven new line
+icons), `PageToolbar` (path, the «Список / Доска / Гант» switch as the catalog's `view-switch`, one primary «Задача» /
+«Создать проект»), `SidePanel` (the task panel docked ≥ 1200 px, a sheet below, a bottom sheet on phones; forms and
+the schedule preview as sheets). Light and dark, 1440 and 390 / 360 px without sideways scrolling of the page (the
+Gantt scrolls inside its own frame, which is a tab stop).
+
+- Status is text plus shape everywhere: a hollow ring «К работе», a half «В работе», a dot «На проверке», a tick
+  «Готово»; on the Gantt — outline / fill / review fill / grey with a tick; «просрочена» / «отстаёт» is a word in the
+  list and on the card and a red outline plus an alert icon on the Gantt; a milestone is a diamond; pinned dates a lock;
+  priority four bars plus its name.
+- Without write rights there are no write controls at all (no disabled look-alikes): values are text, no drag, no
+  forms; the mode line says why (read-only on a public link, writes switched off).
+- Drag-and-drop on the board and the Gantt follows the knowledge map: pointer events with capture, a 4 px threshold,
+  one animation frame per move, the DOM painted directly; the alternatives without dragging (WCAG 2.5.7) are the card
+  menu, Alt + ← / →, ← / → / Shift + ← / → on a Gantt bar and the date form in the task panel.
+
+Deviations: the Gantt on a phone is a timeline without dragging (dates through the task form — allowed by the M6 UX
+spec); the list stays a table with selects on desktop and turns into card rows below 720 px; the task panel's title is
+the panel heading (the page `/tasks/:key` has it as H1).
