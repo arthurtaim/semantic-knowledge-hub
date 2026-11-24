@@ -83,10 +83,13 @@ async def import_document(
             _, body = split_frontmatter(content)
         except ValueError:
             body = content.split("---", 2)[-1] if content.count("---") >= 2 else content
-    if payload.template_id is None or payload.metadata is None:
+    if payload.metadata is None:
         from app.errors import ApiError
 
-        raise ApiError(422, "validation_failed", "Без исходного YAML нужны template_id и metadata.")
+        raise ApiError(
+            422, "validation_failed", "Без исходного YAML нужны metadata (и template_id для шаблона)."
+        )
+    # Without `template_id`: a blank document (its section is `metadata.type`, by default `guide`).
     return await container.proposals.create_new_document(
         user,
         NewDocumentDraftCreate(

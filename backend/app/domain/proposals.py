@@ -112,14 +112,20 @@ class NewDocumentMetadata(BaseModel):
     related_ids: list[str] = Field(default_factory=list, max_length=50)
     source_refs: list[str] = Field(default_factory=list, max_length=50)
     summary: str | None = Field(default=None, max_length=1000)
+    # The catalogue section. A document of a template takes the template's type (another value is
+    # `422 template_type_mismatch`); a blank document takes this one — on creation `guide` when it is empty,
+    # on a save the type it already has. Only the existing `DocType` values (never invented).
+    type: DocType | None = None
 
 
 class NewDocumentDraftCreate(BaseModel):
-    """`POST /api/authoring/drafts`: a persistent draft of a NEW document (operation=create)."""
+    """`POST /api/authoring/drafts`: a persistent draft of a NEW document (operation=create).
+    Without `template_id`: a BLANK document — free Markdown, no required sections, no `template` in the YAML; a
+    template can be applied later (`POST /api/drafts/{id}/apply-template`)."""
 
     model_config = ConfigDict(extra="forbid")
 
-    template_id: str = Field(min_length=1, max_length=40)
+    template_id: str | None = Field(default=None, min_length=1, max_length=40)
     metadata: NewDocumentMetadata
     body: str = Field(min_length=1, max_length=MAX_PROPOSED_CHARS)
     path: str | None = Field(default=None, max_length=400)
@@ -145,11 +151,11 @@ class DraftUpdate(BaseModel):
 
 
 class AuthoringCheckRequest(BaseModel):
-    """Stateless validation + preview of a new document (nothing is stored)."""
+    """Stateless validation + preview of a new document (nothing is stored). No `template_id`: a blank document."""
 
     model_config = ConfigDict(extra="forbid")
 
-    template_id: str = Field(min_length=1, max_length=40)
+    template_id: str | None = Field(default=None, min_length=1, max_length=40)
     metadata: NewDocumentMetadata
     body: str = Field(min_length=1, max_length=MAX_PROPOSED_CHARS)
     path: str | None = Field(default=None, max_length=400)
@@ -185,6 +191,15 @@ class DocumentTemplateInfo(BaseModel):
     # False: not offered for new documents (still resolvable for its existing drafts, `include_hidden`).
     listed: bool = True
     previous_versions: list[int] = Field(default_factory=list)
+
+
+class BlankDocumentInfo(BaseModel):
+    """`GET /api/authoring/blank`: what the server will generate for a document without a template."""
+
+    id_prefix: str
+    suggested_id: str  # preview only: the ID is allocated once, at the first save
+    suggested_path: str
+    default_type: DocType  # the general section when the person does not choose one
 
 
 class AiDraftRequest(BaseModel):

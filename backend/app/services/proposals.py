@@ -783,9 +783,10 @@ class ProposalService:
             )
 
     async def create_new_document(self, user: UserContext, payload: NewDocumentDraftCreate) -> ProposalDetail:
-        """Persist a draft of a NEW document. Nothing is written to the knowledge base or GitLab."""
+        """Persist a draft of a NEW document. Nothing is written to the knowledge base or GitLab.
+        Without `template_id` it is a blank document (`SEM-DOC-NNN`, the chosen type, no `template`)."""
         authoring = self.authoring
-        template = authoring.template(payload.template_id)
+        template = authoring.template(payload.template_id) if payload.template_id else None
         if payload.client_request_id:
             existing = self._store.find_client_request(user.user_id, payload.client_request_id)
             if existing is not None:  # a retried request: the same draft, never a second one
@@ -795,7 +796,7 @@ class ProposalService:
             if not metadata.id.strip():
                 metadata = metadata.model_copy(update={"id": await authoring.allocate_id(user, template)})
             check = await authoring.check_new_document(
-                user, template.id, metadata, payload.body, payload.path, payload.origin
+                user, template.id if template else None, metadata, payload.body, payload.path, payload.origin
             )
             self._raise_taken(check)
             document_id = metadata.id.strip()
@@ -803,8 +804,8 @@ class ProposalService:
             self._insert_create(
                 user,
                 proposal_id,
-                template_id=template.id,
-                template_version=template.version,
+                template_id=template.id if template else None,
+                template_version=template.version if template else None,
                 document_id=document_id,
                 title=metadata.title.strip(),
                 check=check,
