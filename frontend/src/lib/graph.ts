@@ -8,7 +8,7 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
-import type { GraphEdge, GraphFeedback, GraphLegend, GraphNode, GraphOrigin, GraphSourceKind, Subgraph } from "../api/types";
+import type { GraphEdge, GraphFeedback, GraphLegend, GraphNode, GraphSourceKind, Subgraph } from "../api/types";
 import { STATUS_LABEL } from "./labels";
 
 // --- labels (the legend endpoint is authoritative; these are the offline fallback and must match it) ---
@@ -67,13 +67,6 @@ const UNCONFIRMED_ORIGINS = new Set<string>(["query_trace", "external_discovery"
 export const isUnconfirmedEdge = (edge: Pick<GraphEdge, "origin">): boolean => UNCONFIRMED_ORIGINS.has(edge.origin);
 
 export const KIND_ORDER = Object.keys(KIND_LABEL);
-export const ORIGIN_ORDER: GraphOrigin[] = [
-  "canonical_metadata",
-  "verified_registry",
-  "external_discovery",
-  "query_trace",
-  "ai_suggestion",
-];
 
 export interface GraphLabels {
   kind: (kind: string) => string;

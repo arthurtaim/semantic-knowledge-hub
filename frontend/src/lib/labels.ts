@@ -115,9 +115,6 @@ export const PROPOSAL_STATUS_ORDER: ProposalStatus[] = [
   "submission_failed",
 ];
 
-/** Proposals that wait for a person in this application (home page block). */
-export const PROPOSAL_NEEDS_ACTION: ProposalStatus[] = ["draft", "ready_for_review", "submission_failed", "conflict"];
-
 /** Labels for ProposalEvent.action; unknown actions fall back to the raw value. */
 export const PROPOSAL_ACTION_LABEL: Record<string, string> = {
   created: "Создано",

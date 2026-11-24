@@ -45,11 +45,6 @@ export function replacementRange(text: string, wiki: WikiQuery, caret: number): 
   return [wiki.start, end];
 }
 
-/** Text after inserting `insert` over [from, to); the caret goes right after the insert. */
-export function insertAt(text: string, from: number, to: number, insert: string): { text: string; caret: number } {
-  return { text: text.slice(0, from) + insert + text.slice(to), caret: from + insert.length };
-}
-
 /** `## Heading` lines of a Markdown body (sections for «Улучшить раздел»), outside fenced code. */
 export function sectionHeadings(body: string): string[] {
   const result: string[] = [];

@@ -18,11 +18,6 @@ function loadTarget(id: string): Promise<DocumentDetail> {
   return pending;
 }
 
-/** Clears the preview cache (tests; a sync makes cached previews obsolete anyway). */
-export function clearWikiLinkPreviewCache() {
-  cache.clear();
-}
-
 interface Shown {
   anchor: HTMLElement;
   id: string | null;

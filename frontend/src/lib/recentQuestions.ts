@@ -98,17 +98,6 @@ export function noteDialogSources(userId: string | null | undefined, question: s
   write(userId, items);
 }
 
-/** Phase-4 API: the questions only. */
-export function readRecentQuestions(userId: string | null | undefined): string[] {
-  return readRecentDialogs(userId)
-    .map((item) => item.question)
-    .filter((question) => question.length > 0);
-}
-
-export function rememberQuestion(userId: string | null | undefined, question: string): void {
-  rememberDialog(userId, { question });
-}
-
 export function clearRecentQuestions(userId: string | null | undefined): void {
   if (!userId) return;
   try {

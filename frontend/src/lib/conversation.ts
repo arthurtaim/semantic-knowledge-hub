@@ -26,10 +26,6 @@ export function restoreDraft<T>(key: string): T | null {
   return (drafts.get(key) as T | undefined) ?? null;
 }
 
-export function forgetDraft(key: string): void {
-  drafts.delete(key);
-}
-
 /** The home page sends a message: the dialog page picks it up and runs it as the start of a new dialog. */
 export function handOff<T>(message: T): void {
   pending = message;

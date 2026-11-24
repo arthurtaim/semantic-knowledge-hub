@@ -34,10 +34,6 @@ export function SupportBadge({ confidence }: { confidence: Confidence }) {
 }
 
 /** A Confluence page (external, read through MCP) as opposed to a team document. */
-export function isExternal(citation: Citation): boolean {
-  return citationGroup(citation) === "corporate";
-}
-
 /** Page version of a Confluence citation: the revision, or the last part of `confluence:<space>:<page>:<version>`. */
 export function externalVersion(citation: Citation): string {
   return citation.revision || citation.source_id?.split(":").pop() || "—";

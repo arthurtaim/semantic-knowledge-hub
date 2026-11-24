@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  clearRecentQuestions,
-  noteDialogSources,
-  readRecentDialogs,
-  readRecentQuestions,
-  rememberDialog,
-  rememberQuestion,
-} from "../lib/recentQuestions";
+import { clearRecentQuestions, noteDialogSources, readRecentDialogs, rememberDialog } from "../lib/recentQuestions";
+
+// The questions of the remembered dialogs, newest first (the phase-4 wrappers around this API are gone).
+const questions = (userId: string) => readRecentDialogs(userId).map((dialog) => dialog.question);
 
 function memoryStorage(): Storage {
   const data = new Map<string, string>();
@@ -27,21 +23,21 @@ afterEach(() => vi.unstubAllGlobals());
 describe("recent questions (this browser only)", () => {
   it("keeps the last five per user, newest first, without duplicates", () => {
     vi.stubGlobal("localStorage", memoryStorage());
-    for (const q of ["один?", "два?", "три?", "четыре?", "пять?", "шесть?", "два?"]) rememberQuestion("u1", q);
-    expect(readRecentQuestions("u1")).toEqual(["два?", "шесть?", "пять?", "четыре?", "три?"]);
-    expect(readRecentQuestions("u2")).toEqual([]);
+    for (const q of ["один?", "два?", "три?", "четыре?", "пять?", "шесть?", "два?"]) rememberDialog("u1", { question: q });
+    expect(questions("u1")).toEqual(["два?", "шесть?", "пять?", "четыре?", "три?"]);
+    expect(questions("u2")).toEqual([]);
     clearRecentQuestions("u1");
-    expect(readRecentQuestions("u1")).toEqual([]);
+    expect(questions("u1")).toEqual([]);
   });
 
   it("ignores short questions, missing users and broken or unavailable storage", () => {
     const storage = memoryStorage();
     vi.stubGlobal("localStorage", storage);
-    rememberQuestion("u1", "ok");
-    rememberQuestion(null, "Где база?");
-    expect(readRecentQuestions("u1")).toEqual([]);
+    rememberDialog("u1", { question: "ok" });
+    rememberDialog(null, { question: "Где база?" });
+    expect(questions("u1")).toEqual([]);
     storage.setItem("skh.recent-questions.v1:u1", "{not json");
-    expect(readRecentQuestions("u1")).toEqual([]);
+    expect(questions("u1")).toEqual([]);
     vi.stubGlobal("localStorage", {
       getItem: () => {
         throw new Error("blocked");
@@ -50,8 +46,8 @@ describe("recent questions (this browser only)", () => {
         throw new Error("blocked");
       },
     });
-    expect(() => rememberQuestion("u1", "Где база?")).not.toThrow();
-    expect(readRecentQuestions("u1")).toEqual([]);
+    expect(() => rememberDialog("u1", { question: "Где база?" })).not.toThrow();
+    expect(questions("u1")).toEqual([]);
   });
 
   it("keeps a dialog's skill, its file or document and, once answered, the number of sources (never the answer)", () => {
@@ -63,8 +59,6 @@ describe("recent questions (this browser only)", () => {
       { question: "Сверить выгрузку", at: "2026-11-24T10:05:00Z", skill: "Сравнить с файлом", sources: 4, context: "aris.csv" },
       { question: "", at: "2026-11-24T10:00:00Z", skill: "Найти связи", sources: null, context: "ARIS → Catalog" },
     ]);
-    // A skill run without a question is a dialog, not a question.
-    expect(readRecentQuestions("u1")).toEqual(["Сверить выгрузку"]);
     expect(JSON.stringify(window.localStorage.getItem("skh.recent-questions.v1:u1"))).not.toContain("answer");
   });
 
