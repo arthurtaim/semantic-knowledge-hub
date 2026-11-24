@@ -16,12 +16,14 @@ import type { GraphEdge, GraphNode } from "../api/types";
 import {
   boundsOf,
   EDGE_LABEL_FONT_SIZE,
+  EDGE_LABEL_RANK,
   edgeGeometry,
   edgeOffsets,
   estimateTextWidth,
   isUnconfirmedEdge,
   LABEL_FONT_SIZE,
   LABEL_HEIGHT,
+  labelRank,
   mergePositions,
   nodeShapePath,
   nodeStatusClass,
@@ -29,6 +31,7 @@ import {
   placeLabels,
   shortLabel,
   SPARSE_GRAPH,
+  topByDegree,
   type Bounds,
   type EdgeGeometry,
   type GraphLabels,
@@ -61,8 +64,6 @@ export const DRAG_THRESHOLD = 4;
 /** Alt + arrow moves the selected node by this many screen px (Shift: the larger step). */
 export const MOVE_STEP = 10;
 export const MOVE_STEP_LARGE = 40;
-/** Above this many nodes only the most connected, the selected, the hovered and their neighbours are labelled. */
-const TOP_LABELS = 12;
 const ANNOUNCEMENT_MS = 4000;
 export const MOVED_MESSAGE = "Узел перемещён вручную. Остальные остались на месте.";
 export const MOVED_BY_KEYBOARD = "Узел перемещён";
@@ -232,6 +233,13 @@ export interface GraphCanvasProps {
   focusRequest: { id: string; nonce: number } | null;
   /** The legend, drawn over the canvas in the bottom-left corner. */
   legend?: ReactNode;
+  /**
+   * The whole base («Вся база»): edges stay faint until one of their nodes is hovered or selected, and only the 15
+   * most connected nodes, the selected and the hovered node and their neighbours are named. A neighbourhood or an
+   * answer graph is small and always has its centre selected: its edges are drawn as before and, up to 40 nodes,
+   * every node is named where there is room.
+   */
+  overview?: boolean;
 }
 
 type Gesture =
@@ -293,6 +301,7 @@ export function GraphCanvas({
   onSelect,
   focusRequest,
   legend,
+  overview = false,
 }: GraphCanvasProps) {
   const uid = useId().replace(/:/g, "");
   const svgRef = useRef<SVGSVGElement>(null);
@@ -335,13 +344,39 @@ export function GraphCanvas({
     const rect = legendElement?.getBoundingClientRect();
     return rect ? { w: rect.width, h: rect.height } : { w: 0, h: 0 };
   }, []);
+  /** The view set by the last fit: while it is still the current view, the user has not panned or zoomed. */
+  const fitted = useRef<View | null>(null);
+  const sizeRef = useRef(size);
+  sizeRef.current = size;
   const fitAll = useCallback(
-    (at: Size) => setView(fitView(boundsOf(positionsRef.current, layout.extent), at, legendReserve())),
+    (at: Size) => {
+      const next = fitView(boundsOf(positionsRef.current, layout.extent), at, legendReserve());
+      fitted.current = next;
+      setView(next);
+    },
     [layout.extent, legendReserve],
   );
 
   // A new layout (other data, a reset) or a resized canvas shows the whole graph; manual positions stay.
   useEffect(() => fitAll(size), [layout, size, fitAll]);
+
+  // Opening or closing the legend fits the graph again — unless the user has panned or zoomed since the last fit —
+  // so that the open legend does not cover nodes.
+  useEffect(() => {
+    const legendElement = containerRef.current?.querySelector(".graph-legend");
+    if (!legendElement || typeof ResizeObserver === "undefined") return undefined;
+    let initial = true;
+    const observer = new ResizeObserver(() => {
+      // The observer reports the size once when it starts: that is not a change.
+      if (initial) {
+        initial = false;
+        return;
+      }
+      if (viewRef.current === fitted.current) fitAll(sizeRef.current);
+    });
+    observer.observe(legendElement);
+    return () => observer.disconnect();
+  }, [fitAll]);
 
   useEffect(() => {
     if (!announcement) return undefined;
@@ -441,31 +476,25 @@ export function GraphCanvas({
   }, [incident, active]);
   const isFaded = useCallback((id: string) => active !== null && id !== active && !neighbours.has(id), [active, neighbours]);
 
-  // Labels: priority (selected > hovered > centre > search matches > neighbours > edge types > by degree), placed
-  // in screen space; a label that would overlap another label, cover another labelled node or leave the map's
-  // area is hidden.
+  // Labels: which nodes are named (`labelRank`: selected > hovered > centre > search matches > neighbours > edge
+  // types > the most connected), placed in screen space in that order; a label that would overlap another label,
+  // cover another labelled node or leave the map's area is hidden (the name stays in the node's title).
   const k = view.k;
+  const top = useMemo(() => topByDegree(nodes, localDegree), [nodes, localDegree]);
   const placement = useMemo(() => {
-    const top = new Set(
-      [...nodes]
-        .sort((a, b) => (localDegree.get(b.id) ?? 0) - (localDegree.get(a.id) ?? 0) || b.degree - a.degree)
-        .slice(0, TOP_LABELS)
-        .map((n) => n.id),
-    );
-    const all = nodes.length <= SPARSE_GRAPH;
-    const priority = (id: string): number | null => {
-      if (id === selectedId) return 0;
-      if (id === hovered) return 1;
-      if (id === center) return 2;
-      if (matches.has(id)) return 3;
-      if (neighbours.has(id)) return 4;
-      if (all || top.has(id)) return 6;
-      return null;
+    const context = {
+      selected: selectedId,
+      hovered,
+      center,
+      matches,
+      neighbours,
+      top,
+      all: !overview && nodes.length <= SPARSE_GRAPH,
     };
     const ranked: { request: LabelRequest; rank: number; degree: number }[] = [];
     for (const node of nodes) {
       if (isFaded(node.id) && node.id !== selectedId) continue;
-      const rank = priority(node.id);
+      const rank = labelRank(node.id, context);
       const p = positions.get(node.id);
       if (rank === null || !p) continue;
       const bold = node.id === selectedId || node.id === center;
@@ -481,7 +510,8 @@ export function GraphCanvas({
           height: LABEL_HEIGHT,
           sides: ["right", "left", "below", "above"],
           own: node.id,
-          force: rank === 0 && !isFaded(node.id),
+          // The selected and the hovered node are always named.
+          force: rank <= 1 && !isFaded(node.id),
         },
       });
     }
@@ -490,7 +520,7 @@ export function GraphCanvas({
         const g = geometry.get(edge.id);
         if (!g) continue;
         ranked.push({
-          rank: 5,
+          rank: EDGE_LABEL_RANK,
           degree: 0,
           request: {
             key: `e:${edge.id}`,
@@ -521,7 +551,7 @@ export function GraphCanvas({
       obstacles,
       area,
     );
-  }, [nodes, positions, layout.extent, k, selectedId, hovered, center, matches, neighbours, isFaded, localDegree, extentOf, active, incident, geometry, labels]);
+  }, [nodes, positions, layout.extent, k, selectedId, hovered, center, matches, neighbours, top, overview, isFaded, localDegree, extentOf, active, incident, geometry, labels]);
 
   // --- drawing (memoised layers: a pan only changes the viewport transform) -------------------------------
 
@@ -529,7 +559,7 @@ export function GraphCanvas({
   const markerLit = `arrow-lit-${uid}`;
   const edgeLayer = useMemo(
     () => (
-      <g className="graph-edges">
+      <g className={`graph-edges${overview ? " graph-edges--quiet" : ""}`}>
         {edges.map((edge) => {
           const g = geometry.get(edge.id);
           if (!g) return null;
@@ -550,7 +580,7 @@ export function GraphCanvas({
         })}
       </g>
     ),
-    [edges, geometry, active, byId, labels, marker, markerLit],
+    [edges, geometry, active, byId, labels, marker, markerLit, overview],
   );
 
   const edgeLabelLayer = useMemo(

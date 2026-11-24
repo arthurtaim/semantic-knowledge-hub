@@ -166,6 +166,114 @@ test("E2E-MAP-3 the background pans, the wheel zooms, nodes stay where they are"
   expect(await translate(graphNode(page, "doc:DEMO-INT-001"))).toEqual(nodeBefore);
 });
 
+test("E2E-MAP-5 «Вся база»: edges stay faint until one of their nodes is hovered or selected", async ({ page }) => {
+  const problems = watch(page);
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  const opacity = (selector: string) =>
+    expect.poll(() => page.locator(selector).first().evaluate((element) => Number(getComputedStyle(element).opacity)));
+  await expect(page.locator(".graph-edges .graph-edge.is-lit")).toHaveCount(0);
+  await opacity(".graph-edges .graph-edge").toBeLessThanOrEqual(0.25);
+  const point = await grip(page, "doc:DEMO-INT-001");
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator(".graph-edges .graph-edge.is-lit").first()).toBeAttached();
+  await opacity(".graph-edges .graph-edge.is-lit").toBe(1);
+  await opacity(".graph-edges .graph-edge.is-faded").toBeLessThan(0.15);
+  // The relation of a highlighted edge is named on it.
+  await expect(page.locator("[data-edge-label]").first()).toBeVisible();
+  await page.mouse.move(2, 2);
+  await expect(page.locator(".graph-edges .graph-edge.is-lit")).toHaveCount(0);
+  await page.mouse.click(point.x, point.y);
+  await expect(details(page).getByRole("heading", { name: "ARIS → Catalog: обзор потока (демо)" })).toBeVisible();
+  await page.mouse.move(2, 2);
+  await opacity(".graph-edges .graph-edge.is-lit").toBe(1);
+  expect(problems).toEqual([]);
+});
+
+test("E2E-MAP-6 «Вся база»: only the most connected nodes are named, the hovered and selected ones on top", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  const labels = page.locator("[data-label-for]");
+  const overlapping = () =>
+    page.evaluate(() => {
+      const boxes = Array.from(document.querySelectorAll("[data-label-for]")).map((label) => label.getBoundingClientRect());
+      let count = 0;
+      for (let i = 0; i < boxes.length; i += 1) {
+        for (let j = i + 1; j < boxes.length; j += 1) {
+          const a = boxes[i] as DOMRect;
+          const b = boxes[j] as DOMRect;
+          if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) count += 1;
+        }
+      }
+      return count;
+    });
+  const atRest = await labels.count();
+  expect(atRest).toBeGreaterThanOrEqual(8);
+  expect(atRest).toBeLessThanOrEqual(15);
+  expect(await overlapping()).toBe(0);
+  // Every node without a label keeps its full name in its tooltip and accessible name.
+  const unnamed = await page.evaluate(() => {
+    const named = new Set(Array.from(document.querySelectorAll<SVGTextElement>("[data-label-for]")).map((l) => l.dataset.labelFor));
+    return Array.from(document.querySelectorAll<SVGGElement>("[data-node-id]"))
+      .filter((n) => !named.has(n.dataset.nodeId))
+      .map((n) => {
+        const title = n.querySelector("title")?.textContent ?? "";
+        return title.length > 0 && (n.getAttribute("aria-label") ?? "").startsWith(`${title}.`);
+      });
+  });
+  expect(unnamed.length).toBeGreaterThan(80);
+  expect(unnamed.every(Boolean)).toBe(true);
+
+  const point = await grip(page, "doc:DEMO-INT-001");
+  await page.mouse.move(point.x, point.y);
+  await expect(page.locator('[data-label-for="doc:DEMO-INT-001"]')).toBeVisible();
+  expect(await overlapping()).toBe(0);
+  await page.mouse.click(point.x, point.y);
+  await page.mouse.move(2, 2);
+  await expect(page.locator('[data-label-for="doc:DEMO-INT-001"]')).toHaveClass(/is-strong/);
+  expect(await overlapping()).toBe(0);
+});
+
+test("E2E-MAP-7 the legend is one line by default, expands and remembers the choice", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  const legend = page.getByRole("region", { name: "Условные обозначения" });
+  const toggle = legend.getByRole("button", { name: "Условные обозначения" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  // One line: the title and a swatch per kind on the map.
+  expect((await legend.boundingBox())!.height).toBeLessThanOrEqual(44);
+  await expect(legend.locator(".graph-legend__swatches svg")).toHaveCount(6);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(legend.getByText("Подтверждённая связь")).toBeVisible();
+  // The map is fitted again beside or above the open legend: no node is under it.
+  const covered = () =>
+    page.evaluate(() => {
+      const box = document.querySelector(".graph-legend")!.getBoundingClientRect();
+      return Array.from(document.querySelectorAll("[data-node-id] .graph-node__shape")).filter((shape) => {
+        const r = shape.getBoundingClientRect();
+        const x = r.x + r.width / 2;
+        const y = r.y + r.height / 2;
+        return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+      }).length;
+    });
+  await expect.poll(covered).toBe(0);
+  await expect(legend.getByText("Временная или не подтверждённая")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Условные обозначения" }).click();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Условные обозначения" })).toHaveAttribute("aria-expanded", "false");
+});
+
+test("E2E-MAP-8 the graph generation is not in the bar: in «Сведения» with nothing selected", async ({ page }) => {
+  await page.goto("/graph");
+  await expect(page.getByRole("group", { name: /Схема графа: 97 узлов/ })).toBeVisible();
+  await expect(page.locator(".graph-caption")).not.toContainText("Поколение графа");
+  await expect(page.getByText("97 узлов, 326 связей")).toHaveAttribute("title", /^Поколение графа: g\d+$/);
+  await expect(details(page).getByText(/^Поколение графа: g\d+$/)).toBeVisible();
+});
+
 test("E2E-MAP-4 three modes: «Вся база», «Вокруг узла» and «Граф ответа» from an assistant answer", async ({ page }) => {
   const session = (await (await page.request.get("/api/session", { headers: { "X-SKH-Client": "web" } })).json()) as {
     features: { ai_mode: string };

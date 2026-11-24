@@ -2,9 +2,25 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Profiler, useState } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { GraphEdge, GraphNode, GraphNodeKind } from "../api/types";
+import css from "../styles/app.css?raw";
+import type { GraphEdge, GraphNode, GraphNodeKind, GraphRelation } from "../api/types";
 import { DRAG_THRESHOLD, GraphCanvas, MOVE_STEP, MOVE_STEP_LARGE } from "../components/GraphCanvas";
-import { graphLabels, nodeExtent, type Layout, type Point } from "../lib/graph";
+import { GraphLegendView } from "../components/GraphDetails";
+import {
+  estimateTextWidth,
+  graphLabels,
+  LABEL_FONT_SIZE,
+  LABEL_HEIGHT,
+  labelBox,
+  layoutGraph,
+  nodeExtent,
+  topByDegree,
+  type Box,
+  type LabelSide,
+  type Layout,
+  type Point,
+} from "../lib/graph";
+import demo from "./graphDemo.json";
 
 /*
  * Direct node dragging on the knowledge map (docs/ui-v2/specs/04_KNOWLEDGE_GRAPH.md §2): a press is a click until
@@ -94,10 +110,12 @@ interface HarnessProps {
   onMove?: (id: string, point: Point) => void;
   selectedId?: string | null;
   onRender?: () => void;
+  overview?: boolean;
+  withLegend?: boolean;
 }
 
 /** The canvas with its manual positions held like the page holds them. */
-function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, onRender }: HarnessProps) {
+function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, onRender, overview, withLegend }: HarnessProps) {
   const [overrides, setOverrides] = useState<Map<string, Point>>(new Map());
   const [layout] = useState(() => fixedLayout());
   const canvas = (
@@ -117,6 +135,8 @@ function Harness({ onSelect = () => {}, onMove = () => {}, selectedId = null, on
       labels={graphLabels(null)}
       onSelect={onSelect}
       focusRequest={null}
+      overview={overview}
+      legend={withLegend ? <GraphLegendView labels={graphLabels(null)} kinds={["document", "integration"]} statuses={[]} /> : undefined}
     />
   );
   return <MemoryRouter>{onRender ? <Profiler id="canvas" onRender={onRender}>{canvas}</Profiler> : canvas}</MemoryRouter>;
@@ -282,5 +302,241 @@ describe("Knowledge map: dragging nodes", () => {
     fireEvent.click(reset);
     expect(translate(nodeElement("A"))).toEqual({ x: 0, y: 0 });
     expect(reset).toBeDisabled();
+  });
+});
+
+/** The declarations of one CSS rule of `app.css`, by its exact selector. */
+function cssRule(selector: string): string {
+  const start = css.indexOf(`\n${selector} {`);
+  if (start < 0) throw new Error(`no rule ${selector}`);
+  return css.slice(start, css.indexOf("}", start));
+}
+
+const opacityOf = (selector: string) => Number(/opacity:\s*([\d.]+)/.exec(cssRule(selector))?.[1]);
+
+describe("Knowledge map: edges of the whole base", () => {
+  const edgeClasses = () =>
+    Object.fromEntries(
+      Array.from(document.querySelectorAll<SVGPathElement>(".graph-edges [data-edge-id]")).map((path) => [
+        path.dataset.edgeId,
+        path.classList.contains("is-lit") ? "lit" : path.classList.contains("is-faded") ? "faded" : "rest",
+      ]),
+    );
+
+  it("keeps every edge faint until one of its nodes is hovered or selected", () => {
+    const { rerender } = render(<Harness overview />);
+    expect(document.querySelector(".graph-edges")).toHaveClass("graph-edges--quiet");
+    expect(edgeClasses()).toEqual({ "edge:A:B": "rest", "edge:B:C": "rest" });
+    // Hover: the node's edges are fully visible, the others fade further; leaving the canvas puts them back.
+    fireEvent.pointerOver(nodeElement("A"));
+    expect(edgeClasses()).toEqual({ "edge:A:B": "lit", "edge:B:C": "faded" });
+    // The highlighted edge keeps its relation label.
+    expect(document.querySelector('[data-edge-label="edge:A:B"]')).toHaveTextContent("зависит от");
+    fireEvent.pointerLeave(svg());
+    expect(edgeClasses()).toEqual({ "edge:A:B": "rest", "edge:B:C": "rest" });
+    expect(document.querySelector("[data-edge-label]")).toBeNull();
+    // Selection: the same, for as long as the node is selected.
+    rerender(<Harness overview selectedId="B" />);
+    expect(edgeClasses()).toEqual({ "edge:A:B": "lit", "edge:B:C": "lit" });
+  });
+
+  it("draws the edges of a neighbourhood or an answer graph as before (no faint resting state)", () => {
+    render(<Harness />);
+    expect(document.querySelector(".graph-edges")).not.toHaveClass("graph-edges--quiet");
+  });
+
+  it("styles a resting edge almost transparent, a lit one fully visible, and keeps unconfirmed edges dashed", () => {
+    const rest = opacityOf(".graph-edges--quiet .graph-edge");
+    expect(rest).toBeGreaterThan(0);
+    expect(rest).toBeLessThanOrEqual(0.25);
+    expect(opacityOf(".graph-edges--quiet .graph-edge.is-lit")).toBe(1);
+    expect(opacityOf(".graph-edges--quiet .graph-edge.is-faded")).toBeLessThan(rest);
+    // Confirmed vs unconfirmed stays visible when lit: the dash is on the edge itself, whatever its state.
+    expect(cssRule(".graph-edge--unconfirmed")).toContain("stroke-dasharray");
+  });
+});
+
+describe("Knowledge map: labels", () => {
+  const demoNodes: GraphNode[] = (demo.nodes as [string, GraphNodeKind, string, string | null, number][]).map(
+    ([id, kind, label, status, degree]) => ({ ...node(id, kind), label, document_id: id.replace(/^doc:/, ""), status, degree }),
+  );
+  const demoEdges: GraphEdge[] = (demo.edges as [string, GraphRelation, string][]).map(([source, type, target], i) => ({
+    ...edge(source, target),
+    id: `edge:${i}`,
+    type,
+  }));
+  const degree = new Map<string, number>();
+  for (const e of demoEdges) {
+    degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
+    degree.set(e.target, (degree.get(e.target) ?? 0) + 1);
+  }
+  const neighboursOf = (id: string) =>
+    new Set(demoEdges.flatMap((e) => (e.source === id ? [e.target] : e.target === id ? [e.source] : [])));
+  const top = topByDegree(demoNodes, degree);
+  const demoLayout = layoutGraph(demoNodes, demoEdges, null);
+
+  function MapView({ nodes = demoNodes, edges = demoEdges, layout = demoLayout, selectedId = null, overview = true }: {
+    nodes?: GraphNode[];
+    edges?: GraphEdge[];
+    layout?: Layout;
+    selectedId?: string | null;
+    overview?: boolean;
+  }) {
+    return (
+      <MemoryRouter>
+        <GraphCanvas
+          nodes={nodes}
+          edges={edges}
+          layout={layout}
+          overrides={new Map()}
+          onMoveNode={() => {}}
+          onResetLayout={() => {}}
+          center={null}
+          selectedId={selectedId}
+          matches={new Set()}
+          labels={graphLabels(null)}
+          onSelect={() => {}}
+          focusRequest={null}
+          overview={overview}
+        />
+      </MemoryRouter>
+    );
+  }
+
+  const labelled = () => new Set(Array.from(document.querySelectorAll<SVGTextElement>("[data-label-for]")).map((el) => el.dataset.labelFor ?? ""));
+
+  /** The screen box of every drawn node label, rebuilt from its position, side and text as the canvas places it. */
+  function labelBoxes(layout: Layout): Box[] {
+    return Array.from(document.querySelectorAll<SVGTextElement>("[data-label-for]")).map((element) => {
+      const k = LABEL_FONT_SIZE / Number(element.getAttribute("font-size"));
+      const at = translate(element);
+      const anchor = element.getAttribute("text-anchor");
+      const side: LabelSide = anchor === "start" ? "right" : anchor === "end" ? "left" : Number(element.getAttribute("y")) > 0 ? "below" : "above";
+      const id = element.dataset.labelFor ?? "";
+      const width = estimateTextWidth(element.textContent ?? "", LABEL_FONT_SIZE, element.classList.contains("is-strong"));
+      return labelBox({ x: at.x * k, y: at.y * k, ext: (layout.extent.get(id) ?? 0) * k, width, height: LABEL_HEIGHT }, side);
+    });
+  }
+
+  function expectNoOverlaps(layout: Layout) {
+    const boxes = labelBoxes(layout);
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) {
+        const a = boxes[i]!;
+        const b = boxes[j]!;
+        expect(a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1, `labels ${i} and ${j} overlap`).toBe(false);
+      }
+    }
+  }
+
+  it("names only the 15 most connected nodes at rest, without overlaps; a hidden name stays in the title and the accessible name", () => {
+    render(<MapView />);
+    const named = labelled();
+    expect(named.size).toBeGreaterThanOrEqual(10);
+    expect(named.size).toBeLessThanOrEqual(15);
+    for (const id of named) expect(top.has(id), id).toBe(true);
+    expectNoOverlaps(demoLayout);
+    const hidden = demoNodes.find((n) => !named.has(n.id))!;
+    const element = nodeElement(hidden.id);
+    expect(element.querySelector("title")).toHaveTextContent(hidden.label);
+    expect(element.getAttribute("aria-label")?.startsWith(`${hidden.label}.`)).toBe(true);
+  });
+
+  it("names the selected node and its neighbours before the most connected; while hovering, the hovered node and its neighbours", () => {
+    // A node outside the top 15 with neighbours outside it too: selection, not degree, decides.
+    const selected = demoNodes.find((n) => !top.has(n.id) && [...neighboursOf(n.id)].filter((id) => !top.has(id)).length >= 2)!;
+    const { rerender } = render(<MapView selectedId={selected.id} />);
+    let named = labelled();
+    expect(named.has(selected.id)).toBe(true);
+    expect(document.querySelector(`[data-label-for="${selected.id}"]`)).toHaveClass("is-strong");
+    const around = neighboursOf(selected.id);
+    for (const id of named) expect(id === selected.id || around.has(id), id).toBe(true);
+    expect([...named].some((id) => !top.has(id) && id !== selected.id)).toBe(true);
+    expectNoOverlaps(demoLayout);
+
+    // Hover another node: it is always named, with its own neighbours; the selected node keeps its name.
+    const hovered = demoNodes.find((n) => n.id !== selected.id && !around.has(n.id) && neighboursOf(n.id).size >= 3)!;
+    fireEvent.pointerOver(nodeElement(hovered.id));
+    named = labelled();
+    expect(named.has(hovered.id)).toBe(true);
+    expect(named.has(selected.id)).toBe(true);
+    const near = neighboursOf(hovered.id);
+    for (const id of named) expect(id === selected.id || id === hovered.id || near.has(id), id).toBe(true);
+    expectNoOverlaps(demoLayout);
+
+    fireEvent.pointerLeave(svg());
+    rerender(<MapView />);
+    expect([...labelled()].every((id) => top.has(id))).toBe(true);
+  });
+
+  it("names every node of a small neighbourhood or answer graph where there is room, but only the top 15 of the whole base", () => {
+    const grid = Array.from({ length: 20 }, (_, i) => ({ ...node(`N${i}`), label: `Узел ${i}` }));
+    const chain = grid.slice(1).map((n, i) => edge(grid[i]!.id, n.id));
+    const positions = new Map(grid.map((n, i) => [n.id, { x: (i % 5) * 170, y: Math.floor(i / 5) * 120 }]));
+    const layout: Layout = {
+      positions,
+      radius: new Map(grid.map((n) => [n.id, 10])),
+      extent: new Map(grid.map((n) => [n.id, nodeExtent(n.kind, 10)])),
+      bounds: { minX: -13, minY: -13, maxX: 693, maxY: 373 },
+    };
+    const { unmount } = render(<MapView nodes={grid} edges={chain} layout={layout} overview={false} />);
+    expect(labelled().size).toBe(20);
+    unmount();
+    render(<MapView nodes={grid} edges={chain} layout={layout} />);
+    expect(labelled().size).toBe(15);
+  });
+});
+
+describe("Knowledge map: the legend and the fitted view", () => {
+  /** A ResizeObserver the test drives: jsdom has none. */
+  class FakeResizeObserver {
+    static all: FakeResizeObserver[] = [];
+    elements: Element[] = [];
+    constructor(readonly callback: ResizeObserverCallback) {
+      FakeResizeObserver.all.push(this);
+    }
+    observe(element: Element) {
+      this.elements.push(element);
+    }
+    unobserve() {}
+    disconnect() {
+      this.elements = [];
+    }
+  }
+  const resized = (element: Element) => {
+    for (const observer of FakeResizeObserver.all) {
+      if (observer.elements.includes(element)) act(() => observer.callback([], observer as unknown as ResizeObserver));
+    }
+  };
+
+  beforeEach(() => {
+    FakeResizeObserver.all = [];
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {}, removeItem: () => {} });
+  });
+
+  it("fits the graph again when the legend opens or closes, unless the user has moved the view", () => {
+    render(<Harness withLegend />);
+    const legend = document.querySelector(".graph-legend")!;
+    resized(legend); // the observer's first report: no change
+    const closed = view();
+    // Opened, the legend takes the bottom-left corner: the graph is fitted beside it (here: to its right).
+    fireEvent.click(screen.getByRole("button", { name: "Условные обозначения" }));
+    vi.spyOn(legend, "getBoundingClientRect").mockReturnValue(new DOMRect(16, 314, 440, 230));
+    resized(legend);
+    const opened = view();
+    expect(opened).not.toEqual(closed);
+    // The graph's left edge (x = -13 in graph units) is now right of the legend (16 + 440 px).
+    expect(opened.x + opened.k * -13).toBeGreaterThan(456);
+    // Closed again: back to the full fit.
+    fireEvent.click(screen.getByRole("button", { name: "Условные обозначения" }));
+    resized(legend);
+    expect(view()).toEqual(closed);
+    // After a pan the view is the user's: the legend does not move it.
+    drag(svg(), 40, 30);
+    const panned = view();
+    fireEvent.click(screen.getByRole("button", { name: "Условные обозначения" }));
+    resized(legend);
+    expect(view()).toEqual(panned);
   });
 });

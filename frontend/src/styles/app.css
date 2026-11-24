@@ -7130,9 +7130,6 @@ a.source__title:hover {
   font-size: inherit;
 }
 
-.graph-caption__generation {
-  color: var(--text-tertiary);
-}
 
 .graph-search-status p {
   margin: 0;
@@ -7233,6 +7230,20 @@ a.source__title:hover {
 
 .graph-edge.is-faded {
   opacity: 0.2;
+}
+
+/* «Вся база»: an edge is almost transparent until one of its nodes is hovered or selected — the regions of the kinds
+   carry the overview; the lit edges of a node stand out against the rest (which fade further). */
+.graph-edges--quiet .graph-edge {
+  opacity: 0.18;
+}
+
+.graph-edges--quiet .graph-edge.is-lit {
+  opacity: 1;
+}
+
+.graph-edges--quiet .graph-edge.is-faded {
+  opacity: 0.08;
 }
 
 .graph-arrow {
@@ -7428,6 +7439,19 @@ a.source__title:hover {
 
 .graph-legend__toggle:hover {
   color: var(--text);
+}
+
+/* Collapsed, the legend is one line: its title and the swatches of the kinds on the map (names on hover, and in
+   full once expanded). */
+.graph-legend:not(.is-open) .graph-legend__toggle {
+  white-space: nowrap;
+}
+
+.graph-legend__swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: var(--space-2);
 }
 
 .graph-legend__toggle:focus-visible {
@@ -7736,6 +7760,20 @@ a.source__title:hover {
 }
 
 /* Phones: the details are a sheet from the bottom (docs/ui-v2/specs/03_SCREENS.md §6). */
+/* With nothing selected: the generation of the index the map was built from. */
+.graph-panel__generation {
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-tertiary);
+}
+
+.graph-panel__generation code {
+  font-size: inherit;
+}
+
 .graph-panel--sheet {
   position: fixed;
   left: 0;

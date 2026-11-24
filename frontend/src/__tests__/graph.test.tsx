@@ -153,6 +153,23 @@ describe("Knowledge graph", () => {
     expect(request?.headers["X-SKH-Client"]).toBe("web");
   });
 
+  it("keeps the graph generation out of the bar: in «Сведения» while nothing is selected and in the count's tooltip", async () => {
+    mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
+    renderRoutes("/graph", GRAPH);
+    await screen.findByRole("group", { name: /Схема графа/ });
+    expect(document.querySelector(".graph-caption")).not.toHaveTextContent("Поколение графа");
+    expect(document.querySelector(".graph-bar")).not.toHaveTextContent("Поколение графа");
+    expect(screen.getByText("3 узла, 2 связи")).toHaveAttribute("title", "Поколение графа: g1");
+    expect(within(panel()).getByText(/Поколение графа/)).toHaveTextContent("Поколение графа: g1");
+    // A selected node fills the panel with its own details.
+    const target = screen.getByRole("button", { name: /^Логическая модель: BusinessProcess\./ });
+    target.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(within(panel()).queryByText(/Поколение графа/)).toBeNull();
+    await userEvent.keyboard("{Escape}");
+    expect(within(panel()).getByText(/Поколение графа/)).toBeInTheDocument();
+  });
+
   it("draws nodes as focusable buttons; Enter selects a node and Escape clears the selection", async () => {
     mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
     renderRoutes("/graph", GRAPH);
@@ -320,7 +337,7 @@ describe("Knowledge graph", () => {
     );
     renderRoutes(`/graph?trace=${TRACE}`, GRAPH);
     expect(await screen.findByRole("heading", { name: "Граф ответа", level: 1 })).toBeInTheDocument();
-    expect(screen.getByText(/Текст вопроса не хранится/)).toBeInTheDocument();
+    expect(screen.getByText(/Текст вопроса не хранится/)).toHaveTextContent("Узлы и связи следа временные.");
     expect(document.querySelectorAll(".graph-canvas__svg .graph-edge--unconfirmed")).toHaveLength(2);
 
     await userEvent.click(screen.getByRole("button", { name: /^Регламент заморозки изменений метаданных \(демо\)\. Внешняя страница Confluence, статус не подтверждён/ }));

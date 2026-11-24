@@ -452,7 +452,7 @@ export function GraphPage() {
           <IconButton type="submit" icon="search" label="Найти" size="sm" className="graph-search__submit" />
         </form>
         {merged && !graph.error ? (
-          <p className="graph-bar__count">
+          <p className="graph-bar__count" title={`Поколение графа: ${merged.generation}`}>
             {visible.nodes.length} {pluralRu(visible.nodes.length, "узел", "узла", "узлов")}, {visible.edges.length}{" "}
             {pluralRu(visible.edges.length, "связь", "связи", "связей")}
           </p>
@@ -473,16 +473,9 @@ export function GraphPage() {
         {mode.kind === "trace" ? (
           <>
             Какие источники нашлись для вопроса, какие из них процитированы в ответе и с чем они связаны в базе знаний. Текст
-            вопроса не хранится — узел вопроса подписан ключевыми словами.
+            вопроса не хранится — узел вопроса подписан ключевыми словами. Узлы и связи следа временные.
             {queryNode?.expires_at ? ` След хранится до ${formatDateTime(queryNode.expires_at)}.` : ""}
           </>
-        ) : null}
-        {merged && !graph.error ? (
-          <span className="graph-caption__generation">
-            {" "}
-            Поколение графа: <code>{merged.generation}</code>
-            {mode.kind === "trace" ? " · узлы и связи следа временные" : ""}
-          </span>
         ) : null}
       </p>
 
@@ -576,13 +569,9 @@ export function GraphPage() {
                       labels={labels}
                       onSelect={(id) => select(id)}
                       focusRequest={focusRequest}
+                      overview={mode.kind === "global"}
                       legend={
-                        <GraphLegendView
-                          labels={labels}
-                          kinds={presentKinds}
-                          statuses={presentStatuses}
-                          defaultOpen={!narrow}
-                        />
+                        <GraphLegendView labels={labels} kinds={presentKinds} statuses={presentStatuses} />
                       }
                     />
                   ) : (
@@ -629,6 +618,10 @@ export function GraphPage() {
                       <p className="muted">
                         Выберите узел на схеме или в списке: здесь появятся его метаданные и объяснение каждой связи —
                         кто её объявил, в каком поле и в какой ревизии.
+                      </p>
+                      {/* Which build of the index the map shows (moved here from the bar: a detail, not a heading). */}
+                      <p className="graph-panel__generation">
+                        Поколение графа: <code className="doc-id">{merged.generation}</code>
                       </p>
                     </>
                   )}
