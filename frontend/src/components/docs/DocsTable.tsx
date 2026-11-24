@@ -57,9 +57,10 @@ import { StatusMark } from "../ui/StatusMark";
 /*
  * «Таблица» of «Документы» v2 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §3, design docs-04): every document of the
  * tree (GET /api/documents/tree) in one dense table — Название + ID, Раздел, Состояние, Владелец, Системы,
- * Проверен, Связи — with menu-button filters (Раздел, Состояние, Владелец, Система, Тег; Источник when the base
- * has several), «Только требующие внимания», «N из M», grouping and the columns shown. Every filter, the sort and
- * the grouping live in the URL (lib/docsTable.ts); the columns in this browser. A tag or the toolbar search is
+ * Проверен, Связи — with menu-button filters (Раздел, Состояние, Владелец, Система), «Только требующие внимания»,
+ * «Ещё» (Тег; Источник when the base has several — each chosen value a removable chip on the panel, so an active
+ * filter is never hidden), «N из M», grouping and the columns shown. Every filter, the sort and the grouping live in
+ * the URL (lib/docsTable.ts); the columns in this browser. A tag or the toolbar search is
  * answered by the server (the rows it returns stay). Sorting by a header click (`aria-sort`), «Проверен ↑» by
  * default; rows of 38 px under a sticky header, the whole row opens the document, ↑↓ Home End move between rows
  * (one tab stop). No paging. On a phone the rows are cards and the filters a sheet.
@@ -111,10 +112,13 @@ function useServerIds(query: string, tags: string[]) {
 interface FilterGroup {
   /** The URL key the values belong to. */
   key: ListFilter;
-  /** A caption inside the menu when it has several groups. */
+  /** A caption inside the menu when it has several groups (and in «Ещё», its chips). */
   label?: string;
   options: FilterOption[];
 }
+
+/** The filters behind «Ещё» (the owner's decision): the panel keeps Раздел, Состояние, Владелец, Система. */
+const MORE_FILTERS: readonly ListFilter[] = ["tag", "source"];
 
 interface FilterMenuProps {
   /** «Раздел»: the menu's name and the button's prefix. */
@@ -125,16 +129,18 @@ interface FilterMenuProps {
   values: Record<ListFilter, string[]>;
   onToggle: (key: ListFilter, value: string) => void;
   onClear: () => void;
+  /** «Ещё»: the button keeps its name (the chosen values are chips beside it) and every group has its caption. */
+  more?: boolean;
 }
 
 /** A menu button with independent choices (`menuitemcheckbox`): «Раздел: все», «Раздел: Интеграции, Домен». */
-function FilterMenu({ title, idle, groups, values, onToggle, onClear }: FilterMenuProps) {
+function FilterMenu({ title, idle, groups, values, onToggle, onClear, more = false }: FilterMenuProps) {
   const chosen = groups.flatMap((group) =>
     values[group.key].map((value) => group.options.find((option) => option.value === value)?.label ?? value),
   );
   const active = chosen.length > 0;
   const menuGroups: MenuGroup[] = groups.map((group) => ({
-    label: groups.length > 1 ? group.label : undefined,
+    label: groups.length > 1 || more ? group.label : undefined,
     multi: true,
     items: group.options.map((option) => ({
       id: `${group.key}:${option.value}`,
@@ -151,8 +157,8 @@ function FilterMenu({ title, idle, groups, values, onToggle, onClear }: FilterMe
       className="docs-filter-menu"
       groups={menuGroups}
       trigger={(props) => (
-        <button {...props} type="button" className={active ? "docs-filter docs-filter--on" : "docs-filter"}>
-          <span className="docs-filter__text">{active ? `${title}: ${chosen.join(", ")}` : idle}</span>
+        <button {...props} type="button" className={active && !more ? "docs-filter docs-filter--on" : "docs-filter"}>
+          <span className="docs-filter__text">{active && !more ? `${title}: ${chosen.join(", ")}` : idle}</span>
           <Icon name="chevron" size={12} />
         </button>
       )}
@@ -299,6 +305,11 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   const countText = busy ? "Поиск…" : `${rows.length} из ${total}`;
   const countLabel = busy ? "Поиск…" : `Показано ${rows.length} ${pluralRu(rows.length, "документ", "документа", "документов")} из ${total}`;
   const allSources = sourceOptions(index, sourceLabel);
+  // A chosen source the base does not have (a shared link) is still offered, so it can be unticked.
+  const sourceChoices: FilterOption[] = [
+    ...allSources,
+    ...filters.source.filter((source) => !allSources.some((option) => option.value === source)).map((source) => ({ value: source, label: sourceLabel(source), count: 0 })),
+  ];
   // The 30 most used tags (the facets of the base), plus a chosen tag outside them (a link from a document).
   const topTags = (facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }));
   const tagOptions: FilterOption[] = [
@@ -308,7 +319,7 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
       .map((tag) => ({ value: tag, label: tag, count: (facets.data?.tags ?? []).find((f) => f.value === tag)?.count ?? 0 })),
   ];
 
-  const filterGroups: { title: string; idle: string; groups: FilterGroup[] }[] = [
+  const panelFilters: { title: string; idle: string; groups: FilterGroup[] }[] = [
     { title: "Раздел", idle: "Раздел: все", groups: [{ key: "type", options: sectionOptions(index) }] },
     {
       title: "Состояние",
@@ -320,11 +331,26 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
     },
     { title: "Владелец", idle: "Владелец", groups: [{ key: "owner", options: ownerOptions(index) }] },
     { title: "Система", idle: "Система", groups: [{ key: "system", options: systemOptions(index) }] },
-    ...(tagOptions.length > 0 ? [{ title: "Тег", idle: "Тег", groups: [{ key: "tag" as const, options: tagOptions }] }] : []),
-    ...(allSources.length > 1 || filters.source.length > 0
-      ? [{ title: "Источник", idle: "Источник", groups: [{ key: "source" as const, options: allSources }] }]
-      : []),
   ];
+  // «Ещё»: Тег, and Источник when the base has several sources. A chosen value is always offered (its group shows up).
+  const moreGroups: FilterGroup[] = [
+    ...(tagOptions.length > 0 ? [{ key: "tag" as const, label: "Тег", options: tagOptions }] : []),
+    ...(allSources.length > 1 || filters.source.length > 0 ? [{ key: "source" as const, label: "Источник", options: sourceChoices }] : []),
+  ];
+  // The phone sheet lists every filter as its own group.
+  const sheetFilters = [...panelFilters, ...moreGroups.map((g) => ({ title: g.label ?? g.key, idle: g.label ?? g.key, groups: [g] }))];
+
+  /** An active filter from «Ещё» stays in sight: a chip on the panel with «×». */
+  const moreChips = moreGroups.flatMap((g) =>
+    filters[g.key].map((value) => {
+      const label = g.options.find((option) => option.value === value)?.label ?? (g.key === "source" ? sourceLabel(value) : value);
+      return (
+        <Chip key={`${g.key}:${value}`} tone="filter" onRemove={() => toggle(g.key, value)} removeLabel={`Убрать фильтр «${g.label ?? g.key}: ${label}»`}>
+          {g.label}: {label}
+        </Chip>
+      );
+    }),
+  );
 
   const attentionToggle = (
     <button
@@ -475,7 +501,7 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
               onClick={() => update({ [ATTENTION_PARAM]: filters.attention ? null : "1" })}
             />
           </SheetGroup>
-          {filterGroups.flatMap((menu) =>
+          {sheetFilters.flatMap((menu) =>
             menu.groups.map((g) => (
               <SheetGroup key={`${menu.title}-${g.key}`} title={menu.groups.length > 1 ? `${menu.title}: ${(g.label ?? "").toLocaleLowerCase("ru")}` : menu.title}>
                 {g.options.map((option) => (
@@ -574,7 +600,7 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
     <div className="docs-table-view">
       <div className="docs-table-bar">
         <div className="docs-table-bar__filters" role="group" aria-label="Фильтры">
-          {filterGroups.map((menu) => (
+          {panelFilters.map((menu) => (
             <FilterMenu
               key={menu.title}
               title={menu.title}
@@ -586,6 +612,18 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
             />
           ))}
           {attentionToggle}
+          {moreGroups.length > 0 ? (
+            <FilterMenu
+              more
+              title="Ещё фильтры"
+              idle="Ещё"
+              groups={moreGroups}
+              values={filters}
+              onToggle={toggle}
+              onClear={() => update(Object.fromEntries(MORE_FILTERS.map((key) => [key, null])))}
+            />
+          ) : null}
+          {moreChips}
           {extras}
         </div>
         <div className="docs-table-bar__end">

@@ -322,6 +322,64 @@ describe("Таблица: filters", () => {
     expect(screen.getByText("13 из 83")).toBeInTheDocument();
   });
 
+  it("the panel keeps Раздел, Состояние, Владелец, Система and «Только требующие внимания»; Тег and Источник are in «Ещё»", async () => {
+    renderTable();
+    await screen.findByRole("table");
+    const panel = screen.getByRole("group", { name: "Фильтры" });
+    await within(panel).findByRole("button", { name: "Ещё" });
+    expect(within(panel).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "Раздел: все",
+      "Состояние: все",
+      "Владелец",
+      "Система",
+      "Только требующие внимания",
+      "Ещё",
+    ]);
+    await userEvent.click(within(panel).getByRole("button", { name: "Ещё" }));
+    const more = screen.getByRole("menu", { name: "Ещё фильтры" });
+    expect(within(more).getByRole("group", { name: "Тег" })).toBeInTheDocument();
+    expect(within(more).queryByRole("group", { name: "Источник" })).toBeNull(); // one source in the demo base
+  });
+
+  it("a tag chosen in «Ещё» is a chip on the panel with «×»: the filter is never hidden", async () => {
+    const tagged = { items: ["DEMO-INT-001", "DEMO-INT-002"].map((id) => ({ id })), total: 2, page: 1, size: 100, notes: [] };
+    mockApi([
+      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/documents?tag=aris&page=1&size=100", body: tagged },
+    ]);
+    renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
+    await screen.findByRole("table");
+    const panel = screen.getByRole("group", { name: "Фильтры" });
+    await userEvent.click(await within(panel).findByRole("button", { name: "Ещё" }));
+    await userEvent.click(within(screen.getByRole("menu", { name: "Ещё фильтры" })).getByRole("menuitemcheckbox", { name: /^aris/ }));
+    expect(location()).toBe("/documents?view=table&tag=aris");
+    await userEvent.keyboard("{Escape}");
+    expect(within(panel).getByRole("button", { name: "Ещё" })).not.toHaveClass("docs-filter--on"); // the chip says it
+    const chip = within(panel).getByText("Тег: aris").closest(".chip") as HTMLElement;
+    expect(chip).toHaveClass("chip--filter");
+    expect(await screen.findByText("2 из 83")).toBeInTheDocument();
+    await userEvent.click(within(chip).getByRole("button", { name: "Убрать фильтр «Тег: aris»" }));
+    expect(location()).toBe("/documents?view=table");
+    expect(within(panel).queryByText("Тег: aris")).toBeNull();
+    expect(titleLinks()).toHaveLength(83);
+  });
+
+  it("a link with a source filter opens with its chip and «Источник» in «Ещё»", async () => {
+    renderTable("/documents?view=table&source=gitlab");
+    const panel = await screen.findByRole("group", { name: "Фильтры" });
+    const chip = within(panel).getByText("Источник: GitLab").closest(".chip") as HTMLElement;
+    expect(screen.getByText("Документов с такими фильтрами нет")).toBeInTheDocument(); // the demo base is local
+    await userEvent.click(within(panel).getByRole("button", { name: "Ещё" }));
+    const sources = within(screen.getByRole("menu", { name: "Ещё фильтры" })).getByRole("group", { name: "Источник" });
+    expect(within(sources).getByRole("menuitemcheckbox", { name: /^Локальный workspace/ })).toHaveAttribute("aria-checked", "false");
+    expect(within(sources).getByRole("menuitemcheckbox", { name: /^GitLab/ })).toHaveAttribute("aria-checked", "true");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.click(within(chip).getByRole("button", { name: "Убрать фильтр «Источник: GitLab»" }));
+    expect(location()).toBe("/documents?view=table");
+    expect(titleLinks()).toHaveLength(83);
+  });
+
   it("Система «Data Catalog» lists every document about it, also those whose first system (tree group) is another", async () => {
     renderTable();
     await screen.findByRole("table");

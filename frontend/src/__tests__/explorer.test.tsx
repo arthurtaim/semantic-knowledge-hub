@@ -343,7 +343,9 @@ describe("Catalog: filters from old links", () => {
     renderRoutes("/documents?type=integration&tag=aris", { "/documents": <ExplorerPage /> });
     // a link with filters opens «Таблица»; the tag is answered by the server, the section by the tree
     expect(await screen.findByRole("button", { name: "Раздел: Интеграции" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Тег: aris" })).toBeInTheDocument();
+    // the tag lives in «Ещё»; while chosen it is a chip on the panel
+    expect(screen.getByRole("button", { name: "Убрать фильтр «Тег: aris»" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ещё" })).toBeInTheDocument();
     expect(await screen.findByText("2 из 11")).toBeInTheDocument();
     expect(calls.some((c) => c.url === "/api/documents?tag=aris&page=1&size=100")).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "Сбросить фильтры" }));
