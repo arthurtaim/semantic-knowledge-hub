@@ -64,8 +64,14 @@ async function updateDocument(page: Page, request: APIRequestContext, id: string
   await mergeProposal(page, request, (await created.json()).id);
 }
 
-async function openPreview(page: Page, id: string): Promise<void> {
+/** UI v2: «Публикация в Confluence» lives in the «История» segment of the document. */
+async function openPublication(page: Page, id: string): Promise<void> {
   await page.goto(`/documents/${id}`);
+  await page.getByRole("tab", { name: "История" }).click();
+}
+
+async function openPreview(page: Page, id: string): Promise<void> {
+  await openPublication(page, id);
   const block = page.locator("#publication");
   await expect(block.getByRole("heading", { name: "Публикация в Confluence" })).toBeVisible();
   await block.getByRole("link", { name: "Открыть предпросмотр" }).click();
@@ -81,7 +87,7 @@ test.beforeEach(async ({ request }) => {
 test("@gitlab E2E-23/24/25/26/27 merged document → dry-run without writes → page created → updated → repeat is a no-op", async ({ page, request }) => {
   const title = `Публикация E2E ${Date.now().toString(36)}`;
   const id = await mergedDocument(page, request, title);
-  await page.goto(`/documents/${id}`);
+  await openPublication(page, id);
   await expect(page.locator("#publication")).toContainText("Предпросмотр готов");
   await expect(page.locator("#publication")).toContainText("тестовый дубль Confluence");
 
@@ -110,7 +116,7 @@ test("@gitlab E2E-23/24/25/26/27 merged document → dry-run without writes → 
 
   // E2E-27: preparing again for the same revision changes nothing in Confluence
   const writes = state.write_requests;
-  await page.goto(`/documents/${id}`);
+  await openPublication(page, id);
   await expect(page.locator("#publication")).toContainText("Опубликован");
   await page.locator("#publication").getByRole("button", { name: "Подготовить публикацию" }).click();
   await expect(page.getByTestId("publication-action")).toHaveText("Изменений нет — новая версия не создаётся");
@@ -131,7 +137,7 @@ test("@gitlab E2E-28 manual edit in Confluence → conflict, the page is not ove
   await request.post(`${CONFLUENCE}/__mock__/pages/${pageId}/edit`, { data: {} });
 
   await updateDocument(page, request, id, "Изменение после ручной правки.");
-  await page.goto(`/documents/${id}`);
+  await openPublication(page, id);
   await expect(page.locator("#publication")).toContainText("Конфликт");
   await page.locator("#publication").getByRole("link", { name: "Открыть предпросмотр" }).click();
   await expect(page.getByRole("heading", { name: "Страница изменена в Confluence вручную" })).toBeVisible();
@@ -154,7 +160,7 @@ test("@gitlab E2E-31 lost answer after a successful create is reconciled without
 
 test("@gitlab E2E-33/36 unmerged revision and a foreign page with the same title are never published", async ({ page, request }) => {
   // fixtures sit in the mock's initial commit: no merged MR proves that revision
-  await page.goto("/documents/SEM-ARCH-001");
+  await openPublication(page, "SEM-ARCH-001");
   await page.locator("#publication").getByRole("button", { name: "Подготовить публикацию" }).click();
   await expect(page.getByText("Публикация заблокирована:", { exact: true })).toBeVisible();
   await expect(page.getByText(/merged MR/).first()).toBeVisible();

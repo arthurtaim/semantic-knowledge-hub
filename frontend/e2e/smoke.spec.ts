@@ -28,11 +28,13 @@ test("AC-01..AC-04: start, search ARIS, open document, empty search", async ({ p
   await expect(row).toContainText("Локальный workspace");
 
   await result.click();
-  const passport = page.getByRole("complementary", { name: "Паспорт документа" });
-  await expect(passport).toContainText("Черновик");
-  await expect(passport).toContainText("demo-team");
-  await expect(passport).toContainText("local://SEM-INT-ARIS-001");
-  await expect(passport).toContainText("sha256:");
+  // UI v2: the former passport is «Сведения о документе» (a right panel opened from «Все сведения»).
+  await page.getByRole("button", { name: "Все сведения" }).click();
+  const details = page.getByRole("complementary", { name: "Сведения о документе" });
+  await expect(details).toContainText("Черновик");
+  await expect(details).toContainText("demo-team");
+  await expect(details).toContainText("local://SEM-INT-ARIS-001");
+  await expect(details).toContainText("sha256:");
 
   await page.goto("/documents?query=квазизвездный");
   await expect(page.getByText("По запросу «квазизвездный» ничего не найдено")).toBeVisible();
@@ -66,7 +68,7 @@ test("AC-05..AC-07: grounded answer with valid citation, insufficient evidence, 
 test("AC-08..AC-10: propose, inspect diff, reject and mark ready without touching the source", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/documents/SEM-PROC-001");
-  const revision = await page.locator(".passport__fields .doc-id").nth(1).textContent();
+  const revision = await page.locator(".doc-props__revision").getAttribute("title");
 
   for (const decision of ["reject", "ready"] as const) {
     await page.goto("/proposals/new?document=SEM-PROC-001");
@@ -92,8 +94,8 @@ test("AC-08..AC-10: propose, inspect diff, reject and mark ready without touchin
   }
 
   await page.goto("/documents/SEM-PROC-001");
-  await expect(page.locator(".passport__fields .doc-id").nth(1)).toHaveText(revision ?? "");
-  await expect(page.locator(".passport")).toContainText("Утверждён");
+  await expect(page.locator(".doc-props__revision")).toHaveAttribute("title", revision ?? "");
+  await expect(page.locator(".doc-head__status")).toContainText("Утверждён");
   expect(problems).toEqual([]);
 });
 
@@ -108,7 +110,7 @@ test("Integration status is honest", async ({ page }) => {
 
 test("@mobile phone layout has no horizontal scroll and a working menu", async ({ page }) => {
   await page.goto("/documents/SEM-ARCH-001");
-  await expect(page.getByRole("complementary", { name: "Паспорт документа" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Semantic Layer — demonstration architecture" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
   // UI v2: «Меню» in the page toolbar opens the sidebar as a drawer; a link closes it.

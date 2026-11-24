@@ -120,12 +120,17 @@ export function documentTitle(pathname: string, askAvailable: boolean): string {
   return `${crumbs[crumbs.length - 1]?.label ?? "Semantic Knowledge Hub"} — база знаний семантического слоя`;
 }
 
+/** A document page (not «Новый документ» or the import): it centres its own text column and docks a right panel. */
+function isDocumentPage(pathname: string): boolean {
+  return /^\/documents\/[^/]+$/.test(pathname) && pathname !== "/documents/new" && pathname !== "/documents/import";
+}
+
 /**
- * How wide the page content is: tables and the map use the full width of the work area, the dialog a text
- * column (≤ 780 px), everything else a centred column up to 80 rem.
+ * How wide the page content is: tables, the map and a document (its text column plus a right panel) use the
+ * full width of the work area, the dialog a text column (≤ 780 px), everything else a centred column up to 80 rem.
  */
 export function contentWidth(pathname: string): "wide" | "text" | "default" {
-  if (pathname === "/graph" || pathname === "/documents" || pathname === "/proposals") return "wide";
+  if (pathname === "/graph" || pathname === "/documents" || pathname === "/proposals" || isDocumentPage(pathname)) return "wide";
   if (pathname === "/ask") return "text";
   return "default";
 }

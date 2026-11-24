@@ -123,14 +123,17 @@ describe("Four AI modes: no dead controls", () => {
     ];
     mockApi(routes);
     const { unmount } = renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />, withMode("disabled"));
-    await screen.findByRole("complementary", { name: "Паспорт документа" });
+    await screen.findByRole("heading", { level: 1, name: "ARIS integration — questions for discovery" });
     expect(screen.getByRole("link", { name: "Предложить изменение" })).toBeInTheDocument(); // the manual path
-    expect(screen.queryByRole("link", { name: "Спросить ассистента" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "ИИ-помощник" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    expect(screen.getByRole("menuitem", { name: "Показать на карте знаний" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Спросить ассистента" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "ИИ-помощник по документу" })).toBeNull();
     unmount();
     renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />, withMode("mock"));
     expect(await screen.findByRole("heading", { name: "ИИ-помощник по документу" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Ещё" }));
+    expect(screen.getByRole("menuitem", { name: "Спросить ассистента" })).toBeInTheDocument();
   });
 
   it("disabled: a new document is created manually only — the AI option is not offered", async () => {

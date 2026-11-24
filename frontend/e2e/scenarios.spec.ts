@@ -49,12 +49,18 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
 
 test("E2E-03 document with metadata and provenance", async ({ page }) => {
   await page.goto("/documents/SEM-ARCH-001");
-  const passport = page.getByRole("complementary", { name: "Паспорт документа" });
-  for (const text of ["SEM-ARCH-001", "Архитектура", "demo-team", "Утверждён", "sha256:", "Дата ревизии"]) {
-    await expect(passport).toContainText(text);
+  // UI v2: the key facts under the title, every other former passport field in «Сведения о документе».
+  const properties = page.locator(".doc-props");
+  for (const text of ["demo-team", "Архитектура", "Локальный workspace", "sha256:"]) {
+    await expect(properties).toContainText(text);
   }
-  await expect(passport).toContainText("внешней ссылки нет"); // local workspace: no fake link
-  await expect(passport.getByRole("link", { name: /ARIS integration/ })).toBeVisible(); // related document
+  await page.getByRole("button", { name: "Все сведения" }).click();
+  const details = page.getByRole("complementary", { name: "Сведения о документе" });
+  for (const text of ["SEM-ARCH-001", "Архитектура", "demo-team", "Утверждён", "sha256:", "Дата ревизии"]) {
+    await expect(details).toContainText(text);
+  }
+  await expect(details).toContainText("внешней ссылки нет"); // local workspace: no fake link
+  await expect(details.getByRole("link", { name: /ARIS integration/ })).toBeVisible(); // related document
   await expect(page.getByRole("link", { name: "Предложить изменение" })).toBeVisible();
 });
 
@@ -84,7 +90,7 @@ test("E2E-05 question without evidence → «Недостаточно данны
 test("E2E-06/07 create a proposal and review the diff; the source stays unchanged", async ({ page }) => {
   const problems = watch(page);
   await page.goto("/documents/SEM-STD-001");
-  const revision = await page.locator(".passport__fields .doc-id").nth(1).textContent();
+  const revision = await page.locator(".doc-props__revision").getAttribute("title");
   await page.goto("/proposals/new?document=SEM-STD-001");
   const editor = page.getByLabel(/Текст документа/);
   await editor.fill((await editor.inputValue()) + "\nДобавлено правило E2E-06.\n");
@@ -100,7 +106,7 @@ test("E2E-06/07 create a proposal and review the diff; the source stays unchange
   await expect(page.getByRole("button", { name: "Отправить в GitLab" })).toBeDisabled(); // not configured offline
 
   await page.goto("/documents/SEM-STD-001");
-  await expect(page.locator(".passport__fields .doc-id").nth(1)).toHaveText(revision ?? "");
+  await expect(page.locator(".doc-props__revision")).toHaveAttribute("title", revision ?? "");
   expect(problems).toEqual([]);
 });
 
