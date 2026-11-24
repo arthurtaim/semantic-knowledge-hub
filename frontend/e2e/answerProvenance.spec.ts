@@ -56,8 +56,11 @@ test("«Какая у нас модель данных?», then «нам инт�
   const problems = watch(page);
   await askFromHome(page, "Какая у нас модель данных?");
   await quietlySynthetic(page, 0);
-  // The AI mode is a separate thing, said in the head.
-  await expect(answerAt(page, 0).locator(".answer__mode")).toContainText("Внутренняя модель");
+  // The AI mode is a separate thing, said in the head: it names the provider (internal model or the personal Claude
+  // Code CLI — the scripted double runs behind either transport) and never calls synthetic content «демо».
+  const mode = answerAt(page, 0).locator(".answer__mode");
+  await expect(mode).toContainText(/Внутренняя модель|Claude Code CLI/);
+  await expect(mode).not.toContainText(/демо/i);
 
   await followUp(page, "нам интересны демо-файлы", 2);
   await quietlySynthetic(page, 1);
