@@ -40,6 +40,7 @@ from app.domain.models import (
     ScopeStatus,
     SkillRef,
     SystemFact,
+    ToolStepInfo,
     TurnFactContext,
     UserContext,
 )
@@ -89,6 +90,15 @@ LIMIT_TEXTS = {
     "invalid_model_response": "модель вернула ответ в неверном формате",
     "provider_error": "модель перестала отвечать",
 }
+
+
+# A refused repeat of an identical call («already done — use the result above») is guidance for the model: the
+# check itself was done, so it is never shown to the user as something that could not be checked.
+_NOT_A_FAILURE = frozenset({"duplicate_call"})
+
+
+def _user_facing_failures(steps: list[ToolStepInfo]) -> list[ToolStepInfo]:
+    return [s for s in steps if s.outcome != "ok" and s.message and s.error_code not in _NOT_A_FAILURE]
 
 
 @dataclass(frozen=True)
@@ -435,7 +445,7 @@ class AssistantService:
         extras: AskExtras,
     ) -> AskResponse:
         passages = outcome.passages
-        steps_failed = [s for s in outcome.steps if s.outcome != "ok" and s.message]
+        steps_failed = _user_facing_failures(outcome.steps)
         if outcome.final is None:
             response = self._limit_response(prepared, outcome)
         else:
@@ -528,7 +538,7 @@ class AssistantService:
                 f"- {f.label}: {f.value} [{f.ref}]" if f.value is not None else f"- {f.label} [{f.ref}]"
                 for f in facts
             ]
-        failed = list(dict.fromkeys(s.message for s in outcome.steps if s.outcome != "ok" and s.message))
+        failed = list(dict.fromkeys(s.message for s in _user_facing_failures(outcome.steps) if s.message))
         if failed:
             lines.append("Не удалось проверить: " + " ".join(failed[:3]))
         warnings = [

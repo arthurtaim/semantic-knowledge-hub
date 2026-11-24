@@ -395,6 +395,8 @@ def test_a_loop_that_never_finishes_stops_at_the_limit(tool_client: Factory) -> 
         ("invalid", "duplicate_call"),  # the identical call is answered «already done», not re-run
     ]
     assert "лимит шагов" in data["answer"] and len(data["system_facts"]) == 1
+    # a refused repeat is guidance for the model, not a failed check: never shown to the user
+    assert "уже выполнен" not in data["answer"] and "используй" not in data["answer"]
     assert data["confidence"] == "partial" and data["system_facts"]  # the verified count is still reported
     assert f"{len(oracle(GUEST))} [F" in data["answer"]
     assert "### catalog_query" not in recorder.calls[-1][0]
