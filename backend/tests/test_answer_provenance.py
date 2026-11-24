@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,12 +25,14 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.adapters.ai.base import AnswerOptions, CitedEvidence, ContextPassage, ProviderAnswer
-from app.adapters.ai.openai_compatible import format_passages
-from app.domain.models import Citation, DocStatus, SystemFact, SystemFactItem
+from app.adapters.ai.openai_compatible import OpenAICompatibleAIProvider, format_passages
+from app.domain.models import AskRequest, Citation, DocStatus, SystemFact, SystemFactItem
 from app.domain.provenance import MIXED_PROVENANCE_WARNING, summarize_provenance
-from tests.conftest import make_doc, write_doc
+from tests.conftest import FIXTURES_DIR, make_doc, write_doc
+from tests.support.scripted_model import Recorder, openai_transport
 from tests.test_assistant_tool_loop import Factory, m57_workspace, tool_client  # noqa: F401 (fixtures)
 
 DEMO_CLAIM = re.compile(r"демо|синтетич|synthetic|demo", re.I)
@@ -212,3 +215,101 @@ def test_tool_answers_and_failures_never_claim_only_demo(tool_client: Factory, q
     answer = ask(client, question)
     assert provenance_warnings(answer) == [], answer["warnings"]
     assert answer["provenance"]["overall"] == "none"  # a count is a registry fact, not cited content
+
+
+# --- C: broad questions and follow-ups on the full synthetic base -------------------------------------------------
+@pytest.fixture
+def full_tool_client(
+    client_factory: Callable[..., TestClient], full_workspace: Path
+) -> Callable[[], tuple[TestClient, Recorder]]:
+    def factory() -> tuple[TestClient, Recorder]:
+        client = client_factory(local_knowledge_dir=full_workspace)
+        container = client.app.state.container  # type: ignore[attr-defined]
+        recorder = Recorder()
+        container.assistant._provider = OpenAICompatibleAIProvider(
+            base_url="https://ai.example.test/v1",
+            model="scripted",
+            api_key=SecretStr(""),
+            timeout_seconds=10,
+            allowed_hosts=["ai.example.test"],
+            transport=openai_transport(recorder),
+            instructions=container.instructions,
+        )
+        return client, recorder
+
+    return factory
+
+
+def boilerplate_lines(min_documents: int = 5) -> set[str]:
+    """Independent oracle: body lines repeated verbatim in at least `min_documents` fixture documents."""
+    counts: Counter[str] = Counter()
+    for path in FIXTURES_DIR.rglob("*.md"):
+        body = path.read_text(encoding="utf-8").split("---", 2)[-1]
+        lines = {" ".join(line.lstrip("> ").split()).casefold() for line in body.splitlines()}
+        counts.update(line for line in lines if len(line) > 20 and not line.startswith(("#", "|")))
+    return {line for line, n in counts.items() if n >= min_documents}
+
+
+def passage_texts(prompt: str) -> list[tuple[str, str]]:
+    return [
+        (json.loads(meta)["document_id"], text)
+        for _cid, meta, text in re.findall(r"<<<PASSAGE (C\d+)>>>\n(.*?)\n(.*?)\n<<<END \1>>>", prompt, re.S)
+    ]
+
+
+def test_boilerplate_is_not_handed_to_the_model_as_evidence(full_tool_client: Callable[..., Any]) -> None:
+    client, _ = full_tool_client()
+    container = client.app.state.container  # type: ignore[attr-defined]
+    banner = boilerplate_lines()
+    assert banner  # the synthetic base repeats its disclaimer in most documents
+    for question in (
+        "Какая у нас модель данных?",
+        "Какие источники данных у нас описаны?",
+        "Что такое lineage?",
+    ):
+        prepared = client.portal.call(
+            container.assistant._prepare, container.demo_user(), AskRequest(question=question)
+        )
+        assert prepared.passages, question
+        for p in prepared.passages:
+            lines = [" ".join(x.split()).casefold() for x in p.text.splitlines() if x.strip()]
+            assert not lines or not all(line in banner for line in lines), (
+                question,
+                p.document_id,
+                p.text[:80],
+            )
+
+
+@pytest.mark.parametrize(
+    ("previous", "question"),
+    [
+        ("Что такое логическая модель BusinessProcess?", "а физическая?"),
+        ("Какая у нас модель данных?", "Как часто метаданные ARIS обновляются в каталоге?"),
+        ("Как устроен поток ARIS → Catalog?", "а какие у него ограничения?"),
+    ],
+)
+def test_follow_up_retrieval_keeps_both_readings(
+    client_factory: Callable[..., TestClient], full_workspace: Path, previous: str, question: str
+) -> None:
+    """The pre-retrieval of a follow-up keeps the best passage of the new words AND of the conversation: old terms
+    never push the subject of the new question out of the context (and vice versa)."""
+    client = client_factory(local_knowledge_dir=full_workspace)
+    container = client.app.state.container  # type: ignore[attr-defined]
+
+    def prepared(body: dict[str, Any]) -> list[str]:
+        result = client.portal.call(container.assistant._prepare, container.demo_user(), AskRequest(**body))
+        return [p.document_id for p in result.passages]
+
+    alone = prepared({"question": question})
+    combined = prepared({"question": f"{question} {previous}"})
+    follow_up = prepared({"question": question, "history": [{"question": previous, "answer": ""}]})
+    assert alone[0] in follow_up and combined[0] in follow_up, (alone[:3], combined[:3], follow_up)
+
+
+def test_a_word_missing_from_an_earlier_question_never_blocks_a_new_subject(client: TestClient) -> None:
+    unanswered = ask(client, "Какой SLA у интеграции с ЦФТ?")
+    assert unanswered["confidence"] == "insufficient_evidence"
+    history = [{"question": "Какой SLA у интеграции с ЦФТ?", "answer": unanswered["answer"][:4000]}]
+    answer = ask(client, "What layers does the demonstration architecture have?", history=history)
+    assert answer["confidence"] != "insufficient_evidence" and answer["citations"]
+    assert "ЦФТ" not in answer["unmatched_terms"] and "ЦФТ" not in answer["answer"]

@@ -51,6 +51,7 @@ from app.errors import ApiError
 from app.services import graph as g
 from app.services.knowledge import owner_missing as _owner_missing
 from app.services.knowledge import sort_documents
+from app.services.retrieval import only_boilerplate
 
 if TYPE_CHECKING:
     from app.services.ai_workflows import AiWorkflowService
@@ -670,7 +671,9 @@ class SystemToolExecutor:
                     available=[s.heading for s in doc.sections if s.text][:20],
                 )
         else:
-            sections = sections[:2]
+            # The opening sections, without corpus-wide boilerplate (e.g. a banner repeated in every document).
+            common = self._knowledge.retrieval.boilerplate(snapshot)
+            sections = [s for s in sections if not only_boilerplate(s.text, common)][:2] or sections[:2]
         passages: list[ContextPassage] = []
         budget = READ_TOTAL_CHARS
         for section in sections:

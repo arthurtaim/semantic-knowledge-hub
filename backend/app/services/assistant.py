@@ -219,6 +219,14 @@ def local_insufficiency(
     return None
 
 
+def _interleave(first: list[Any], second: list[Any]) -> list[Any]:
+    """Round-robin merge of two ranked lists (duplicates are dropped later, by document and section)."""
+    merged: list[Any] = []
+    for index in range(max(len(first), len(second))):
+        merged += [items[index] for items in (first, second) if index < len(items)]
+    return merged
+
+
 def _allowed_statuses(req: AskRequest) -> set[DocStatus]:
     allowed = {DocStatus.approved}
     if req.include_drafts:
@@ -562,10 +570,13 @@ class AssistantService:
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
             )
-        # A follow-up ("а какие у неё ограничения?") is retrieved together with the previous question.
+        # A follow-up is retrieved twice and the passages are merged: together with the previous question (its referent:
+        # «а какие у неё ограничения?») and by its own words (a narrowed or a new subject: «а физическая?»).
+        # Concatenation alone let the old terms push the subject of the new words out of the bounded context.
         base_text = extras.retrieval_text or req.question
         retrieval_text = base_text if not req.history else f"{base_text} {req.history[-1].question}"
         analysis = self._knowledge.retrieval.analyze(retrieval_text)
+        own = self._knowledge.retrieval.analyze(base_text) if req.history else analysis
         terms = analysis.terms
         allowed = _allowed_statuses(req)
         excluded_statuses = set(DocStatus) - allowed
@@ -597,6 +608,11 @@ class AssistantService:
             selected, _ranked = self._knowledge.retrieval.passages(
                 snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
             )
+            if own is not analysis:
+                own_selected, _ = self._knowledge.retrieval.passages(
+                    snapshot, own, team_filters, max_passages=MAX_PASSAGES
+                )
+                selected = _interleave(own_selected, selected)
             team_count = 0
             for passage in selected:
                 doc = passage.document
@@ -752,7 +768,11 @@ class AssistantService:
                 if origin is not None and origin.revision == p.revision:
                     sources[p.cid] = (origin.body, p.section_anchor)
 
-        unmatched = [t for t in terms if t.stem not in matched_terms]
+        # «Not found» concerns the words of THIS question only: the previous question is context (its terms still
+        # help to select passages), and a word the user does not ask about again must neither be reported as missing
+        # nor block the answer to a new subject (e.g. an unanswered earlier question about a system that is absent).
+        own_stems = {t.stem for t in own.terms}
+        unmatched = [t for t in terms if t.stem not in matched_terms and t.stem in own_stems]
         history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
         return _Prepared(
             terms=terms,
@@ -762,7 +782,11 @@ class AssistantService:
             excluded=excluded,
             scopes=scopes,
             options=AnswerOptions(
-                terms=terms, unmatched_terms=unmatched, history=history, compare_terms=extras.compare_terms
+                terms=terms,
+                unmatched_terms=unmatched,
+                history=history,
+                compare_terms=extras.compare_terms,
+                context_terms=[t for t in terms if t.stem not in own_stems],
             ),
             normalized_query=analysis.normalized,
             mode=mode,

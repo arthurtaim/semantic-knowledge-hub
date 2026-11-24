@@ -75,6 +75,9 @@ class AnswerOptions:
     # Compare mode (skill compare_with_file): the terms come from an attached file, so terms absent from the
     # knowledge base are a FINDING to report, not a reason to refuse the whole answer.
     compare_terms: bool = False
+    # A follow-up: terms that come only from the previous question (the conversation's referent). They help to
+    # select passages and sentences, but the user did not ask them now: never reported as missing.
+    context_terms: list[QueryTerm] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

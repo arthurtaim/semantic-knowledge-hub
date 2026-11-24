@@ -262,7 +262,7 @@ class MockAIProvider:
         candidates = [s for s in sentences if s.safe and s.weight > 0]
         if not candidates:
             return insufficient(
-                "Недостаточно данных: в доступных источниках не найдено фрагментов, отвечающих на вопрос.",
+                "Недостаточно данных: в найденных фрагментах нет предложений, отвечающих на вопрос.",
                 warnings,
             )
 
@@ -348,7 +348,8 @@ class MockAIProvider:
         # "supported" only when ONE source covers the question; scattered matches stay "partial".
         confidence: Confidence = "supported" if best_single >= SUPPORTED_COVERAGE else "partial"
         answer = MOCK_PREFIX + "\n\n" + "\n".join(lines)
-        not_covered = reportable_terms([t for t in terms if t.stem not in covered])
+        context = {t.stem for t in options.context_terms}
+        not_covered = reportable_terms([t for t in terms if t.stem not in covered and t.stem not in context])
         if not_covered and confidence == "partial":
             answer += f"\n\nВ процитированных фрагментах не встречаются: {_format_terms(not_covered)}."
         return ProviderAnswer(answer=answer, confidence=confidence, evidence=evidence, warnings=warnings)
