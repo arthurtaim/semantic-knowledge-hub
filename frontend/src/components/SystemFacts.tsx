@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useRef, useState, type MouseEvent, type RefObje
 import { Link } from "react-router-dom";
 import type { AskResponse, DocStatus, SystemFact, SystemFactItem, ToolStepInfo } from "../api/types";
 import { formatWhen, STATUS_LABEL, TEMPLATE_STATUS_LABEL } from "../lib/labels";
-import { factItemOrigin, showsSourceOrigins } from "../lib/provenance";
+import { factItemOrigin, ORIGIN_GROUP_LABEL, showsSourceOrigins } from "../lib/provenance";
 import {
   ATTENTION_REASON_LABEL,
   CHECK_OUTCOME_LABEL,
@@ -178,11 +178,14 @@ const BREAKDOWN_TITLE: Record<string, string> = {
   owner: "По владельцу",
   tag: "По тегам",
   attention: "По причинам",
+  provenance: "По происхождению",
 };
 
 function breakdownName(key: string, name: string): string {
   if (key === "status") return (STATUS_LABEL[name as DocStatus] ?? name).toLocaleLowerCase("ru");
   if (key === "attention") return ATTENTION_REASON_LABEL[name] ?? name;
+  // «синтетические 83 · без пометки 2»: the server's keys are not words (and never «реальные»).
+  if (key === "provenance") return ORIGIN_GROUP_LABEL[name as keyof typeof ORIGIN_GROUP_LABEL] ?? name;
   return name;
 }
 

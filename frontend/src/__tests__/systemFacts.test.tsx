@@ -91,6 +91,8 @@ function toolAnswer(overrides: Partial<AskResponse> = {}): AskResponse {
     tool_steps: [step()],
     general_knowledge: false,
     conversation_context: [{ tool: "catalog_query", operation: "count", filters: {}, document_ids: [], value: 83 }],
+    // A bare registry count relies on no document (docs/API_CONTRACTS.md «Answer provenance»).
+    provenance: { overall: "none", synthetic: 0, not_synthetic: 0, unknown: 0, by_kind: {} },
     ...overrides,
   };
 }
@@ -214,6 +216,25 @@ describe("System facts: «По данным реестра SKH» cards", () => {
     expect(card).toHaveTextContent("По причинам");
     expect(card).toHaveTextContent("черновик 3 · на ревью 4 · устарел 3 · без владельца 2");
     expect(filtersText(fact({ effective_filters: { needs_attention: false } }))).toBe("Фильтр: не требуют внимания");
+  });
+
+  it("«По происхождению»: the facets' provenance counts get a title and names — never the raw keys, never «реальные»", async () => {
+    const facets = fact({
+      operation: "facets",
+      label: "Разбивка доступного каталога SKH",
+      breakdown: {
+        status: { approved: 73, draft: 10 },
+        provenance: { synthetic: 81, not_synthetic: 2, unknown: 1 },
+      },
+    });
+    mockApi([streamRoute(...final(toolAnswer({ answer: "Все 83 документа помечены как синтетические [F1].", system_facts: [facets] })))]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await ask("Это реальные данные банка?");
+    const card = within(facts()).getAllByRole("listitem")[0] as HTMLElement;
+    const terms = Array.from(card.querySelectorAll(".fact__breakdown dt")).map((dt) => dt.textContent);
+    expect(terms).toEqual(["По статусу", "По происхождению"]);
+    expect(card).toHaveTextContent("синтетические 81 · без пометки 2 · не указано 1");
+    expect(card.textContent).not.toMatch(/provenance|not_synthetic|synthetic \d|реальн/);
   });
 
   it("says a zero is a zero within the scope — not an error and not «no documents in the base»", async () => {
