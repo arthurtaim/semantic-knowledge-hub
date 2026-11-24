@@ -1,11 +1,13 @@
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState, SystemFact } from "../api/types";
+import { answerPlainText } from "../lib/answerMarkdown";
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { CONFIDENCE_LABEL, shortRevision } from "../lib/labels";
 import { factLabels, factPlainText } from "../lib/systemFacts";
 import { useAsync } from "../lib/useAsync";
+import { AnswerMarkdown, type AnswerMarkers } from "./AnswerMarkdown";
 import { CardExcerpt, excerptText } from "./CitationExcerpt";
 import { Highlighted } from "./Highlighted";
 import { StatusStamp } from "./StatusStamp";
@@ -156,59 +158,41 @@ interface TextProps {
   turnNo: number;
   question: string;
   facts?: FactRefs;
+  /** The document panel: its answer heading is an h3, so Markdown headings start one level lower. */
+  compact?: boolean;
 }
 
 /**
- * A line of answer text with its «[n]» markers turned into citation markers (only for verified citations) and its
- * «[F1]» markers into markers of system data (only for facts the server produced).
+ * The markers of a validated answer: `[n]` becomes a citation marker only for a citation the server verified,
+ * `[F1]` a marker of system data only for a fact the server produced (lib/answerMarkdown.ts finds them in the
+ * Markdown text nodes; code, link text and URLs are never searched).
  */
-function MarkedLine({ line, citations, labels, turnNo, question, facts = NO_FACTS }: TextProps & { line: string }) {
-  const byRef = new Map(citations.map((c) => [c.ref, c]));
-  const factByRef = new Map(facts.facts.map((f) => [f.ref, f]));
-  const parts: ReactNode[] = [];
-  let last = 0;
-  for (const match of line.matchAll(/\s?\[(\d{1,3}|F\d{1,3})\]/g)) {
-    const ref = match[1] ?? "";
-    const index = match.index ?? 0;
-    parts.push(line.slice(last, index));
-    if (ref.startsWith("F")) {
-      const fact = factByRef.get(ref);
-      parts.push(
-        fact ? (
-          <FactMarker key={index} fact={fact} label={facts.labels.get(ref) ?? ref} turnNo={turnNo} hasProposal={facts.hasProposal} />
-        ) : (
-          match[0]
-        ),
-      );
-    } else {
-      const citation = byRef.get(Number(ref));
-      parts.push(
-        citation ? (
-          <CitationMarker key={index} citation={citation} label={labels.get(citation.ref) ?? String(citation.ref)} turnNo={turnNo} question={question} />
-        ) : (
-          match[0]
-        ),
-      );
-    }
-    last = index + match[0].length;
-  }
-  parts.push(line.slice(last));
-  return <>{parts}</>;
+function useMarkers({ citations, labels, turnNo, question, facts = NO_FACTS }: TextProps): AnswerMarkers {
+  return useMemo(() => {
+    const byRef = new Map(citations.map((c) => [c.ref, c]));
+    const factByRef = new Map(facts.facts.map((f) => [f.ref, f]));
+    return {
+      known: { citations: new Set(byRef.keys()), facts: new Set(factByRef.keys()) },
+      render: (kind, ref) => {
+        if (kind === "fact") {
+          const fact = factByRef.get(ref);
+          return fact ? <FactMarker fact={fact} label={facts.labels.get(ref) ?? ref} turnNo={turnNo} hasProposal={facts.hasProposal} /> : null;
+        }
+        const citation = byRef.get(Number(ref));
+        return citation ? (
+          <CitationMarker citation={citation} label={labels.get(citation.ref) ?? String(citation.ref)} turnNo={turnNo} question={question} />
+        ) : null;
+      },
+    };
+  }, [citations, labels, turnNo, question, facts]);
 }
 
-/** The answer text: paragraphs, lines and citation markers. */
+/** The answer text: Markdown with citation and system-data markers (components/AnswerMarkdown.tsx). */
 export function AnswerText({ text, ...props }: TextProps & { text: string }) {
+  const markers = useMarkers(props);
   return (
-    <div className="answer__text">
-      {text.split(/\n{2,}/).map((paragraph, pIndex) => (
-        <p key={pIndex}>
-          {paragraph.split("\n").map((line, lIndex) => (
-            <span key={lIndex} className="answer__line">
-              <MarkedLine line={line} {...props} />
-            </span>
-          ))}
-        </p>
-      ))}
+    <div className="answer__text answer-md">
+      <AnswerMarkdown text={text} markers={markers} headingLevel={props.compact ? 3 : 2} />
     </div>
   );
 }
@@ -253,6 +237,7 @@ export function demoRemainder(answer: AskResponse): string[] {
 /** A demo answer: no model, no conclusions — which sources hold the quotes, and anything else the server said. */
 export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskResponse }) {
   const rest = demoRemainder(answer);
+  const markers = useMarkers(props);
   const groups: { group: CitationGroup; title: string }[] = [
     { group: "team", title: "документы команды" },
     { group: "corporate", title: "корпоративные страницы" },
@@ -262,7 +247,7 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
     .map(({ group, title }) => ({ title, items: answer.citations.filter((c) => citationGroup(c) === group) }))
     .filter((entry) => entry.items.length > 0);
   return (
-    <div className="answer__text">
+    <div className="answer__text answer-md">
       {present.length > 0 ? (
         <p>
           Без языковой модели ассистент не делает выводов: ниже, в «Источниках», — дословные выдержки.{" "}
@@ -284,24 +269,18 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
           .
         </p>
       ) : null}
-      {rest.map((line, index) => (
-        <p key={index}>
-          <MarkedLine line={line} {...props} />
-        </p>
-      ))}
+      {rest.length > 0 ? <AnswerMarkdown text={rest.join("\n\n")} markers={markers} headingLevel={props.compact ? 3 : 2} /> : null}
     </div>
   );
 }
 
-/** Plain text of the answer with its sources, for «Копировать с источниками». */
+/** Plain text of the answer with its sources, for «Копировать с источниками»: readable text, not Markdown syntax. */
 export function answerWithSources(answer: AskResponse, labels: Map<number, string>, demo: boolean): string {
   const facts = answer.system_facts ?? [];
   const factLabel = factLabels(facts);
-  const relabel = (line: string) =>
-    line
-      .replace(/\[(\d{1,3})\]/g, (whole, ref: string) => (labels.has(Number(ref)) ? `[${labels.get(Number(ref))}]` : whole))
-      .replace(/\[(F\d{1,3})\]/g, (whole, ref: string) => (factLabel.has(ref) ? `[${factLabel.get(ref)}]` : whole));
-  const body = demo ? demoRemainder(answer).map(relabel).join("\n") : relabel(splitServerNotes(answer).text);
+  const known = { citations: new Set(answer.citations.map((c) => c.ref)), facts: new Set(facts.map((f) => f.ref)) };
+  const markdown = demo ? demoRemainder(answer).join("\n\n") : splitServerNotes(answer).text;
+  const body = answerPlainText(markdown, known, { citation: (ref) => labels.get(ref), fact: (ref) => factLabel.get(ref) });
   const sources = answer.citations.map((c) => {
     const label = labels.get(c.ref) ?? String(c.ref);
     const group = citationGroup(c);
