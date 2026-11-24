@@ -1,10 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentLinks } from "../api/types";
-import { DocumentPage } from "../pages/DocumentPage";
+import { ASSISTANT_OPEN_KEY, DETAILS_OPEN_KEY, DocumentPage } from "../pages/DocumentPage";
 import { arisDetail, gitlabDetail, proposalSummary } from "./fixtures";
-import { mockApi, mockViewport, renderAt, renderRoutes, type MockRoute } from "./helpers";
+import { memoryStorage, mockApi, mockViewport, renderAt, renderRoutes, type MockRoute } from "./helpers";
 
 const drafts = { items: [], total: 0 };
 const links: DocumentLinks = {
@@ -48,6 +48,11 @@ function documentRoutes(extra: MockRoute[] = []): MockRoute[] {
 
 /** The properties grid under the title (a description list). */
 const properties = () => screen.getByText("Владелец", { selector: ".doc-props dt" }).closest("dl") as HTMLElement;
+
+beforeEach(() => {
+  // «Сведения» remembers whether it was left open: every test starts from an empty store.
+  vi.stubGlobal("localStorage", memoryStorage());
+});
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -209,6 +214,66 @@ describe("Document detail", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(open).toHaveFocus();
+  });
+
+  it("remembers that «Сведения» was left open on a wide screen, and that it was closed", async () => {
+    mockApi(documentRoutes());
+    const first = renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Все сведения" }));
+    expect(localStorage.getItem(DETAILS_OPEN_KEY)).toBe("1");
+    first.unmount();
+
+    const second = renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    const details = await screen.findByRole("complementary", { name: "Сведения о документе" });
+    await userEvent.click(within(details).getByRole("button", { name: "Закрыть: Сведения о документе" }));
+    expect(localStorage.getItem(DETAILS_OPEN_KEY)).toBeNull();
+    second.unmount();
+
+    renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    await screen.findByRole("button", { name: "Все сведения" });
+    expect(screen.queryByRole("complementary", { name: "Сведения о документе" })).toBeNull();
+  });
+
+  it("does not open «Сведения» by itself as a sheet below 1200 px, even when it was left open", async () => {
+    localStorage.setItem(DETAILS_OPEN_KEY, "1");
+    mockViewport(1024);
+    mockApi(documentRoutes());
+    renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    await screen.findByRole("button", { name: "Все сведения" });
+    expect(screen.queryByRole("dialog", { name: "Сведения о документе" })).toBeNull();
+  });
+
+  it("keeps one right panel remembered: opening «Сведения» forgets the assistant, and back", async () => {
+    localStorage.setItem(ASSISTANT_OPEN_KEY, "1");
+    mockApi([...documentRoutes(), { path: "/api/assistant/skills", body: [] }]);
+    renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    expect(await screen.findByRole("complementary", { name: "Ассистент" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Все сведения" }));
+    expect(localStorage.getItem(DETAILS_OPEN_KEY)).toBe("1");
+    expect(localStorage.getItem(ASSISTANT_OPEN_KEY)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Ассистент" }));
+    expect(localStorage.getItem(ASSISTANT_OPEN_KEY)).toBe("1");
+    expect(localStorage.getItem(DETAILS_OPEN_KEY)).toBeNull();
+  });
+
+  it("still opens and closes «Сведения» when the browser storage is blocked", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      setItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+      removeItem: () => {
+        throw new DOMException("blocked", "SecurityError");
+      },
+    });
+    mockApi(documentRoutes());
+    renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Все сведения" }));
+    const details = screen.getByRole("complementary", { name: "Сведения о документе" });
+    await userEvent.click(within(details).getByRole("button", { name: "Закрыть: Сведения о документе" }));
+    expect(screen.queryByRole("complementary", { name: "Сведения о документе" })).toBeNull();
   });
 
   it("sanitizes hostile HTML before rendering", async () => {

@@ -73,6 +73,15 @@ export type DocumentPanel = "details" | "assistant";
 
 /** Whether the reader left the assistant panel open (per browser; only a docked panel reopens by itself). */
 export const ASSISTANT_OPEN_KEY = "skh.document.assistant";
+/** The same for «Сведения»: one right panel at a time, so at most one of the two keys is set. */
+export const DETAILS_OPEN_KEY = "skh.document.details";
+
+/** The right panel the reader left open (the assistant only while it can be asked). */
+function rememberedPanel(aiOn: boolean): DocumentPanel | null {
+  if (aiOn && readPreference(ASSISTANT_OPEN_KEY) === "1") return "assistant";
+  if (readPreference(DETAILS_OPEN_KEY) === "1") return "details";
+  return null;
+}
 
 /** ⌘J / Ctrl+J on any keyboard layout (the key code: «о» on a Russian layout is KeyJ). */
 export function isAssistantShortcut(event: KeyboardEvent): boolean {
@@ -341,9 +350,7 @@ function DocumentBody({
   const panelMode = useSidePanelMode();
   const [view, setView] = useState<DocumentView>(() => viewForHash(location.hash));
   // Closed by default; a docked panel the reader left open opens again (a sheet never opens by itself).
-  const [panel, setPanel] = useState<DocumentPanel | null>(() =>
-    aiOn && panelMode === "inline" && readPreference(ASSISTANT_OPEN_KEY) === "1" ? "assistant" : null,
-  );
+  const [panel, setPanel] = useState<DocumentPanel | null>(() => (panelMode === "inline" ? rememberedPanel(aiOn) : null));
   const [seenHash, setSeenHash] = useState(location.hash);
   if (location.hash !== seenHash) {
     // A link to an anchor (a citation, «Подробнее о публикации») opens the segment that holds it; a sheet over
@@ -361,10 +368,11 @@ function DocumentBody({
   const markRange = useRef<Range | null>(null);
   const selected = assistant.composer.draft.selection;
 
-  /** One right panel at a time; the assistant's open/closed state is remembered. */
+  /** One right panel at a time; which one is open (or none) is remembered. */
   const changePanel = useCallback((next: DocumentPanel | null) => {
     setPanel(next);
     writePreference(ASSISTANT_OPEN_KEY, next === "assistant" ? "1" : null);
+    writePreference(DETAILS_OPEN_KEY, next === "details" ? "1" : null);
   }, []);
   const closePanel = useCallback(() => changePanel(null), [changePanel]);
 
