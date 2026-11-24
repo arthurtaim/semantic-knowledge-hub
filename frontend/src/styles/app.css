@@ -1880,7 +1880,7 @@ kbd {
   text-decoration: none;
 }
 
-/* The mark: a green tile with two lines (docs/ui-v2/design-source/Sidebar.dc.html). */
+/* The mark: a green tile with two lines (the UI v2 sidebar mockup). */
 .brand__mark {
   flex: none;
   width: 1.625rem;

@@ -1,7 +1,6 @@
 # Раздел «Документы» v2: дерево, обзор, таблица
 
-Макеты: `screens/design/docs-01…04.png`, исходники `design-source/Docs*.dc.html`.
-Сейчас: `screens/current/current-documents-*.png`.
+Макеты: `screens/design/docs-01…04.png`.
 
 ## Проблема
 

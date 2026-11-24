@@ -53,7 +53,7 @@ interface SidebarProps {
 }
 
 /**
- * The left sidebar (docs/ui-v2/specs/03_SCREENS.md §1, design-source/Sidebar.dc.html): workspace, search (the
+ * The left sidebar (docs/ui-v2/specs/03_SCREENS.md §1): workspace, search (the
  * ⌘K palette), the navigation in groups, the user with the theme menu. On wide screens it collapses to an icon
  * rail; below 960 px it is a modal drawer with a scrim, Esc, a focus trap and focus return (handled by Layout).
  */

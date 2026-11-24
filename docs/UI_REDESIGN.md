@@ -139,7 +139,7 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
 - No horizontal scroll at 360 px; keyboard focus visible on the dark bar and on paper.
 - No changes to API calls, routes, accessible names or Russian copy that tests rely on.
 
-## 5. Phase 4 — AI-first entry (from `docs/research/SKH_UI_UX_direction_2026.md`)
+## 5. Phase 4 — AI-first entry (UI/UX research, kept in git history)
 
 Scope: the research roadmap sections «Quick wins» and «AI-first entry (on the current component set)», on the
 current stack, without new UI libraries or backend changes. The audit in the research was made on the phase‑1
@@ -271,7 +271,7 @@ separate labelled step.
 
 ## 6. UI v2 — the new interface (phases A–F, 2026-11-24)
 
-Task: `docs/ui-v2/TASK.md`; specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
+Task: the UI v2 handoff (kept in git history); specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
 `04_KNOWLEDGE_GRAPH.md`; mockups `docs/ui-v2/screens/design/`. Branch `feature/ui-v2-workspace`. Routes, existing API
 contracts and the AI rules (`02_ASSISTANT.md` §6) are unchanged; the only new endpoints are those of `02_ASSISTANT.md`
 §5 (the review round added only optional parameters and fields, §6.8). New dependencies: `@fontsource/inter` (frontend); `pypdf`, `python-docx`, `openpyxl` (backend, attachments);
@@ -282,14 +282,14 @@ Paths below without a prefix are under `frontend/src/`; `public/` and `e2e/` are
 
 | Phase | What | Commits |
 |---|---|---|
-| A. Visual system | Colour tokens for light and dark in one block of `styles/app.css` (`tokens.test.ts`: no colour literal outside it, the two dark blocks identical, WCAG pairs); theme «Как в системе» / light / dark in the user menu (`lib/theme.ts`), applied before first paint by `public/theme-init.js`; Inter as the one typeface (Golos Text and PT Serif removed; JetBrains Mono only for Markdown source, diffs, code); `components/ui`: `Icon` (inline SVG from `design-source/`), `Button` / `IconButton`, `SegmentedControl`, `Chip`, `StatusMark`, `Popover` / `Menu` (APG keyboard), `Tooltip`; every existing screen moved onto the tokens | 4c37f92, a983929, 2125321, d4f2e2d |
+| A. Visual system | Colour tokens for light and dark in one block of `styles/app.css` (`tokens.test.ts`: no colour literal outside it, the two dark blocks identical, WCAG pairs); theme «Как в системе» / light / dark in the user menu (`lib/theme.ts`), applied before first paint by `public/theme-init.js`; Inter as the one typeface (Golos Text and PT Serif removed; JetBrains Mono only for Markdown source, diffs, code); `components/ui`: `Icon` (inline SVG from the mockup sources), `Button` / `IconButton`, `SegmentedControl`, `Chip`, `StatusMark`, `Popover` / `Menu` (APG keyboard), `Tooltip`; every existing screen moved onto the tokens | 4c37f92, a983929, 2125321, d4f2e2d |
 | B. Shell | Left sidebar (logo and workspace, «Поиск ⌘K», Ассистент, Ревью, groups Знания / Работа / Система, user), icon rail (⌘\\), drawer below 960 px; the 52 px page toolbar with the path or title, page actions, the «Демо» badge and the AI-mode chip (`components/shell/*`, `lib/routes.ts`) | 3d2f9cb, 54cb82d, b74493b, 9422c9d, 353bf56 |
 | C. Assistant | Backend: skills registry over the M5.6.3 scenarios, conversation attachments (md, txt, csv, json, yaml, sql, pdf, docx, xlsx; text only; per-dialog; TTL), new `ask` fields and the `attachment` citation (API v0.4, `docs/API_CONTRACTS.md`). Frontend: `Composer` (files by button / drag / paste, skills by button and «/», documents by button and «@», «Где искать», AI-mode label), the home page as the assistant screen, `/ask` as a dialog (markers in the text, citation card, one «Источники» block in three groups, excluded documents folded, pinned field), the ⌘K palette as `QuickFind` | 85d40d4, d7aff6b, 6546d1a, 5bd9f84, e2ee2d0, 2b21bfd, 78fa6ee, a2fb106, 4ce9cef, dbd51e9, 51e4f98, 66f23d0, e6208bf |
 | D. Document, catalog, other pages | Document: status line, 30/36 title, properties grid, segments Текст / Связи / История / Markdown, «Сведения» panel, assistant panel (⌘J) with context chips, quick actions and the compact field, floating bar over a selection (Alt+F10). Catalog: table with groups and counts, filter chips and «+ Фильтр», Список / Таблица / Карта, phone card rows and a filter sheet. Templates, import, create, proposals, publication, corporate page, integrations and 404 in the toolbar / content / right-panel pattern | e8b707f, 325da89, 80b5d31, 915dfc6, 5be8e16, 3ac55e7, fa96c5b, 59d26bf |
 | E. Knowledge map | Deterministic layout without overlaps (rings around a centre, unlinked nodes on an outer ring), type colours and shapes, label placement by priority, highlight of a node's neighbourhood, legend, node dragging with manual positions per view (`sessionStorage`), «Сбросить расположение», Alt+arrows (`docs/KNOWLEDGE_GRAPH.md`) | 6147ce9, cb7a152, bef9602, 45a0106, 5f3152d, 5c1e783 |
 | F. Polish | Dark theme pass, phone 360 / 390 px, WCAG 2.2 AA audit and fixes, dead styles and exports removed, flaky tests made robust, this section (§6.4) | §6.7 |
 
-### 6.2 Checklist — `TASK.md` §2 and the specs
+### 6.2 Checklist — the UI v2 task §2 and the specs
 
 Status: **сделано**, **частично** (what is missing is said), **нет**.
 
@@ -297,7 +297,7 @@ Status: **сделано**, **частично** (what is missing is said), **н
 |---|---|---|
 | A · tokens as CSS custom properties, light and dark, theme from the system or chosen | сделано | `styles/app.css` (token block), `lib/theme.ts`, `public/theme-init.js`, sidebar user menu «Тема» |
 | A · Inter only (`@fontsource/inter`), Golos and PT Serif removed | сделано | `package.json`, `styles/fonts.css` |
-| A · `Icon` from `design-source/` (inline SVG, no library) | сделано | `components/ui/Icon.tsx` |
+| A · `Icon` from the mockup sources (inline SVG, no library) | сделано | `components/ui/Icon.tsx` |
 | A · Button (primary / secondary / quiet / icon), SegmentedControl, Chip, StatusMark, Popover / Menu, Tooltip | сделано | `components/ui/*`; since phase F the map and the create page use `SegmentedControl` too (one segmented style) |
 | A · no hex outside the tokens | сделано | `tokens.test.ts` («uses no colour literal outside the token definitions») |
 | 01 · CiteMarker, SourceBadge | частично | markers are `CitationMarker` / `.cite-pill` (`AnswerParts.tsx`); the source is a group heading and a meta line, not a separate badge component |
@@ -680,8 +680,8 @@ Branch `feature/publications-page`. No backend change, no new dependency, existi
 
 ## 7. «Документы» v2 — tree, overview, table (2026-11-24)
 
-Task `docs/ui-v2/documents/TASK.md`, spec `docs/ui-v2/documents/specs/DOCUMENTS_V2.md`, mockups
-`docs/ui-v2/documents/screens/design/docs-01…04.png` (sources `design-source/Docs*.dc.html`). Branch
+Task: the documents v2 handoff (kept in git history), spec `docs/ui-v2/documents/specs/DOCUMENTS_V2.md`, mockups
+`docs/ui-v2/documents/screens/design/docs-01…04.png`. Branch
 `feature/documents-v2`. The only API change is the spec's §4 (additive: `GET /api/documents/tree`, optional `summary`
 and `systems` on list items; the follow-up round changed no contract); no new dependencies — the tree, the menus and the sheets are the app's own components.
 Paths without a prefix are under `frontend/src/`.

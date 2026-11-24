@@ -10,7 +10,7 @@ provides corporate knowledge via an approved read-only MCP connector and later s
 selected approved GitLab documents. Demo and tests use **synthetic fixtures only** (`synthetic: true`); never
 upload bank documents, tokens, credentials, database dumps, schema exports or internal URLs to GitHub.
 Prioritize a working application over more planning documents; do not ask for corporate credentials.
-UI language is Russian by default; code, API and identifiers are English. Read `START_HERE.md`,
+UI language is Russian by default; code, API and identifiers are English. Read `README.md`,
 `docs/PRODUCT.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` and `docs/API_CONTRACTS.md` before coding.
 
 ## 2. Repository layout

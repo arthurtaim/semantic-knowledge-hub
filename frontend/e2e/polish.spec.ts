@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /*
- * UI v2 phase F (docs/ui-v2/TASK.md, docs/UI_REDESIGN.md «UI v2»): what jsdom cannot see — layout at phone widths,
+ * UI v2 phase F (docs/UI_REDESIGN.md «UI v2»): what jsdom cannot see — layout at phone widths,
  * the page-toolbar path next to the badges, the skip link and focus that must not end up under the sticky toolbar or
  * the dialog's pinned field (WCAG 2.2: 2.4.7, 2.4.11, 2.5.8). Offline demo stack, synthetic documents only.
  */
