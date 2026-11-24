@@ -35,6 +35,13 @@ class Action(StrEnum):
         "prepare_publication"  # publication jobs, dry-run, reconciliation (Confluence reads)
     )
     publish_confluence = "publish_confluence"  # Confluence write: create/update a page of a merged document
+    # Template Studio (docs/TEMPLATE_HUB.md): four separate rights, so a future RBAC can give them to different roles.
+    view_templates = (
+        "view_templates"  # the template catalogue, versions, comparisons, studio state and checks
+    )
+    create_template = "create_template"  # a new template (its first draft), also from an AI proposal
+    edit_template = "edit_template"  # save / discard the draft of a template, acknowledge a shipped update
+    activate_template = "activate_template"  # make a draft or an existing version the current one
 
 
 class AuthorizationPolicy(Protocol):
