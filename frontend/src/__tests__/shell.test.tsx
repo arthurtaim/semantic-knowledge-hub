@@ -32,6 +32,8 @@ describe("Application shell", () => {
       Документы: "/documents",
       "Карта знаний": "/graph",
       Шаблоны: "/templates",
+      // M6: projects, tasks, Board and Gantt in the same shell (no second app, no iframe).
+      Проекты: "/projects",
       Предложения: "/proposals?open_only=true",
       // A page of its own since the «Публикации» list (was the publisher row of /integrations, which lit up both items).
       Публикации: "/publications",
