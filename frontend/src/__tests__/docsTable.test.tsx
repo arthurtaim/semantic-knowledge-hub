@@ -380,6 +380,24 @@ describe("Таблица: filters", () => {
     expect(titleLinks()).toHaveLength(83);
   });
 
+  it("a search's rows say their source quietly (provenance on every result); without a search one source is not repeated", async () => {
+    const found = { items: ["DEMO-INT-001", "DEMO-INT-002", "SEM-INT-ARIS-001"].map((id) => ({ id })), total: 3, page: 1, size: 100, notes: [] };
+    mockApi([
+      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/documents?query=ARIS&page=1&size=100", body: found },
+    ]);
+    const { unmount } = renderRoutes("/documents?view=table&q=ARIS", { "/documents": <ExplorerPage /> });
+    await screen.findByText("3 из 83");
+    const sources = Array.from(table().querySelectorAll(".docs-table__source")).map((el) => el.textContent);
+    expect(sources).toEqual(["Источник: Локальный workspace", "Источник: Локальный workspace", "Источник: Локальный workspace"]);
+    unmount();
+    renderTable();
+    await screen.findByRole("table");
+    expect(table().querySelectorAll(".docs-table__source")).toHaveLength(0);
+    expect(table().querySelector("caption")).toHaveTextContent("Источник: Локальный workspace");
+  });
+
   it("Система «Data Catalog» lists every document about it, also those whose first system (tree group) is another", async () => {
     renderTable();
     await screen.findByRole("table");

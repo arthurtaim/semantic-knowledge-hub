@@ -28,6 +28,15 @@ These are proposed MVP HTTP contracts. Claude Code may refine field details but 
     front-matter value, else its first meaningful paragraph — the same value as `DocumentDetail.summary`) and
     `systems: list[str]` (the systems the document is about, rule below). Other routes that return a
     `DocumentSummary` leave both `null`; `DocumentDetail` keeps its `summary` and also fills `systems`.
+  - *«Документы» v2 — whole-base search (no contract change).* With `query`, the list is the same search as
+    `GET /api/search` (team scope), one row per document instead of passages: the same SQLite FTS5 index and the same
+    ranking (`RetrievalService.rank_documents`: exact ID, title, full text, declared-relation expansion) over the same
+    **reader's snapshot**, which is the access check of both routes — a document the reader cannot see is found by
+    neither, not even through the shared index or a relation. The list keeps up to 1000 matches, so for a query of
+    several words it may add partial (OR) matches that the top-N of `/api/search` leaves out. Every item carries its
+    provenance: `source` (`local|gitlab|confluence`), `source_uri`, `revision` (required fields, as before). Tests:
+    `tests/test_doc_tree.py::test_a_hidden_document_is_found_by_neither_documents_query_nor_search`,
+    `::test_documents_query_ranks_like_search_and_every_result_carries_its_source`.
 - `GET /api/documents/tree` (*«Документы» v2, new*, `read_knowledge`) -> the whole visible base as sections → groups →
   documents in one response, no paging. Spec: `docs/ui-v2/documents/specs/DOCUMENTS_V2.md` §4; code:
   `app/domain/doc_tree.py` (rule and order), `services/knowledge.py` `document_tree`; tests `tests/test_doc_tree.py`.

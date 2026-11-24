@@ -18,6 +18,8 @@ from fastapi.testclient import TestClient
 
 from app.adapters.knowledge.base import KnowledgeSnapshot, SyncInfo
 from app.adapters.knowledge.records import assemble_snapshot, build_record
+from app.adapters.search.base import SearchFilters
+from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.domain.doc_tree import (
     COMMON_GROUP_LABEL,
     GROUP_RESOLVERS,
@@ -32,8 +34,16 @@ from app.domain.doc_tree import (
     section_label,
     section_rank,
 )
-from app.domain.models import DocStatus, DocumentRecord, DocumentTree, UserContext
+from app.domain.models import (
+    DocStatus,
+    DocumentPage,
+    DocumentRecord,
+    DocumentTree,
+    SearchResponse,
+    UserContext,
+)
 from app.services.knowledge import DocumentQuery, KnowledgeService
+from app.services.search import SearchService
 from tests.conftest import make_doc, write_doc
 
 TODAY = date(2026, 11, 24)
@@ -363,6 +373,86 @@ def test_tree_uses_the_same_snapshot_as_the_catalog(client_factory: Callable[...
     listed = client.get("/api/documents", params={"size": 100}).json()
     assert set(tree["documents"]) == {i["id"] for i in listed["items"]}
     assert tree["total"] == listed["total"]
+
+
+# --- whole-base search of «Документы»: `GET /api/documents?query=` is `/api/search`'s index and access check ------
+
+
+class _WholeBaseIndex:
+    """ONE SQLite FTS5 index of the whole base (built from the owner's snapshot) shared by every reader: a reader's
+    own sync leaves it as it is. So the index does hold a hidden document, and only the reader's snapshot — the
+    access check both routes share — can keep it out of the results."""
+
+    def __init__(self, full: KnowledgeSnapshot) -> None:
+        self._fts = SqliteFtsSearchProvider(":memory:")
+        self._fts.sync(full)
+
+    def sync(self, snapshot: KnowledgeSnapshot, *, full: bool = False) -> None:
+        return None
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._fts, name)
+
+
+def test_a_hidden_document_is_found_by_neither_documents_query_nor_search() -> None:
+    secret = _record(
+        "SEC-PRC-001",
+        title="Квазарный регламент закрытого контура",
+        body="Квазарный порядок сверки закрытого контура: ключ сверки ОМЕГА-7.",
+    )
+    public = _record(
+        "PUB-PRC-001",
+        title="Открытый регламент сверки",
+        body="Квазарный порядок сверки, открытая часть.",
+        extra="relations:\n  depends_on: [SEC-PRC-001]\n",  # graph expansion must not bring it back either
+    )
+    full = assemble_snapshot([secret, public], "v1", [])
+    guest = assemble_snapshot([public], "v1-guest", [])
+    knowledge = KnowledgeService(
+        _ScopedRepository({"owner": full, "guest": guest}),  # type: ignore[arg-type]
+        _WholeBaseIndex(full),
+        review_stale_days=180,
+    )
+    knowledge.today = lambda: TODAY
+    search = SearchService(knowledge, connector=None)  # type: ignore[arg-type]  # team scope only
+
+    def listed(user: UserContext, query: str) -> DocumentPage:
+        return asyncio.run(knowledge.list_documents(user, DocumentQuery(query=query, size=100)))
+
+    def searched(user: UserContext, query: str) -> SearchResponse:
+        return asyncio.run(search.search(user, query, ["team"], 50, SearchFilters()))
+
+    for query in ("квазарный", "SEC-PRC-001", "Квазарный регламент закрытого контура"):
+        # The shared index holds it: the owner finds it by both paths …
+        assert "SEC-PRC-001" in [i.id for i in listed(OWNER, query).items], query
+        assert "SEC-PRC-001" in [i.id for i in searched(OWNER, query).items], query
+        # … the guest by neither, and nothing of it leaks into what the guest gets.
+        page, response = listed(GUEST, query), searched(GUEST, query)
+        assert "SEC-PRC-001" not in [i.id for i in page.items], query
+        assert "SEC-PRC-001" not in [i.id for i in response.items], query
+        assert secret.title not in [i.title for i in page.items] + [r.title for r in response.items], query
+        assert "ОМЕГА" not in page.model_dump_json() + response.model_dump_json(), query  # no snippet of it
+    assert "ОМЕГА" in listed(OWNER, "квазарный").model_dump_json()  # the owner does get its snippet
+    assert "ОМЕГА" in searched(OWNER, "квазарный").model_dump_json()
+    # The guest does get the public document (the search works, only the hidden one is kept out).
+    assert [i.id for i in listed(GUEST, "квазарный").items] == ["PUB-PRC-001"]
+    assert [i.id for i in searched(GUEST, "квазарный").items] == ["PUB-PRC-001"]
+
+
+def test_documents_query_ranks_like_search_and_every_result_carries_its_source(
+    client_factory: Callable[..., TestClient], full_workspace: Path
+) -> None:
+    client = _tree_client(client_factory, full_workspace)
+    for query in ("ARIS", "маппинг", "lineage"):
+        listed = client.get("/api/documents", params={"query": query, "size": 10}).json()["items"]
+        found = client.get("/api/search", params={"q": query, "limit": 10}).json()["items"]
+        assert listed, query
+        # the same ranking over the same FTS5 index: the same documents in the same order
+        assert [i["id"] for i in listed] == [r["id"] for r in found], query
+        for item in listed:  # provenance on every result (CLAUDE.md §4)
+            assert item["source"] == "local", item["id"]
+            assert item["source_uri"].startswith("local://"), item["id"]
+            assert item["revision"].startswith("sha256:"), item["id"]
 
 
 # --- the rule, unit by unit ---------------------------------------------------------------------------------------

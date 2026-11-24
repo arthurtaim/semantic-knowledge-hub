@@ -55,7 +55,8 @@ describe("Список: search results", () => {
     expect(link).toHaveAttribute("href", "/documents/SEM-INT-ARIS-001");
     expect(within(link).getByText("Черновик")).toBeInTheDocument();
     expect(within(link).getByText("SEM-INT-ARIS-001")).toBeInTheDocument();
-    expect(within(link).getByText("Источник: Локальный workspace")).toHaveClass("visually-hidden");
+    // provenance on every result: the source, quietly in the row
+    expect(link.querySelector(".docs-row__source")).toHaveTextContent("Источник: Локальный workspace");
     expect(within(link).getByText("ARIS", { selector: "mark" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Результаты: «ARIS»" })).toBeInTheDocument();
     expect(screen.getByText("1 документ по запросу «ARIS»")).toBeInTheDocument();
@@ -101,11 +102,18 @@ describe("Список: search results", () => {
     expect(screen.getByText("def456")).toBeInTheDocument();
   });
 
-  it("shows the source once under the list when all results share it", async () => {
-    searchRoutes(documentPage);
+  it("says the source on every result row (provenance), even when all results share it — not once under the list", async () => {
+    searchRoutes({ ...documentPage, items: [arisSummary, { ...arisSummary, id: "SEM-ARCH-001", title: "Semantic Layer — demonstration architecture" }], total: 2 });
     renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
     await screen.findByRole("link", { name: /^ARIS integration/ });
-    expect(screen.getByText("Источник: Локальный workspace", { selector: "p" })).toBeInTheDocument();
+    const rows = within(screen.getByRole("region", { name: "Результаты: «ARIS»" })).getAllByRole("link").filter((l) => l.classList.contains("docs-row"));
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const source = row.querySelector(".docs-row__source") as HTMLElement;
+      expect(source).toHaveTextContent("Источник: Локальный workspace");
+      expect(within(source).getByText("Источник:")).toHaveClass("visually-hidden"); // seen: «Локальный workspace»
+    }
+    expect(screen.queryByText(/^Источник:/, { selector: "p" })).toBeNull();
   });
 
   it("shows the source on every row when the results mix sources (list and table)", async () => {
@@ -117,14 +125,14 @@ describe("Список: search results", () => {
     ]);
     renderAt("/documents?query=x", "/documents", <ExplorerPage />);
     const link = await screen.findByRole("link", { name: /^GitLab document/ });
-    expect(screen.queryByText(/^Источник:/)).toBeNull();
-    expect(within(link).getByText("GitLab")).not.toHaveClass("visually-hidden");
+    expect(screen.queryByText(/^Источник:/, { selector: "p" })).toBeNull();
+    expect(link.querySelector(".docs-row__source")).toHaveTextContent(/^Источник: GitLab$/);
     await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
     // «Таблица» keeps the search's rows (the server answers, the tree gives the row) and says the source on each
     const tableRow = (await screen.findByRole("link", { name: "GitLab document" })).closest("tr") as HTMLElement;
-    expect(within(tableRow).getByText("GitLab")).toBeInTheDocument();
+    expect(tableRow.querySelector(".docs-table__source")).toHaveTextContent(/^Источник: GitLab$/);
     const arisRow = screen.getByRole("link", { name: "ARIS integration — questions for discovery" }).closest("tr") as HTMLElement;
-    expect(within(arisRow).getByText("Локальный workspace")).toBeInTheDocument();
+    expect(arisRow.querySelector(".docs-table__source")).toHaveTextContent("Локальный workspace");
     expect(screen.getAllByRole("row")).toHaveLength(3); // the header and the two results
   });
 

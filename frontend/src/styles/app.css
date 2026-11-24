@@ -10848,6 +10848,10 @@ a.source__title:hover {
   color: var(--status-draft-text);
 }
 
+.docs-row__source {
+  white-space: nowrap;
+}
+
 .docs-row__review {
   margin-left: auto;
   white-space: nowrap;

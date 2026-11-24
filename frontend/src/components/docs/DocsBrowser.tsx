@@ -204,6 +204,7 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
         onPreview={preview}
         openOnClick={single}
         busy={search.first.loading}
+        sourceOnRows
         before={
           <>
             <p className="visually-hidden" aria-live="polite">

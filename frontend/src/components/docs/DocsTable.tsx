@@ -298,8 +298,9 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   const visibleIds = groups.flatMap((g) => (collapsed.has(g.key) ? [] : g.ids));
   const tabStop = focusId && visibleIds.includes(focusId) ? focusId : visibleIds[0];
   const sources = new Set(rows.map((id) => documents[id]?.source));
-  const mixedSources = sources.size > 1;
-  const singleSource = sources.size === 1 ? [...sources][0] : undefined;
+  // The source on every row when the rows mix sources, and on every search result (provenance on each result).
+  const mixedSources = sources.size > 1 || Boolean(query);
+  const singleSource = sources.size === 1 && !mixedSources ? [...sources][0] : undefined;
   const activeCount = filterCount(filters) + (query ? 1 : 0);
   const busy = server.busy;
   const countText = busy ? "Поиск…" : `${rows.length} из ${total}`;
@@ -581,7 +582,7 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
                           <StatusMark status={entry.status} />
                           <Review entry={entry} />
                           <span className="docs-table__id">{id}</span>
-                          {mixedSources ? <span className="docs-table__source">{sourceLabel(entry.source)}</span> : null}
+                          {mixedSources ? <SourceNote source={entry.source} /> : null}
                         </span>
                       </li>
                     );
@@ -715,6 +716,16 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   );
 }
 
+/** The quiet source after the ID: «GitLab», «Локальный workspace» (named «Источник» for assistive technology). */
+function SourceNote({ source }: { source: string }) {
+  return (
+    <span className="docs-table__source">
+      <span className="visually-hidden">Источник: </span>
+      {sourceLabel(source)}
+    </span>
+  );
+}
+
 interface RowProps {
   id: string;
   entry: DocumentTreeEntry;
@@ -739,7 +750,7 @@ function Row({ id, entry, index, columns, mixedSources, tabStop, linkRef, onOpen
                 {entry.title}
               </Link>
               <span className="docs-table__id">{id}</span>
-              {mixedSources ? <span className="docs-table__source">{sourceLabel(entry.source)}</span> : null}
+              {mixedSources ? <SourceNote source={entry.source} /> : null}
               {entry.index_state === "stale" ? <StaleMark /> : null}
             </span>
           </td>

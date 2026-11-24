@@ -15,7 +15,8 @@ import { StatusMark } from "../ui/StatusMark";
  * docs-02): the branch's path, its count and the order menu, then one row per document — three lines (~72 px):
  * the title with the status only when it is not «Утверждён», the summary when there is one, then the ID, the
  * systems and the review date (amber when overdue or never reviewed). A search shows its results in the same rows
- * with the highlighted snippet and «Почему найдено».
+ * with the highlighted snippet, «Почему найдено» and, quietly, the source of every result (provenance: `local`,
+ * `gitlab`, `confluence`); a branch says its source once under the list unless the sources mix.
  *
  * A row is a link to the document: a click shows it in the preview (on a phone it opens it), Enter or a double
  * click opens it, Space previews; ↑↓ Home End move between the rows (one tab stop). No paging; beyond 200 rows the
@@ -69,6 +70,8 @@ interface BranchListProps {
   /** Shown instead of rows (an empty branch, a search without results). */
   empty?: ReactNode;
   busy?: boolean;
+  /** Every row says its source (search results: provenance on every result), not once under the list. */
+  sourceOnRows?: boolean;
 }
 
 const docHref = (id: string) => `/documents/${encodeURIComponent(id)}`;
@@ -89,6 +92,7 @@ export function BranchList({
   after,
   empty,
   busy = false,
+  sourceOnRows = false,
 }: BranchListProps) {
   const idBase = useId();
   const navigate = useNavigate();
@@ -97,9 +101,9 @@ export function BranchList({
   const ids = rows.map((row) => row.id);
   // One tab stop: the row last focused, else the selected one, else the first.
   const tabStop = focusId && ids.includes(focusId) ? focusId : selected && ids.includes(selected) ? selected : ids[0];
-  // One source for every row: said once under the list; mixed sources: on every row.
+  // One source for every row: said once under the list; mixed sources (or search results): on every row.
   const sources = new Set(rows.map((row) => row.source));
-  const singleSource = sources.size === 1 ? rows[0]?.source : null;
+  const singleSource = sources.size === 1 && !sourceOnRows ? rows[0]?.source : null;
 
   // The selected row given from outside (the URL, the tree) is scrolled into view in the list too.
   useEffect(() => {
@@ -257,7 +261,10 @@ export function BranchList({
                     {singleSource ? (
                       <span className="visually-hidden">Источник: {SOURCE_LABEL[row.source]}</span>
                     ) : (
-                      <span className="docs-row__source">{SOURCE_LABEL[row.source]}</span>
+                      <span className="docs-row__source">
+                        <span className="visually-hidden">Источник: </span>
+                        {SOURCE_LABEL[row.source]}
+                      </span>
                     )}
                     <span className={`docs-row__review docs-row__review--${row.review.tone}`} title={row.review.description}>
                       <span className="visually-hidden">{row.review.description}</span>
