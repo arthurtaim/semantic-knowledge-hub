@@ -17,6 +17,7 @@ const PHONE_ROUTES = [
   "/templates",
   "/templates/integration",
   "/proposals",
+  "/publications",
   "/integrations",
   "/no-such-page",
 ];
