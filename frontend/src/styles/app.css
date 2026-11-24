@@ -5659,20 +5659,38 @@ a.source__title:hover {
 .filter-chips {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-2) var(--space-4);
   margin-bottom: var(--space-5);
 }
 
-/* the status chips, then the author filter after a divider */
+/* the status chips wrap on the left; the author filter stays on the first line, after a divider */
 .filter-chips__group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
 }
 
+.filter-chips__group:first-child {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .filter-chips__group + .filter-chips__group {
+  flex: none;
   border-left: 1px solid var(--line);
   padding-left: var(--space-4);
+}
+
+@media (max-width: 719.98px) {
+  .filter-chips__group:first-child {
+    flex-basis: 100%;
+  }
+
+  .filter-chips__group + .filter-chips__group {
+    border-left: 0;
+    padding-left: 0;
+  }
 }
 
 .filter-chip {
