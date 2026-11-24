@@ -385,7 +385,7 @@ describe("Dialog: messages with skills, files and documents", () => {
         method: "POST",
         path: STREAM,
         status: 422,
-        body: { code: "skill_input_missing", message: "Для навыка «Проверить актуальность» нужно: документ.", request_id: "r", details: { missing: ["document"] } },
+        body: { code: "skill_input_missing", message: "Для навыка «Что перепроверить» нужно: документ.", request_id: "r", details: { missing: ["document"] } },
       },
     ]);
     renderAt("/ask", "/ask", <AskPage />);

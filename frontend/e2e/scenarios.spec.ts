@@ -23,7 +23,7 @@ test("E2E-01 home: the assistant field, quick skills and what waits for a decisi
   await expect(page.getByRole("textbox", { name: "Вопрос" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Где искать: Команда" })).toBeVisible();
   const quick = page.getByRole("group", { name: "Быстрые навыки" });
-  for (const name of ["Черновик документа", "Проверить актуальность", "Найти связи", "Сравнить с файлом"]) {
+  for (const name of ["Черновик документа", "Что перепроверить", "Найти связи", "Сравнить с файлом"]) {
     await expect(quick.getByRole("button", { name })).toBeVisible();
   }
   await expect(page.getByRole("heading", { name: "Ждёт вашего решения" })).toBeVisible();

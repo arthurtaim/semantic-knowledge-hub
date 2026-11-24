@@ -32,7 +32,7 @@ test("D-01 the assistant panel answers a question about the document with a cita
 
   const panel = page.getByRole("complementary", { name: "Ассистент" });
   await expect(panel.getByRole("region", { name: "Контекст" })).toContainText("Этот документ");
-  await expect(panel.getByRole("list", { name: "Быстрые действия" })).toContainText("Проверить актуальность");
+  await expect(panel.getByRole("list", { name: "Быстрые действия" })).toContainText("Что перепроверить");
   const field = panel.getByRole("textbox", { name: "Вопрос по документу" });
   await expect(field).toBeFocused();
   await field.fill("Где ещё требуется стабильный ID?");

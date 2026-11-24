@@ -351,3 +351,6 @@ combine with `status` and `document_id` (AND):
 
 A non-boolean value is `422 invalid_request`. In demo single-user mode every proposal is the caller's own, so
 the «Ревью» list is usually empty (no badge).
+
+**Skill rename.** `check_freshness` is named «Что перепроверить», description «Покажет связанные документы, которые
+могли устареть» (the id and the `impact_analysis` scenario behind it are unchanged).

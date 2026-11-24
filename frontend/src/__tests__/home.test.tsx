@@ -74,7 +74,7 @@ describe("Home page: the assistant", () => {
     const group = await screen.findByRole("group", { name: "Быстрые навыки" });
     expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual([
       "Черновик документа",
-      "Проверить актуальность",
+      "Что перепроверить",
       "Найти связи",
       "Сравнить с файлом",
     ]);
@@ -91,7 +91,7 @@ describe("Home page: the assistant", () => {
     mockApi(homeRoutes({ skills: { path: "/api/assistant/skills", body: limited } }));
     renderRoutes("/", routes);
     const group = await screen.findByRole("group", { name: "Быстрые навыки" });
-    expect(within(group).queryByRole("button", { name: "Проверить актуальность" })).toBeNull();
+    expect(within(group).queryByRole("button", { name: "Что перепроверить" })).toBeNull();
     expect(within(group).getAllByRole("button")).toHaveLength(3);
   });
 

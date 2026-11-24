@@ -239,10 +239,10 @@ describe("Document assistant panel", () => {
     expect(Array.from(actions.querySelectorAll(".doc-assistant__action")).map((item) => item.textContent)).toEqual([
       "Объяснить раздел",
       "Найти связанные",
-      "Проверить актуальность",
+      "Что перепроверить",
       "Предложить правку",
     ]);
-    await userEvent.click(within(actions).getByRole("button", { name: "Проверить актуальность" }));
+    await userEvent.click(within(actions).getByRole("button", { name: "Что перепроверить" }));
 
     await waitFor(() => expect(asks(calls)).toHaveLength(1));
     const body = asks(calls)[0]?.body as Record<string, unknown>;
@@ -251,7 +251,7 @@ describe("Document assistant panel", () => {
     expect(body.selection).toBeUndefined();
 
     const conversation = within(panel()).getByRole("region", { name: "Переписка" });
-    expect(within(conversation).getByText("Проверить актуальность", { selector: ".turn__bubble" })).toBeInTheDocument();
+    expect(within(conversation).getByText("Что перепроверить", { selector: ".turn__bubble" })).toBeInTheDocument();
     const answer = await within(conversation).findByRole("region", { name: "Ассистент" });
     expect(within(answer).getByText("Подтверждено источниками")).toBeInTheDocument();
     expect(within(answer).getByText("Демо")).toBeInTheDocument();
@@ -315,7 +315,7 @@ describe("Document assistant panel", () => {
     expect(manual).toHaveAccessibleDescription(
       "В демо-режиме нет языковой модели: переписать раздел нельзя. Откроется ручное предложение изменения.",
     );
-    const freshness = within(actions).getByRole("button", { name: "Проверить актуальность" });
+    const freshness = within(actions).getByRole("button", { name: "Что перепроверить" });
     expect(freshness).toBeDisabled();
     expect(freshness).toHaveAccessibleDescription("Нужна языковая модель.");
   });

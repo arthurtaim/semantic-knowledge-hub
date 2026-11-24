@@ -187,11 +187,11 @@ describe("Composer: skills («Навык» and «/»)", () => {
 
   it("runs a skill whose question is optional with an empty field; a skill that needs a document says so", async () => {
     const { field, onSend } = setup();
-    await userEvent.type(field, "/актуальн{Enter}");
-    // «Проверить актуальность» needs a document: no send until one is chosen.
-    expect(screen.getByText(/Навыку «Проверить актуальность» нужен документ/)).toBeInTheDocument();
+    await userEvent.type(field, "/перепров{Enter}");
+    // «Что перепроверить» needs a document: no send until one is chosen.
+    expect(screen.getByText(/Навыку «Что перепроверить» нужен документ/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Отправить" })).toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "Убрать навык «Проверить актуальность»" }));
+    await userEvent.click(screen.getByRole("button", { name: "Убрать навык «Что перепроверить»" }));
     await userEvent.type(field, "/связи{Enter}");
     expect(field).toHaveAttribute("placeholder", expect.stringContaining("оставьте поле пустым"));
     expect(screen.getByRole("button", { name: "Отправить" })).toBeEnabled();

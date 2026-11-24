@@ -80,8 +80,8 @@ SKILLS: tuple[SkillDefinition, ...] = (
     ),
     SkillDefinition(
         id="check_freshness",
-        name="Проверить актуальность",
-        description="Сравнит документ с более новыми источниками",
+        name="Что перепроверить",
+        description="Покажет связанные документы, которые могли устареть",
         access="read",
         runner="workflow",
         builds_on=("impact_analysis",),

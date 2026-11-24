@@ -37,7 +37,7 @@ interface QuickAction {
 export const QUICK_ACTIONS: QuickAction[] = [
   { skill: "explain", label: "Объяснить раздел", icon: "info" },
   { skill: "find_related", label: "Найти связанные", icon: "map" },
-  { skill: "check_freshness", label: "Проверить актуальность", icon: "clock" },
+  { skill: "check_freshness", label: "Что перепроверить", icon: "clock" },
   { skill: "improve_section", label: "Предложить правку", icon: "edit" },
 ];
 
