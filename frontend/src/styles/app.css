@@ -6323,44 +6323,6 @@ a.source__title:hover {
 
 /* ---------- M5.6 additions to ask, explorer, integrations ---------- */
 
-.answer__graph {
-  font-size: var(--fs-small);
-}
-
-.answer__external {
-  margin: 0 0 var(--space-3);
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
-  max-width: 68ch;
-}
-
-.citation__origin {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  font-size: var(--fs-small);
-  color: var(--text-secondary);
-}
-
-.citation__feedback {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0 2.25rem;
-  font-size: var(--fs-small);
-}
-
-@media (max-width: 520px) {
-  .citation__feedback {
-    margin-left: 0;
-  }
-}
-
-.citation__feedback-label {
-  color: var(--text-tertiary);
-}
-
 .toggle-button {
   display: inline-flex;
   align-items: center;
@@ -6387,22 +6349,6 @@ a.source__title:hover {
 .toggle-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
-}
-
-.citation__feedback .button--quiet {
-  min-height: 0;
-  padding-block: 0.15rem;
-  font-size: var(--fs-small);
-}
-
-.citation__note {
-  flex-basis: 100%;
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-.citation__note--error {
-  color: var(--danger-text);
 }
 
 .result__why {
