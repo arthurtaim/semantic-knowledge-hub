@@ -44,3 +44,5 @@ secrets/
 # Claude Code CLI personal test stack: local values and the OAuth token never go to git
 deploy/claude-test/*.env
 claude_code_oauth_token
+# Task packages for coding agents (local only, never committed)
+.tasks/
