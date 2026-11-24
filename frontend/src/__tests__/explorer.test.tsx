@@ -96,18 +96,22 @@ describe("Catalog: the list with snippets (a search)", () => {
     expect(screen.getByText("abc123")).toBeInTheDocument();
   });
 
-  it("searches from «Найти в списке» through the URL", async () => {
+  // «Документы» v2: the toolbar field of the mockup («Найти в документах», «Название, ID, тег или система») writes
+  // `q` to the URL; a search always shows «Список».
+  it("searches from the toolbar field through the URL", async () => {
     const calls = mockApi([
       { path: "/api/knowledge/facets", body: facets },
       { path: /\/api\/documents\?/, body: documentPage },
     ]);
-    renderAt("/documents", "/documents", <ExplorerPage />);
-    const field = await screen.findByRole("searchbox", { name: "Поиск по документам" });
-    expect(field).toHaveAttribute("placeholder", "Найти в списке");
+    renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
+    const field = await screen.findByRole("searchbox", { name: "Найти в документах" });
+    expect(field).toHaveAttribute("placeholder", "Название, ID, тег или система");
     await userEvent.type(field, "ARIS{Enter}");
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=20")).toBe(true));
-    // without a remembered choice a search shows the list with snippets
-    expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(location()).toBe("/documents?view=table&q=ARIS"));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=100")).toBe(true));
+    // the query chip removes `q` and keeps the view
+    await userEvent.click(screen.getByRole("button", { name: "Убрать запрос" }));
+    expect(location()).toBe("/documents?view=table");
   });
 
   // Round 2: «Обновлён» is the document's own date (`metadata_updated_at`), not the revision / load time.
@@ -258,9 +262,10 @@ describe("Catalog: the table", () => {
   }
 
   // Round 2 (decision 7): «Связи» is a column now — the API's `link_count`, never a number the UI makes up.
-  it("is the default for browsing: Название + ID, Статус, Владелец, Обновлён, Связи", async () => {
+  // «Документы» v2: the table is the «Таблица» view (`?view=table`); «Список» is the default now.
+  it("«Таблица»: Название + ID, Статус, Владелец, Обновлён, Связи", async () => {
     const calls = catalogRoutes();
-    renderAt("/documents", "/documents", <ExplorerPage />);
+    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
     const table = await screen.findByRole("table");
     expect(screen.getByRole("button", { name: "Таблица" })).toHaveAttribute("aria-pressed", "true");
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
@@ -297,7 +302,7 @@ describe("Catalog: the table", () => {
 
   it("groups by section with real counts, in the knowledge base order, and collapses a group", async () => {
     catalogRoutes();
-    renderAt("/documents", "/documents", <ExplorerPage />);
+    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
     const table = await screen.findByRole("table");
     const headers = within(table).getAllByRole("rowheader");
     expect(headers.map((h) => h.textContent)).toEqual(["Системы-источники1 документ", "Датасеты1 документ", "Интеграции2 документа"]);
@@ -314,7 +319,7 @@ describe("Catalog: the table", () => {
 
   it("changes the grouping from «Группировка» and remembers it", async () => {
     catalogRoutes();
-    const { unmount } = renderAt("/documents", "/documents", <ExplorerPage />);
+    const { unmount } = renderAt("/documents?view=table", "/documents", <ExplorerPage />);
     await screen.findByRole("table");
     await userEvent.click(screen.getByRole("button", { name: "Группировка: Раздел" }));
     await userEvent.click(screen.getByRole("menuitemradio", { name: "Статус" }));
@@ -322,32 +327,33 @@ describe("Catalog: the table", () => {
     expect(headers).toEqual(["Утверждён2 документа", "На ревью1 документ", "Устарел1 документ"]);
     expect(localStorage.getItem("skh.catalog.group")).toBe("status");
     unmount();
-    renderAt("/documents", "/documents", <ExplorerPage />);
+    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
     expect(await screen.findByRole("button", { name: "Группировка: Статус" })).toBeInTheDocument();
   });
 
   it("opens a document by a press anywhere on its row; the title stays a real link", async () => {
     catalogRoutes();
-    renderRoutes("/documents", { "/documents": <ExplorerPage /> });
+    renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
     const link = await screen.findByRole("link", { name: "Датасет Process Overview" });
     expect(link).toHaveAttribute("href", "/documents/DEMO-SEM-009");
     await userEvent.click(within(link.closest("tr") as HTMLElement).getByText("Утверждён"));
     expect(location()).toBe("/documents/DEMO-SEM-009");
   });
 
-  it("remembers the view chosen in this browser", async () => {
+  // «Документы» v2: a new key (`skh.documents.view`) — the old catalog's «list» was a list of snippets.
+  it("remembers the view chosen in this browser and puts it in the URL", async () => {
     catalogRoutes();
-    const { unmount } = renderAt("/documents", "/documents", <ExplorerPage />);
-    await screen.findByRole("table");
-    await userEvent.click(screen.getByRole("button", { name: "Список" }));
+    const { unmount } = renderRoutes("/documents", { "/documents": <ExplorerPage /> });
     expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("table")).toBeNull();
-    expect(localStorage.getItem("skh.catalog.view")).toBe("list");
+    await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    expect(location()).toBe("/documents?view=table");
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Таблица" })).toHaveAttribute("aria-pressed", "true");
+    expect(localStorage.getItem("skh.documents.view")).toBe("table");
     unmount();
     renderAt("/documents", "/documents", <ExplorerPage />);
-    await screen.findByRole("link", { name: "Датасет Process Overview" });
-    expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("table")).toBeNull();
+    expect(await screen.findByRole("table")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Таблица" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("still works when the browser refuses storage", async () => {
@@ -364,9 +370,9 @@ describe("Catalog: the table", () => {
     });
     catalogRoutes();
     renderAt("/documents", "/documents", <ExplorerPage />);
-    await screen.findByRole("table");
-    await userEvent.click(screen.getByRole("button", { name: "Список" }));
-    expect(screen.queryByRole("table")).toBeNull();
+    expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    expect(await screen.findByRole("table")).toBeInTheDocument();
   });
 
   it("«Карта» opens the map with the filters the map has", async () => {
@@ -382,7 +388,7 @@ describe("Catalog: filter chips", () => {
       { path: "/api/knowledge/facets", body: allFacets },
       { path: /\/api\/documents\?/, body: catalog },
     ]);
-    renderRoutes("/documents", { "/documents": <ExplorerPage /> });
+    renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
     await screen.findByRole("table");
     const add = screen.getByRole("button", { name: "Фильтр" });
     await userEvent.click(add);
@@ -391,14 +397,14 @@ describe("Catalog: filter chips", () => {
     await userEvent.click(within(status).getByRole("button", { name: /Утверждён/ }));
     await userEvent.click(within(status).getByRole("button", { name: /На ревью/ }));
     expect(within(status).getByRole("button", { name: /Утверждён/ })).toHaveAttribute("aria-pressed", "true");
-    expect(location()).toBe("/documents?status=approved%2Cin_review");
+    expect(location()).toBe("/documents?view=table&status=approved%2Cin_review");
     await waitFor(() => expect(calls.some((c) => c.url.includes("status=approved%2Cin_review"))).toBe(true));
 
     const chips = screen.getByRole("list", { name: "Активные фильтры" });
     expect(within(chips).getByText("Статус: Утверждён, На ревью")).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     await userEvent.click(within(chips).getByRole("button", { name: "Убрать фильтр: Статус" }));
-    expect(location()).toBe("/documents");
+    expect(location()).toBe("/documents?view=table");
     expect(within(chips).queryByText(/Статус:/)).toBeNull();
   });
 
@@ -411,8 +417,9 @@ describe("Catalog: filter chips", () => {
     const chips = await screen.findByRole("list", { name: "Активные фильтры" });
     expect(within(chips).getByText("Раздел: Интеграции")).toBeInTheDocument();
     expect(within(chips).getByText("Тег: aris")).toBeInTheDocument();
+    // «Документы» v2: a link with filters opens «Таблица»; resetting keeps the view, the URL names it
     await userEvent.click(within(chips).getByRole("button", { name: "Сбросить фильтры" }));
-    expect(location()).toBe("/documents");
+    expect(location()).toBe("/documents?view=table");
   });
 
   describe("on a phone", () => {

@@ -9776,3 +9776,64 @@ a.source__title:hover {
   }
 }
 
+
+/* ---------- «Документы» v2 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md) ---------- */
+
+/* «Обзор» until the matrix: the totals and the sections with their counts, all from GET /api/documents/tree. */
+.docs-overview {
+  max-width: 40rem;
+}
+
+.docs-overview__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-4);
+  font-size: var(--fs-section);
+  line-height: var(--lh-section);
+  font-weight: 600;
+}
+
+.docs-overview__attention {
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  color: var(--demo-text);
+}
+
+.docs-overview__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-ui);
+}
+
+.docs-overview__table th,
+.docs-overview__table td {
+  height: var(--row-height);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.docs-overview__table thead th {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.docs-overview__table tbody th {
+  font-weight: 500;
+}
+
+.docs-overview__table tbody th a {
+  color: var(--text);
+}
+
+.docs-overview__table .docs-overview__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-overview__none {
+  color: var(--text-tertiary);
+}

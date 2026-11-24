@@ -43,8 +43,8 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   await expect(page).toHaveURL(/\/documents\?query=/);
   await expect(page.locator(".result").first()).toBeVisible();
 
-  // UI v2: browsing opens the catalog table; the sort is in the «Вид» menu.
-  await page.goto("/documents");
+  // UI v2: the sort of the catalog table is in the «Вид» menu («Документы» v2: the table is the «Таблица» view).
+  await page.goto("/documents?view=table");
   await page.getByRole("button", { name: "Вид" }).click();
   await page.getByRole("menuitemradio", { name: "Сначала новые" }).click();
   await expect(page).toHaveURL(/sort=updated/);

@@ -19,6 +19,7 @@ import type {
   DocumentPublicationStatus,
   DocumentSort,
   DocumentTemplateInfo,
+  DocumentTree,
   DocumentLinks,
   DocumentTypeInfo,
   DiscoveryFeedbackResponse,
@@ -378,6 +379,8 @@ export const api = {
   integrations: () => request<IntegrationsResponse>("/integrations/status"),
   documents: (params: DocumentListParams = {}) => request<DocumentPage>(`/documents${query({ ...params })}`),
   document: (id: string) => request<DocumentDetail>(`/documents/${encodeURIComponent(id)}`),
+  /** «Документы» v2: sections → groups → documents of the whole visible base, with attention counts. */
+  documentTree: () => request<DocumentTree>("/documents/tree"),
   facets: () => request<DocumentFacets>("/knowledge/facets"),
   indexStatus: () => request<SyncStatus>("/index/status"),
   syncIndex: () => request<SyncStatus>("/index/sync", { method: "POST" }),

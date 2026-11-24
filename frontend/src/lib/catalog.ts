@@ -55,12 +55,10 @@ export function activeFilters(params: URLSearchParams): ActiveFilter[] {
   });
 }
 
-// --- view and grouping, remembered per browser ------------------------------------------------------------
+// --- grouping of the table, remembered per browser (the view itself: lib/docsView.ts) -----------------------
 
-export type CatalogView = "list" | "table";
 export type CatalogGroup = "type" | "status" | "owner" | "none";
 
-export const CATALOG_VIEW_KEY = "skh.catalog.view";
 export const CATALOG_GROUP_KEY = "skh.catalog.group";
 
 export const GROUP_LABEL: Record<CatalogGroup, string> = {
@@ -69,21 +67,6 @@ export const GROUP_LABEL: Record<CatalogGroup, string> = {
   owner: "Владелец",
   none: "Без группировки",
 };
-
-/** The view chosen earlier in this browser, if any. */
-export function storedView(): CatalogView | null {
-  const stored = readPreference(CATALOG_VIEW_KEY);
-  return stored === "list" || stored === "table" ? stored : null;
-}
-
-/** Without a choice: the table for browsing, the list with snippets and «Почему найдено» for a search. */
-export function defaultView(hasQuery: boolean): CatalogView {
-  return hasQuery ? "list" : "table";
-}
-
-export function rememberView(view: CatalogView): void {
-  writePreference(CATALOG_VIEW_KEY, view);
-}
 
 export function initialGroup(): CatalogGroup {
   const stored = readPreference(CATALOG_GROUP_KEY);

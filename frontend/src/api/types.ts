@@ -105,6 +105,58 @@ export interface DocumentSummary {
    * the document has none. `updated_at` above is the time of the source revision (commit date / file mtime).
    */
   metadata_updated_at?: string | null;
+  /** «Документы» v2: the document's `summary` (front matter, else its first paragraph). Set by GET /api/documents. */
+  summary?: string | null;
+  /** «Документы» v2: the systems the document is about (consumes / produces sources, then tags). GET /api/documents. */
+  systems?: string[] | null;
+}
+
+/** One document of GET /api/documents/tree (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §4). */
+export interface DocumentTreeEntry {
+  title: string;
+  type: DocType;
+  status: DocStatus;
+  review_state: ReviewState;
+  reviewed_at: string | null;
+  owner: string;
+  owner_missing: boolean;
+  summary: string | null;
+  systems: string[];
+  link_count: number;
+  is_demo: boolean;
+  source: SourceType;
+  index_state: IndexState;
+  /** The full group key (`integration/aris`); null when the document sits directly in its section. */
+  group: string | null;
+  /** in_review / draft / deprecated, or a stale / missing review, or no owner. */
+  attention: boolean;
+}
+
+export interface DocumentTreeGroup {
+  key: string;
+  label: string;
+  count: number;
+  attention: number;
+  doc_ids: string[];
+}
+
+export interface DocumentTreeSection {
+  /** The document type (an unknown one may arrive: it is shown last, by its key). */
+  key: string;
+  label: string;
+  count: number;
+  attention: number;
+  groups: DocumentTreeGroup[];
+  /** Documents directly in the section (empty when every document is in a group). */
+  doc_ids: string[];
+}
+
+/** GET /api/documents/tree: the whole visible base, sections in the tree's order, counts from the server. */
+export interface DocumentTree {
+  total: number;
+  attention_total: number;
+  sections: DocumentTreeSection[];
+  documents: Record<string, DocumentTreeEntry>;
 }
 
 export interface Section {

@@ -22,7 +22,8 @@ async function rowCells(page: Page, title: string): Promise<string[]> {
 
 test("R2-01 catalog «Связи» equals the document page; «Обновлён» is the document's date, «—» without one", async ({ page }) => {
   const problems = watch(page);
-  await page.goto("/documents");
+  // «Документы» v2: the table is the «Таблица» view («Список» with the tree is the default).
+  await page.goto("/documents?view=table");
   const table = page.getByRole("table");
   await expect(table.getByRole("columnheader")).toHaveText(["Название", "Статус", "Владелец", "Обновлён", "Связи"]);
 
@@ -54,7 +55,7 @@ test("R2-01 catalog «Связи» equals the document page; «Обновлён�
   expect(known.length).toBeGreaterThan(50);
   expect(known).toEqual([...known].sort().reverse());
   expect(dates.slice(known.length).every((d) => d === null)).toBe(true);
-  await page.goto("/documents?sort=updated");
+  await page.goto("/documents?view=table&sort=updated");
   await page.getByRole("button", { name: /^Группировка:/ }).click();
   await page.getByRole("menuitemradio", { name: "Без группировки" }).click();
   const titles = await page.locator(".catalog-row .catalog__title").allTextContents();
