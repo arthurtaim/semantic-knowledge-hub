@@ -131,7 +131,10 @@ def test_answer_without_evidence_block_is_not_trusted(claude_client: Callable[..
 
 
 def test_unknown_question_never_reaches_claude(claude_client: Callable[..., TestClient]) -> None:
-    client = claude_client()
+    # Content-only path (AI_TOOLS_ENABLED=false, explicit skills): no passages → no model call. In the M5.7 tool loop
+    # the model is asked even without passages (a question about SKH state has none); that path is covered by
+    # tests/test_assistant_tool_loop.py::test_cli_tool_mode_unknown_question_reaches_model_without_inventing.
+    client = claude_client(ai_tools_enabled=False)
     data = client.post(
         "/api/assistant/ask", json={"question": "Квазизвёздный шлюз ZQX-777?", "sources": ["team"]}
     ).json()

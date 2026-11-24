@@ -1,7 +1,7 @@
 ---
 id: retrieval_grounding
-version: 1
-applies_to: [answer, authoring]
+version: 2
+applies_to: [answer, authoring, tools]
 ---
 Работа с источниками (backend сам выбирает и передаёт фрагменты — других источников нет):
 - Используй только переданные фрагменты. Не добавляй сведений из памяти или внешних знаний.

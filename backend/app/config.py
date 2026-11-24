@@ -135,6 +135,16 @@ class Settings(BaseSettings):
     claude_cli_timeout_seconds: float = Field(default=120.0, gt=0, le=600)
     claude_cli_draft_timeout_seconds: float = Field(default=240.0, gt=0, le=600)
     claude_cli_personal_use_ack: bool = False
+    # M5.7 (docs/AI_NATIVE_TOOLS.md): the bounded model → tool → model loop of providers that support it
+    # (internal_api, claude_cli; the mock keeps the content-only answer). Guardrails, not tuning knobs.
+    ai_tools_enabled: bool = True
+    ai_tools_max_rounds: int = Field(default=4, ge=2, le=8)
+    ai_tools_max_calls_per_round: int = Field(default=4, ge=1, le=8)
+    ai_tools_max_calls_total: int = Field(default=10, ge=1, le=24)
+    ai_tools_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    ai_tools_budget_seconds: float = Field(default=300.0, gt=0, le=900)
+    ai_tools_result_chars: int = Field(default=4000, ge=500, le=20_000)
+    ai_tools_transcript_chars: int = Field(default=24_000, ge=2000, le=100_000)
     # Assistant attachments (UI v2): how long the extracted text of a file attached to a conversation is kept.
     # Limits (10 files per conversation, 20 MB each) are fixed by docs/ui-v2/specs/02_ASSISTANT.md §3.
     attachments_ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
