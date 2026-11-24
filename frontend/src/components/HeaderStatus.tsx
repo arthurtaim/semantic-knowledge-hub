@@ -72,17 +72,28 @@ export function AiModeChip() {
   }, [open, status, failed]);
 
   if (!mode) return null;
+  // «ИИ: демо» → «ИИ» + «: демо»: a phone shows only «ИИ» (the rest stays in the accessible name and the popover).
+  const label = AI_CHIP_LABEL[mode];
+  const colon = label.indexOf(":");
   return (
     <div className="header-status__item" ref={root}>
       <button
         ref={button}
         type="button"
         className={`ai-chip ai-chip--${mode}`}
+        aria-label={label}
         aria-expanded={open}
         aria-controls="ai-mode-details"
         onClick={toggle}
       >
-        {AI_CHIP_LABEL[mode]}
+        {colon > 0 ? (
+          <span>
+            {label.slice(0, colon)}
+            <span className="ai-chip__rest">{label.slice(colon)}</span>
+          </span>
+        ) : (
+          label
+        )}
       </button>
       {/* Rendered only while open: its text must not stand in for the page's own wording. */}
       <div id="ai-mode-details" className="popover popover--bottom popover--end" hidden={!open}>
