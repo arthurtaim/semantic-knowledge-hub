@@ -125,14 +125,14 @@ function byUpdatedDesc(a: ProposalSummary, b: ProposalSummary): number {
 }
 
 /**
- * «Ждёт вашего решения»: only what the API reports — proposals marked «Готово к ревью» (the sidebar's «Ревью»
- * count; there is no reviewer assignment) and documents without an owner. Nothing is invented when a list
- * cannot be read.
+ * «Ждёт вашего решения»: only what the API reports — proposals «Готово к ревью» that someone else created (the
+ * sidebar's «Ревью»: nobody reviews their own change; there is no reviewer assignment) and documents without an
+ * owner. Nothing is invented when a list cannot be read.
  */
 function AwaitingDecision() {
-  const drafts = useAsync(() => api.drafts(), "home-review");
+  const drafts = useAsync(() => api.drafts({ status: "ready_for_review", exclude_own: true }), "home-review");
   const documents = useAsync(() => api.documents({ size: 100 }), "home-owners");
-  const review = (drafts.data?.items ?? []).filter((p) => p.status === "ready_for_review").sort(byUpdatedDesc);
+  const review = [...(drafts.data?.items ?? [])].sort(byUpdatedDesc);
   const noOwner = ownerless(documents.data);
   const loading = (drafts.loading && !drafts.data) || (documents.loading && !documents.data);
   const nothing = review.length === 0 && (noOwner?.length ?? 0) === 0;

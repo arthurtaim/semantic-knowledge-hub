@@ -27,7 +27,7 @@ describe("Application shell", () => {
     const nav = screen.getByRole("navigation", { name: "Основная навигация" });
     const hrefs: Record<string, string> = {
       Ассистент: "/",
-      Ревью: "/proposals?status=ready_for_review",
+      Ревью: "/proposals?status=ready_for_review&exclude_own=true",
       Документы: "/documents",
       "Карта знаний": "/graph",
       Шаблоны: "/templates",

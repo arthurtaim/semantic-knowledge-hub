@@ -7,7 +7,8 @@ export interface NavCounts {
   documents: number | null;
   /** All change proposals (GET /api/drafts → total). */
   proposals: number | null;
-  /** Proposals with status «Готово к ревью» (the Ревью item opens that filter). */
+  /** Proposals «Готово к ревью» that someone else created (GET /api/drafts?status=ready_for_review&exclude_own=true
+   * → total): the Ревью item opens the same list. Usually 0 in the single-user demo — then no badge. */
   review: number | null;
 }
 
@@ -31,14 +32,18 @@ export function useNavCounts(key: string): NavCounts {
       .drafts()
       .then((list) => {
         if (!live) return;
-        setCounts((prev) => ({
-          ...prev,
-          proposals: list.total,
-          review: list.items.filter((item) => item.status === "ready_for_review").length,
-        }));
+        setCounts((prev) => ({ ...prev, proposals: list.total }));
       })
       .catch(() => {
-        if (live) setCounts((prev) => ({ ...prev, proposals: null, review: null }));
+        if (live) setCounts((prev) => ({ ...prev, proposals: null }));
+      });
+    api
+      .drafts({ status: "ready_for_review", exclude_own: true })
+      .then((list) => {
+        if (live) setCounts((prev) => ({ ...prev, review: list.total }));
+      })
+      .catch(() => {
+        if (live) setCounts((prev) => ({ ...prev, review: null }));
       });
     return () => {
       live = false;

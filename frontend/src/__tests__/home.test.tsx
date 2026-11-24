@@ -10,12 +10,20 @@ import { memoryStorage, mockApi, renderRoutes, type MockRoute } from "./helpers"
 
 /* The home page is the assistant (docs/ui-v2/specs/02_ASSISTANT.md §1, design-01/02). */
 
+/** «Ждёт вашего решения» asks the server for «Ревью»: ready for review and not the reader's own. */
+const REVIEW_PATH = "/api/drafts?status=ready_for_review&exclude_own=true";
+
 const review: ProposalList = {
   items: [
-    proposalSummary({ id: "p-ready", status: "ready_for_review", document_title: "Archive Store: исторические снимки", updated_at: "2026-11-23T10:00:00Z" }),
-    proposalSummary({ id: "p-draft", status: "draft", reason: "Новая формулировка" }),
+    proposalSummary({
+      id: "p-ready",
+      status: "ready_for_review",
+      author: "colleague",
+      document_title: "Archive Store: исторические снимки",
+      updated_at: "2026-11-23T10:00:00Z",
+    }),
   ],
-  total: 2,
+  total: 1,
 };
 
 const withOwnerless: DocumentPage = {
@@ -32,7 +40,7 @@ const withOwnerless: DocumentPage = {
 function homeRoutes(overrides: Partial<Record<"skills" | "drafts" | "documents" | "index", MockRoute>> = {}): MockRoute[] {
   return [
     overrides.skills ?? { path: "/api/assistant/skills", body: skills },
-    overrides.drafts ?? { path: "/api/drafts", body: review },
+    overrides.drafts ?? { path: REVIEW_PATH, body: review },
     overrides.documents ?? { path: "/api/documents?size=100", body: withOwnerless },
     overrides.index ?? { path: "/api/index/status", body: freshSync },
   ];
@@ -142,14 +150,15 @@ describe("Home page: the assistant", () => {
     expect(window.localStorage.getItem("skh.recent-questions.v1:local-demo-user")).toBeNull();
   });
 
-  it("«Ждёт вашего решения»: proposals ready for review and documents without an owner — from the API only", async () => {
-    mockApi(homeRoutes());
+  it("«Ждёт вашего решения»: others' proposals ready for review and documents without an owner — from the API only", async () => {
+    const calls = mockApi(homeRoutes());
     renderRoutes("/", routes);
     const waiting = screen.getByRole("heading", { name: "Ждёт вашего решения" }).closest("section") as HTMLElement;
     const ready = await within(waiting).findByRole("link", { name: /Archive Store: исторические снимки/ });
     expect(ready).toHaveAttribute("href", "/proposals/p-ready");
     expect(ready).toHaveTextContent("Готово к ревью · Изменение документа");
-    expect(within(waiting).queryByText(/Новая формулировка/)).toBeNull(); // a draft is not waiting for review
+    // The server leaves out drafts and the reader's own proposals: the page asks for exactly «Ревью».
+    expect(calls.filter((call) => call.url.startsWith("/api/drafts")).map((call) => call.url)).toEqual([REVIEW_PATH]);
     const owners = await within(waiting).findByRole("link", { name: /2 документа без владельца/ });
     expect(owners).toHaveTextContent("Процессы и системы-источники");
     expect(owners).toHaveAttribute("href", "/documents?owner=unassigned");
@@ -159,7 +168,7 @@ describe("Home page: the assistant", () => {
     const partial: DocumentPage = { ...withOwnerless, total: 250 };
     mockApi(
       homeRoutes({
-        drafts: { path: "/api/drafts", body: { items: [proposalSummary({ status: "draft" })], total: 1 } },
+        drafts: { path: REVIEW_PATH, body: { items: [], total: 0 } },
         documents: { path: "/api/documents?size=100", body: partial },
       }),
     );
@@ -172,7 +181,7 @@ describe("Home page: the assistant", () => {
   it("says when the review list cannot be read", async () => {
     mockApi(
       homeRoutes({
-        drafts: { path: "/api/drafts", status: 500, body: { code: "internal_error", message: "x", request_id: "r" } },
+        drafts: { path: REVIEW_PATH, status: 500, body: { code: "internal_error", message: "x", request_id: "r" } },
         documents: { path: "/api/documents?size=100", body: documentPage },
       }),
     );

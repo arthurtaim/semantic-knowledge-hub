@@ -414,8 +414,15 @@ export const api = {
   deleteAttachment: (id: string) =>
     request<null>(`/assistant/attachments/${encodeURIComponent(id)}`, { method: "DELETE" }),
   corporatePage: (id: string) => request<CorporatePage>(`/corporate/pages/${encodeURIComponent(id)}`),
-  drafts: (params: { status?: ProposalStatus; document_id?: string } = {}) =>
-    request<ProposalList>(`/drafts${query({ ...params })}`),
+  /** `exclude_own`: not the caller's own proposals (the «Ревью» list; API v0.4). */
+  drafts: (params: { status?: ProposalStatus; document_id?: string; exclude_own?: boolean } = {}) =>
+    request<ProposalList>(
+      `/drafts${query({
+        status: params.status,
+        document_id: params.document_id,
+        exclude_own: params.exclude_own ? "true" : undefined,
+      })}`,
+    ),
   draft: (id: string) => request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}`),
   createDraft: (payload: DraftCreate) => request<ProposalDetail>("/drafts", { method: "POST", body: json(payload) }),
   rejectDraft: (id: string, comment?: string) =>

@@ -89,19 +89,15 @@ describe("Sidebar", () => {
   });
 
   it("shows counts only from the API: documents, proposals and the green review badge", async () => {
-    mockApi([
+    const others = [
+      proposalSummary({ id: "a", status: "ready_for_review", author: "colleague" }),
+      proposalSummary({ id: "c", status: "ready_for_review", author: "colleague" }),
+    ];
+    const calls = mockApi([
       { path: "/api/knowledge/facets", body: { ...facets, total: 83 } },
-      {
-        path: "/api/drafts",
-        body: {
-          items: [
-            proposalSummary({ id: "a", status: "ready_for_review" }),
-            proposalSummary({ id: "b", status: "draft" }),
-            proposalSummary({ id: "c", status: "ready_for_review" }),
-          ],
-          total: 3,
-        },
-      },
+      { path: "/api/drafts", body: { items: [...others, proposalSummary({ id: "b", status: "draft" })], total: 3 } },
+      // «Ревью»: ready for review, not the reader's own — the server filters, the badge is its total.
+      { path: "/api/drafts?status=ready_for_review&exclude_own=true", body: { items: others, total: 2 } },
     ]);
     renderShell("/");
     const documents = within(nav()).getByRole("link", { name: "Документы" });
@@ -111,6 +107,21 @@ describe("Sidebar", () => {
     expect(await within(review).findByText("2")).toHaveClass("sidebar__badge");
     expect(review).toHaveAccessibleDescription("Ждут ревью: 2");
     expect(within(nav()).getByRole("link", { name: "Предложения" })).toHaveAccessibleDescription("Предложений: 3");
+    expect(calls.map((call) => call.url)).toContain("/api/drafts?status=ready_for_review&exclude_own=true");
+  });
+
+  it("shows no «Ревью» badge when everything ready for review is the reader's own (the single-user demo)", async () => {
+    mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/drafts", body: { items: [proposalSummary({ status: "ready_for_review" })], total: 1 } },
+      { path: "/api/drafts?status=ready_for_review&exclude_own=true", body: { items: [], total: 0 } },
+    ]);
+    renderShell("/");
+    const proposals = within(nav()).getByRole("link", { name: "Предложения" });
+    expect(await within(proposals).findByText("1")).toBeInTheDocument();
+    const review = within(nav()).getByRole("link", { name: "Ревью" });
+    expect(review.querySelector(".sidebar__badge")).toBeNull();
+    expect(review).not.toHaveAttribute("aria-describedby");
   });
 
   it("shows no count when the API does not answer", async () => {
@@ -121,10 +132,14 @@ describe("Sidebar", () => {
   });
 
   it("marks «Ревью» for the review filter and «Публикации» for a publication job", () => {
-    const { unmount } = renderShell("/proposals?status=ready_for_review");
+    const { unmount } = renderShell("/proposals?status=ready_for_review&exclude_own=true");
     expect(within(nav()).getByRole("link", { name: "Ревью" })).toHaveAttribute("aria-current", "page");
     expect(within(nav()).getByRole("link", { name: "Предложения" })).not.toHaveAttribute("aria-current");
     unmount();
+    // «Готово к ревью» with the reader's own proposals is a filter of «Предложения», not «Ревью».
+    const own = renderShell("/proposals?status=ready_for_review");
+    expect(within(nav()).getByRole("link", { name: "Предложения" })).toHaveAttribute("aria-current", "page");
+    own.unmount();
     renderShell("/publications/job-1");
     expect(within(nav()).getByRole("link", { name: "Публикации" })).toHaveAttribute("aria-current", "page");
   });

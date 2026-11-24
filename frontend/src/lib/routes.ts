@@ -22,8 +22,17 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** The proposals list filtered to what waits for review: there is no reviewer assignment («на мне») in the API. */
-export const REVIEW_HREF = "/proposals?status=ready_for_review";
+/**
+ * «Ревью»: proposals «Готово к ревью» that someone else created — nobody reviews their own change. The same
+ * filters as the API (GET /api/drafts?status=ready_for_review&exclude_own=true); there is no reviewer assignment.
+ */
+export const REVIEW_HREF = "/proposals?status=ready_for_review&exclude_own=true";
+
+/** The location is the «Ревью» list (the proposals page with both review filters). */
+export function isReviewList(pathname: string, search: string): boolean {
+  const params = new URLSearchParams(search);
+  return pathname === "/proposals" && params.get("status") === "ready_for_review" && params.get("exclude_own") === "true";
+}
 
 /**
  * There is no list of publications: a publication is a step of a document (its page) and a job page
@@ -73,7 +82,7 @@ export function navGroups(askAvailable: boolean): NavGroup[] {
 /** Which sidebar item the current location belongs to (null: a page outside the navigation, e.g. 404). */
 export function activeNav(pathname: string, search: string): NavId | null {
   if (pathname === "/" || pathname === "/ask" || pathname.startsWith("/ask/")) return "assistant";
-  if (pathname === "/proposals" && new URLSearchParams(search).get("status") === "ready_for_review") return "review";
+  if (isReviewList(pathname, search)) return "review";
   if (pathname.startsWith("/proposals")) return "proposals";
   if (pathname.startsWith("/documents")) return "documents";
   if (pathname.startsWith("/graph")) return "map";

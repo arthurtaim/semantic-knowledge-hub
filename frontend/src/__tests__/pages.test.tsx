@@ -110,6 +110,31 @@ describe("Other pages in the new system", () => {
     expect(await within(bar).findByText("1")).toHaveClass("page-toolbar__count");
   });
 
+  it("«Ревью»: proposals ready for review that others created — the same list as the API, with the author filter", async () => {
+    const theirs = proposalSummary({ id: "p-theirs", status: "ready_for_review", author: "colleague" });
+    const calls = mockApi([
+      { path: "/api/drafts?status=ready_for_review&exclude_own=true", body: { items: [], total: 0 } },
+      { path: "/api/drafts?status=ready_for_review", body: { items: [theirs], total: 1 } },
+    ]);
+    renderAt("/proposals?status=ready_for_review&exclude_own=true", "/proposals", <ProposalsPage />);
+    expect(await screen.findByRole("heading", { level: 1, name: "Ревью" })).toBeInTheDocument();
+    expect(await screen.findByText("Нечего ревьюить")).toBeInTheDocument();
+    expect(screen.getByText(/Свои предложения в этот список не попадают/)).toBeInTheDocument();
+    const statuses = screen.getByRole("group", { name: "Фильтр по статусу" });
+    expect(within(statuses).getByRole("button", { name: "Готово к ревью" })).toHaveAttribute("aria-pressed", "true");
+    const author = screen.getByRole("group", { name: "Фильтр по автору" });
+    const others = within(author).getByRole("button", { name: "Кроме моих" });
+    expect(others).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(others);
+    expect(await screen.findByRole("heading", { level: 1, name: "Предложения" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: theirs.document_title })).toHaveAttribute("href", "/proposals/p-theirs");
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/drafts?status=ready_for_review&exclude_own=true",
+      "/api/drafts?status=ready_for_review",
+    ]);
+  });
+
   it("Предложения on a phone: card rows with every column's facts instead of a table that scrolls sideways", async () => {
     mockViewport(390);
     mockApi([

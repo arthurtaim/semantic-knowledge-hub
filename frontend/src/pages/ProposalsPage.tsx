@@ -93,22 +93,40 @@ function routeNotice(state: unknown): string | null {
   return null;
 }
 
+/** The URL mirrors the API filters (`?status=…&exclude_own=true`), so «Ревью» is a link like any other filter. */
+function filterParams(status: ProposalStatus | "", excludeOwn: boolean): Record<string, string> {
+  const next: Record<string, string> = {};
+  if (status) next.status = status;
+  if (excludeOwn) next.exclude_own = "true";
+  return next;
+}
+
+function emptyTitle(status: ProposalStatus | "", excludeOwn: boolean): string {
+  if (status === "ready_for_review" && excludeOwn) return "Нечего ревьюить";
+  if (excludeOwn) return status ? `Нет чужих предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»` : "Чужих предложений нет";
+  return status ? `Нет предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»` : "Предложений пока нет";
+}
+
 export function ProposalsPage() {
   const [params, setParams] = useSearchParams();
   // e.g. "Черновик удалён" after deleting a draft on another page
   const notice = routeNotice(useLocation().state);
   const raw = params.get("status") ?? "";
   const status = (KNOWN.has(raw) ? raw : "") as ProposalStatus | "";
+  // Not the reader's own proposals: nobody reviews their own change («Ревью» = «Готово к ревью» + this).
+  const excludeOwn = params.get("exclude_own") === "true";
+  const review = status === "ready_for_review" && excludeOwn;
   const phone = useMediaQuery(PHONE);
   const { data, error, loading, reload } = useAsync(
-    () => api.drafts(status ? { status } : {}),
-    `drafts-${status}`,
+    () => api.drafts({ ...(status ? { status } : {}), ...(excludeOwn ? { exclude_own: true } : {}) }),
+    `drafts-${status}-${excludeOwn ? "others" : "all"}`,
   );
+  const title = review ? "Ревью" : "Предложения";
 
   return (
     <div className="proposals">
       <PageToolbar
-        title="Предложения"
+        title={title}
         meta={data ? <span className="page-toolbar__count">{data.total}</span> : null}
         actions={
           <Link to="/documents/new" className={buttonClass("secondary", "md", "button--collapsible button--with-icon")}>
@@ -118,10 +136,11 @@ export function ProposalsPage() {
         }
       />
       <div className="page-head">
-        <h1>Предложения</h1>
+        <h1>{title}</h1>
         <p className="lead">
-          Все правки проходят через предложения: они не меняют документы до ревью и merge в GitLab. «Готово к ревью» и
-          открытый MR — это ещё не merge.
+          {review
+            ? "Предложения со статусом «Готово к ревью», которые подготовили другие участники: свои предложения не ревьюят. Решение о merge принимается в GitLab."
+            : "Все правки проходят через предложения: они не меняют документы до ревью и merge в GitLab. «Готово к ревью» и открытый MR — это ещё не merge."}
         </p>
       </div>
       {notice ? (
@@ -129,34 +148,47 @@ export function ProposalsPage() {
           <Notice tone="success">{notice}</Notice>
         </div>
       ) : null}
-      <div className="filter-chips" role="group" aria-label="Фильтр по статусу">
-        {FILTERS.map((filter) => (
+      <div className="filter-chips">
+        <div className="filter-chips__group" role="group" aria-label="Фильтр по статусу">
+          {FILTERS.map((filter) => (
+            <button
+              key={filter.value || "all"}
+              type="button"
+              className="filter-chip"
+              aria-pressed={status === filter.value}
+              onClick={() => setParams(filterParams(filter.value, excludeOwn))}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+        <div className="filter-chips__group" role="group" aria-label="Фильтр по автору">
           <button
-            key={filter.value || "all"}
             type="button"
             className="filter-chip"
-            aria-pressed={status === filter.value}
-            onClick={() => setParams(filter.value ? { status: filter.value } : {})}
+            aria-pressed={excludeOwn}
+            onClick={() => setParams(filterParams(status, !excludeOwn))}
           >
-            {filter.label}
+            Кроме моих
           </button>
-        ))}
+        </div>
       </div>
       <div aria-live="polite">
         {loading && !data ? <Loading /> : null}
         {error ? <ErrorState error={error} onRetry={reload} /> : null}
       </div>
       {data && data.items.length === 0 ? (
-        <EmptyState title={status ? `Нет предложений со статусом «${PROPOSAL_STATUS_LABEL[status]}»` : "Предложений пока нет"}>
+        <EmptyState title={emptyTitle(status, excludeOwn)}>
           <p>
-            Откройте документ и нажмите «Предложить изменение», чтобы подготовить правку с diff, или создайте новый
-            документ.
+            {review
+              ? "Здесь появятся предложения других участников со статусом «Готово к ревью». Свои предложения в этот список не попадают."
+              : "Откройте документ и нажмите «Предложить изменение», чтобы подготовить правку с diff, или создайте новый документ."}
           </p>
           <div className="button-row">
             <Link to="/documents" className="button button--secondary">
               Перейти к документам
             </Link>
-            {status ? (
+            {status || excludeOwn ? (
               <button type="button" className="button button--ghost" onClick={() => setParams({})}>
                 Показать все предложения
               </button>
