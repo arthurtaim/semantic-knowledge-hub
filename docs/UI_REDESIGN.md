@@ -274,7 +274,8 @@ separate labelled step.
 Task: `docs/ui-v2/TASK.md`; specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
 `04_KNOWLEDGE_GRAPH.md`; mockups `docs/ui-v2/screens/design/`. Branch `feature/ui-v2-workspace`. Routes, existing API
 contracts and the AI rules (`02_ASSISTANT.md` §6) are unchanged; the only new endpoints are those of `02_ASSISTANT.md`
-§5. New dependencies: `@fontsource/inter` (frontend); `pypdf`, `python-docx`, `openpyxl` (backend, attachments).
+§5 (the review round added only optional parameters and fields, §6.8). New dependencies: `@fontsource/inter` (frontend); `pypdf`, `python-docx`, `openpyxl` (backend, attachments);
+`python-multipart` (backend, the attachment upload parser — allowed by the owner in the review round, §6.8).
 Paths below without a prefix are under `frontend/src/`; `public/` and `e2e/` are under `frontend/`.
 
 ### 6.1 What changed, by phase
@@ -305,22 +306,22 @@ Status: **сделано**, **частично** (what is missing is said), **н
 | B · sidebar: logo and workspace, «Поиск Ctrl K», Ассистент, Ревью, Знания (Документы, Карта знаний, Шаблоны), Работа (Предложения, Публикации), Система (Интеграции), user | сделано | `components/shell/Sidebar.tsx`, `lib/routes.ts` |
 | B · collapse to icons; below 960 px a slide-over with Esc, focus return, scrim | сделано | `Layout.tsx`, `Sidebar.tsx`; `a11y.test.tsx` |
 | B · 52 px toolbar: path or title, actions on the right (≤ 1 primary), demo badge, AI-mode chip | сделано | `components/shell/PageToolbar.tsx`; phase F: the path shortens and never runs under the badges |
-| B · counts: Документы, Ревью (green badge), Предложения | частично | numbers from the API only; «Ревью» counts «Готово к ревью» (no reviewer assignment in the API) |
+| B · counts: Документы, Ревью (green badge), Предложения | сделано | numbers from the API only: «Ревью» = «Готово к ревью» except the reader's own (`GET /api/drafts?status=ready_for_review&exclude_own=true`), «Предложения» = open proposals (`?open_only=true`); each link opens the same list (§6.8) |
 | C · home = assistant: title, one line, field ≤ 760 px, four quick skills, «Недавние диалоги», «Ждёт вашего решения»; `disabled`: «Что нужно найти?», search, no skills | сделано | `pages/HomePage.tsx` |
 | C · `/ask` dialog: toolbar «Ассистент / вопрос», demo badge, «Новый диалог»; user bubble with chips; support level; markers and card; one main action, «Открыть документ», «Копировать с источниками»; «Источники» in three groups with the attachment caption; excluded documents folded; no duplicated quotes; pinned field; chips kept after sending | сделано | `pages/AskPage.tsx`, `components/AssistantTurn.tsx`, `AnswerParts.tsx`, `AnswerSources.tsx`, `lib/useComposer.ts` |
 | C · unconfirmed claims underlined in amber | частично | the API does not mark claims: an amber line lists the terms the server reports as unconfirmed |
 | C · states: stream stages, «Недостаточно данных», error with retry, conflict | сделано | `components/AssistantTurn.tsx`, `lib/useAssistantTurns.ts` |
-| C · `Composer`: chips with «убрать», Backspace, placeholder, Enter / Shift+Enter, up to 8 lines, files (button, drag, paste) with states, skills («/»), documents («@»), «Где искать», AI label, 34 px send disabled while reading or empty | сделано | `components/Composer.tsx`, `ComposerPalette.tsx`, `lib/useComposer.ts`, `composer.test.tsx` |
+| C · `Composer`: chips with «убрать», Backspace, placeholder, Enter / Shift+Enter, up to 8 lines, files (button, drag, paste) with states, skills («/»), documents («@»), «Где искать», AI label, 34 px send disabled while reading, empty or while the skill's input is missing (§6.8) | сделано | `components/Composer.tsx`, `ComposerPalette.tsx`, `lib/useComposer.ts`, `composer.test.tsx` |
 | C · attachment limits (10 per dialog, 20 MB, formats, text only, per dialog, expiry, delete) | сделано | `backend/app/services/attachments.py`, `backend/app/api/assistant.py` |
-| C · skills from the backend registry over `AiProposalKind`; «создаёт черновик» never applies anything | сделано | `backend/app/domain/skills.py`, `services/skills.py`; `useSkills.ts` |
+| C · skills from the backend registry over `AiProposalKind`; «создаёт черновик» never applies anything | сделано | `backend/app/domain/skills.py`, `services/skills.py`; `useSkills.ts`; «one of» requirement `requires.document_or_question` («Найти связи»: document or question; the field waits for one) |
 | C · modes: everything in `internal_api` / `claude_cli`; `mock` disables skills without a deterministic implementation with a reason; `disabled` = search field | сделано | `aiModes.test.tsx`, e2e `assistant.spec.ts` |
 | C · API: `GET /api/assistant/skills`, attachments POST / DELETE, new `ask` fields, `attachment` citations; pytest per endpoint | сделано | `backend/app/api/assistant.py`, `backend/tests/` |
 | D · document toolbar: path, «Предложить изменение», «Ассистент» (pressed tone), «Ещё» | сделано | `pages/DocumentPage.tsx` |
 | D · status line, 30/36 title, properties grid (Владелец, Раздел, Проверен, Источник, Ревизия, Связи); passport removed, all its fields kept | сделано | `DocumentPage.tsx`, `components/DocumentDetails.tsx` («Все сведения») |
 | D · segments Текст / Связи / История / Markdown; text Inter 16/27 ≤ 700 px; repeated H1 hidden | сделано | `DocumentPage.tsx`, `.prose` |
 | D · floating bar over a selection (Объяснить / Найти связанные / Предложить правку), keyboard selection, Esc | сделано | `components/SelectionToolbar.tsx` (Alt+F10) |
-| D · assistant panel 360–380 px (⌘J): context chips, quick actions, short conversation, compact field; closed by default, remembered; a sheet below 1200 px | сделано | `components/DocumentAssistant.tsx`, `components/shell/SidePanel.tsx` |
-| D · publication, AI proposals block, links and WikiLinks kept | сделано | `DocumentPublication.tsx`, `AiProposal.tsx`, `DocumentLinks.tsx` |
+| D · assistant panel 360–380 px (⌘J): context chips, quick actions, short conversation, compact field; closed by default, remembered; a sheet below 1200 px | сделано | `components/DocumentAssistant.tsx`, `components/shell/SidePanel.tsx`; «Сведения» is remembered the same way (one key per panel, at most one set); a panel the page reopens does not take the focus |
+| D · publication, AI proposals block, links and WikiLinks kept | сделано | `DocumentPublication.tsx`, `DocumentLinks.tsx`; the AI proposals block moved into the assistant panel: «Ещё по документу» (summarize, completeness, metadata) and «Ждут решения» (earlier undecided proposals, Accept / Reject) — `DocumentAssistant.tsx`, `AskProposal.tsx` |
 | D · catalog toolbar: «Документы 83», Список / Таблица / Карта, «Найти в списке», «Создать документ» | сделано | `pages/ExplorerPage.tsx` |
 | D · filter chips, «+ Фильтр», «Группировка», «Вид» | частично | «Вид» holds only the sort (nothing else to set) |
 | D · table: Название + ID, Статус, Владелец, Обновлён, Связи; 42 px rows, 36 px group rows with counts; whole row clickable; the view remembered | частично | no «Связи» column (the list API has no per-document link count); `components/CatalogTable.tsx` |
@@ -446,10 +447,14 @@ Shell
   mode). On a phone it reads «ИИ».
 - The collapse button sits next to the logo (⌘\\).
 - With AI disabled the first item is «Главная» (there is no assistant).
-- «Ревью» opens `/proposals?status=ready_for_review` and its badge counts that status: the API has no reviewer
-  assignment («на мне»).
+- «Ревью» opens `/proposals?status=ready_for_review&exclude_own=true` and its badge is that list's total — «Готово к
+  ревью» except the reader's own proposals (owner's decision; the API still has no reviewer assignment «на мне»). In
+  the single-user demo it is usually 0, so no badge. The proposals page shows it as «Ревью» with a «Кроме моих»
+  toggle after the status chips.
 - «Публикации» opens the Confluence publisher row of the integrations page: there is no publications list page.
-- «Предложения» shows the total from the API (the mockup shows a "needs action" number).
+- «Предложения» counts and opens the open proposals (`/proposals?open_only=true`: draft, ready for review, being
+  sent, in a GitLab MR, sending failed — not merged, rejected or conflict), owner's decision; the page has an
+  «Открытые» chip next to «Все».
 - Labelled toolbar actions keep only their icon below 760 px; the path shows only the current page when the
   toolbar is narrow.
 
@@ -464,10 +469,17 @@ Assistant
 - The drop overlay shows only the number of files (browsers do not expose sizes during a drag).
 - The skill list has no letter badges and no «Все навыки» (there is no such page).
 - On phones the field's tools and «Новый диалог» are icons only and the AI label is hidden.
-- «Ждёт вашего решения» says «Готово к ревью», not «На ревью у вас».
-- Backend: multipart is parsed with the standard library (`python-multipart` is not an allowed dependency);
-  `improve_section` is unavailable in `mock`; extra limits — 100 ready files per user, `ATTACHMENTS_TTL_HOURS` = 24;
-  an answer cited only from attachments is capped at «Частично подтверждено».
+- «Ждёт вашего решения» says «Готово к ревью», not «На ревью у вас», and lists only other people's proposals (the
+  «Ревью» list).
+- The skill `check_freshness` is «Что перепроверить» — «Покажет связанные документы, которые могли устареть»
+  (owner's decision; `02_ASSISTANT.md` still says «Проверить актуальность»): it runs `impact_analysis`, which lists
+  linked documents to re-check rather than checking freshness itself.
+- «Найти связи» with neither a document nor a question: the send button is disabled, the placeholder asks for a
+  question or a document and one line under the field says what is missing.
+- Backend: uploads are parsed by `python-multipart`'s streaming parser under a hard byte cap checked before each
+  chunk (not FastAPI's `UploadFile`, which spools to a temporary file without a size cap); `improve_section` is
+  unavailable in `mock` (owner agreed); extra limits — 100 ready files per user, `ATTACHMENTS_TTL_HOURS` = 24; an
+  answer cited only from attachments is capped at «Частично подтверждено».
 
 Document and catalog
 - No «Связи» column in the catalog: the list API has no per-document link count.
@@ -475,7 +487,13 @@ Document and catalog
 - Group counts are per loaded page (≤ 100 rows).
 - The revision is shown short, `sha256:02b52b3c`.
 - Default view: table when browsing, list for a search, then the remembered choice.
-- The «ИИ-помощник по документу» block stays under the text (spec §3 keeps the AI proposals block).
+- The «ИИ-помощник по документу» block is no longer under the text: it duplicated the assistant panel, so its
+  actions are skills in the panel («Найти связанные», «Что перепроверить» and, under «Ещё по документу», «Кратко
+  пересказать», «Проверить полноту», «Предложить метаданные»), their proposals open from the answer with Accept /
+  Reject, and the document's earlier undecided AI proposals are a folded «Ждут решения: N» list in the panel. Without
+  AI (`disabled`) the panel and all of this are absent.
+- «Сведения» reopens on a wide screen when it was left open, like the assistant panel; a panel reopened on load
+  does not take the focus.
 - «Предложить правку» in `mock` opens the manual editor; «Объяснить раздел» without a selection explains the
   document.
 - Proposals and the import preview become card rows / a field list on phones (the spec names only the catalog).
@@ -488,15 +506,22 @@ Map
 
 ### 6.6 Open questions for the owner
 
-1. Allow `python-multipart` instead of the standard-library parser?
-2. «Ревью»: which source — a reviewer assignment in the API, or keep «Готово к ревью»?
-3. «Предложения» count: total, or proposals that need an action (which statuses)?
-4. «Проверить актуальность» is built on `impact_analysis`: is the wording right?
-5. `improve_section` stays off in `mock` (no language model): agreed?
-6. «Найти связи» needs a document or a question; the skills registry cannot express «one of»: extend it?
+1. ~~Allow `python-multipart` instead of the standard-library parser?~~ **Decided: yes** — pinned with hashes,
+   streaming parser with the byte cap (§6.8).
+2. ~~«Ревью»: which source — a reviewer assignment in the API, or keep «Готово к ревью»?~~ **Decided:** «Готово к
+   ревью» except the proposals the current user created (`exclude_own`); badge, link and the home row alike.
+3. ~~«Предложения» count: total, or proposals that need an action (which statuses)?~~ **Decided:** open proposals
+   only (`open_only`: draft, ready_for_review, submitting, submitted_to_gitlab, submission_failed).
+4. ~~«Проверить актуальность» is built on `impact_analysis`: is the wording right?~~ **Decided:** renamed «Что
+   перепроверить» — «Покажет связанные документы, которые могли устареть»; the id stays `check_freshness`.
+5. ~~`improve_section` stays off in `mock` (no language model): agreed?~~ **Decided: yes** — unchanged, verified.
+6. ~~«Найти связи» needs a document or a question; the skills registry cannot express «one of»: extend it?~~
+   **Decided: yes** — `requires.document_or_question`, `skill_input_missing` with `document_or_question`, the
+   composer's send rule.
 7. A per-document link count in the list API (for the catalog's «Связи» column)?
 8. Should a recent dialog restore its skill and files, not only the question?
-9. Should the document's «Сведения» panel be remembered like the assistant panel?
+9. ~~Should the document's «Сведения» panel be remembered like the assistant panel?~~ **Decided: yes** — remembered
+   per browser, docked only, mutually exclusive with the assistant.
 
 ### 6.7 Phase F acceptance
 
@@ -512,3 +537,36 @@ section.
   1 skipped before → 55 passed, 1 skipped after (`polish.spec.ts` F-01…F-04).
 - Screenshots of every route × `mock` / `disabled` × light / dark × 1440 / 390 px and 360 px, and the interactive
   states in dark (1440 and 390 px) and light, before and after — kept outside the repository.
+
+### 6.8 Review round — the owner's answers (2026-11-24)
+
+The owner answered open questions 1–6 and 9 (§6.6; 7 and 8 are handled separately) and asked to fold the
+document's AI block into the assistant panel. Commits on `feature/ui-v2-workspace`:
+
+| Item | What | Commits |
+|---|---|---|
+| 1 · `python-multipart` | Pinned `0.0.34` with the wheel and sdist hashes (`requirements.lock`, also `requirements-dev.lock`, `pyproject.toml`). `app/api/multipart.py`: `FormReader` feeds request chunks to `python_multipart.MultipartParser` and checks the byte cap before each chunk; same `FormData` shape and error codes (`invalid_multipart`, `invalid_request`, `too_large`), field order tolerated, parts in memory only, the parser's texts and log warnings (they quote body bytes) never passed on; the stdlib splitter is removed | b78fcad |
+| 2 · «Ревью» | `GET /api/drafts?exclude_own=true` (additive); badge, link (`/proposals?status=ready_for_review&exclude_own=true`) and the home «Ждёт вашего решения» row use it; the proposals page shows «Ревью» with a «Кроме моих» toggle | 1ac55a0, 0a8f574, 616b152 |
+| 3 · «Предложения» | `GET /api/drafts?open_only=true` (open = `OPEN_STATUSES`: draft, ready_for_review, submitting, submitted_to_gitlab, submission_failed); the sidebar count and link use it; «Открытые» chip | 5eaac72, 226d7da |
+| 4 · `check_freshness` | «Что перепроверить» — «Покажет связанные документы, которые могли устареть»; the panel's quick action follows; id unchanged | 0aa8083 |
+| 5 · `improve_section` in `mock` | unchanged: unavailable with its reason (registry test; checked on the running `mock` stack) | — |
+| 6 · «документ или вопрос» | `requires.document_or_question` (additive, only `find_related`), `422 skill_input_missing` with `details.missing = ["document_or_question"]`; the composer disables sending, asks for a question or a document in the placeholder and says what is missing in one line | 469ccdf, ec2f592, 6c5c674 |
+| 9 · «Сведения» remembered | `DETAILS_OPEN_KEY` next to the assistant's key (`lib/storage`, try/catch), one panel at a time, docked only; a panel the page reopens does not take the focus | 011702d, 4449c52 |
+| D · document AI block | it duplicated the panel: removed from under the text; «Ещё по документу» (summarize, completeness, metadata) and a folded «Ждут решения: N» (earlier undecided AI proposals, Accept / Reject in place) in the panel; nothing applies without Accept; absent with `disabled` | eb415c8 |
+| e2e | C-02 waited for nothing before dropping a file (failed once on a cold dev server) | f2381c6 |
+
+API changes (all additive, `docs/API_CONTRACTS.md` «v0.4 additions»): `GET /api/drafts` `exclude_own`,
+`open_only`; `SkillInfo.requires.document_or_question`; `skill_input_missing` may report `document_or_question`
+(was `document` for `find_related`); the `check_freshness` name and description.
+
+Checks (this tree, real runs):
+- Backend: `ruff check`, `ruff format --check`, `mypy app claude_worker` clean; `pytest` 597 passed, 6 skipped
+  before → 616 passed, 6 skipped after (new: the streaming reader — chunking, field order, cap while streaming,
+  64 KiB prefix, nine malformed bodies, no body bytes in the 422, no temporary file —, `exclude_own`, `open_only`,
+  the «one of» requirement).
+- Frontend: `tsc`, `eslint` clean; `vitest` 346 → 358 (29 files).
+- E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 55 passed, 1 skipped before and
+  after (on stacks restarted cold).
+- Screenshots of home / document / proposals × `mock` / `disabled` × light / dark × 1440 / 390 px, and of the
+  document panel with the moved actions, «Ждут решения», «Ревью», «Открытые», the «Найти связи» hint and the
+  remembered «Сведения» — outside the repository.
