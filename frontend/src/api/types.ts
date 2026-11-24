@@ -175,10 +175,16 @@ export interface ScopeStatus {
 export type CitationSourceKind = "local_markdown" | "gitlab_approved" | "confluence_mcp";
 /** Status of a Confluence page as the page itself declares it; never the same as an approved team document. */
 export type ExternalStatus = "approved" | "draft" | "unknown";
+/**
+ * Where a cited excerpt comes from (UI v2): a knowledge source, or a file attached to this conversation.
+ * An attachment is never a knowledge-base document — show it in its own group («Вложения этого диалога»).
+ */
+export type CitationSourceType = SourceType | "attachment";
 
 export interface Citation {
   ref: number;
-  source_type: SourceType;
+  source_type: CitationSourceType;
+  /** For an attachment: its id (ATT-…). */
   document_id: string;
   title: string;
   source_uri: string;
@@ -196,6 +202,11 @@ export interface Citation {
   external_status?: ExternalStatus | null;
   fragment_id?: string | null;
   content_hash?: string | null;
+  /** UI v2, `source_type: "attachment"` only. */
+  attachment_id?: string | null;
+  attachment_name?: string | null;
+  /** Computed by the server from the cited lines: «строка 1», «стр. 4», «лист Fields, строка 12», «строки 3–5». */
+  locator?: string | null;
 }
 
 export interface ExcludedSource {
@@ -213,7 +224,17 @@ export interface ConversationTurn {
   answer: string;
 }
 
+/** A fragment selected in a document (UI v2). The server checks that `text` really is in that document/section. */
+export interface AskSelection {
+  document_id: string;
+  /** Section heading anchor (`DocumentDetail.sections[].anchor`); required by `improve_section`. */
+  section_anchor?: string | null;
+  /** Verbatim selected text, ≤ 8000 characters; "" means the whole section. */
+  text?: string;
+}
+
 export interface AskRequest {
+  /** ≥ 3 characters, or "" when the chosen skill has `prompt_optional: true`. */
   question: string;
   sources: SearchScope[];
   include_drafts: boolean;
@@ -222,6 +243,31 @@ export interface AskRequest {
   history?: ConversationTurn[];
   /** Ask the server to consult Confluence even when the team documents look sufficient. */
   search_external?: boolean;
+  // --- UI v2 (docs/ui-v2/specs/02_ASSISTANT.md §5); all optional ---
+  /** Client-generated id of the dialog, `^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$`; required with `attachment_ids`. */
+  conversation_id?: string;
+  /** A skill id from GET /api/assistant/skills; omitted = the plain grounded answer. */
+  skill_id?: string;
+  /** Ready attachments of THIS conversation, at most 10. */
+  attachment_ids?: string[];
+  /** Documents chosen with «@», at most 5: cited first when relevant. */
+  context_document_ids?: string[];
+  selection?: AskSelection | null;
+}
+
+/** The skill that produced an answer (echoed when the request named one). */
+export interface AskSkillRef {
+  id: string;
+  name: string;
+  access: SkillAccess;
+}
+
+/** An AI proposal a skill created (GET /api/ai/proposals/{id}); nothing was applied. */
+export interface AskProposalRef {
+  id: string;
+  kind: AiProposalKind;
+  status: AiProposalStatus;
+  graph_link?: string | null;
 }
 
 /** Why the server consulted the external source (AskResponse.external.trigger). */
@@ -261,6 +307,55 @@ export interface AskResponse {
   index_generation?: string | null;
   instructions_version?: string | null;
   external?: ExternalRetrievalSummary | null;
+  /** UI v2: the skill used (null for a plain question). */
+  skill?: AskSkillRef | null;
+  /** UI v2: the proposal a workflow skill created — show it as a card with a link. */
+  proposal?: AskProposalRef | null;
+}
+
+// --- UI v2: assistant skills and conversation attachments (docs/ui-v2/specs/02_ASSISTANT.md §3–§5) ---
+
+/** "read" — «чтение»; "draft" — «создаёт черновик» (never applies anything: a proposal or a draft for review). */
+export type SkillAccess = "read" | "draft";
+
+export interface SkillRequires {
+  /** A chosen document (`context_document_ids[0]`) or a selection in one. */
+  document: boolean;
+  selection: boolean;
+  attachment: boolean;
+}
+
+/** GET /api/assistant/skills — the registry, with availability in the current AI mode. */
+export interface AssistantSkill {
+  id: string;
+  name: string;
+  description: string;
+  access: SkillAccess;
+  requires: SkillRequires;
+  /** true: Enter with an empty question runs the skill. */
+  prompt_optional: boolean;
+  available: boolean;
+  /** One Russian line when unavailable (e.g. «ИИ отключён»). */
+  unavailable_reason: string | null;
+}
+
+export type AttachmentStatus = "ready" | "error";
+export type AttachmentErrorCode = "unsupported_type" | "too_large" | "limit_reached" | "unreadable";
+
+/** POST /api/assistant/attachments: HTTP 201 when `ready`, HTTP 200 with `status: "error"` when not accepted. */
+export interface AssistantAttachment {
+  id: string;
+  conversation_id: string;
+  /** Display name only (sanitized). */
+  name: string;
+  size: number;
+  mime: string;
+  status: AttachmentStatus;
+  /** «3 листа», «12 страниц», «1 240 строк» (no-break space between digit groups). */
+  summary: string | null;
+  error_code: AttachmentErrorCode | null;
+  /** null for an error result (nothing was stored). */
+  expires_at: string | null;
 }
 
 // --- POST /api/assistant/ask/stream: NDJSON events, one JSON object per line ---
