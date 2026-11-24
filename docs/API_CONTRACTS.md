@@ -2,7 +2,7 @@
 
 These are proposed MVP HTTP contracts. Claude Code may refine field details but must document changes, keep tests consistent and preserve adapter boundaries. All routes prefixed `/api`.
 
-**Current implemented contract: v0.4 (v0.3 + UI v2 phase C: assistant skills and attachments)** — see the last two sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
+**Current implemented contract: v0.5 (v0.4 + M5.7 system facts and tool steps)** — see the last sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
 
 ## 1. Health and integrations
 - `GET /api/health` -> `{ "status": "ok", "mode": "local_demo" }` (no secrets).
@@ -395,3 +395,29 @@ are unaffected): the skill needs a chosen document / a selection in one **or** a
 characters. Only `find_related` sets it. Without either, `/ask` answers `422 skill_input_missing` with
 `details.missing = ["document_or_question"]` (message «… нужно: документ или вопрос.»); the composer disables
 sending and says the same in one line.
+
+## Implemented contract (v0.5, M5.7: AI-native system awareness)
+
+Additive only; every v0.4 field and behaviour is unchanged. Design, semantics and limits: `docs/AI_NATIVE_TOOLS.md`.
+
+| Route | Change |
+|---|---|
+| `POST /api/assistant/ask` | request: `history[i].context?: TurnFactContext[]` (≤ 5, the referent of that answer); response: `system_facts`, `tool_steps`, `general_knowledge`, `conversation_context` |
+| `POST /api/assistant/ask/stream` | new events `tool_call {call_id, round, tool, operation}` and `tool_result {call_id, step}`; `status: generating` carries `round`; `final` = the response above |
+
+- `SystemFact` = `{ref ("F1"), tool, operation, label, value, unit, effective_filters, definition,
+  access_scope: "visible_to_request_context", source: skh_document_registry | skh_knowledge_graph |
+  skh_template_registry | skh_ai_proposals, generation, as_of, items[{id, title, kind: document | template |
+  relation | proposal, status, detail, app_path}], truncated, breakdown}`. `[F1]` in `answer` refers to `ref`.
+  Render values from here; a fact is computed from the reader's own snapshot.
+- `ToolStepInfo` = `{call_id, round, tool, operation, outcome: ok | invalid | unknown_tool | not_found | denied |
+  unavailable | timeout | error, duration_ms, result_count, fact_ref, error_code, message}` — no payloads.
+- `TurnFactContext` = `{tool, operation, filters (≤ 12 keys, ≤ 1000 chars JSON), document_ids (≤ 20), value}`;
+  unknown fields → 422. Context only: IDs the reader can no longer see are dropped, every tool call re-checks access.
+- Confidence: an answer backed by `system_facts` may be `supported` without document citations; a general explanation
+  is `partial` with `general_knowledge: true` and a warning; without either the v0.4 gate applies unchanged.
+- `proposal` may now also come from a `drafts_propose` tool step (same `ProposalRef`, status `suggested`, nothing
+  applied); the route requires nothing new — the tool is offered only when the user has `create_proposal`.
+- Which answers use tools: a plain question (or `skill_id: "answer"`) with a provider that supports the loop
+  (`internal_api`, `claude_cli`) and `AI_TOOLS_ENABLED=true`. `mock`, explicit skills and `AI_TOOLS_ENABLED=false`
+  behave exactly as v0.4 (empty `system_facts` / `tool_steps`).
