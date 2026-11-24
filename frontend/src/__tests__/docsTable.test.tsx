@@ -92,6 +92,21 @@ describe("lib/docsTable", () => {
     expect(sorted.slice(0, 6)).toEqual(["SEM-DOM-001", "SEM-PROC-OLD-001", "SEM-STD-001", "DEMO-GOV-013", "DEMO-INT-018", "DEMO-SRC-004"]);
     expect(new Set(sorted.slice(-3))).toEqual(new Set(["SEM-INT-ARIS-001", "DEMO-SRC-009", "DEMO-INT-017"]));
     expect(sorted.slice(-3).every((id) => documents[id]?.review_state === "not_required")).toBe(true);
+    const dated = sorted.slice(1, -3).map((id) => documents[id]?.reviewed_at ?? "");
+    expect(dated.every(Boolean)).toBe(true);
+    expect(dated).toEqual([...dated].sort());
+  });
+
+  it("sorts «Проверен ↓»: the newest review first, «не проверялся» after every date; «не требуется» still last", () => {
+    const sorted = sortIdsBy(Object.keys(documents), documents, { key: "reviewed", dir: "desc" });
+    expect(new Set(sorted.slice(-3))).toEqual(new Set(["SEM-INT-ARIS-001", "DEMO-SRC-009", "DEMO-INT-017"]));
+    expect(sorted.at(-4)).toBe("SEM-DOM-001"); // never reviewed: older than any date
+    const dated = sorted.slice(0, -4).map((id) => documents[id]?.reviewed_at ?? "");
+    expect(dated.every(Boolean)).toBe(true);
+    expect(dated).toEqual([...dated].sort().reverse());
+    // «не требуется» among themselves: by title in both directions
+    const ascLast = sortIdsBy(Object.keys(documents), documents, { key: "reviewed", dir: "asc" }).slice(-3);
+    expect(sorted.slice(-3)).toEqual(ascLast);
   });
 
   it("filters: values of one key with «или», keys with «и»; «не назначен» is every document without an owner", () => {
@@ -216,6 +231,19 @@ describe("Таблица: columns and rows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Браузер: назад" }));
     expect(location()).toBe("/documents?view=table");
     expect(header("Проверен")).toHaveAttribute("aria-sort", "ascending");
+  });
+
+  it("«Проверен» either way: «не требуется» (drafts) stays at the bottom", async () => {
+    renderTable();
+    await screen.findByRole("table");
+    const reviewTexts = () => Array.from(table().querySelectorAll(".docs-table__review > span[aria-hidden]")).map((el) => el.textContent);
+    expect(reviewTexts()[0]).toBe("не проверялся");
+    expect(reviewTexts().slice(-3)).toEqual(["не требуется", "не требуется", "не требуется"]);
+    await userEvent.click(within(header("Проверен")).getByRole("button"));
+    expect(location()).toBe("/documents?view=table&sort=-reviewed");
+    expect(header("Проверен")).toHaveAttribute("aria-sort", "descending");
+    expect(reviewTexts()[0]).toMatch(/\d{4}$/); // the newest date first
+    expect(reviewTexts().slice(-4)).toEqual(["не проверялся", "не требуется", "не требуется", "не требуется"]);
   });
 });
 

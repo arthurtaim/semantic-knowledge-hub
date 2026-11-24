@@ -158,11 +158,18 @@ export function nextSort(current: TableSort, key: SortKey): TableSort {
 
 const byTitle = (a: DocumentTreeEntry, b: DocumentTreeEntry) => a.title.localeCompare(b.title, "ru", { sensitivity: "base" });
 
-/** Never reviewed first (the oldest of all), then the oldest review; «не требуется» last. */
+/** «не требуется»: no review is expected (a draft, a deprecated document without a review date). */
+export function noReviewNeeded(entry: Pick<DocumentTreeEntry, "review_state" | "reviewed_at">): boolean {
+  return entry.review_state !== "never_reviewed" && !entry.reviewed_at;
+}
+
+/**
+ * «Проверен» ascending: never reviewed first (older than any date), then the oldest review. «не требуется» is not on
+ * this scale — `sortIdsBy` puts it last in either direction.
+ */
 function reviewOrder(entry: DocumentTreeEntry): string {
   if (entry.review_state === "never_reviewed") return "0";
-  if (entry.reviewed_at) return `1${entry.reviewed_at}`;
-  return "2";
+  return `1${entry.reviewed_at ?? ""}`;
 }
 
 function compareBy(key: SortKey, a: DocumentTreeEntry, b: DocumentTreeEntry): number {
@@ -185,7 +192,11 @@ function compareBy(key: SortKey, a: DocumentTreeEntry, b: DocumentTreeEntry): nu
   }
 }
 
-/** The documents in the table's order; ties by title, then ID (stable whichever the direction). */
+/**
+ * The documents in the table's order; ties by title, then ID (stable whichever the direction). By «Проверен»,
+ * «не требуется» comes last in both directions (the owner's decision): ascending — «не проверялся», the oldest
+ * review … the newest, then «не требуется»; descending — the newest … the oldest, «не проверялся», then «не требуется».
+ */
 export function sortIdsBy(ids: string[], documents: Record<string, DocumentTreeEntry>, sort: TableSort): string[] {
   const sign = sort.dir === "asc" ? 1 : -1;
   return ids
@@ -193,7 +204,8 @@ export function sortIdsBy(ids: string[], documents: Record<string, DocumentTreeE
     .sort((x, y) => {
       const a = documents[x] as DocumentTreeEntry;
       const b = documents[y] as DocumentTreeEntry;
-      return sign * compareBy(sort.key, a, b) || byTitle(a, b) || x.localeCompare(y);
+      const last = sort.key === "reviewed" ? Number(noReviewNeeded(a)) - Number(noReviewNeeded(b)) : 0;
+      return last || sign * compareBy(sort.key, a, b) || byTitle(a, b) || x.localeCompare(y);
     });
 }
 

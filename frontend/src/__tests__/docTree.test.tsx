@@ -15,6 +15,7 @@ import {
   sortIds,
   type TreeIndex,
 } from "../lib/docTree";
+import demo from "./docsTreeDemo.json";
 import { demoTree } from "./docsTreeFixture";
 import { memoryStorage } from "./helpers";
 
@@ -306,6 +307,19 @@ describe("lib/docTree", () => {
     const reviewed = sortIds(ids, demoTree.documents, "reviewed");
     expect(reviewed[0]).toBe("DEMO-INT-018"); // 2025-12-10, the oldest
     expect(reviewed.at(-1)).toBe("SEM-INT-ARIS-001"); // a draft: no review expected
+  });
+
+  it("«По дате проверки» on the whole demo base: «не проверялся» first, the oldest review next, «не требуется» last", () => {
+    const docs = (demo as DocumentTree).documents;
+    const all = indexTree(demo as DocumentTree).nodes.get("all")?.allDocIds ?? [];
+    const reviewed = sortIds(all, docs, "reviewed");
+    expect(reviewed).toHaveLength(83);
+    expect(reviewed[0]).toBe("SEM-DOM-001"); // never reviewed: older than any date
+    expect(new Set(reviewed.slice(-3))).toEqual(new Set(["DEMO-SRC-009", "DEMO-INT-017", "SEM-INT-ARIS-001"]));
+    expect(reviewed.slice(-3).every((id) => docs[id]?.review_state === "not_required")).toBe(true);
+    const dated = reviewed.slice(1, -3).map((id) => docs[id]?.reviewed_at ?? "");
+    expect(dated.every(Boolean)).toBe(true);
+    expect(dated).toEqual([...dated].sort());
   });
 
   it("formats the review date and its tone", () => {
