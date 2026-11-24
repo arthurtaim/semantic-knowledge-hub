@@ -1,5 +1,5 @@
 """«Пустой документ»: a document created without a template (server-owned technical metadata, free Markdown) and
-«Применить шаблон» later."""
+«Применить шаблон» later — to a draft (updated after confirmation) or to an indexed document (a change proposal)."""
 
 from __future__ import annotations
 
@@ -7,10 +7,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from app.domain.models import DocType
 from app.domain.schema import split_frontmatter
+from app.domain.template_apply import apply_template_to_body, apply_template_to_content
+from app.domain.templates import DocumentTemplate
 from tests.conftest import make_doc
 
 FREE_BODY = """# Заметки о витрине клиентов
@@ -43,6 +47,25 @@ def front(content: str) -> dict[str, Any]:
 
 def codes(issues: list[dict[str, Any]]) -> set[str]:
     return {i["code"] for i in issues}
+
+
+def template(**overrides: Any) -> DocumentTemplate:
+    values: dict[str, Any] = {
+        "id": "architecture",
+        "title": "Архитектура",
+        "description": "",
+        "doc_type": DocType.architecture,
+        "id_prefix": "SEM-ARCH",
+        "default_tags": (),
+        "sections": ("Назначение", "Контекст", "Компоненты"),
+        "body": "## Назначение\n> Требует уточнения: зачем\n\n## Контекст\n> Требует уточнения: окружение\n\n"
+        "## Компоненты\n> Требует уточнения: части\n\n## Связанное\n> Требует уточнения: ссылки\n",
+        "order": 1,
+        "version": 3,
+        "optional_sections": ("Связанное",),
+    }
+    values.update(overrides)
+    return DocumentTemplate(**values)
 
 
 # --- creating a blank document -------------------------------------------------------------------------------
@@ -217,3 +240,237 @@ def test_import_without_any_active_template_becomes_a_blank_document(
     )
     assert created.status_code == 201, created.text
     assert created.json()["template_id"] is None and created.json()["origin"] == "import"
+
+
+# --- applying a template: the body algorithm --------------------------------------------------------------------
+
+
+def test_apply_maps_headings_adds_required_skeletons_and_only_adds_lines() -> None:
+    body = "# Т\n\nВступление.\n\n## контекст\nТекст контекста.\n\n## Мои вопросы\n- вопрос\n"
+    applied = apply_template_to_body(body, template())
+    assert applied.body == (
+        "# Т\n\nВступление.\n\n"
+        "## Назначение\n> Требует уточнения: зачем\n\n"
+        "## контекст\nТекст контекста.\n\n"
+        "## Компоненты\n> Требует уточнения: части\n\n"
+        "## Мои вопросы\n- вопрос\n"
+    )
+    states = [(s.heading, s.state) for s in applied.sections]
+    assert states == [
+        ("Назначение", "added"),
+        ("контекст", "matched"),
+        ("Компоненты", "added"),
+        ("Мои вопросы", "kept"),
+        ("Связанное", "optional_missing"),
+    ]
+    # every original line survives in order: the result only gains lines
+    original = body.split("\n")
+    result = iter(applied.body.split("\n"))
+    assert all(any(line == r for r in result) for line in original)
+
+
+def test_apply_ignores_headings_in_code_and_appends_to_a_document_without_sections() -> None:
+    body = "Текст.\n\n```\n## Назначение\n```\n"
+    applied = apply_template_to_body(body, template())
+    assert applied.body.startswith("Текст.\n\n```\n## Назначение\n```\n\n## Назначение\n> Требует уточнения")
+    assert [s.state for s in applied.sections][:3] == ["added", "added", "added"]
+    assert apply_template_to_body("", template()).body.startswith("## Назначение\n")
+    # applying again changes nothing
+    assert apply_template_to_body(applied.body, template()).body == applied.body
+
+
+def test_apply_rewrites_only_type_and_template_lines_of_the_front_matter() -> None:
+    content = (
+        "---\nid: SEM-DOC-001\ntitle: Х\ntype: guide\nstatus: approved\nowner: a\ntags: [x]\n"
+        "relations:\n  depends_on: [SEM-ARCH-001]\nreviewed_at: 2026-01-01\n---\n\n## Контекст\nТекст.\n"
+    )
+    applied = apply_template_to_content(content, template())
+    assert applied.previous == {"type": "guide", "template": None, "template_version": None}
+    yaml_text, body = split_frontmatter(applied.content)
+    assert yaml_text.split("\n") == [
+        "id: SEM-DOC-001",
+        "title: Х",
+        "type: architecture",
+        "status: approved",
+        "owner: a",
+        "tags: [x]",
+        "relations:",
+        "  depends_on: [SEM-ARCH-001]",
+        "reviewed_at: 2026-01-01",
+        "template: architecture",
+        "template_version: 3",
+    ]
+    assert body.startswith("## Назначение\n> Требует уточнения: зачем\n\n## Контекст\nТекст.\n")
+
+
+# --- applying a template: drafts ----------------------------------------------------------------------------------
+
+
+def test_apply_template_to_a_blank_draft_after_a_diff_preview(client: TestClient) -> None:
+    draft = blank(client).json()
+    preview = client.post(
+        f"/api/drafts/{draft['id']}/apply-template/preview", json={"template_id": "architecture"}
+    )
+    assert preview.status_code == 200, preview.text
+    p = preview.json()
+    assert p["target"] == "draft" and p["expected_version"] == 1 and p["changed"]
+    assert p["template_version"] == 1 and p["type_before"] == "guide" and p["type_after"] == "architecture"
+    assert p["previous_template_id"] is None
+    states = {s["heading"]: s["state"] for s in p["sections"]}
+    assert states["Контекст"] == "matched" and states["Мои вопросы"] == "kept"
+    assert states["Назначение"] == "added" and states["Компоненты"] == "added"
+    body_removals = [
+        ln for ln in p["diff"]["lines"] if ln["kind"] == "remove" and not ln["text"].startswith("type:")
+    ]
+    assert body_removals == []  # nothing of the text is removed
+    assert client.get(f"/api/drafts/{draft['id']}").json()["edit_version"] == 1  # a preview stores nothing
+
+    applied = client.post(
+        f"/api/drafts/{draft['id']}/apply-template",
+        json={"template_id": "architecture", "template_version": 1, "expected_version": 1},
+    )
+    assert applied.status_code == 200, applied.text
+    detail = applied.json()
+    assert detail["template_id"] == "architecture" and detail["template_version"] == 1
+    assert detail["edit_version"] == 2 and detail["document_id"] == "SEM-DOC-001"  # the ID never changes
+    meta = front(detail["proposed_content"])
+    assert (
+        meta["template"] == "architecture"
+        and meta["template_version"] == 1
+        and meta["type"] == "architecture"
+    )
+    body = detail["new_document"]["body"]
+    for kept in (
+        "Свободный текст без шаблона",
+        "[[SEM-ARCH-001]]",
+        "## Мои вопросы",
+        "Витрина собирается ночью",
+    ):
+        assert kept in body
+    assert "## Компоненты\n> Требует уточнения" in body
+    assert detail["history"][-1]["action"] == "template_applied"
+    # the draft is now validated by the template (the remaining sections are a warning, not a block)
+    assert "template_section_missing" not in codes(detail["validation"])
+    # later saves keep the pinned template
+    saved = client.put(
+        f"/api/drafts/{draft['id']}",
+        json={"expected_version": 2, "metadata": {"title": "Заметки"}, "body": body + "\nЕщё строка.\n"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert front(saved.json()["proposed_content"])["template"] == "architecture"
+
+
+def test_apply_template_is_guarded_against_stale_drafts_and_templates(client: TestClient) -> None:
+    draft = blank(client).json()
+    stale = client.post(
+        f"/api/drafts/{draft['id']}/apply-template",
+        json={"template_id": "architecture", "template_version": 1, "expected_version": 7},
+    )
+    assert stale.status_code == 409 and stale.json()["code"] == "draft_modified"
+    moved_on = client.post(
+        f"/api/drafts/{draft['id']}/apply-template",
+        json={"template_id": "integration", "template_version": 1, "expected_version": 1},
+    )
+    assert moved_on.status_code == 409 and moved_on.json()["code"] == "template_version_changed"
+    assert client.get(f"/api/drafts/{draft['id']}").json()["template_id"] is None  # nothing applied
+    ok = client.post(
+        f"/api/drafts/{draft['id']}/apply-template",
+        json={"template_id": "architecture", "template_version": 1, "expected_version": 1},
+    )
+    assert ok.status_code == 200
+    again = client.post(
+        f"/api/drafts/{draft['id']}/apply-template",
+        json={"template_id": "architecture", "template_version": 1, "expected_version": 2},
+    )
+    assert again.status_code == 409 and again.json()["code"] == "template_apply_no_change"
+    client.post(f"/api/drafts/{draft['id']}/mark-ready")
+    closed = client.post(f"/api/drafts/{draft['id']}/apply-template/preview", json={"template_id": "adr"})
+    assert closed.status_code == 409 and closed.json()["code"] == "draft_not_editable"
+
+
+@pytest.mark.parametrize(
+    ("template_id", "status", "code"),
+    [
+        ("meeting_decision", 409, "template_not_active"),  # deprecated
+        ("external_import", 409, "template_not_active"),  # hidden, only for external pages
+        ("no_such_template", 404, "template_not_found"),
+    ],
+)
+def test_only_an_active_template_can_be_applied(
+    client: TestClient, template_id: str, status: int, code: str
+) -> None:
+    draft = blank(client).json()
+    preview = client.post(
+        f"/api/drafts/{draft['id']}/apply-template/preview", json={"template_id": template_id}
+    )
+    assert preview.status_code == status and preview.json()["code"] == code
+    confirm = client.post(
+        "/api/documents/SEM-ARCH-001/apply-template",
+        json={"template_id": template_id, "template_version": 1, "base_revision": "x"},
+    )
+    assert confirm.status_code == status and confirm.json()["code"] == code
+
+
+# --- applying a template: indexed (approved) documents ------------------------------------------------------------
+
+
+def test_apply_template_to_an_approved_document_creates_a_change_proposal(client: TestClient) -> None:
+    before = client.get("/api/documents/SEM-ARCH-001").json()
+    preview = client.post(
+        "/api/documents/SEM-ARCH-001/apply-template/preview", json={"template_id": "architecture"}
+    ).json()
+    assert preview["target"] == "document" and preview["base_revision"] == before["revision"]
+    assert preview["type_before"] == "architecture" == preview["type_after"]
+    assert preview["content_before"] == before["raw"]
+    assert {s["heading"]: s["state"] for s in preview["sections"]}["Principles"] == "kept"
+
+    stale = client.post(
+        "/api/documents/SEM-ARCH-001/apply-template",
+        json={"template_id": "architecture", "template_version": 1, "base_revision": "0" * 12},
+    )
+    assert stale.status_code == 409 and stale.json()["code"] == "revision_conflict"
+    created = client.post(
+        "/api/documents/SEM-ARCH-001/apply-template",
+        json={"template_id": "architecture", "template_version": 1, "base_revision": before["revision"]},
+    )
+    assert created.status_code == 201, created.text
+    proposal = created.json()
+    assert proposal["operation"] == "update" and proposal["status"] == "draft"
+    assert (
+        proposal["base_revision"] == before["revision"]
+        and proposal["proposed_content"] == preview["content_after"]
+    )
+    assert proposal["reason"] == "Применить шаблон «Архитектура» v1" and proposal["error_count"] == 0
+    meta = front(proposal["proposed_content"])
+    assert (
+        meta["template"] == "architecture" and meta["status"] == "approved" and meta["id"] == "SEM-ARCH-001"
+    )
+    # the approved original is untouched until review and merge
+    after = client.get("/api/documents/SEM-ARCH-001").json()
+    assert after["revision"] == before["revision"] and after["raw"] == before["raw"]
+    assert after.get("template_id") is None
+    # an update draft can take another template the same way
+    other = client.post(
+        f"/api/drafts/{proposal['id']}/apply-template/preview", json={"template_id": "knowledge_article"}
+    ).json()
+    assert other["previous_template_id"] == "architecture" and other["type_after"] == "guide"
+    switched = client.post(
+        f"/api/drafts/{proposal['id']}/apply-template",
+        json={"template_id": "knowledge_article", "template_version": 2, "expected_version": 1},
+    )
+    assert switched.status_code == 200, switched.text
+    assert front(switched.json()["proposed_content"])["template"] == "knowledge_article"
+
+
+# --- AI on a blank draft ----------------------------------------------------------------------------------------
+
+
+def test_ai_actions_work_on_a_blank_draft_and_completeness_waits_for_a_template(client: TestClient) -> None:
+    draft = blank(client).json()
+    meta = client.post("/api/ai/proposals", json={"kind": "suggest_metadata", "draft_id": draft["id"]})
+    assert meta.status_code == 201, meta.text
+    assert any(i["kind"] == "template" for i in meta.json()["items"])  # a template is only suggested
+    complete = client.post("/api/ai/proposals", json={"kind": "check_completeness", "draft_id": draft["id"]})
+    assert [i["id"] for i in complete.json()["items"]][:1] == ["no_template"]
+    summary = client.post("/api/ai/proposals", json={"kind": "summarize", "draft_id": draft["id"]})
+    assert summary.status_code == 201, summary.text

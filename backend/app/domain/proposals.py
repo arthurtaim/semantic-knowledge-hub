@@ -202,6 +202,68 @@ class BlankDocumentInfo(BaseModel):
     default_type: DocType  # the general section when the person does not choose one
 
 
+# --- applying a template later (docs/TEMPLATE_HUB.md) -------------------------------------------------------
+_TEMPLATE_ID = r"^[a-z][a-z0-9_]{1,40}$"
+TemplateSectionState = Literal["matched", "added", "kept", "optional_missing"]
+
+
+class TemplateApplyPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=2, max_length=41, pattern=_TEMPLATE_ID)
+
+
+class DraftTemplateApply(BaseModel):
+    """Confirm on a draft: the template version and the draft version the person saw in the preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=2, max_length=41, pattern=_TEMPLATE_ID)
+    template_version: int = Field(ge=1, le=1000)
+    expected_version: int = Field(ge=1)
+
+
+class DocumentTemplateApply(BaseModel):
+    """Confirm on an indexed document: a change proposal is created; the document itself never changes here."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    template_id: str = Field(min_length=2, max_length=41, pattern=_TEMPLATE_ID)
+    template_version: int = Field(ge=1, le=1000)
+    base_revision: str = Field(min_length=1, max_length=128)
+    reason: str | None = Field(default=None, min_length=3, max_length=2000)
+
+
+class TemplateSectionMapping(BaseModel):
+    heading: str
+    template_heading: str | None
+    state: TemplateSectionState
+    required: bool
+
+
+class TemplateApplyPreview(BaseModel):
+    """What applying the template would change. Nothing is stored."""
+
+    target: Literal["draft", "document"]
+    document_id: str
+    draft_id: str | None = None
+    expected_version: int | None = None  # draft: confirm with this `edit_version`
+    base_revision: str | None = None  # document: confirm with this revision
+    template_id: str
+    template_version: int
+    template_title: str
+    previous_template_id: str | None
+    previous_template_version: int | None
+    type_before: DocType | None
+    type_after: DocType
+    sections: list[TemplateSectionMapping]
+    content_before: str
+    content_after: str
+    diff: DiffResult
+    changed: bool
+    validation: list[ValidationIssue]  # of the result
+
+
 class AiDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

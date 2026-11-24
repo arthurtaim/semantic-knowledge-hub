@@ -382,6 +382,39 @@ class ProposalStore:
             )
             return cursor.rowcount == 1
 
+    def apply_template(
+        self,
+        proposal_id: str,
+        expected_version: int,
+        *,
+        template_id: str,
+        template_version: int,
+        proposed_content: str,
+        validation_json: str,
+        additions: int,
+        deletions: int,
+    ) -> bool:
+        """Re-pin the template of a `create` draft (compare-and-set like `save_draft`). The only write of
+        `template_id` / `template_version` after creation — an explicit, confirmed action of the author."""
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE proposals SET template_id = ?, template_version = ?, proposed_content = ?, "
+                "validation_json = ?, additions = ?, deletions = ?, edit_version = edit_version + 1, "
+                "updated_at = ? WHERE id = ? AND operation = 'create' AND status = 'draft' AND edit_version = ?",
+                (
+                    template_id,
+                    template_version,
+                    proposed_content,
+                    validation_json,
+                    additions,
+                    deletions,
+                    _now().isoformat(),
+                    proposal_id,
+                    expected_version,
+                ),
+            )
+            return cursor.rowcount == 1
+
     def delete_draft(self, proposal_id: str) -> bool:
         """Delete a proposal that never reached GitLab (draft, or a conflict before any submission).
         The content-free audit trail is kept."""
