@@ -21,6 +21,8 @@ import re
 import sqlite3
 import threading
 import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -74,6 +76,7 @@ ProposalKind = Literal[
     "find_related",
     "explain_relation",
     "impact_analysis",
+    "draft_template",  # Template Studio: a template structure; saved only from the editor (docs/AI_WORKFLOWS.md)
 ]
 ProposalState = Literal["suggested", "applied", "partially_applied", "rejected", "invalidated", "answered"]
 ItemKind = Literal["metadata", "section", "link", "template", "draft", "task", "note"]
@@ -133,6 +136,7 @@ class AiProposal(BaseModel):
     graph_link: str | None = None
     applied_items: list[str] = []
     result_draft_id: str | None = None  # the draft the accepted items went into
+    result_template_id: str | None = None  # draft_template: the template created from the (edited) proposal
 
 
 class ProposalRequest(BaseModel):
@@ -192,6 +196,18 @@ def replace_section(body: str, heading: str, new_text: str) -> str:
             end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
             return body[: m.end()] + "\n" + new_text.strip("\n") + "\n\n" + body[end:].lstrip("\n")
     return body.rstrip("\n") + f"\n\n## {heading}\n{new_text.strip()}\n"
+
+
+@dataclass
+class DraftedTemplate:
+    """What Template Studio returns for a `draft_template` proposal (services/template_studio.py)."""
+
+    summary: str
+    items: list[ProposalItem]
+    warnings: list[str]
+
+
+TemplateDrafter = Callable[[UserContext, str], Awaitable[DraftedTemplate]]
 
 
 class AiProposalStore:
@@ -312,6 +328,11 @@ class AiWorkflowService:
         self._graph = graph
         self._assistant = assistant
         self._accept_lock = asyncio.Lock()
+        self._template_drafter: TemplateDrafter | None = None
+
+    def attach_template_drafter(self, drafter: TemplateDrafter) -> None:
+        """Template Studio provides `draft_template` (the registry, validation and the provider protocol live there)."""
+        self._template_drafter = drafter
 
     # --- loading the subject of a proposal -----------------------------------------------------------
     async def _target(self, user: UserContext, req: ProposalRequest, snapshot: KnowledgeSnapshot) -> _Target:
@@ -381,6 +402,7 @@ class AiWorkflowService:
             "find_related": self._find_related,
             "explain_relation": self._explain_relation,
             "impact_analysis": self._impact,
+            "draft_template": self._draft_template,
         }[req.kind]
         try:
             proposal = await builder(user, req, snapshot)
@@ -524,6 +546,42 @@ class AiWorkflowService:
             warnings=draft.warnings,
             insufficient=draft.insufficient_data,
         )
+
+    async def _draft_template(
+        self, user: UserContext, req: ProposalRequest, snapshot: KnowledgeSnapshot
+    ) -> AiProposal:
+        prompt = (req.prompt or "").strip()
+        if len(prompt) < 10:
+            raise ApiError(422, "validation_failed", "Опишите, какой шаблон нужен (prompt, от 10 символов).")
+        if self._template_drafter is None:
+            raise ApiError(503, "ai_template_unavailable", "Проектирование шаблонов с ИИ недоступно.")
+        drafted = await self._template_drafter(user, prompt)
+        return self._new(
+            "draft_template",
+            self._base(None, snapshot),
+            drafted.summary,
+            drafted.items,
+            warnings=drafted.warnings,
+        )
+
+    def open_template_proposal(self, user: UserContext, proposal_id: str) -> AiProposal:
+        """A `draft_template` proposal the user may still turn into a template (their own, not decided yet)."""
+        proposal = self.get(user, proposal_id)
+        if proposal.kind != "draft_template":
+            raise ApiError(422, "validation_failed", "Это не предложение шаблона.")
+        if proposal.status != "suggested":
+            raise ApiError(409, "ai_proposal_closed", "Решение по предложению уже принято.")
+        return proposal
+
+    def settle_template_proposal(self, user: UserContext, proposal_id: str, template_id: str) -> AiProposal:
+        """The person saved the (edited) proposal as a template draft in the editor: that is the Accept."""
+        proposal = self.open_template_proposal(user, proposal_id)
+        proposal.status, proposal.decided_at = "applied", _now()
+        proposal.applied_items = [i.id for i in proposal.items if i.applicable]
+        proposal.result_template_id = template_id
+        self._store.save(user.user_id, proposal)
+        logger.info("ai template proposal %s saved as template %s", proposal.id, template_id)
+        return proposal
 
     async def _suggest_metadata(
         self, user: UserContext, req: ProposalRequest, snapshot: KnowledgeSnapshot
@@ -987,6 +1045,12 @@ class AiWorkflowService:
         proposal = self.get(user, proposal_id)
         if proposal.status != "suggested":
             raise ApiError(409, "ai_proposal_closed", "Решение по предложению уже принято.")
+        if proposal.kind == "draft_template":
+            raise ApiError(
+                409,
+                "ai_proposal_use_editor",
+                "Предложение шаблона принимается в редакторе шаблонов: проверьте, отредактируйте и сохраните черновик.",
+            )
         chosen = [i for i in proposal.items if i.id in set(req.item_ids)]
         if not chosen or any(not i.applicable for i in chosen):
             raise ApiError(422, "validation_failed", "Выберите применимые пункты предложения.")

@@ -37,6 +37,7 @@ from app.adapters.ai.base import (
     AuthoringRequest,
     ContextPassage,
     ProviderAnswer,
+    TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
     ToolTurnRequest,
@@ -196,6 +197,7 @@ class ClaudeCodeCLIProvider:
     mode: AIMode = "claude_cli"
     supports_edit_suggestions = True
     supports_authoring = True
+    supports_template_drafting = True  # Template Studio: the model-agnostic protocol of template_protocol.py
     # M5.7: tool loop through the constrained text envelope. The CLI keeps every tool disabled (the worker flags are
     # unchanged): SKH tools are executed by the backend, never by the CLI (docs/AI_NATIVE_TOOLS.md).
     supports_tools = True
@@ -360,6 +362,16 @@ class ClaudeCodeCLIProvider:
         if meta is None:
             draft.warnings.append("Модель не вернула список источников: все утверждения требуют проверки.")
         return draft
+
+    async def draft_template(self, request: TemplateDraftRequest) -> str:
+        """A template PROPOSAL: the raw reply; the backend parses and validates it (template_protocol.py)."""
+        from app.adapters.ai.template_protocol import TEMPLATE_PROMPT, build_template_message
+
+        return await self._collect(
+            compose(self._instructions.for_task("authoring"), TEMPLATE_PROMPT),
+            build_template_message(request, self._max_context_chars),
+            self._draft_timeout,
+        )
 
     async def status(self) -> IntegrationStatus:
         base = {"name": "ai_provider", "title": "AI-провайдер", "kind": "ai"}

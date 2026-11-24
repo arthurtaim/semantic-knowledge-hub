@@ -41,6 +41,15 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «бесконечн» | requests a tool in every round (loop limit) |
 | «упади» | provider error after the first tool round |
 | anything else | cites the first passage verbatim (content answer), or «insufficient» without passages |
+
+Template Studio «Создать с помощью AI» (app/adapters/ai/template_protocol.py), keyed by the REQUEST text:
+
+| request contains | reply |
+|---|---|
+| «сломанный формат» | not JSON (the backend answers `ai_invalid_response`) |
+| «…: a, b и c» | «Назначение» + one required section per listed item + optional «Связанные документы», a rule per |
+|  | required section, a TAKEN prefix and an unknown metadata field (the backend replaces / drops them and warns) |
+| «интеграц» | doc_type integration; `similar_to` names the catalogue's integration templates |
 """
 
 from __future__ import annotations
@@ -447,10 +456,78 @@ def legacy_script(system: str, prompt: str, transport: Transport) -> str:
     )
 
 
+_REQUEST_RE = re.compile(r"<<<REQUEST>>>\n(.*?)\n<<<END REQUEST>>>", re.S)
+_CATALOGUE_RE = re.compile(r"<<<CATALOGUE>>>\n(.*?)\n?<<<END CATALOGUE>>>", re.S)
+
+
+def template_script(prompt: str) -> str:
+    """A template proposal in the model-agnostic JSON protocol of Template Studio (synthetic, deterministic)."""
+    match = _REQUEST_RE.search(prompt)
+    request = (match.group(1) if match else "").strip()
+    q = request.casefold()
+    if "сломанный формат" in q:
+        return "Вот шаблон: Назначение, Источники — без JSON."
+    catalogue = []
+    if block := _CATALOGUE_RE.search(prompt):
+        for line in block.group(1).splitlines():
+            try:
+                catalogue.append(json.loads(line))
+            except ValueError:
+                continue
+    listed = request.split(":", 1)[1] if ":" in request else ""
+    items = [p.strip(" .;") for p in re.split(r",|\sи\s", listed) if p.strip(" .;")][:8]
+    sections = [
+        {"title": "Назначение", "required": True, "hint": "зачем нужен документ и какой результат он даёт"}
+    ]
+    sections += [
+        {"title": item[:1].upper() + item[1:], "required": True, "hint": f"опишите: {item}"} for item in items
+    ]
+    sections.append(
+        {"title": "Связанные документы", "required": False, "hint": "ссылки [[ID]] на документы базы"}
+    )
+    integration = "интеграц" in q
+    similar = [
+        {"template_id": c["template_id"], "reason": "тоже описывает интеграцию"}
+        for c in catalogue
+        if integration and c.get("doc_type") == "integration"
+    ]
+    rules = [f"Заполнен раздел «{section['title']}»" for section in sections if section["required"]]
+    template = {
+        "title": "Обмен данными между системами" if integration else "Новый шаблон",
+        "description": "Синтетический шаблон по запросу: " + request[:120],
+        "template_id": "data_exchange" if integration else "new_template",
+        "id_prefix": "SEM-INT",  # taken by «Интеграция»: the backend must propose another one and say so
+        "doc_type": "integration" if integration else "guide",
+        "category": "Интеграции" if integration else "Руководства",
+        "labels": ["обмен", "интеграция"] if integration else ["шаблон"],
+        "default_tags": ["integration"] if integration else [],
+        "sections": sections,
+        "required_metadata": [
+            "title",
+            "owner",
+            "tags",
+            "system_owner",
+        ],  # system_owner is not a document field
+        "optional_metadata": ["related_ids"],
+        "validation": rules[:6],
+        "instructions": "Один документ — один обмен. Источники и получатели — ссылками [[ID]].",
+        "ai_guidance": "Только факты из утверждённых документов с цитатой; неизвестное — «Требует уточнения».",
+        "example": "## Назначение\nЕжедневная выгрузка справочника регионов (синтетический пример).",
+    }
+    payload = {
+        "template": template,
+        "similar_to": similar,
+        "warnings": ["Проверьте обязательность разделов."],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
     if "Режим системных инструментов SKH" in system:
         return tool_script(parse_round(system, prompt))
+    if "Режим проектирования шаблона SKH" in system:
+        return template_script(prompt)
     return legacy_script(system, prompt, transport)
 
 

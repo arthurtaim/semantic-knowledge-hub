@@ -163,6 +163,38 @@ class AssistResult:
     insufficient_data: bool
 
 
+@dataclass(frozen=True)
+class TemplateCatalogueEntry:
+    """An existing active template as DATA for the model (so it can say «похоже на существующий шаблон»)."""
+
+    template_id: str
+    title: str
+    doc_type: str
+    category: str
+    description: str
+    sections: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TemplateDraftRequest:
+    """Template Studio «Создать с помощью AI» (docs/AI_WORKFLOWS.md): a PROPOSAL of a template structure. The request
+    and the catalogue are DATA; the allowed values come from the backend. The reply is the model's raw text, parsed
+    by app/adapters/ai/template_protocol.py — the provider never stores, validates or activates anything."""
+
+    request: str
+    catalogue: tuple[TemplateCatalogueEntry, ...]
+    doc_types: tuple[str, ...]
+    metadata_fields: tuple[str, ...]
+
+
+class TemplateDraftingAIProvider(Protocol):
+    """Optional capability (model-agnostic JSON protocol; any chat model: internal API, a future GigaChat)."""
+
+    supports_template_drafting: bool
+
+    async def draft_template(self, request: TemplateDraftRequest) -> str: ...
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)

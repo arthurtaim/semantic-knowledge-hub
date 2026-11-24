@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Path, Query
 
 from app.api.deps import get_container
-from app.authz import Action, require
+from app.authz import Action, ensure_allowed, require
 from app.container import Container
 from app.domain.models import UserContext
 from app.services.ai_workflows import AcceptRequest, AiProposal, ProposalRequest
@@ -23,7 +23,10 @@ async def create_proposal(
     user: Annotated[UserContext, Depends(require(Action.create_proposal))],
 ) -> AiProposal:
     """Draft from a prompt, metadata / related documents / completeness / improve / summarize / explain,
-    relation explanation and impact analysis. Returns a proposal; nothing is written."""
+    relation explanation and impact analysis; `draft_template` (Template Studio) also needs `create_template`.
+    Returns a proposal; nothing is written."""
+    if payload.kind == "draft_template":
+        ensure_allowed(container.policy, user, Action.create_template)
     return await container.ai_workflows.propose(user, payload)
 
 
