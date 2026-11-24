@@ -358,7 +358,6 @@ a:hover {
 }
 
 p a,
-li > a:only-child:not([class]),
 .prose a,
 .answer__text a,
 .notice a,
@@ -407,9 +406,8 @@ button,
 input,
 select,
 textarea {
-  resize: vertical;
-  padding-block: var(--space-2);
-  line-height: 1.5;
+  font: inherit;
+  color: inherit;
 }
 
 ::selection {
@@ -1148,12 +1146,12 @@ kbd {
 
 .composer__option--ask,
 .composer__option--all {
-  margin-top: var(--space-1);
-  box-shadow: 0 -1px 0 var(--line);
+  font-weight: 500;
 }
 
 .composer__option--all {
-  border-top: 1px solid var(--line);
+  margin-top: var(--space-1);
+  box-shadow: 0 -1px 0 var(--line);
 }
 
 .composer__option-kind {
@@ -1691,6 +1689,7 @@ textarea::placeholder {
 
 textarea {
   resize: vertical;
+  padding-block: var(--space-2);
   line-height: 1.5;
 }
 
