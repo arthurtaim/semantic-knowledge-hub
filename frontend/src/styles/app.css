@@ -4737,6 +4737,39 @@ dd a.button {
   font-size: var(--fs-caption);
 }
 
+/*
+ * Origin of the sources (lib/provenance.ts): metadata on its own row of the head, quiet — not a notice. The amber dot
+ * is the one of «Демо-данные» (synthetic content), never the AI mode.
+ */
+.answer__provenance {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+.source-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.answer__provenance--synthetic::before,
+.source-origin--synthetic::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--demo-dot);
+}
+
 .answer__external {
   margin: 0;
   font-size: var(--fs-small);

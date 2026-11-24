@@ -154,9 +154,12 @@ export const supportedAnswer: AskResponse = {
       retrieved_at: "2026-11-22T00:00:00Z",
       is_demo: true,
       app_path: "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture",
+      provenance: "synthetic",
     },
   ],
-  warnings: ["Используются только демо-документы (синтетические данные) — они не являются фактами о банке."],
+  // Synthetic origin is metadata of the cited source (`provenance`), not a fixed warning (docs/API_CONTRACTS.md).
+  warnings: [],
+  provenance: { overall: "synthetic", synthetic: 1, not_synthetic: 0, unknown: 0, by_kind: { team: 1 } },
   excluded_sources: [],
   scopes: [
     { scope: "team", state: "connected", message: "Локальный workspace с демо-документами." },
@@ -181,6 +184,8 @@ export const insufficientAnswer: AskResponse = {
   ],
   scopes: [{ scope: "team", state: "connected", message: "Локальный workspace с демо-документами." }],
   unmatched_terms: ["ЦФТ"],
+  // No evidence: no provenance claim (never «only demo» because some accessible document is demo).
+  provenance: { overall: "none", synthetic: 0, not_synthetic: 0, unknown: 0, by_kind: {} },
 };
 
 export const integrations: IntegrationsResponse = {

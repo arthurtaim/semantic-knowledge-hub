@@ -1,15 +1,17 @@
 import { useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
-import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState, SystemFact } from "../api/types";
+import type { AskRequest, AskResponse, Citation, Confidence, IntegrationState, ProvenanceOrigin, SystemFact } from "../api/types";
 import { answerPlainText } from "../lib/answerMarkdown";
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { CONFIDENCE_LABEL, shortRevision } from "../lib/labels";
+import { citationOrigin, ORIGIN_LABEL, provenanceCopyLine, showsSourceOrigins } from "../lib/provenance";
 import { factLabels, factPlainText } from "../lib/systemFacts";
 import { useAsync } from "../lib/useAsync";
 import { AnswerMarkdown, type AnswerMarkers } from "./AnswerMarkdown";
 import { CardExcerpt, excerptText } from "./CitationExcerpt";
 import { Highlighted } from "./Highlighted";
+import { OriginMark } from "./Provenance";
 import { StatusStamp } from "./StatusStamp";
 import { FactMarker, useFitInWindow } from "./SystemFacts";
 import { buttonClass } from "./ui/Button";
@@ -68,13 +70,15 @@ interface CitationMarkerProps {
   label: string;
   turnNo: number;
   question: string;
+  /** The source's origin when the answer's sources differ (lib/provenance.ts `showsSourceOrigins`); else none. */
+  origin?: ProvenanceOrigin | null;
 }
 
 /**
  * An inline marker. Hover or focus shows a card: number, source, status, the quote, section, scope and revision;
  * a click opens the document at the cited section (`section_anchor`), or the file's row under «Источники».
  */
-export function CitationMarker({ citation, label, turnNo, question }: CitationMarkerProps) {
+export function CitationMarker({ citation, label, turnNo, question, origin = null }: CitationMarkerProps) {
   const [open, setOpen] = useState(false);
   const cardId = useId();
   const cardRef = useRef<HTMLSpanElement>(null);
@@ -92,7 +96,6 @@ export function CitationMarker({ citation, label, turnNo, question }: CitationMa
     meta.push(GROUP_LABEL[group]);
   }
   if (group === "team") meta.push(`ред. ${shortRevision(citation.revision)}`);
-  if (citation.is_demo && group !== "attachment") meta.push("демо");
 
   const card = (
     <span id={cardId} ref={cardRef} role="tooltip" className="cite-card" hidden={!open} style={shift ? { translate: `${shift}px 0` } : undefined}>
@@ -106,6 +109,7 @@ export function CitationMarker({ citation, label, turnNo, question }: CitationMa
         {meta.map((part) => (
           <span key={part}>{part}</span>
         ))}
+        {origin ? <OriginMark origin={origin} /> : null}
       </span>
     </span>
   );
@@ -160,6 +164,8 @@ interface TextProps {
   facts?: FactRefs;
   /** The document panel: its answer heading is an h3, so Markdown headings start one level lower. */
   compact?: boolean;
+  /** The answer's sources differ in origin: each citation card names its own (lib/provenance.ts). */
+  origins?: boolean;
 }
 
 /**
@@ -167,7 +173,7 @@ interface TextProps {
  * `[F1]` a marker of system data only for a fact the server produced (lib/answerMarkdown.ts finds them in the
  * Markdown text nodes; code, link text and URLs are never searched).
  */
-function useMarkers({ citations, labels, turnNo, question, facts = NO_FACTS }: TextProps): AnswerMarkers {
+function useMarkers({ citations, labels, turnNo, question, facts = NO_FACTS, origins = false }: TextProps): AnswerMarkers {
   return useMemo(() => {
     const byRef = new Map(citations.map((c) => [c.ref, c]));
     const factByRef = new Map(facts.facts.map((f) => [f.ref, f]));
@@ -180,11 +186,17 @@ function useMarkers({ citations, labels, turnNo, question, facts = NO_FACTS }: T
         }
         const citation = byRef.get(Number(ref));
         return citation ? (
-          <CitationMarker citation={citation} label={labels.get(citation.ref) ?? String(citation.ref)} turnNo={turnNo} question={question} />
+          <CitationMarker
+            citation={citation}
+            label={labels.get(citation.ref) ?? String(citation.ref)}
+            turnNo={turnNo}
+            question={question}
+            origin={origins ? citationOrigin(citation) : null}
+          />
         ) : null;
       },
     };
-  }, [citations, labels, turnNo, question, facts]);
+  }, [citations, labels, turnNo, question, facts, origins]);
 }
 
 /** The answer text: Markdown with citation and system-data markers (components/AnswerMarkdown.tsx). */
@@ -262,6 +274,7 @@ export function DemoAnswerText({ answer, ...props }: TextProps & { answer: AskRe
                   label={props.labels.get(citation.ref) ?? String(citation.ref)}
                   turnNo={props.turnNo}
                   question={props.question}
+                  origin={props.origins ? citationOrigin(citation) : null}
                 />
               ))}
             </span>
@@ -281,6 +294,7 @@ export function answerWithSources(answer: AskResponse, labels: Map<number, strin
   const known = { citations: new Set(answer.citations.map((c) => c.ref)), facts: new Set(facts.map((f) => f.ref)) };
   const markdown = demo ? demoRemainder(answer).join("\n\n") : splitServerNotes(answer).text;
   const body = answerPlainText(markdown, known, { citation: (ref) => labels.get(ref), fact: (ref) => factLabel.get(ref) });
+  const origins = showsSourceOrigins(answer);
   const sources = answer.citations.map((c) => {
     const label = labels.get(c.ref) ?? String(c.ref);
     const group = citationGroup(c);
@@ -290,13 +304,17 @@ export function answerWithSources(answer: AskResponse, labels: Map<number, strin
         : group === "corporate"
           ? `Confluence, версия ${externalVersion(c)}`
           : `${c.document_id}${c.section ? `, раздел «${c.section}»` : ""}, ред. ${shortRevision(c.revision)}`;
-    return `[${label}] ${citationTitle(c)} — ${where}\n«${excerptText(c)}»`;
+    const origin = origins ? ` · ${ORIGIN_LABEL[citationOrigin(c)]}` : "";
+    return `[${label}] ${citationTitle(c)} — ${where}${origin}\n«${excerptText(c)}»`;
   });
   const system = facts.map((fact) => factPlainText(fact, factLabel.get(fact.ref) ?? fact.ref));
+  // Copied text leaves the app: where its sources come from goes with it (a quiet line on screen, said here in words).
+  const provenance = provenanceCopyLine(answer.provenance);
   return [
     body.trim(),
     system.length > 0 ? `Данные системы SKH:\n${system.join("\n")}` : "",
     sources.length > 0 ? `Источники:\n${sources.join("\n")}` : "",
+    provenance ?? "",
   ]
     .filter(Boolean)
     .join("\n\n");

@@ -4,12 +4,14 @@ import type { ApiError } from "../api/client";
 import type { AiMode, AskRequest, AskResponse, AskSkillRef, ExternalRetrievalSummary, SearchScope } from "../api/types";
 import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeLabel, scopeOfSources } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
+import { showsSourceOrigins } from "../lib/provenance";
 import { useSession } from "../lib/session";
 import { failedChecks, proposalCardId, toolChecksFailed } from "../lib/systemFacts";
 import { AnswerMarkdown } from "./AnswerMarkdown";
 import { AnswerActions, AnswerText, DemoAnswerText, factRefsOf, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
 import { AnswerSources } from "./AnswerSources";
 import { AskProposal } from "./AskProposal";
+import { ProvenanceLine } from "./Provenance";
 import { ErrorState, Notice } from "./Feedback";
 import { ChecksInsufficient, FailedChecks, SystemFacts } from "./SystemFacts";
 import { Chip } from "./ui/Chip";
@@ -189,9 +191,10 @@ interface AnswerViewProps {
 }
 
 /**
- * The assistant's answer: who answers and how well it is supported (a category, never a percentage), the text
- * with citation markers, terms without support, the proposal of a skill (nothing applied), what to do next and
- * one list of sources — team, corporate and attachments apart. Generated text is labelled «ИИ», demo «Демо».
+ * The assistant's answer: who answers and how well it is supported (a category, never a percentage), where its
+ * sources come from (one quiet line, lib/provenance.ts — metadata, not a warning), the text with citation markers,
+ * terms without support, the proposal of a skill (nothing applied), what to do next and one list of sources — team,
+ * corporate and attachments apart. Generated text is labelled «ИИ», demo «Демо».
  */
 export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, compact = false }: AnswerViewProps) {
   const session = useSession();
@@ -203,7 +206,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
   const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
   const demoExcerpts = answer.mode === "mock" && !answer.proposal;
   const facts = useMemo(() => factRefsOf(answer), [answer]);
-  const textProps = { citations: answer.citations, labels, turnNo, question, facts, compact };
+  const textProps = { citations: answer.citations, labels, turnNo, question, facts, compact, origins: showsSourceOrigins(answer) };
   const showText = !insufficient || Boolean(answer.proposal);
   // M5.7: system tools were used and some did not work out — an answer that could not be confirmed says what could
   // not be checked instead of «В базе знаний нет ответа» with near matches (a metric is not a document).
@@ -245,6 +248,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
             Граф ответа
           </Link>
         ) : null}
+        <ProvenanceLine provenance={answer.provenance} />
       </div>
       <CorporateGap answer={answer} asked={request.sources} />
       {answer.external?.called ? <p className="answer__external">{externalSummary(answer.external)}</p> : null}
