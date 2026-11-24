@@ -545,7 +545,7 @@ export function Composer({
           ref={inputRef}
           id={fieldId}
           className="composer__input"
-          rows={variant === "home" ? 3 : 2}
+          rows={searchMode ? 1 : variant === "home" ? 3 : 2}
           value={text}
           placeholder={resolvedPlaceholder}
           maxLength={MAX_QUESTION}
@@ -628,7 +628,7 @@ export function Composer({
             </>
           )}
           <span className="composer__spacer" />
-          {compact || !mode ? null : (
+          {compact || searchMode || !mode ? null : (
             <span className="composer__mode">{skill ? SKILL_ACCESS_LABEL[skill.access] : AI_CHIP_LABEL[mode]}</span>
           )}
           {pending ? (

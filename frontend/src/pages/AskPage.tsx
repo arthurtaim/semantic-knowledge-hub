@@ -642,7 +642,7 @@ export function AskPage() {
         }
         actions={
           <Button icon="plus" onClick={newConversation} disabled={pending}>
-            Новый диалог
+            <span className="toolbar-action__label">Новый диалог</span>
           </Button>
         }
       />
@@ -699,7 +699,7 @@ export function AskPage() {
           placeholder={turns.length > 0 && !composer.draft.skill ? "Уточните вопрос или попросите черновик правки" : undefined}
           note={
             context.length > 0
-              ? `С учётом ${context.length} ${pluralRu(context.length, "предыдущего ответа", "предыдущих ответов", "предыдущих ответов")} этого диалога (не более ${MAX_HISTORY_TURNS}) — только как контекст; доказательства — найденные источники.`
+              ? `С учётом ${context.length} ${pluralRu(context.length, "предыдущего ответа", "предыдущих ответов", "предыдущих ответов")} этого диалога (до ${MAX_HISTORY_TURNS}) — только как контекст.`
               : undefined
           }
         />

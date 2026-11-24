@@ -1332,6 +1332,10 @@ kbd {
   min-height: 4.375rem;
 }
 
+.composer--search .composer__input {
+  min-height: 2rem;
+}
+
 .composer__bar {
   display: flex;
   flex-wrap: wrap;
@@ -2236,6 +2240,11 @@ kbd {
   flex: 1 1 auto;
 }
 
+/* Only the current page shortens (ellipsis); the crumbs before it keep their width instead of overlapping it. */
+.crumbs li:not(:last-child) {
+  flex: none;
+}
+
 .crumbs [aria-current="page"] {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2857,6 +2866,18 @@ a.assistant-home__row:hover {
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-5);
   margin: 0;
+}
+
+/* «Новый диалог» in the page toolbar: the icon alone on a phone (the name stays for assistive technology). */
+@media (max-width: 600px) {
+  .toolbar-action__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ── end Assistant: home ── */
@@ -3987,6 +4008,12 @@ h1 a:hover {
 
 .source:target {
   background: var(--accent-wash);
+}
+
+/* A row reached from its marker (a file has no page) lands above the pinned field, not under it. */
+.dialog .source,
+.dialog .sources__group {
+  scroll-margin-bottom: 14rem;
 }
 
 .source > .cite-pill {

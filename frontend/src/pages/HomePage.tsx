@@ -217,7 +217,7 @@ export function HomePage() {
                 composer.focus();
               }}
             >
-              Новый диалог
+              <span className="toolbar-action__label">Новый диалог</span>
             </Button>
           ) : null
         }
