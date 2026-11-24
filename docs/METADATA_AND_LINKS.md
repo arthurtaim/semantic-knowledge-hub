@@ -18,6 +18,26 @@ of the template under a lock (no two drafts share an ID); saving the draft with 
 titles are allowed (IDs differ) and produce a `duplicate_title` warning. `GET /api/document-types` lists
 types, their active templates and which fields the server owns.
 
+### A blank document (no template)
+
+`POST /api/authoring/drafts` without `template_id` («Пустой документ»). The server composes the technical metadata
+itself; the person gives only what a person knows:
+
+| Field | Value | Who |
+|---|---|---|
+| `id` | next free `SEM-DOC-NNN` (`GET /api/authoring/blank` previews it), allocated once under the same lock, immutable — also after a template is applied later | server |
+| `status` | `draft`; approved only through review + merge | server |
+| `owner` | the form's value (the editor pre-fills the current user), empty → `unassigned` | person / server |
+| `type` | the section the person chose from the existing types (`GET /api/document-types`); `guide` («Руководства») when none is chosen — never invented; can be changed while it is a draft | person |
+| origin | `manual` (`import` for an import); dates and the revision guard (`edit_version`) as for every draft | server |
+| `template`, `template_version` | absent until «Применить шаблон» pins them (`docs/TEMPLATE_HUB.md`) | server, on the person's confirm |
+| title, tags, summary, related_ids, source_refs | as typed | person |
+
+The body is free Markdown: no required sections, WikiLinks are `references` edges as always; the size, secret,
+personal-data and unsafe-markup checks are the same. A draft without a template — a blank one or an imported file
+— opens in the same editor; YAML keys the form does not show (e.g. `relations`, `aliases`, `reviewed_at`) are kept
+on every save.
+
 ## Importing Markdown
 
 | Input | Preview state | What happens on create |
@@ -25,7 +45,7 @@ types, their active templates and which fields the server owns.
 | valid YAML, new ID | `ready` (fields `existing`) | draft with the file kept verbatim (`keep_original_metadata`); `status: approved` in the file only takes effect after review + merge |
 | valid YAML, ID already in the base | `conflict` | not imported: propose a change on the document page |
 | invalid YAML | `invalid_metadata` + generated replacement fields | draft with generated YAML (accepted fields) |
-| no YAML | `needs_metadata_review` | draft with generated YAML: title from `# H1`, template suggested with reasons, owner missing → `unassigned`, tags / summary / related suggested |
+| no YAML | `needs_metadata_review` | draft with generated YAML: title from `# H1`, template suggested with reasons, owner missing → `unassigned`, tags / summary / related suggested; without any active template (or `template_id` left out on create) a blank `SEM-DOC-NNN` document |
 
 `POST /api/documents/import/preview` writes nothing. Files in the knowledge root without valid YAML are
 listed by `GET /api/documents/import/staging`; they are never indexed or cited, and the original file is

@@ -625,3 +625,47 @@ Checks of the merged round (this tree, real runs):
 - Frontend: `tsc`, `eslint` clean; `vitest` 346 → 391 (33 files).
 - E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 55 passed, 1 skipped → 65 passed,
   1 skipped.
+
+## Пустой документ и «Применить шаблон» (2026-11-24)
+
+The owner's request: create a document without choosing a template, as in Obsidian or Notion; SKH forms the
+technical metadata; free Markdown, WikiLinks and the AI assistant are available; a template can be applied to an
+existing document later. Templates help structure documentation, they do not gate its creation. API:
+`docs/API_CONTRACTS.md` («Blank documents and «Применить шаблон»»); rules: `docs/TEMPLATE_HUB.md`,
+`docs/METADATA_AND_LINKS.md`.
+
+- **«Создать документ»** (`/documents/new`): «Пустой документ» comes first — «Название», «Раздел каталога» (the
+  types of `GET /api/document-types`, «Руководства» by default, a hint says why a section is needed) and «Начать
+  писать» opens the editor. «По шаблону» below is today's flow, unchanged (also `?template=` from the Template Hub).
+  With no active template the page still creates blank documents.
+- **Editor of a blank draft**: the body starts as `# Название` only; «Раздел каталога» is a select; «Происхождение»
+  says «без шаблона»; the new «Шаблон» row says «не применён» (or the pinned template and version) next to
+  «Применить шаблон». `[[` autocomplete, diagnostics, preview, save / check / submit are the same as for template
+  drafts. The AI panel offers metadata, related documents, improve, summarize and explain; «Проверить полноту»
+  appears once a template is applied; with `AI_PROVIDER=disabled` there is no AI panel. Drafts without a template —
+  blank ones and imported files — now open in this editor (the M5.6.3 limitation is gone; the import page always
+  continues in the editor).
+- **«Применить шаблон»** (the editor's «Шаблон» row; the document page's «Ещё» menu): a modal sheet (a bottom
+  sheet on phones) — a select of the active templates with the chosen one's section and required sections, then
+  «Что изменится» (pinned template + version, section before → after, the ID stays), the sections as matched ✓ /
+  added + / kept • / optional not added ○, the validation of the result and the diff. Confirm updates the draft
+  (and reopens it with a success notice) or, on a document page, creates a change proposal and opens it — the
+  document itself is never modified. A stale preview disables the confirm and offers «Обновить предпросмотр».
+
+Deviations and open points:
+- The template chooser in the sheet is a select, not radio cards: with 12 templates the cards pushed the preview
+  below the fold. The create page keeps its cards.
+- «Применить шаблон» in the editor works on the saved draft (as the AI proposals): with unsaved edits the button is
+  disabled with the reason. «Причина / цель документа» stays required for the first save of a blank draft (same
+  rule as template drafts), so a blank document is stored when the author saves it, not when «Начать писать» opens
+  the editor.
+- Blank IDs are `SEM-DOC-NNN` and stay after a template is applied (IDs never change), so an architecture document
+  created blank keeps `SEM-DOC-…` rather than `SEM-ARCH-…`. The default section is `guide` («Руководства»).
+- The API also applies a template to an `update` draft; the change-proposal editor (`/proposals/new?edit=`) has no
+  button for it yet. The import page has no explicit «Без шаблона» choice: the server accepts an import without
+  `template_id` (a blank document) and uses it automatically when no template is active.
+
+Checks (this branch, real runs): backend `ruff`, `ruff format --check`, `mypy` clean; `pytest` 670 → 689 passed,
+6 skipped; deterministic eval unchanged (cases=200 pass=191 R@1=0.9487 R@5=0.9744 MRR=0.9647 leaks=0). Frontend
+`tsc`, `eslint` clean; `vitest` 391 → 400 (34 files). E2E desktop + mobile (`E2E_DISABLED_URL` set): 61 passed,
+1 skipped (the Confluence scenario needs a connector), 6 of them new (`e2e/blankDocument.spec.ts`).
