@@ -1,0 +1,197 @@
+# Work Management (M6): проекты, задачи, зависимости, планирование
+
+Собственный лёгкий трекер внутри SKH (модульный монолит, без Plane/Jira): проекты, задачи и подзадачи, статусы,
+приоритеты, исполнители, даты, вехи, зависимости Finish-to-Start, серверный предпросмотр расписания и
+атомарное применение, аудит. Этот документ — контракт для backend (шаги 1–2, реализованы), UI (шаг 3), связей с
+документами (шаг 4) и AI-предложений (шаг 5). Маршруты и схемы: `docs/API_CONTRACTS.md` «v0.7». Аудит исходного
+состояния: `reports/m6/BASELINE_AUDIT.md`.
+
+```text
+React (шаг 3) ── api.work* (frontend/src/api/client.ts)
+   │
+FastAPI app/api/work.py ── require(Action.X) → AuthorizationPolicy (глобально)
+   │                        └ WorkPrincipal (identity сервера + request id + X-SKH-Exposure)
+   ▼
+app/work/service.py  WorkService ── WorkAccessGate (local_operator | read_only | membership | disabled)
+   │   инварианты, optimistic locking, idempotency, audit, plan_revision
+   ├── scheduler.py (чистые функции: DAG, FS, preview diff)   calendar.py (Пн–Пт, [start, end))
+   └── store.py (SQL) ── db.py (work.sqlite3, миграции, backup) ── migrations.py (v1 work_core)
+container.tasks = NativeTaskSystem (статус модуля в /api/integrations/status)
+```
+
+## 1. Модель данных
+
+| Сущность (таблица) | Ключевые поля и правила |
+|---|---|
+| Project (`work_projects`) | `id` (uuid hex, неизменяем), `key` (`^[A-Z][A-Z0-9]{1,9}$`, уникален, неизменяем), `title`, `description` (Markdown), `status` `active\|on_hold\|completed\|archived`, `timezone` (IANA), `calendar` `mon_fri_v1`, `start_date?`, `target_date?`, `version` (строка, optimistic locking), `plan_revision` (монотонная ревизия плана), `next_task_number`, `is_demo`, `seed_key` |
+| ProjectMember (`work_project_members`) | `project_id`, `user_id`, `role` `admin\|member\|viewer`, `active`. Используется **только** в режиме `membership` (команда с настоящей идентичностью) |
+| Task (`work_tasks`) | `id` (uuid hex) ≠ человекочитаемый ключ `PROJ-N` (`number` выдаётся атомарно в транзакции, уникален в проекте, FK не используют ключ); `parent_task_id` (до 4 уровней), `title` ≤ 200, `description` ≤ 20 000, `status` `todo\|in_progress\|review\|done`, `priority` `low\|medium\|high\|critical`, `assignee_id?`, `reporter_id`, `estimate_workdays?`, `start_date?`, `end_exclusive?`, `due_date?`, `is_milestone`, `date_locked`, `sort_order`, `version`, `archived_at?` |
+| Dependency (`work_dependencies`) | `predecessor_id`, `successor_id`, `kind = FS`, `lag_workdays = 0`; уникальная пара, без self-loop (CHECK), без циклов, в одном проекте |
+| TaskDocumentLink (`work_task_links`) | таблица готова для шага 4: `task_id`, `target_type`, `source_system` `skh\|confluence\|gitlab`, `document_id`/`external_ref`, `relation` `implements\|requires\|documents\|verifies\|blocks`, `revision_at_link`, `status` `active\|proposed\|removed`. Заголовок, статус и ACL документа НЕ копируются — читаются из текущего снимка Knowledge |
+| TaskAuditEvent (`work_audit_events`) | append-only (триггеры запрещают UPDATE/DELETE): `at` (UTC), `actor_id` (только сервер), `operation`, `entity_type/id`, `project_id`, `task_id`, `related_task_id`, `correlation_id`, `changes_json` (before/after; текст описания не хранится — только `{changed: true}`) |
+| Idempotency (`work_idempotency`) | `(scope, actor_id, key)` → хэш запроса и ответ; повтор с другим телом → `409 conflict` `idempotency_key_reused` |
+| SchedulePreview (`work_schedule_previews`) | сохранённый предпросмотр: базовая `plan_revision`, `input_hash`, `result_hash`, нормализованный запрос, TTL (`WORK_PREVIEW_TTL_SECONDS`, 900 с), отметка применения |
+| AIWorkProposal | шаг 5, отдельной миграцией v2 |
+
+**Статусы.** Workflow — четыре колонки Kanban; переходы между ними свободны (перетаскивание в любую колонку).
+«Заблокирована» не статус: `blocked_by` = незавершённые FS-предшественники, вычисляется при чтении. Архив —
+отдельное состояние (`archived_at`), а не статус. `Project.status` — статус проекта, не задачи.
+
+**Иерархия.** Не более 4 уровней; подзадачи только в своём проекте; смена родителя проверяет циклы, глубину всего
+переносимого поддерева и отсутствие FS-зависимости между поддеревом и новыми предками. У вехи детей нет
+(`milestone_parent`, `milestone_has_children`). Даты родителя не сворачиваются из дочерних (P0).
+
+**Удаление = архив.** `DELETE /api/tasks/{id}` архивирует; при активных подзадачах нужен `cascade=true`. Зависимости
+архивируемых задач удаляются (с аудитом); аудит и ссылки на документы остаются. `restore` возвращает задачу и
+поддерево, заархивированное той же операцией (старые зависимости не восстанавливаются). Архивный проект — задачи
+только для чтения (`409 conflict` `project_archived`).
+
+## 2. Время и календарь
+
+- Даты задач — `YYYY-MM-DD` в часовом поясе проекта; события и аудит — UTC с offset.
+- Обычная задача занимает **полуоткрытый** интервал `[start_date, end_exclusive)`. `duration_workdays` = число
+  рабочих дней внутри (Пн–Пт, праздников нет — их не выдумываем). В ответе есть `last_day` — последний занятый
+  рабочий день (включительно); **UI показывает его**, а не `end_exclusive`.
+- Даты хранятся канонически: начало — рабочий день, конец — следующий день после последнего рабочего
+  (`[Сб, Вт)` → `[Пн, Вт)`, `[Пт, Пн)` → `[Пт, Сб)`). Набор рабочих дней не меняется. Интервал без рабочих дней
+  отклоняется (`no_workdays`).
+- Веха — точка: `start_date == end_exclusive`, длительность 0, рисуется ромбом на границе дня.
+- `due_date` — отдельный **включительный** дедлайн; планировщик его не меняет, только предупреждает.
+- Незапланированная задача: `start_date = end_exclusive = null`; частично заданная пара отклоняется (`partial`).
+  Ни одно действие не придумывает даты.
+- FS, лаг 0: `start_B ≥ next_workday(end_exclusive_A)`. Пример (тест): A = пт 2026-11-27, 1 день →
+  `[2026-11-27, 2026-11-28)`, B после A — не раньше пн 2026-11-30. Пн 2026-11-30 + 2 рабочих дня → конец ср 2026-12-02.
+- `today` (просрочка) — дата в часовом поясе проекта. `overdue`: не `done` и `due_date < today`. `late`: не `done` и
+  последний день плана (у вехи — её дата) раньше `today`.
+
+## 3. Планирование
+
+**Инварианты на запись.** Граф FS — DAG (цикл → `422 dependency_cycle` с путём `cycle_keys`); зависимость в одном
+проекте, не на себя, не дубль, не между задачей и её предком/потомком, не на архивную задачу. Прямое изменение дат
+(`PATCH`) не может создать новое нарушение FS (`422 schedule_conflict`, `fs_violation`) и не меняет закреплённые
+даты (`task_locked`; снять закрепление можно в том же запросе). Зависимость, которую текущие даты уже нарушают,
+`POST …/dependencies` не создаёт (`dependency_violated`) — её добавляют через предпросмотр (`add_dependencies`),
+который заодно сдвигает зависимые. Так каждый путь записи сохраняет «FS выполнены для запланированных задач»;
+Гант всё равно вычисляет `violations` (защита для старых данных) и умеет их устранить (`resolve_violations`).
+
+**Алгоритм** (`app/work/scheduler.py`, чистые функции): топологический порядок Кана с ключом (номер, id) —
+детерминированный; затем один проход вперёд по затронутым задачам:
+
+- `shift_successors` — запрошенные задачи получают новые даты, все достижимые по FS последователи сдвигаются
+  **только вперёд** ровно на ближайший допустимый старт с сохранением длительности; независимые ветки не трогаются;
+  в ромбе A→B, A→C, B→D, C→D задача D двигается один раз на максимум ограничений;
+- `only_this_task` — меняются только запрошенные задачи; нарушение у последователя — конфликт `successor_violation`;
+- `resolve_violations` — без запроса: сдвинуть вперёд всё, что сейчас нарушает FS.
+
+Конфликты (apply запрещён): `task_locked` (запрошена закреплённая), `locked_successor` (закреплённой пришлось бы
+сдвинуться), `requested_violates_predecessor`, `successor_violation`. Предупреждения (нужно `accept_warnings`):
+`due_date_exceeded`. `blocked_tasks`: `unscheduled` (нет дат — расчёт для неё остановлен) и
+`predecessor_unscheduled` (ограничение от предшественника без дат не учтено; известные ограничения применяются).
+Сложность O((V+E) log V). CPM/критический путь — P1: `critical_path` всегда `null`, флаг `features.critical_path =
+false` — ложный критический путь не показывается.
+
+**Preview → apply.** `POST /api/projects/{id}/schedule/preview` ничего не меняет в задачах, проекте и аудите (пишет
+только запись предпросмотра) и возвращает `operations` (before/after, `shift_workdays`, причина, `because_of`,
+версия задачи), `conflicts`, `warnings`, `blocked_tasks`, `unchanged`, `can_apply`, `base_plan_revision`,
+`expires_at`. `POST …/schedule/apply` с `{preview_id, expected_plan_revision, client_request_id, accept_warnings}`
+в одной транзакции `BEGIN IMMEDIATE`: идемпотентный повтор (тот же ключ → прежний ответ, `replayed: true`, без
+второго аудита) → предпросмотр свой, не истёк, не применён → `plan_revision` проекта совпадает → расчёт заново по
+текущему состоянию, хэши входа и результата совпадают → нет конфликтов, предупреждения приняты → запись дат с CAS
+по версии каждой задачи, аудит `schedule_applied` (correlation = preview id), `plan_revision + 1`, отметка
+применения, запись idempotency. Любая ошибка откатывает всё (тест M6-18 с отказом после второй записи). Ответы:
+`409 stale_schedule` (`plan_revision`, `snapshot_changed`, `expired`, `already_applied`, `task_changed`) — UI просит
+повторить предпросмотр; `422 schedule_conflict` (`conflicts`, `warnings_not_accepted`).
+
+**plan_revision** растёт при каждом изменении задач, зависимостей, расписания и часового пояса проекта; списки,
+Гант и карточка проекта возвращают её — все представления видят одно состояние (M6-36), а предпросмотр применяется
+только к тому состоянию, по которому посчитан.
+
+## 4. Идентичность и права
+
+Два уровня, оба на сервере; ни один не читает роль, actor или user id из тела, query или заголовков запроса
+(тела строгие, `extra="forbid"`: `created_by`, `role`, `version`, `is_demo` → 422).
+
+1. **Глобальный** `AuthorizationPolicy` (`app/authz.py`): новые действия `view_projects`, `view_tasks`,
+   `manage_project`, `create_task`, `edit_task`, `schedule_task`, `view_work_audit`, `propose_work`,
+   `apply_work_proposal`; каждый маршрут объявляет ровно одно (тест).
+2. **Проектный** `WorkAccessGate` (`app/work/permissions.py`):
+
+| Режим | Когда | Права |
+|---|---|---|
+| `local_operator` | `AUTH_MODE=local_demo` (loopback, проверки старта), нет публичной экспозиции | один оператор, заданный сервером (`local-demo-user`), читает и пишет. Ролей команды **нет** (`members: []`, подпись «Локальная демонстрация — один оператор»); исполнители — сам оператор и синтетические роли «(демо)», не учётные записи |
+| `read_only` | `WORK_PUBLIC_EXPOSURE=true` (ставит `docker-compose.claude-public.yml`), запрос с заголовком шлюза `X-SKH-Exposure` (ставят `deploy/claude-test/Caddyfile*`) или `WORK_WRITES_ENABLED=false` | только `view_projects`/`view_tasks`: синтетический снимок для показа. Нет записей задач, нет приватного аудита, нет AI-предложений; `403 forbidden` с `details.mode = read_only` и причиной. Включить запись при экспозиции **нечем** — такого переключателя нет |
+| `membership` | идентичность от настоящего провайдера (`Container.identity`, шов для SSO), `AUTH_MODE≠local_demo` | `ProjectMember`: viewer — чтение; member — + задачи, расписание, аудит, предложения; admin — + настройки проекта. Не участник — проект и его задачи **невидимы** (`404`, без названий и счётчиков). Демо-оператор в этом режиме ничего не может |
+| `disabled` | `TASK_SYSTEM=disabled` | `503 feature_unavailable` |
+
+Почему так: публичный шлюз тестового стенда переписывает `Host` на `127.0.0.1`, и backend не отличает внешний
+запрос от локального; общий пароль Basic Auth не идентифицирует человека. Поэтому экспозиция объявляется явно
+(переменная окружения в overlay + маркер шлюза, который может только **ограничить** доступ).
+
+**Team-ready gate** (не выполнен, `team_ready: false` в `GET /api/work/capabilities`): нужен реальный
+`IdentityProvider` (SSO) в `Container.identity`, политика RBAC вместо `LocalDemoPolicy`, управление участниками
+проекта (API не открыт, пока нет каталога пользователей) и E2E нескольких пользователей в разрешённом shared
+runtime. Сегодня `AUTH_MODE=sso` не запускается, режим `membership` проверен только тестовой server-side
+идентичностью (`tests/support/work_identity.py`, M6-19/M6-37).
+
+## 5. Хранение, миграции, резервная копия и откат
+
+- **Отдельный файл** `workspace/work.sqlite3` (`WORK_STATE_PATH`), а не таблицы в `app_state.sqlite3`: своя история
+  миграций, свой backup/restore, неудачная миграция M6 не может задеть предложения, discovery и реестр шаблонов
+  (прецедент — `publications.sqlite3`). Стек тот же: stdlib `sqlite3`, без ORM и новых зависимостей.
+- **Миграции** (`app/work/migrations.py`): упорядоченные, только добавляются; каждая — одна транзакция с
+  `PRAGMA user_version` и строкой в `work_schema_migrations` (имя + checksum). При старте: база новее приложения →
+  отказ; изменённая выпущенная миграция (checksum) → отказ; после миграции проверяются таблицы и
+  `foreign_key_check`. Несколько процессов: повторная проверка версии под write-lock.
+- **Соединения**: одно на единицу работы; запись — `BEGIN IMMEDIATE` (один писатель, `busy_timeout` 10 с), чтение —
+  снимок в WAL. `PRAGMA foreign_keys=ON` всегда. WAL — для параллельности, не вместо транзакций.
+- **PostgreSQL**: доменная логика без SQLite-специфики (нет `INSERT OR REPLACE`, JSON1; даты ISO-текстом, id из
+  приложения, рекурсивный CTE стандартный). Для порта меняются: `AUTOINCREMENT` → identity, триггеры append-only →
+  функция-триггер или `REVOKE UPDATE, DELETE`, `user_version` → только таблица миграций. Отдельная реализация не
+  делалась.
+- **Backup до миграции**: если база существует и есть новые миграции — `work.sqlite3.pre-v<N>-<UTC>.bak` через online
+  backup API (включает содержимое WAL). Вручную: `python -m app.tools.work_db backup --out FILE`, проверка
+  `verify`, состояние `status`.
+- **Откат**: остановить backend → `python -m app.tools.work_db restore --from FILE --yes` (проверяет копию, сохраняет
+  текущую базу рядом, удаляет `-wal/-shm`) → запустить предыдущую версию приложения (pin SHA). Миграции аддитивны,
+  поэтому старая версия с восстановленной копией работает. Проверено тестом (`test_work_db.py`).
+- **Docker**: база в томе `workspace` (`/data/workspace`), переживает перезапуск и пересборку (M6-21); корень
+  контейнера read-only — в образ ничего не пишется.
+
+## 6. Демо-данные
+
+`app/work/seed.py`, при первом старте в режимах одного оператора (`WORK_SEED_DEMO=true`, никогда в `membership`) или
+`python -m app.tools.work_db seed-demo`. Три синтетических проекта (ARIS Metadata Integration, Dataset Quality
+Initiative, Confluence RAG Improvements), 32 задачи, 4 уровня вложенности, все статусы, 4 вехи (одна закреплена),
+цепочки и ромб FS, задачи без дат, задержки и просрочка относительно даты посева (раскладка от понедельника за три
+недели до «сегодня» с прямым проходом FS — без нарушений), исполнители — роли «(демо)». Пометка `is_demo`, «(демо)»
+в названии, «ДЕМО-ДАННЫЕ» в описании. Идемпотентность: проект с `seed_key` уже есть → пропуск целиком (правки
+оператора не перезаписываются); ключ занят пользовательским проектом → пропуск с отчётом; детерминированные id.
+Ссылки демо-задач на синтетические документы добавит шаг 4.
+
+## 7. Производительность (измерения, не обещания)
+
+`python -m app.evaluation.work_bench --tasks N` — синтетический проект: цепочки по 10 задач + перекрёстные рёбра,
+уровень сервиса (без HTTP). Последний прогон и машина — `reports/m6/STEP1_2_BACKEND.md`. На 1000 задач p95: список
+200 строк ≈ 16 мс, Гант ≈ 22 мс, preview ≈ 13 мс, preview+apply ≈ 28 мс, правка задачи ≈ 5 мс; 3000 задач — до ≈ 71 мс.
+Ограничения P0: список строит производные поля по всему проекту и пагинирует в памяти (линейно по размеру
+проекта); лимиты — 5000 задач и 20 000 зависимостей на проект. Цели 05 §5 (p95 < 500/800 мс) нужно подтвердить
+на staging с HTTP и параллельными пользователями — здесь не измерялось.
+
+## 8. Швы для следующих шагов
+
+- **UI (шаг 3)**: `api.work*` в `frontend/src/api/client.ts`, типы в `types.ts`. Начать с
+  `GET /api/work/capabilities` (режим, `can_write`, подпись, календарь, лимиты, флаги). List/Board — `workTasks`
+  (+ `plan_revision`), Board перетаскивание — `workUpdateTask({expected_version, status})`, Гант — `workGantt` (дерево,
+  `unscheduled_task_ids` → пул «без дат», `violations`), drag/resize → `workSchedulePreview` → диалог diff →
+  `workScheduleApply` (тот же `client_request_id` при повторе; `409 stale_schedule` → обновить и повторить
+  предпросмотр). Ключи (`ARIS`, `ARIS-12`) работают в путях для deep links.
+- **Документы (шаг 4)**: таблица `work_task_links` уже есть; сервис/маршруты `GET/POST/DELETE /api/tasks/{id}/links` и
+  «задачи по документу» — рядом с `WorkService`, с проверкой документа по снимку читателя
+  (`KnowledgeService.snapshot(user)`); `link_count` в `TaskOut` уже считает активные ссылки; включить
+  `features.document_links`.
+- **AI (шаг 5)**: действия `propose_work`/`apply_work_proposal` уже есть в политике и матрице ролей; миграция v2 для
+  `work_ai_proposals`; применение предложения — тем же сервисом в одной транзакции (создание задач +
+  `add_dependencies`), `work_inspect` — read-only инструмент в `SystemToolExecutor` поверх методов `WorkService` с
+  `WorkPrincipal` от сервера.
+EOF
+echo ok

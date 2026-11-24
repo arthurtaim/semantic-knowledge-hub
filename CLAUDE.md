@@ -36,6 +36,7 @@ registry. GitLab MR workflow and Confluence publication: `docs/GITLAB_KNOWLEDGE_
 `docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`. Overall: `docs/ARCHITECTURE.md`.
 M5.6.3: metadata without YAML + WikiLinks/backlinks (`docs/METADATA_AND_LINKS.md`), Template Hub
 (`docs/TEMPLATE_HUB.md`), AI-first proposals with Accept/Reject (`docs/AI_WORKFLOWS.md`).
+M6: native Work Management — projects/tasks/FS scheduling/identity gate in `backend/app/work/` (`docs/WORK_MANAGEMENT.md`).
 Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
 AI service; no embeddings, vector DB, LLM re-ranker or orchestration framework by default. Claude Code is the
 current developer agent, GigaCode the future one — never couple app logic to either, never assume a

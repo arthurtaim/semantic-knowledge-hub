@@ -598,3 +598,45 @@ operator has both). Design and rules: `docs/TEMPLATE_HUB.md` «Template Studio»
   was never activated is listed with `status: "draft"` and `versions: []`; `GET /api/templates/{id}` returns its
   draft (status `draft`, no history); `/versions/{v}` is `404` for it.
 - `AiProposal.kind` gains `draft_template`; `AiProposal.result_template_id`.
+
+## Implemented contract (v0.7, M6 Work Management — steps 1–2)
+
+Additive only. Design, semantics and the identity gate: `docs/WORK_MANAGEMENT.md`. Every route declares one action
+on the global policy; the work gate then applies `local_operator` / `read_only` / `membership` (§4 there). `{project_id}`
+accepts the id or the key (`ARIS`); `{task_id}` the id or the key (`ARIS-12`). Request bodies are strict (unknown or
+server-owned fields → `422 invalid_request`). Dates are `YYYY-MM-DD`; a scheduled task is `[start_date, end_exclusive)`.
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/work/capabilities` | `view_projects` | — | `WorkCapabilities {enabled, mode, label, can_write, can_view_audit, read_only_reason, team_ready (false), identity, calendar, statuses, priorities, project_statuses, schedule_modes, link_relations, limits, features}` | `503 feature_unavailable` |
+| `GET /api/work/assignees?project_id=` | `view_projects` | — | `AssigneeRef[] {id, display_name, kind: operator\|fixture\|member\|unknown}` | `404` |
+| `GET /api/projects?status=&include_archived=` | `view_projects` | — | `{items: ProjectOut[], total}`; only member projects in `membership` | `400 invalid_filter` |
+| `POST /api/projects` | `manage_project` | `{key, title, description?, status?, timezone?, start_date?, target_date?, client_request_id?}` | `201 ProjectOut` (replay of `client_request_id` → the first result) | `409 conflict` (`key_taken`, `idempotency_key_reused`), `422 invalid_request\|invalid_date_range`, `403` |
+| `GET /api/projects/{project_id}` | `view_projects` | — | `ProjectOut {…, version, plan_revision, is_demo, stats {total, by_status, open, blocked, overdue, milestones, unscheduled, next_milestone}, my_role}` | `404` (also not a member) |
+| `PATCH /api/projects/{project_id}` | `manage_project` | `{expected_version, title?, description?, status?, timezone?, start_date?, target_date?}` | `ProjectOut` | `409 stale_project` (`details.current_version`), `422`, `403` |
+| `GET /api/projects/{project_id}/members` | `view_projects` | — | `{project_id, mode, members[], note}` — empty in `local_operator` (no team roles are claimed) | `404` |
+| `GET /api/projects/{project_id}/activity?limit=&before_seq=` | `view_work_audit` | — | `{items: ActivityEvent[], next_before_seq}` | `403` (read-only/viewer), `404` |
+| `GET /api/projects/{project_id}/tasks` | `view_tasks` | query: `status`, `priority` (comma lists), `assignee` (id\|`none`), `parent` (id\|`root`), `q` (title/key, case-insensitive), `milestone`, `scheduled`, `overdue`, `blocked`, `include_archived`, `sort` (`key\|title\|status\|priority\|start_date\|due_date\|updated_at\|sort_order`), `order`, `limit` ≤ 500, `offset` | `{project_id, plan_revision, items: TaskOut[], total, limit, offset, today}` | `400 invalid_filter`, `404` |
+| `POST /api/projects/{project_id}/tasks` | `create_task` | `TaskCreate {title, description?, parent_task_id?, status?, priority?, assignee_id?, estimate_workdays?, start_date?, end_exclusive? \| duration_workdays?, due_date?, is_milestone?, date_locked?, sort_order?, expected_plan_revision?, client_request_id?}` | `201 TaskOut` | `422 invalid_date_range` (`partial`, `end_before_start`, `no_workdays`, `duration_zero`, `duration_mismatch`, `milestone_point`, `milestone_duration`, `lock_requires_dates`, `out_of_range`), `422 invalid_hierarchy` (`too_deep`, `milestone_parent`, `parent_not_in_project`, `parent_archived`), `422 invalid_assignee`, `409 stale_schedule`, `409 conflict` (`project_archived`, `task_limit`, `idempotency_key_reused`) |
+| `GET /api/tasks/{task_id}` | `view_tasks` | — | `TaskOut` (also archived) | `404` |
+| `PATCH /api/tasks/{task_id}` | `edit_task` | `TaskUpdate {expected_version, …any TaskCreate field}`; `null` clears; `start_date` alone moves keeping the duration; `start_date=null, end_exclusive=null` unschedules | `TaskOut` (no change → same version) | `409 stale_task` (`details.current_version`), `409 conflict` (`task_archived`, `milestone_has_children`), `422 invalid_hierarchy` (`parent_cycle`, `self_parent`, `dependency_with_ancestor`…), `422 schedule_conflict` (`fs_violation` with `violations[]`, `task_locked`), `422 invalid_date_range` |
+| `DELETE /api/tasks/{task_id}?expected_version=&cascade=` | `edit_task` | — | `{archived: TaskOut[], removed_dependency_ids, plan_revision}` (soft delete) | `409 conflict` (`has_children` + `children`), `409 stale_task` |
+| `POST /api/tasks/{task_id}/restore?expected_version=` | `edit_task` | — | `TaskOut` (+ the subtree archived by the same operation) | `409 conflict` (`parent_archived`, `task_active`) |
+| `GET /api/tasks/{task_id}/activity` | `view_work_audit` | — | `ActivityPage` (also dependency events where the task is the predecessor) | `403`, `404` |
+| `GET /api/tasks/{task_id}/dependencies` | `view_tasks` | — | `{task_id, plan_revision, predecessors[], successors[]}` each `{dependency: DependencyOut {…, satisfied}, task: TaskBrief}` | `404` |
+| `POST /api/tasks/{task_id}/dependencies` | `schedule_task` | `{predecessor_task_id \| successor_task_id, kind: "FS", lag_workdays: 0, expected_plan_revision?}` | `201 {dependency, plan_revision}` | `422 invalid_dependency` (`self`, `not_in_project` — also for unknown ids, `archived`, `duplicate`, `hierarchy`), `422 dependency_cycle` (`cycle`, `cycle_keys`), `422 schedule_conflict` (`dependency_violated`, `earliest_start`), `409 stale_schedule` |
+| `DELETE /api/tasks/{task_id}/dependencies/{dependency_id}?expected_plan_revision=` | `schedule_task` | — | `{dependency_id, plan_revision}` | `404`, `409 stale_schedule` |
+| `GET /api/projects/{project_id}/gantt` | `view_tasks` | — | `{project_id, project_key, plan_revision, snapshot_at, today, calendar, tasks (tree order), dependencies, unscheduled_task_ids, violations[], range_start, range_end_exclusive, critical_path: null, features}` — one snapshot | `404` |
+| `POST /api/projects/{project_id}/schedule/preview` | `schedule_task` | `{mode: only_this_task\|shift_successors\|resolve_violations, changes: [{task_id, start_date, end_exclusive \| duration_workdays}] ≤ 100, add_dependencies: [{predecessor_task_id, successor_task_id}] ≤ 20, base_plan_revision?}` | `SchedulePreview {preview_id, base_plan_revision, input_hash, operations[{task_id, key, change, before, after, shift_workdays, reason, because_of, version}], added_dependencies, conflicts[], warnings[], blocked_tasks[], unchanged[], can_apply, critical_path: null, created_at, expires_at}`; writes no task/revision/audit | `404` (unknown task), `422` (validation, `dependency_cycle`, `invalid_dependency`, `invalid_date_range`), `409 stale_schedule`, `403` |
+| `POST /api/projects/{project_id}/schedule/apply` | `schedule_task` | `{preview_id, expected_plan_revision, client_request_id, accept_warnings?}` | `ScheduleApplyResult {preview_id, applied, plan_revision, changed_tasks, added_dependencies, correlation_id, replayed}` | `409 stale_schedule` (`plan_revision`, `snapshot_changed`, `expired`, `already_applied`, `task_changed`, `revalidation_failed`), `422 schedule_conflict` (`conflicts`, `warnings_not_accepted`), `409 conflict` (`idempotency_key_reused`), `404` (unknown or someone else's preview) |
+
+- `TaskOut` = `{id, project_id, key, number, parent_task_id, depth, title, description, status, priority, assignee_id,
+  assignee, reporter_id, estimate_workdays, start_date, end_exclusive, last_day, duration_workdays, due_date,
+  is_milestone, date_locked, scheduled, sort_order, is_demo, version, created_by, created_at, updated_by, updated_at,
+  archived_at, blocked_by[], is_blocked, overdue, late, child_count, link_count}`.
+- Read-only exposure: every write, preview/apply and activity route answers `403 forbidden` with `details.mode =
+  "read_only"` and `details.reason`; reads keep working. Membership mode: a non-member gets `404` for the project and
+  everything in it (no titles, counts or existence leaks).
+- Additive elsewhere: `SessionResponse.features.work_management` (`local_operator\|read_only\|membership\|disabled`);
+  `GET /api/integrations/status` item `task_system` is the built-in module (`connected`, target `local`, access
+  `read_write`/`read`); CORS allows `PATCH`.
