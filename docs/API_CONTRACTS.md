@@ -122,9 +122,13 @@ Response:
   "mode": "mock",
   "confidence": "insufficient_evidence",
   "citations": [],
-  "warnings": ["Используются только демо-документы"]
+  "warnings": [],
+  "provenance": {"overall": "none", "synthetic": 0, "not_synthetic": 0, "unknown": 0, "by_kind": {}}
 }
 ```
+
+Synthetic origin of the sources is metadata (`provenance`, `Citation.provenance`), not a fixed warning — see
+«Answer provenance» below.
 
 In actual `internal_api` mode, model synthesis must use only retrieved authorized context, and the citations list must be checked against the retrieval set. `confidence` is a descriptive status (`supported|partial|insufficient_evidence`), not a model-generated probability.
 
@@ -417,7 +421,7 @@ Search terms, coverage counting and answer decisions are unchanged (function wor
 named).
 
 **Skills and AI modes.** `internal_api`, `claude_cli`: all available. `mock`: all except `improve_section`
-(`unavailable_reason`: «В демо-режиме нет языковой модели: переписать раздел нельзя.» — the mock can only normalize
+(`unavailable_reason`: «Нет языковой модели (режим mock): переписать раздел нельзя.» — the mock can only normalize
 layout). `disabled`: none available, reason «ИИ отключён». `draft_document` additionally needs a provider with
 `supports_authoring`.
 
@@ -519,3 +523,33 @@ Additive only; every v0.4 field and behaviour is unchanged. Design, semantics an
 - Client (UI v2, `frontend/src/api/client.ts`): passes `status.round`, `tool_call` and `tool_result` to the caller; a
   malformed tool event is skipped like an unknown event (it only feeds a progress line). A follow-up echoes the
   previous answer's `conversation_context` as `history[i].context`.
+
+## Answer provenance (additive, answer-quality fix)
+
+Every v0.5 field and behaviour is unchanged except one removal: the fixed server warning «Используются только
+демо-документы (синтетические данные) — они не являются фактами о банке.» is **no longer added** to answers (it was
+added to every answer that had retrieved a demo passage, and to answers without passages whenever some accessible
+document was demo — also on non-demo deployments). Provenance is now typed metadata of the VALIDATED evidence
+(`app/domain/provenance.py`):
+
+- `AskResponse.provenance: AnswerProvenance` = `{overall: synthetic | not_synthetic | unknown | mixed | none,
+  synthetic, not_synthetic, unknown, by_kind: {team?, corporate?, attachment?}}` — distinct sources among the
+  validated citations and the document items of the system facts the answer relies on (a skill's chosen document
+  counts too). `none`: no source (insufficient evidence, general knowledge, a bare registry count). Never derived
+  from retrieved-but-uncited passages or from «any document of the catalog».
+- `Citation.provenance: synthetic | not_synthetic | unknown` — from `source_type` + `is_demo`: `synthetic` = marked
+  synthetic/demo (front matter `synthetic: true`, a `demo` tag, `LOCAL_CONTENT_IS_DEMO`, the mock Confluence corpus);
+  `not_synthetic` = a team document / corporate page without that mark; `unknown` = an attachment (no provenance
+  metadata; its `is_demo: false` must not be read as «real»).
+- `SystemFactItem.is_demo: bool | null` — for `kind: document` items.
+- `catalog_query` (model-visible): `facets` adds `breakdown.provenance {synthetic?, not_synthetic?}` over the whole
+  filtered scope (an exhaustive, scoped check the model can cite as `[F1]` when asked «are these real data?»);
+  `list` rows carry `synthetic`. Passages handed to a model carry `"synthetic": true|false` in their metadata line
+  (not for attachments).
+- Warnings that stay (material): `MIXED_PROVENANCE_WARNING` when the evidence mixes synthetic and non-synthetic
+  sources; attachment-only evidence; drafts / in_review / deprecated cited; unconfirmed Confluence pages; dropped
+  citations or facts; injection-like text; index generations mixed.
+- UI contract: show `provenance` as one quiet indicator per answer (e.g. «Источники: синтетические (учебные)»), a
+  per-source badge from `Citation.provenance` when the sources differ (`mixed`; otherwise the indicator covers
+  them), and nothing when `overall` is `none`. The mode label (`mode: mock` — «без языковой модели») is a separate
+  concept from synthetic content. Implemented in `docs/UI_REDESIGN.md` «Происхождение источников и режим ИИ».

@@ -46,6 +46,19 @@ rolls back and the previous generation keeps serving.
 
 Embeddings, a vector DB or an LLM re-ranker are not used.
 
+**Assistant passages** (`RetrievalService.passages`, also `knowledge_search`): the best sections of the best eligible
+documents, one per document first. A section whose every line is corpus-wide boilerplate — a body line repeated in
+≥ 5 documents and > 5 % of the reader's snapshot (`RetrievalService.boilerplate`, cached per snapshot; e.g. the banner
+every synthetic document opens with) — is skipped for the next section of the same document: it matched many words
+and, being short, outranked content, so the model received disclaimers instead of evidence. Document ranking and the
+FTS index are unchanged. A follow-up question is pre-retrieved by its own words and together with the previous
+question, merged round-robin (`AssistantService._prepare`).
+
+Eval case fields for the assistant (`app/evaluation/knowledge_eval.py`): `history` (earlier questions of a
+follow-up), `expect_provenance` (`AskResponse.provenance.overall`), `max_warnings`, `unmatched_only_current`,
+`context_any` (one of the documents must be in the context given to the model) — besides `expected_doc_ids`,
+`cited_any`, `facts_required`, `facts_forbidden`, `not_cited`, `warning_contains`, `expected_excluded`.
+
 Changing the dictionary or the weights requires a before/after `make knowledge-eval` on the same cases;
 holdout cases are never used for tuning (skill `search-retrieval-evaluation`).
 
@@ -70,5 +83,5 @@ newer one exists. Nothing is migrated silently. Shipped: `integration` v2 (v1 in
 ```bash
 make mock-kb-validate     # fixtures: schema, links, ≥100 edges, required chains, synthetic, secrets
 make mock-kb-sync         # fixtures → ./workspace/knowledge (only files it owns)
-make knowledge-eval       # 160 deterministic gold cases incl. sync and template scenarios
+make knowledge-eval       # 216 deterministic gold cases incl. sync, template, provenance and follow-up cases
 ```

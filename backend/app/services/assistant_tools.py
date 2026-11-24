@@ -51,6 +51,7 @@ from app.errors import ApiError
 from app.services import graph as g
 from app.services.knowledge import owner_missing as _owner_missing
 from app.services.knowledge import sort_documents
+from app.services.retrieval import only_boilerplate
 
 if TYPE_CHECKING:
     from app.services.ai_workflows import AiWorkflowService
@@ -137,6 +138,7 @@ def _doc_item(doc: DocumentRecord, detail: str | None = None) -> SystemFactItem:
         status=doc.status.value,
         detail=detail,
         app_path=_doc_path(doc.id),
+        is_demo=doc.is_demo,
     )
 
 
@@ -149,6 +151,8 @@ def _doc_row(doc: DocumentRecord) -> dict[str, Any]:
         "owner": "unassigned" if _owner_missing(doc) else doc.owner,
         "tags": list(doc.tags[:8]),
         "updated": doc.metadata_updated_at.isoformat() if doc.metadata_updated_at else None,
+        # provenance as metadata (synthetic/demo mark of the document), never a claim about its content
+        "synthetic": doc.is_demo,
     }
 
 
@@ -483,6 +487,8 @@ class SystemToolExecutor:
             "type": top([d.type.value for d in docs]),
             "owner": top(["unassigned" if _owner_missing(d) else d.owner for d in docs]),
             "tag": top([t for d in docs for t in d.tags]),
+            # whole-scope provenance: how many of these documents are marked synthetic (an exhaustive check)
+            "provenance": top(["synthetic" if d.is_demo else "not_synthetic" for d in docs]),
         }
 
     def _metadata(
@@ -665,7 +671,9 @@ class SystemToolExecutor:
                     available=[s.heading for s in doc.sections if s.text][:20],
                 )
         else:
-            sections = sections[:2]
+            # The opening sections, without corpus-wide boilerplate (e.g. a banner repeated in every document).
+            common = self._knowledge.retrieval.boilerplate(snapshot)
+            sections = [s for s in sections if not only_boilerplate(s.text, common)][:2] or sections[:2]
         passages: list[ContextPassage] = []
         budget = READ_TOTAL_CHARS
         for section in sections:

@@ -1,11 +1,13 @@
 import { useId, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api/client";
-import type { AskResponse, Citation, DiscoveryVerdict, DocStatus, ExcludedSource } from "../api/types";
+import type { AskResponse, Citation, DiscoveryVerdict, DocStatus, ExcludedSource, ProvenanceOrigin } from "../api/types";
 import { citationGroup, type CitationGroup } from "../lib/assistant";
 import { pluralRu, shortRevision, SOURCE_LABEL } from "../lib/labels";
+import { citationOrigin, showsSourceOrigins } from "../lib/provenance";
 import { citationTitle, externalVersion } from "./AnswerParts";
 import { SourceExcerpt } from "./CitationExcerpt";
+import { OriginMark } from "./Provenance";
 import { buttonClass } from "./ui/Button";
 import { StatusMark } from "./ui/StatusMark";
 
@@ -114,9 +116,11 @@ interface SourceRowProps {
   actionsTrace: string | null;
   /** The document panel: the section only (the revision and the store are on the document itself). */
   compact: boolean;
+  /** This source's origin when the answer's sources differ (null: the answer's line covers every source). */
+  origin: ProvenanceOrigin | null;
 }
 
-function SourceRow({ citation, label, turnNo, actionsTrace, compact }: SourceRowProps) {
+function SourceRow({ citation, label, turnNo, actionsTrace, compact, origin }: SourceRowProps) {
   const group = citationGroup(citation);
   const meta: string[] = [];
   if (group === "team" && compact) {
@@ -148,12 +152,12 @@ function SourceRow({ citation, label, turnNo, actionsTrace, compact }: SourceRow
           )}
         </div>
         <SourceExcerpt citation={citation} />
-        {meta.length > 0 ? (
+        {meta.length > 0 || origin ? (
           <p className="source__meta">
             {meta.map((part) => (
               <span key={part}>{part}</span>
             ))}
-            {citation.is_demo && group !== "attachment" ? <span>демо</span> : null}
+            {origin ? <OriginMark origin={origin} /> : null}
           </p>
         ) : null}
         {group === "corporate" && actionsTrace && citation.source_id ? (
@@ -236,6 +240,7 @@ export function AnswerSources({ answer, labels, turnNo, compact = false }: Answe
   const excluded = answer.excluded_sources;
   const toggle = () => setExcludedOpen((value) => !value);
   const traceId = answer.retrieval_trace_id ?? null;
+  const origins = showsSourceOrigins(answer);
   // Several citations may quote one Confluence page: its feedback controls appear once, at the first of them.
   const withActions = new Set<number>();
   const seen = new Set<string>();
@@ -280,6 +285,7 @@ export function AnswerSources({ answer, labels, turnNo, compact = false }: Answe
                   turnNo={turnNo}
                   actionsTrace={withActions.has(citation.ref) ? traceId : null}
                   compact={compact}
+                  origin={origins ? citationOrigin(citation) : null}
                 />
               ))}
             </ol>

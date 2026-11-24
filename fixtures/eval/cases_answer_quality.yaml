@@ -1,0 +1,24 @@
+# Answer quality (provenance policy and follow-ups) — deterministic, mock provider, synthetic corpus only.
+# provenance: an ordinary answer over synthetic documents carries `provenance.overall` from its VALIDATED evidence and no
+#   boilerplate warning; an answer without evidence makes no provenance claim; material warnings (drafts, deprecated)
+#   stay. followup: `history` holds earlier questions of the dialog; the pre-retrieval keeps the subject of the new words
+#   next to the conversation's referent, and words of an earlier question are never reported as «not found» now.
+# Fields: expect_provenance, max_warnings, unmatched_only_current, context_any (docs/SEARCH_SYNC_TEMPLATES.md §eval).
+# --- provenance (8)
+- {case_id: KQ-PROV-01, category: provenance, method: assistant, question: "Какой формат у идентификатора процесса process_id?", cited_any: [DEMO-SEM-007, DEMO-SEM-002], expect_provenance: synthetic, max_warnings: 0}
+- {case_id: KQ-PROV-02, category: provenance, method: assistant, question: "Как часто метаданные ARIS обновляются в каталоге?", expected_doc_ids: [DEMO-INT-013], expect_provenance: synthetic, max_warnings: 0}
+- {case_id: KQ-PROV-03, category: provenance, method: assistant, question: "Какие атрибуты у логической модели BusinessProcess?", cited_any: [DEMO-SEM-002], expect_provenance: synthetic, max_warnings: 0}
+- {case_id: KQ-PROV-04, category: provenance, method: assistant, question: "Чем CDC отличается от full refresh?", cited_any: [DEMO-INT-010, DEMO-ADR-004], expect_provenance: synthetic, max_warnings: 0}
+- {case_id: KQ-PROV-05, category: provenance, method: assistant, question: "Какой SLA у интеграции с ЦФТ?", expected_no_answer: true, expect_provenance: none, max_warnings: 0, notes: "no evidence: no provenance claim, no «only demo» warning"}
+- {case_id: KQ-PROV-06, category: provenance, method: assistant, question: "Как часто метаданные ARIS обновляются в каталоге?", include_drafts: true, expect_provenance: synthetic, notes: "drafts allowed: a draft-status warning may appear (material), provenance unchanged"}
+- {case_id: KQ-PROV-07, category: provenance, method: assistant, question: "Как устроена ночная полная выгрузка ARIS?", include_deprecated: true, cited_any: [DEMO-INT-018], expect_provenance: synthetic, warning_contains: ["deprecated"], notes: "the deprecated warning is material and stays"}
+- {case_id: KQ-PROV-08, category: provenance, method: assistant, question: "Какие колонки у таблицы sl_process_metadata?", cited_any: [DEMO-SEM-005], expect_provenance: synthetic, max_warnings: 0}
+# --- followup (8)
+- {case_id: KQ-FUP-01, category: followup, method: assistant, history: ["Что такое логическая модель BusinessProcess?"], question: "а физическая?", context_any: [DEMO-SEM-005], unmatched_only_current: true, notes: "narrowed subject: the old terms must not push the new one out"}
+- {case_id: KQ-FUP-02, category: followup, method: assistant, history: ["Какая у нас модель данных?"], question: "Как часто метаданные ARIS обновляются в каталоге?", expected_doc_ids: [DEMO-INT-013], unmatched_only_current: true, expect_provenance: synthetic, notes: "topic switch"}
+- {case_id: KQ-FUP-03, category: followup, method: assistant, history: ["Как устроен поток ARIS → Catalog?"], question: "а какие у него ограничения?", context_any: [DEMO-INT-001], unmatched_only_current: true, notes: "elliptical: the referent comes from the previous question"}
+- {case_id: KQ-FUP-04, category: followup, method: assistant, history: ["Какой формат у идентификатора процесса process_id?"], question: "а в какой колонке физической модели он хранится?", context_any: [DEMO-SEM-005], unmatched_only_current: true}
+- {case_id: KQ-FUP-05, category: followup, method: assistant, history: ["Что такое CDC?"], question: "а чем полная перезагрузка хуже?", context_any: [DEMO-INT-010], unmatched_only_current: true}
+- {case_id: KQ-FUP-06, category: followup, method: assistant, history: ["Какие атрибуты у логической модели BusinessProcess?"], question: "а у BusinessObject?", context_any: [DEMO-SEM-003], unmatched_only_current: true}
+- {case_id: KQ-FUP-07, category: followup, method: assistant, history: ["Какой SLA у интеграции с ЦФТ?"], question: "Какие атрибуты у логической модели Dataset?", cited_any: [DEMO-SEM-004], unmatched_only_current: true, notes: "a word missing from an earlier, unanswered question never blocks a new subject"}
+- {case_id: KQ-FUP-08, category: followup, method: assistant, history: ["Как восстановить lineage датасета?"], question: "а для Source Coverage?", context_any: [DEMO-SEM-011], unmatched_only_current: true}

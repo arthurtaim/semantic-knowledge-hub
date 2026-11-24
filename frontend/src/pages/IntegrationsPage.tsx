@@ -80,7 +80,7 @@ function IntegrationRow({ item }: { item: IntegrationStatus }) {
       <div className="integration__main">
         <div className="integration__head">
           <h2>{item.title}</h2>
-          <StateBadge state={item.state} />
+          <StateBadge state={item.state} kind={item.kind} />
         </div>
         <p>{item.human_readable_message}</p>
       </div>

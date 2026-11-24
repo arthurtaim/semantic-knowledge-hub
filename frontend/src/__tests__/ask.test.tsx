@@ -80,7 +80,7 @@ describe("Ask the knowledge base", () => {
     await userEvent.click(sendButton());
 
     expect(await screen.findByText("Подтверждено источниками")).toBeInTheDocument();
-    expect(screen.getByText("Демо-режим: выдержки без языковой модели")).toBeInTheDocument();
+    expect(screen.getByText("Без языковой модели: дословные выдержки")).toBeInTheDocument();
     // The marker opens the cited document at the cited section (evidence first: the quote is listed above).
     const marker = screen.getByRole("link", { name: "Источник 1" });
     expect(marker).toHaveAttribute("href", "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture");
@@ -459,7 +459,7 @@ function confluenceCitation(ref: number, page: string, version: string, status: 
 
 const externalAnswer: AskResponse = {
   ...supportedAnswer,
-  answer: "Демо-режим.\n\n1. «Выдержка 1» [1]\n2. «Выдержка 2» [2]\n3. «Выдержка 3» [3]",
+  answer: "Без языковой модели: дословные выдержки.\n\n1. «Выдержка 1» [1]\n2. «Выдержка 2» [2]\n3. «Выдержка 3» [3]",
   citations: [
     confluenceCitation(1, "200101", "3", "unknown"),
     confluenceCitation(2, "200101", "3", "unknown"),

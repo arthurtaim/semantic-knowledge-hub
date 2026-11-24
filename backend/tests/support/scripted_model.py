@@ -30,6 +30,7 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «почему <A> связан с <B>» | graph_inspect path |
 | «шаблон» | templates_inspect list (doc_type integration when «интеграц») |
 | «утвержд» + «aris» + «пробел» | composite: count + knowledge_search in one round, then a cited analysis |
+| «оформи» | count + knowledge_search «ARIS», then a MARKDOWN answer (heading, bold, list, code, table) with [F1]/[Cn] |
 | «черновик» | drafts_propose draft_from_prompt (proposal only) |
 | «метаданные <ID>» | catalog_query get_metadata |
 | «что такое rag» / «what is rag» | general knowledge, no tools |
@@ -40,6 +41,9 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «неизвестный инструмент» | requests `sql_query` (rejected), then answers |
 | «бесконечн» | requests a tool in every round (loop limit) |
 | «упади» | provider error after the first tool round |
+| «модель данных» | overview: catalog_query list (text «модель») + knowledge_search in one round, then a scoped, cited overview |
+| «интересны» + history | follow-up: knowledge_search for the PREVIOUS question's subject, then a cited continuation |
+| «реальные данные» | catalog_query facets → discloses the provenance breakdown of the accessible catalog |
 | anything else | cites the first passage verbatim (content answer), or «insufficient» without passages |
 """
 
@@ -242,6 +246,9 @@ def tool_script(r: Round) -> str:
         text += " Возможный пробел (вывод, не факт): нет утверждённых правил частоты выгрузки."
         return final(text, facts=[count["fact_id"]], citations=cites)
 
+    if "оформи" in q:
+        return _markdown_script(r)
+
     if "черновик" in q or "draft" in q:
         if not r.results:
             return tool_request(("drafts_propose", {"kind": "draft_from_prompt", "prompt": r.question[:500]}))
@@ -292,6 +299,12 @@ def tool_script(r: Round) -> str:
         )
     if "внимани" in q or "need attention" in q or "needs attention" in q:
         return _attention_script(r, q, facts)
+    if "модель данных" in q:
+        return _overview_script(r, facts)
+    if "интересны" in q and r.history:
+        return _follow_up_script(r)
+    if "реальные данные" in q:
+        return _real_data_script(r, facts)
     if "сколько" in q and "aris" in q:
         if not r.results:
             return tool_request(
@@ -403,6 +416,117 @@ def _attention_script(r: Round, q: str, facts: list[dict[str, Any]]) -> str:
         f"Требуют внимания {fact['count']} документов [{fact['fact_id']}]. {fact['definition']}",
         facts=[fact["fact_id"]],
     )
+
+
+def _cited_overview(r: Round, limit: int = 3) -> tuple[list[str], list[dict[str, str]]]:
+    """Verbatim quotes of the first passages found by knowledge_search, one per document."""
+    lines: list[str] = []
+    cites: list[dict[str, str]] = []
+    seen: set[str] = set()
+    searched = _searched_ids(r)
+    for cid, meta, body in r.passages:
+        document = json.loads(meta).get("document_id")
+        if cid not in searched or document in seen or len(cites) >= limit:
+            continue
+        seen.add(document)
+        quote = _verbatim(body)
+        cites.append({"id": cid, "quote": quote})
+        lines.append(f"- {json.loads(meta).get('title')}: «{quote}» [{cid}]")
+    return lines, cites
+
+
+def _overview_script(r: Round, facts: list[dict[str, Any]]) -> str:
+    """A broad question: look at the catalog AND search content in one round, then a scoped overview."""
+    if not r.results:
+        return tool_request(
+            (
+                "catalog_query",
+                {"operation": "list", "filters": {"text": "модель"}, "sort": "id", "limit": 20},
+            ),
+            (
+                "knowledge_search",
+                {"operation": "search", "query": "логическая модель физическая модель", "limit": 6},
+            ),
+        )
+    listed = (r.facts("catalog_query") or [None])[0]
+    lines, cites = _cited_overview(r)
+    head = "В доступных вам документах SKH модели данных описаны в нескольких документах"
+    text = (
+        head + (f" — {listed['total']} совпадений в каталоге [{listed['fact_id']}]" if listed else "") + ":\n"
+    )
+    text += "\n".join(lines) + "\n\nЭто обзор просмотренных документов, а не полный перечень."
+    return final(text, facts=[listed["fact_id"]] if listed else [], citations=cites)
+
+
+def _follow_up_script(r: Round) -> str:
+    """A short clarification: the subject comes from the previous question of the dialog, not from these words."""
+    previous = str(r.history[-1].get("question") or "")
+    if not r.results:
+        return tool_request(
+            ("knowledge_search", {"operation": "search", "query": previous[:200], "limit": 6})
+        )
+    lines, cites = _cited_overview(r)
+    if not cites:
+        return final("В просмотренных источниках ответа не нашлось.", confidence="insufficient_evidence")
+    return final(f"Продолжая предыдущий вопрос («{previous}»):\n" + "\n".join(lines), citations=cites)
+
+
+def _real_data_script(r: Round, facts: list[dict[str, Any]]) -> str:
+    """«Are these real data?»: the provenance breakdown of the accessible catalog is the evidence."""
+    if not r.results:
+        return tool_request(("catalog_query", {"operation": "facets"}))
+    fact = facts[0]
+    provenance = fact.get("breakdown", {}).get("provenance", {})
+    synthetic, total = provenance.get("synthetic", 0), fact["total"]
+    if total and synthetic == total:
+        text = (
+            f"Нет. Все {total} документов доступного вам каталога SKH помечены как синтетические (учебные) "
+            f"[{fact['fact_id']}]: это не сведения о банке."
+        )
+    else:
+        text = (
+            f"Синтетическими помечены {synthetic} из {total} документов доступного вам каталога SKH "
+            f"[{fact['fact_id']}]; остальные такой пометки не имеют."
+        )
+    return final(text, facts=[fact["fact_id"]])
+
+
+def _markdown_script(r: Round) -> str:
+    """A rich Markdown final answer (UI Workstream A): verified markers in a paragraph, bold, a list item and table
+    cells; a marker inside inline code (a code sample, not a reference) and a literal [7] that is no citation."""
+    if not r.results:
+        return tool_request(
+            ("catalog_query", {"operation": "count"}),
+            ("knowledge_search", {"operation": "search", "query": "ARIS"}),
+        )
+    count = r.facts("catalog_query")[0]
+    found = [p for p in r.passages if p[0] in _searched_ids(r)]
+    if not found:
+        return final(
+            f"В доступном вам каталоге SKH — {count['count']} документов [{count['fact_id']}].",
+            facts=[count["fact_id"]],
+        )
+    cid, _meta, body = found[0]
+    quote = _verbatim(body)
+    f = count["fact_id"]
+    text = "\n".join(
+        [
+            "## Сводка по ARIS",
+            "",
+            f"**Что нашлось:** в доступном вам каталоге SKH — {count['count']} документов [{f}].",
+            "",
+            f"- Документы описывают: *«{quote}»* [{cid}]",
+            f"- Пример сущности: `BusinessProcess`; запись `[{cid}]` в коде — не ссылка",
+            "",
+            "| Что | Подтверждение |",
+            "| --- | --- |",
+            f"| Число документов | [{f}] |",
+            f"| Цитата | [{cid}] |",
+            "",
+            "Пометка [7] не проверена сервером и остаётся текстом.",
+        ]
+    )
+    return final(text, facts=[f], citations=[{"id": cid, "quote": quote}])
 
 
 def _searched_ids(r: Round) -> set[str]:

@@ -306,6 +306,29 @@ export interface Citation {
    * Absent / null: show `excerpt` as is. `excerpt` stays the verbatim, verified quote.
    */
   excerpt_parts?: ExcerptPart[] | null;
+  /**
+   * Origin of this source from its metadata (answer-quality fix, additive): "synthetic" — marked synthetic/demo,
+   * "not_synthetic" — no such mark, "unknown" — no provenance metadata (an attachment; `is_demo` is false there, so
+   * never read `is_demo: false` as «real»). Show it as a quiet per-source badge, not as a warning.
+   */
+  provenance?: ProvenanceOrigin | null;
+}
+
+export type ProvenanceOrigin = "synthetic" | "not_synthetic" | "unknown";
+
+/**
+ * Origin of the evidence an answer ACTUALLY relies on (validated citations + documents named by its system facts),
+ * counted in distinct sources. Replaces the former fixed warning «Используются только демо-документы…» on every
+ * answer: show one quiet indicator; the server adds a warning only when it is material (mixed origins).
+ * `overall: "none"` — the answer relies on no source (insufficient evidence, general knowledge, a bare count).
+ */
+export interface AnswerProvenance {
+  overall: ProvenanceOrigin | "mixed" | "none";
+  synthetic: number;
+  not_synthetic: number;
+  unknown: number;
+  /** "team" | "corporate" | "attachment" → distinct sources. */
+  by_kind: Record<string, number>;
 }
 
 /** A piece of a cited excerpt: prose of the quote, or the rows of a table the quote touches. */
@@ -352,6 +375,8 @@ export interface SystemFactItem {
   /** e.g. «guide · владелец не назначен · обновлён 2026-11-21», «references · body:12», «v2 · действующая». */
   detail: string | null;
   app_path: string | null;
+  /** A document item: marked synthetic/demo in its metadata (absent / null for templates, relations, proposals). */
+  is_demo?: boolean | null;
 }
 
 /**
@@ -521,6 +546,8 @@ export interface AskResponse {
   general_knowledge?: boolean;
   /** M5.7: send back as `history[i].context` of this turn so a follow-up keeps its referent. */
   conversation_context?: TurnFactContext[];
+  /** Origin of the validated evidence (additive; absent from older servers). */
+  provenance?: AnswerProvenance;
 }
 
 // --- UI v2: assistant skills and conversation attachments (docs/ui-v2/specs/02_ASSISTANT.md §3–§5) ---

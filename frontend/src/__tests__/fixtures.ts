@@ -136,7 +136,8 @@ export const staleSync: SyncStatus = {
 };
 
 export const supportedAnswer: AskResponse = {
-  answer: "Демо-режим: дословные выдержки.\n\n1. «This local demonstration models a knowledge base with four layers» [1]",
+  answer:
+    "Без языковой модели: ниже приведены дословные выдержки из найденных документов.\n\n1. «This local demonstration models a knowledge base with four layers» [1]",
   mode: "mock",
   confidence: "supported",
   citations: [
@@ -154,9 +155,12 @@ export const supportedAnswer: AskResponse = {
       retrieved_at: "2026-11-22T00:00:00Z",
       is_demo: true,
       app_path: "/documents/SEM-ARCH-001#semantic-layer-demonstration-architecture",
+      provenance: "synthetic",
     },
   ],
-  warnings: ["Используются только демо-документы (синтетические данные) — они не являются фактами о банке."],
+  // Synthetic origin is metadata of the cited source (`provenance`), not a fixed warning (docs/API_CONTRACTS.md).
+  warnings: [],
+  provenance: { overall: "synthetic", synthetic: 1, not_synthetic: 0, unknown: 0, by_kind: { team: 1 } },
   excluded_sources: [],
   scopes: [
     { scope: "team", state: "connected", message: "Локальный workspace с демо-документами." },
@@ -181,6 +185,8 @@ export const insufficientAnswer: AskResponse = {
   ],
   scopes: [{ scope: "team", state: "connected", message: "Локальный workspace с демо-документами." }],
   unmatched_terms: ["ЦФТ"],
+  // No evidence: no provenance claim (never «only demo» because some accessible document is demo).
+  provenance: { overall: "none", synthetic: 0, not_synthetic: 0, unknown: 0, by_kind: {} },
 };
 
 export const integrations: IntegrationsResponse = {
@@ -189,7 +195,7 @@ export const integrations: IntegrationsResponse = {
     { name: "local_knowledge", title: "Локальная база знаний", kind: "knowledge_repository", state: "connected", capabilities: ["read"], human_readable_message: "Локальный workspace", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
     { name: "gitlab_knowledge", title: "GitLab (каноническая база знаний)", kind: "knowledge_repository", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
     { name: "confluence_mcp", title: "Confluence Data Center (MCP, только чтение)", kind: "corporate_knowledge", state: "disabled", capabilities: [], human_readable_message: "Не подключено", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
-    { name: "ai_provider", title: "AI-провайдер", kind: "ai", state: "mock", capabilities: ["extractive_answers"], human_readable_message: "Демо-режим", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
+    { name: "ai_provider", title: "AI-провайдер", kind: "ai", state: "mock", capabilities: ["extractive_answers"], human_readable_message: "Режим без языковой модели (mock)", details: {}, target: "local", access: "read", checked_at: "2026-11-22T00:00:00Z" },
     { name: "confluence_publisher", title: "Confluence Data Center (REST, публикация)", kind: "confluence_publisher", state: "disabled", capabilities: [], human_readable_message: "Не настроено (CONFLUENCE_REST_URL не задан).", details: {}, target: "none", access: "none", checked_at: "2026-11-22T00:00:00Z" },
   ],
 };
@@ -590,7 +596,7 @@ export const skills: AssistantSkill[] = [
     "Предложит новую формулировку раздела; применяется только после вашего решения",
     "draft",
     { document: true, selection: true },
-    { available: false, unavailable_reason: "В демо-режиме нет языковой модели: переписать раздел нельзя." },
+    { available: false, unavailable_reason: "Нет языковой модели (режим mock): переписать раздел нельзя." },
   ),
 ];
 

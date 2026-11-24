@@ -40,7 +40,9 @@ test("D-01 the assistant panel answers a question about the document with a cita
 
   const answer = panel.getByRole("region", { name: "Переписка" }).getByRole("region", { name: "Ассистент" });
   await expect(answer).toBeVisible();
-  await expect(answer.getByText("Демо", { exact: true })).toBeVisible();
+  // The mode (no language model) and, apart from it, the origin of the sources (synthetic fixtures).
+  await expect(answer.getByText("Без модели", { exact: true })).toBeVisible();
+  await expect(answer.locator(".answer__provenance")).toHaveText("Источники: синтетические (учебные)");
   const marker = answer.locator(".answer__text").getByRole("link", { name: "Источник 1" });
   await expect(marker).toHaveAttribute("href", /^\/documents\/SEM-ARCH-001#/);
   await expect(answer.getByRole("region", { name: "Источники" }).getByRole("region", { name: "Документы команды" })).toBeVisible();

@@ -115,7 +115,7 @@ describe("Composer: text, Enter and chips", () => {
 
   it("shows the AI mode on the right and «Где искать» switches the scope (with a note when Confluence is off)", async () => {
     const { field, onSend } = setup();
-    expect(screen.getByText("ИИ: демо")).toBeInTheDocument();
+    expect(screen.getByText("ИИ: без модели")).toBeInTheDocument();
     const scope = screen.getByRole("button", { name: "Где искать: Команда" });
     await userEvent.click(scope);
     expect(scope).toHaveAttribute("aria-expanded", "true");
@@ -143,7 +143,7 @@ describe("Composer: skills («Навык» and «/»)", () => {
     expect(within(list).getByRole("option", { name: /Найти связи/ })).toHaveTextContent("чтение");
     const unavailable = within(list).getByRole("option", { name: /Улучшить раздел/ });
     expect(unavailable).toHaveAttribute("aria-disabled", "true");
-    expect(unavailable).toHaveTextContent("В демо-режиме нет языковой модели: переписать раздел нельзя.");
+    expect(unavailable).toHaveTextContent("Нет языковой модели (режим mock): переписать раздел нельзя.");
 
     await userEvent.type(field, "черн");
     expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringContaining("Черновик документа")]);

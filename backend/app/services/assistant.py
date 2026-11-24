@@ -44,6 +44,7 @@ from app.domain.models import (
     TurnFactContext,
     UserContext,
 )
+from app.domain.provenance import apply_provenance
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
 from app.domain.skills import DEFAULT_SKILL
 from app.domain.text import QueryTerm, reportable_terms, term_matches_text, tokenize
@@ -71,7 +72,6 @@ FIXED_INSUFFICIENT = (
     "Ассистент не делает предположений о том, чего нет в документах."
 )
 
-DEMO_WARNING = "Используются только демо-документы (синтетические данные) — они не являются фактами о банке."
 ATTACHMENT_ONLY_WARNING = (
     "Ответ опирается только на вложение этого диалога: это не утверждённый документ базы знаний."
 )
@@ -217,6 +217,14 @@ def local_insufficiency(
     if best * 3 < len(terms) * 2:
         return "no_single_local_passage"
     return None
+
+
+def _interleave(first: list[Any], second: list[Any]) -> list[Any]:
+    """Round-robin merge of two ranked lists (duplicates are dropped later, by document and section)."""
+    merged: list[Any] = []
+    for index in range(max(len(first), len(second))):
+        merged += [items[index] for items in (first, second) if index < len(items)]
+    return merged
 
 
 def _allowed_statuses(req: AskRequest) -> set[DocStatus]:
@@ -473,7 +481,6 @@ class AssistantService:
                 facts=used,
                 general_knowledge=final.general_knowledge,
                 insufficient_text=self._tools_insufficient_text(steps_failed),
-                demo=None if passages else await self._knowledge_is_demo(user),
             )
             response.system_facts = used
             response.general_knowledge = (
@@ -502,13 +509,6 @@ class AssistantService:
             outcome.limit or "-",
         )
         return self._record(user, req, replace(prepared, passages=passages), response, extras)
-
-    async def _knowledge_is_demo(self, user: UserContext) -> bool | None:
-        try:
-            snapshot = await self._knowledge.snapshot(user)
-        except RepositoryUnavailableError:
-            return None
-        return any(d.is_demo for d in snapshot.documents.values())
 
     @staticmethod
     def _tools_insufficient_text(failed: list[Any]) -> str:
@@ -545,8 +545,6 @@ class AssistantService:
             *prepared.warnings,
             "Ответ модели не получен полностью: показаны только проверенные данные.",
         ]
-        if any(p.is_demo for p in outcome.passages) or not outcome.passages:
-            warnings.insert(0, DEMO_WARNING)
         return AskResponse(
             answer="\n".join(lines),
             mode=self._provider.mode,
@@ -572,10 +570,13 @@ class AssistantService:
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
             )
-        # A follow-up ("а какие у неё ограничения?") is retrieved together with the previous question.
+        # A follow-up is retrieved twice and the passages are merged: together with the previous question (its referent:
+        # «а какие у неё ограничения?») and by its own words (a narrowed or a new subject: «а физическая?»).
+        # Concatenation alone let the old terms push the subject of the new words out of the bounded context.
         base_text = extras.retrieval_text or req.question
         retrieval_text = base_text if not req.history else f"{base_text} {req.history[-1].question}"
         analysis = self._knowledge.retrieval.analyze(retrieval_text)
+        own = self._knowledge.retrieval.analyze(base_text) if req.history else analysis
         terms = analysis.terms
         allowed = _allowed_statuses(req)
         excluded_statuses = set(DocStatus) - allowed
@@ -607,6 +608,11 @@ class AssistantService:
             selected, _ranked = self._knowledge.retrieval.passages(
                 snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
             )
+            if own is not analysis:
+                own_selected, _ = self._knowledge.retrieval.passages(
+                    snapshot, own, team_filters, max_passages=MAX_PASSAGES
+                )
+                selected = _interleave(own_selected, selected)
             team_count = 0
             for passage in selected:
                 doc = passage.document
@@ -762,7 +768,11 @@ class AssistantService:
                 if origin is not None and origin.revision == p.revision:
                     sources[p.cid] = (origin.body, p.section_anchor)
 
-        unmatched = [t for t in terms if t.stem not in matched_terms]
+        # «Not found» concerns the words of THIS question only: the previous question is context (its terms still
+        # help to select passages), and a word the user does not ask about again must neither be reported as missing
+        # nor block the answer to a new subject (e.g. an unanswered earlier question about a system that is absent).
+        own_stems = {t.stem for t in own.terms}
+        unmatched = [t for t in terms if t.stem not in matched_terms and t.stem in own_stems]
         history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
         return _Prepared(
             terms=terms,
@@ -772,7 +782,11 @@ class AssistantService:
             excluded=excluded,
             scopes=scopes,
             options=AnswerOptions(
-                terms=terms, unmatched_terms=unmatched, history=history, compare_terms=extras.compare_terms
+                terms=terms,
+                unmatched_terms=unmatched,
+                history=history,
+                compare_terms=extras.compare_terms,
+                context_terms=[t for t in terms if t.stem not in own_stems],
             ),
             normalized_query=analysis.normalized,
             mode=mode,
@@ -792,6 +806,7 @@ class AssistantService:
         """Attach provenance (generation, instructions) and, when allowed, store the retrieval trace:
         which fragments were in context and which were cited — never the answer text. Attachments of a
         conversation are never written to the discovery memory."""
+        apply_provenance(response)
         response.index_generation = prepared.index_generation
         response.instructions_version = self._instructions_version()
         response.external = prepared.external.summary() if prepared.external else None
@@ -941,8 +956,6 @@ class AssistantService:
         facts: list[SystemFact] | None = None,
         general_knowledge: bool = False,
         insufficient_text: str = FIXED_INSUFFICIENT,
-        demo: bool
-        | None = None,  # tool mode without passages: whether the reader's knowledge is demo content
     ) -> AskResponse:
         """Every citation is verified against the passage it names. M5.7: verified SYSTEM FACTS (`facts`) are the
         evidence of system claims — an answer backed by them is not rejected for lacking a document quote; a
@@ -1092,9 +1105,8 @@ class AssistantService:
                 if fact.operation == "count" and f"[{fact.ref}]" in answer and str(fact.value) not in stated:
                     warnings.append(FACT_NUMBER_WARNING)
 
-        used = [by_cid[c] for c in cid_to_ref] if citations else passages
-        if any(p.is_demo for p in used) or (not passages and demo is not False):
-            warnings.insert(0, DEMO_WARNING)
+        # Provenance (synthetic or not) is metadata of the validated evidence: `_record` summarizes it
+        # (app/domain/provenance.py) — no fixed «only demo» warning on every answer.
         if any(c.status in (DocStatus.draft, DocStatus.in_review) for c in citations):
             warnings.append("Среди цитируемых источников есть неутверждённые документы (draft / in_review).")
         if any(c.status == DocStatus.deprecated for c in citations):

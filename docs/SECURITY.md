@@ -22,7 +22,10 @@ These are non-negotiable for a prototype intended eventually for a bank. The **l
 
 ## Code and runtime
 - Validate document IDs and resolved paths, reject `..` traversal, malicious symlinks and excessive file sizes.
-- Render Markdown safely; sanitize raw HTML; prevent XSS in excerpts and document titles.
+- Render Markdown safely; sanitize raw HTML; prevent XSS in excerpts and document titles. Assistant answers are
+  untrusted model text even after citation checks: rendered from a Markdown AST with raw HTML shown as text, links
+  limited to http(s), mailto and app paths, no remote images, markers only for server-verified references
+  (`docs/UI_REDESIGN.md` «Ответ ассистента в Markdown»).
 - Configure CORS narrowly; robust request/response validation and CSRF/session protection before multiuser deployment.
 - Strict outbound allowlist for LLM, GitLab and Confluence endpoints; prevent SSRF and arbitrary URL fetches.
 - Use timeouts, response-size limits, retry-with-backoff and clear disabled states.

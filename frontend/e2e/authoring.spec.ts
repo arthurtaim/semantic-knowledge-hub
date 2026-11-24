@@ -89,7 +89,7 @@ test("E2E-21 demo AI quotes approved sources and admits missing data", async ({ 
   await page.getByLabel(/^Что должно быть в документе/).fill("Опиши решение о хранении канонической базы знаний в GitLab");
   await page.getByRole("button", { name: "Подготовить черновик" }).click();
   const panel = page.getByRole("region", { name: "Источники и выдержки" }).or(page.locator("section", { hasText: "Источники и выдержки" })).first();
-  await expect(panel).toContainText(/Демо-режим/);
+  await expect(panel).toContainText("Без языковой модели"); // the AI mode, not «демо»
   await expect(panel).toContainText("Подтверждённые выдержки");
   await expect(page.getByLabel(/^Текст в формате Markdown/)).toHaveValue(/Требует уточнения/);
   // status is read-only (a new document is a draft); the origin is recorded by the server
