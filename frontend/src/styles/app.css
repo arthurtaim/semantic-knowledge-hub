@@ -3809,10 +3809,6 @@ h1 a:hover {
   max-width: none;
 }
 
-.doc-panel--text .ai-assist {
-  margin-top: var(--space-7);
-}
-
 .doc-panel .links-panel {
   margin-top: 0;
 }
@@ -4406,6 +4402,49 @@ dd a.button {
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   color: var(--text-tertiary);
+}
+
+/* Earlier AI proposals of the document that still wait for a decision: a folded line, then collapsed cards. */
+.doc-assistant__disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.doc-assistant__disclosure:hover {
+  color: var(--text);
+}
+
+.doc-assistant__disclosure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+
+.doc-assistant__disclosure-icon {
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.doc-assistant__disclosure[aria-expanded="false"] .doc-assistant__disclosure-icon {
+  transform: rotate(-90deg);
+}
+
+.doc-assistant__pending-list {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.doc-assistant__pending-list[hidden] {
+  display: none;
 }
 
 .doc-assistant__conversation {

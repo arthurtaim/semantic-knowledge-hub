@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AiMode, AskResponse, AskStreamEvent, AssistantSkill, DocumentDetail, SessionResponse } from "../api/types";
+import type { AiMode, AiProposal, AskResponse, AskStreamEvent, AssistantSkill, DocumentDetail, SessionResponse } from "../api/types";
 import { ASSISTANT_OPEN_KEY, DocumentPage } from "../pages/DocumentPage";
 import { arisDetail, attachmentReady, session, skills, supportedAnswer } from "./fixtures";
 import { memoryStorage, mockApi, mockViewport, renderAt, type MockRoute, type RecordedCall } from "./helpers";
@@ -50,14 +50,38 @@ function streamOf(response: AskResponse): MockRoute {
   };
 }
 
+const PROPOSALS_OF_DOC = `/api/ai/proposals?document_id=${DOC_ID}`;
+
 function routes(extra: MockRoute[] = [], registry: AssistantSkill[] = skills): MockRoute[] {
   return [
     ...extra,
     { path: `/api/documents/${DOC_ID}`, body: archDetail },
     { path: `/api/drafts?document_id=${DOC_ID}`, body: { items: [], total: 0 } },
     { path: "/api/assistant/skills", body: registry },
+    // The document's earlier AI proposals (none unless a test says otherwise).
+    { path: PROPOSALS_OF_DOC, body: [] },
   ];
 }
+
+/** An M5.6.3 metadata proposal for this document, as GET /api/ai/proposals/{id} returns it. */
+const metadataProposal: AiProposal = {
+  id: "AIP-00000000000000m1",
+  kind: "suggest_metadata",
+  status: "suggested",
+  created_at: "2026-11-24T10:00:00Z",
+  decided_at: null,
+  mode: "mock",
+  base: { draft_id: null, edit_version: null, document_id: DOC_ID, revision: "sha256:abc", template_id: null, template_version: null, index_generation: "g1" },
+  summary: "Предложены теги по утверждённым документам.",
+  items: [
+    { id: "tags", kind: "metadata", field: "tags", section: null, target_id: null, current: ["architecture"], proposed: ["architecture", "layers"], reason: "Слово «layers» есть в тексте", evidence: [], applicable: true },
+  ],
+  warnings: [],
+  insufficient: false,
+  graph_link: null,
+  applied_items: [],
+  result_draft_id: null,
+};
 
 const asks = (calls: RecordedCall[]) => calls.filter((call) => call.method === "POST" && call.url === STREAM);
 
@@ -318,6 +342,115 @@ describe("Document assistant panel", () => {
     const freshness = within(actions).getByRole("button", { name: "Что перепроверить" });
     expect(freshness).toBeDisabled();
     expect(freshness).toHaveAccessibleDescription("Нужна языковая модель.");
+  });
+
+  it("holds the former «ИИ-помощник по документу»: «Ещё по документу» runs a skill, its proposal is accepted only on Accept", async () => {
+    const answer: AskResponse = {
+      ...supportedAnswer,
+      answer: metadataProposal.summary,
+      citations: [],
+      skill: { id: "suggest_metadata", name: "Предложить метаданные", access: "draft" },
+      proposal: { id: metadataProposal.id, kind: "suggest_metadata", status: "suggested", graph_link: null },
+    };
+    const draftId = "d".repeat(32);
+    const calls = mockApi(
+      routes([
+        streamOf(answer),
+        { path: `/api/ai/proposals/${metadataProposal.id}`, body: metadataProposal },
+        {
+          method: "POST",
+          path: `/api/ai/proposals/${metadataProposal.id}/accept`,
+          body: { ...metadataProposal, status: "applied", applied_items: ["tags"], result_draft_id: draftId },
+        },
+      ]),
+    );
+    renderDocument();
+    await loaded();
+    // The block under the text is gone: the actions live in the panel only.
+    expect(screen.queryByRole("heading", { name: "ИИ-помощник по документу" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Действия ИИ" })).toBeNull();
+
+    await userEvent.click(toggle());
+    const more = within(panel()).getByRole("list", { name: "Ещё по документу" });
+    expect(Array.from(more.querySelectorAll(".doc-assistant__action")).map((item) => item.textContent)).toEqual([
+      "Кратко пересказать",
+      "Проверить полноту",
+      "Предложить метаданные",
+    ]);
+    await userEvent.click(within(more).getByRole("button", { name: "Предложить метаданные" }));
+    await waitFor(() => expect(asks(calls)).toHaveLength(1));
+    expect(asks(calls)[0]?.body).toMatchObject({ question: "", skill_id: "suggest_metadata", context_document_ids: [DOC_ID] });
+
+    const card = await within(panel()).findByRole("region", { name: "Предложение ИИ: Метаданные" });
+    expect(within(card).getByText(/Ничего не применено/)).toBeInTheDocument();
+    await userEvent.click(within(card).getByRole("button", { name: "Открыть предложение" }));
+    const accept = await within(card).findByRole("button", { name: /Применить выбранное \(0\)/ });
+    expect(accept).toBeDisabled(); // nothing is chosen, nothing applies
+    await userEvent.click(within(card).getByRole("checkbox", { name: "Принять: Поле «Теги»" }));
+    expect(calls.some((call) => call.url.endsWith("/accept"))).toBe(false);
+    await userEvent.click(within(card).getByRole("button", { name: /Применить выбранное \(1\)/ }));
+    expect(calls.filter((call) => call.url.endsWith("/accept")).map((call) => call.body)).toEqual([{ item_ids: ["tags"] }]);
+    expect(await within(card).findByRole("link", { name: "Открыть черновик" })).toHaveAttribute("href", `/proposals/${draftId}`);
+  });
+
+  it("lists the document's earlier AI proposals that wait for a decision, with Reject in place — and only those", async () => {
+    const decided: AiProposal = { ...metadataProposal, id: "AIP-00000000000000m2", status: "rejected" };
+    const calls = mockApi(
+      routes([
+        { path: PROPOSALS_OF_DOC, body: [metadataProposal, decided] },
+        { path: `/api/ai/proposals/${metadataProposal.id}`, body: metadataProposal },
+        { method: "POST", path: `/api/ai/proposals/${metadataProposal.id}/reject`, body: { ...metadataProposal, status: "rejected" } },
+      ]),
+    );
+    renderDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    const pending = await within(panel()).findByRole("region", { name: "Ждут решения: 1" });
+    // Folded: one line until the reader opens it.
+    expect(within(pending).queryByRole("region", { name: "Предложение ИИ: Метаданные" })).toBeNull();
+    const fold = within(pending).getByRole("button", { name: "Ждут решения: 1" });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(fold);
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    const card = within(pending).getByRole("region", { name: "Предложение ИИ: Метаданные" });
+    const open = within(card).getByRole("button", { name: "Открыть предложение" });
+    expect(open).toHaveClass("button--secondary"); // not the panel's main action
+    await userEvent.click(open);
+    await userEvent.click(await within(card).findByRole("button", { name: "Отклонить" }));
+    expect(calls.filter((call) => call.method === "POST").map((call) => call.url)).toEqual([`/api/ai/proposals/${metadataProposal.id}/reject`]);
+    expect(await within(card).findByText("Предложение отклонено — ничего не изменено.", { selector: ".ask-proposal__note" })).toBeInTheDocument();
+  });
+
+  it("does not repeat in «Ждут решения» a proposal that is already in this visit's conversation", async () => {
+    const answer: AskResponse = {
+      ...supportedAnswer,
+      answer: metadataProposal.summary,
+      citations: [],
+      skill: { id: "suggest_metadata", name: "Предложить метаданные", access: "draft" },
+      proposal: { id: metadataProposal.id, kind: "suggest_metadata", status: "suggested", graph_link: null },
+    };
+    mockApi(routes([streamOf(answer), { path: PROPOSALS_OF_DOC, body: [metadataProposal] }]));
+    renderDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    expect(await within(panel()).findByRole("region", { name: "Ждут решения: 1" })).toBeInTheDocument();
+    await userEvent.click(within(panel()).getByRole("button", { name: "Предложить метаданные" }));
+    const conversation = within(panel()).getByRole("region", { name: "Переписка" });
+    expect(await within(conversation).findByRole("region", { name: "Предложение ИИ: Метаданные" })).toBeInTheDocument();
+    expect(within(panel()).queryByRole("region", { name: /Ждут решения/ })).toBeNull();
+    expect(within(panel()).getAllByRole("region", { name: "Предложение ИИ: Метаданные" })).toHaveLength(1);
+  });
+
+  it("says so when the document's AI proposals cannot be read, and says nothing without the right to propose", async () => {
+    mockApi(routes([{ path: PROPOSALS_OF_DOC, status: 500, body: { code: "internal_error", message: "x", request_id: "r" } }]));
+    const first = renderDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    expect(await within(panel()).findByText("Не удалось загрузить предложения ИИ к документу.")).toBeInTheDocument();
+    first.unmount();
+    mockApi(routes([{ path: PROPOSALS_OF_DOC, status: 403, body: { code: "forbidden", message: "x", request_id: "r" } }]));
+    renderDocument();
+    await waitFor(() => expect(queryPanel()).not.toBeNull()); // remembered open
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(within(panel()).queryByText("Не удалось загрузить предложения ИИ к документу.")).toBeNull();
+    expect(within(panel()).queryByRole("region", { name: /Ждут решения/ })).toBeNull();
   });
 
   it("does not exist with AI_PROVIDER=disabled: no toggle, no panel, no ⌘J, no selection bar", async () => {

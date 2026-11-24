@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, type ApiError } from "../api/client";
 import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList, ProposalSummary } from "../api/types";
-import { AiAssistPanel, useAiProposal, type AiAction } from "../components/AiProposal";
 import { isEditable } from "../components/ComposerPalette";
 import {
   ASSISTANT_PANEL_ID,
@@ -104,44 +103,6 @@ async function loadDocument(id: string): Promise<{ doc: DocumentDetail; proposal
 export function linkedDocumentCount(links: DocumentLinks): number {
   return new Set([...links.outgoing.map((l) => l.target.document_id), ...links.backlinks.map((l) => l.source.document_id)])
     .size;
-}
-
-/** AI actions on an approved document: proposals only; an accepted change becomes an update DRAFT. */
-function DocumentAiPanel({ doc }: { doc: DocumentDetail }) {
-  const state = useAiProposal();
-  const actions: AiAction[] = [
-    { key: "meta", label: "Предложить метаданные", build: () => ({ kind: "suggest_metadata", document_id: doc.id }) },
-    { key: "related", label: "Найти связанные", build: () => ({ kind: "find_related", document_id: doc.id }) },
-    { key: "complete", label: "Проверить полноту", build: () => ({ kind: "check_completeness", document_id: doc.id }) },
-    { key: "impact", label: "Анализ влияния", build: () => ({ kind: "impact_analysis", document_id: doc.id }) },
-  ];
-  return (
-    <AiAssistPanel
-      id="doc-ai"
-      title="ИИ-помощник по документу"
-      state={state}
-      actions={actions}
-      intro={
-        <p className="muted">
-          Предложения опираются на утверждённые документы и показывают основания. Утверждённый документ не меняется:
-          принятые пункты попадают в новый черновик изменения, который проходит обычное ревью.
-        </p>
-      }
-      appliedNote={(p) =>
-        p.result_draft_id ? (
-          <Notice tone="success">
-            <p>
-              <strong>Создан черновик изменения.</strong> Принятые пункты применены к черновику, а не к утверждённому
-              документу: он изменится только после ревью и merge.
-            </p>
-            <Link to={`/proposals/${encodeURIComponent(p.result_draft_id)}`} className="text-link">
-              Открыть черновик изменения
-            </Link>
-          </Notice>
-        ) : null
-      }
-    />
-  );
 }
 
 interface LinksState {
@@ -604,17 +565,14 @@ function DocumentBody({
           </div>
           <div id="doc-panel" role="tabpanel" aria-labelledby={`doc-tab-${view}`} className={`doc-panel doc-panel--${view}`}>
             {view === "text" ? (
-              <>
-                {/* The text and its selection bar; focus lands here when the bar closes with Esc. */}
-                <div className="doc-text" ref={frameRef} tabIndex={-1}>
-                  <WikiLinkPreviewArea>
-                    <SafeHtml html={doc.content_html} className="prose" />
-                  </WikiLinkPreviewArea>
-                  {aiOn ? <SelectionToolbar frameRef={frameRef} actions={selectionActions} onAction={onSelectionAction} /> : null}
-                </div>
-                {/* Without an AI provider the block is not shown at all (the manual path is the page itself). */}
-                {aiOff ? null : <DocumentAiPanel doc={doc} />}
-              </>
+              // The text and its selection bar; focus lands here when the bar closes with Esc. The AI actions on
+              // the whole document are in the assistant panel (⌘J), never under the text.
+              <div className="doc-text" ref={frameRef} tabIndex={-1}>
+                <WikiLinkPreviewArea>
+                  <SafeHtml html={doc.content_html} className="prose" />
+                </WikiLinkPreviewArea>
+                {aiOn ? <SelectionToolbar frameRef={frameRef} actions={selectionActions} onAction={onSelectionAction} /> : null}
+              </div>
             ) : view === "links" ? (
               <DocumentLinksPanel
                 links={links.data}

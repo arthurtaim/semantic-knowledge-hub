@@ -131,10 +131,13 @@ describe("Four AI modes: no dead controls", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ещё" }));
     expect(screen.getByRole("menuitem", { name: "Показать на карте знаний" })).toBeInTheDocument();
     expect(screen.queryByRole("menuitem", { name: "Спросить ассистента" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "ИИ-помощник по документу" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ассистент" })).toBeNull(); // no assistant panel, no AI actions
+    expect(screen.queryByRole("heading", { name: "Ещё по документу" })).toBeNull();
     unmount();
     renderAt("/documents/SEM-INT-ARIS-001", "/documents/:id", <DocumentPage />, withMode("mock"));
-    expect(await screen.findByRole("heading", { name: "ИИ-помощник по документу" })).toBeInTheDocument();
+    // The document's AI actions are in the assistant panel (the block under the text was moved there).
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    expect(screen.getByRole("list", { name: "Ещё по документу" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Ещё" }));
     expect(screen.getByRole("menuitem", { name: "Спросить ассистента" })).toBeInTheDocument();
   });
