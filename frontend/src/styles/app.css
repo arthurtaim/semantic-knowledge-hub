@@ -11970,6 +11970,10 @@ a.fact-item__title:hover {
   font-weight: 500;
 }
 
+.studio-ai .ai-mode-line {
+  margin-bottom: var(--space-2);
+}
+
 .studio-ai__form {
   margin-bottom: var(--space-4);
 }

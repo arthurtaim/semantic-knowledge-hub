@@ -750,3 +750,14 @@ def test_reverting_to_an_older_structure_reactivates_that_version(client: TestCl
     assert (result["action"], result["version"]) == ("reactivated", 1)
     assert authoring_template(client)["version"] == 1  # type: ignore[index]
     assert state(client)["versions"][-1]["version"] == 2  # v2 stays readable
+
+
+def test_draft_comparison_shows_only_what_activation_would_change(client: TestClient) -> None:
+    current = state(client, "mapping")["current"]
+    current["sections"].append({"title": "Мониторинг", "required": True, "hint": "метрики", "content": ""})
+    ok(client.put("/api/templates/mapping/studio/draft", json={"spec": current, "expected_revision": 0}))
+    result = ok(client.get("/api/templates/mapping/studio/compare", params={"from": 2, "to": "draft"}))
+    changed = [ln["text"] for ln in result["source_diff"]["lines"] if ln["kind"] in ("add", "remove")]
+    assert any("## Мониторинг" in text for text in changed)
+    assert not any(text.startswith(("order:", "listed:", "template_id:")) for text in changed), changed
+    assert result["sections_added"] == ["Мониторинг"] and result["to_version"] == 3

@@ -461,7 +461,14 @@ class TemplateStudioService:
                 raise ApiError(404, "template_draft_missing", "Открытого черновика нет.")
             spec = TemplateSpec.model_validate_json(record.draft_json)
             outcome = self._outcome(template_id, spec)
-            new = loose_template(spec, version=outcome[1])
+            current = self._registry.get(template_id)
+            new = loose_template(  # what «Активировать» would store: same order/listing, today's date
+                spec,
+                version=outcome[1],
+                order=current.order if current else 100,
+                listed=current.listed if current else True,
+                updated=_today(),
+            )
         else:
             new = self._registry.get(template_id, to)
         if old is None or new is None:
