@@ -172,6 +172,37 @@ export interface ScopeStatus {
   message: string;
 }
 
+/** One passage of GET /api/search (backend `SearchResult`); a document may appear with several sections. */
+export interface SearchResult {
+  id: string;
+  title: string;
+  type: DocType | null;
+  status: DocStatus | null;
+  owner: string | null;
+  source: SourceType;
+  source_uri: string;
+  revision: string;
+  tags: string[];
+  excerpt: string;
+  excerpt_segments: HighlightSegment[];
+  section: string | null;
+  section_anchor: string | null;
+  score: number;
+  is_demo: boolean;
+  match_reasons?: string[];
+  matched_fields?: string[];
+  related_via?: string | null;
+}
+
+/** GET /api/search: ranked passages plus the state of every requested scope. */
+export interface SearchResponse {
+  query: string;
+  items: SearchResult[];
+  total: number;
+  scopes: ScopeStatus[];
+  warnings: string[];
+}
+
 export type CitationSourceKind = "local_markdown" | "gitlab_approved" | "confluence_mcp";
 /** Status of a Confluence page as the page itself declares it; never the same as an approved team document. */
 export type ExternalStatus = "approved" | "draft" | "unknown";

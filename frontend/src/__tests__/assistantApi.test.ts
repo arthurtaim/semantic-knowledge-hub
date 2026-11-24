@@ -73,3 +73,14 @@ describe("assistant skills and attachments client", () => {
     expect(init?.method).toBe("DELETE");
   });
 });
+
+describe("knowledge search client", () => {
+  it("asks GET /api/search with the query, the scopes as CSV and a limit", async () => {
+    const body = { query: "маппинг", items: [], total: 0, scopes: [], warnings: [] };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(json(body));
+    await expect(api.search({ q: "маппинг", source: ["team", "corporate"], limit: 8 })).resolves.toEqual(body);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+      `/api/search?q=${encodeURIComponent("маппинг").replace(/%20/g, "+")}&source=team%2Ccorporate&limit=8`,
+    );
+  });
+});

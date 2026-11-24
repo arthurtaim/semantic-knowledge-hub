@@ -43,6 +43,8 @@ import type {
   ProposalStatus,
   PublicationJobDetail,
   PublicationJobList,
+  SearchResponse,
+  SearchScope,
   SessionResponse,
   StagingItem,
   Subgraph,
@@ -380,6 +382,12 @@ export const api = {
   indexStatus: () => request<SyncStatus>("/index/status"),
   syncIndex: () => request<SyncStatus>("/index/sync", { method: "POST" }),
   issues: () => request<LoadIssue[]>("/knowledge/issues"),
+  /** GET /api/search: ranked passages (title, ID, section, status); the composer's «@» uses it. */
+  search: (params: { q: string; source?: SearchScope[]; limit?: number }, options: { signal?: AbortSignal } = {}) =>
+    request<SearchResponse>(
+      `/search${query({ q: params.q, source: params.source?.join(","), limit: params.limit })}`,
+      { signal: options.signal },
+    ),
   ask: (payload: AskRequest) => request<AskResponse>("/assistant/ask", { method: "POST", body: json(payload) }),
   /** Streaming variant of `ask` (NDJSON); works with every provider — mock sends only status + final. */
   askStream,
