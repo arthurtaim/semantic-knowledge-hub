@@ -543,6 +543,10 @@ class AskRequest(BaseModel):
     # Documents the user chose («@документ»): cited first when relevant.
     context_document_ids: list[DocumentRef] = Field(default_factory=list, max_length=5)
     selection: AskSelection | None = None
+    # Chat history (v0.7, additive): where the conversation lives in the UI — the dialog (/ask) or the assistant
+    # panel of a document (its document is the selection's or the first chosen one). Labels the stored
+    # conversation only; the answer does not depend on it.
+    origin: Literal["dialog", "document"] = "dialog"
 
     @model_validator(mode="after")
     def _question_and_conversation(self) -> AskRequest:

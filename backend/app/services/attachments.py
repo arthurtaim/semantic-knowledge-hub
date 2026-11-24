@@ -164,6 +164,18 @@ class StoredAttachment:
 
 
 @dataclass(frozen=True)
+class AttachmentMeta:
+    """What the chat history may say about a stored file: never its text."""
+
+    id: str
+    name: str
+    size: int
+    mime: str
+    summary: str
+    expires_at: float
+
+
+@dataclass(frozen=True)
 class AttachmentFragment:
     """A window of consecutive units handed to the assistant as one passage."""
 
@@ -548,6 +560,38 @@ class AttachmentStore:
                 > 0
             )
 
+    def describe(
+        self, actor: str, conversation_id: str, attachment_ids: list[str], now: float
+    ) -> dict[str, AttachmentMeta]:
+        """Metadata (never the text) of the caller's live attachments of one conversation, by id."""
+        if not attachment_ids:
+            return {}
+        marks = ",".join("?" for _ in attachment_ids)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT id, name, size, mime, summary, expires_ts FROM assistant_attachments "  # noqa: S608
+                f"WHERE actor = ? AND conversation_id = ? AND expires_ts > ? AND id IN ({marks})",
+                (actor, conversation_id, now, *attachment_ids),
+            ).fetchall()
+        return {
+            row[0]: AttachmentMeta(
+                id=row[0],
+                name=row[1],
+                size=int(row[2]),
+                mime=row[3],
+                summary=row[4],
+                expires_at=float(row[5]),
+            )
+            for row in rows
+        }
+
+    def delete_conversation(self, actor: str, conversation_id: str) -> int:
+        with self._lock, self._conn:
+            return self._conn.execute(
+                "DELETE FROM assistant_attachments WHERE actor = ? AND conversation_id = ?",
+                (actor, conversation_id),
+            ).rowcount
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -687,6 +731,17 @@ class AttachmentService:
                 )
             found.append(item)
         return found
+
+    def describe(
+        self, user: UserContext, conversation_id: str, attachment_ids: list[str]
+    ) -> dict[str, AttachmentMeta]:
+        """The caller's attachments of this conversation that are still kept (expired / deleted ones are absent)."""
+        valid = [a for a in dict.fromkeys(attachment_ids) if _ATTACHMENT_RE.match(a)]
+        return self._store.describe(user.user_id, conversation_id, valid, self.clock())
+
+    def delete_conversation(self, user: UserContext, conversation_id: str) -> int:
+        """Deletes the caller's files of one conversation (the conversation was deleted from the history)."""
+        return self._store.delete_conversation(user.user_id, conversation_id)
 
     def close(self) -> None:
         self._store.close()
