@@ -11,8 +11,9 @@ import { StatusMark } from "../ui/StatusMark";
 
 /*
  * The right column of «Список» (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §1 «Предпросмотр», design docs-01):
- * the document from GET /api/documents/{id} — status, ID, version, title, summary, «Открыть» / «Спросить
- * ассистента» / «Предложить изменение», its place in the tree, systems, owner, review, links (the tree's
+ * the document from GET /api/documents/{id} — status, ID, version, the title (a link to the document), summary,
+ * «Открыть» / «Спросить ассистента» / «Предложить изменение» (all secondary: the view's one primary is «Создать
+ * документ» in the toolbar — the owner's decision), its place in the tree, systems, owner, review, links (the tree's
  * `link_count`, a link to the document's «Связи»), tags and its level-2 sections. A skeleton while it loads; a
  * short error with «Повторить».
  */
@@ -103,12 +104,15 @@ export function DocPreview({ id, index, canAskAssistant, headingId }: DocPreview
         <span className="doc-preview__id">{doc.id}</span>
         {doc.version ? <span className="doc-preview__version">версия {doc.version}</span> : null}
       </p>
+      {/* The title is a link to the document (the owner's decision: «Открыть» is secondary, one primary per view). */}
       <h2 id={headingId ?? `doc-preview-${doc.id}`} className={doc.status === "deprecated" ? "doc-preview__title doc-preview__title--deprecated" : "doc-preview__title"}>
-        {doc.title}
+        <Link to={docHref(doc.id)} className="doc-preview__title-link">
+          {doc.title}
+        </Link>
       </h2>
       {doc.summary ? <p className="doc-preview__summary">{doc.summary}</p> : null}
       <div className="doc-preview__actions">
-        <Link to={docHref(doc.id)} className={buttonClass("primary", "md")}>
+        <Link to={docHref(doc.id)} className={buttonClass("secondary", "md")}>
           Открыть
         </Link>
         {canAskAssistant ? <Button onClick={() => askAboutDocument(navigate, doc.id, doc.title)}>Спросить ассистента</Button> : null}

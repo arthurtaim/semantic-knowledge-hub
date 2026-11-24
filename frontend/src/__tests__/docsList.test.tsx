@@ -224,9 +224,20 @@ describe("Список: tree, list and preview together", () => {
     expect(location()).toBe("/documents?view=list&node=integration%2Faris&doc=DEMO-INT-001");
     // highlighted in the tree and in the list
     expect(within(tree).getByRole("treeitem", { name: "ARIS → Catalog: обзор потока (демо)" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("link", { name: "ARIS → Catalog: обзор потока (демо)" })).toHaveAttribute("aria-current", "true");
+    expect(within(branch()).getByRole("link", { name: "ARIS → Catalog: обзор потока (демо)" })).toHaveAttribute("aria-current", "true");
     const preview = await screen.findByRole("article", { name: "ARIS → Catalog: обзор потока (демо)" });
     await userEvent.click(within(preview).getByRole("link", { name: "Открыть" }));
+    expect(location()).toBe("/documents/DEMO-INT-001");
+  });
+
+  it("the preview's title opens the document too (a link, reachable from the keyboard)", async () => {
+    routes();
+    renderList("/documents?view=list&node=integration/aris&doc=DEMO-INT-001");
+    const preview = await screen.findByRole("article", { name: "ARIS → Catalog: обзор потока (демо)" });
+    const title = within(within(preview).getByRole("heading", { level: 2 })).getByRole("link");
+    title.focus();
+    expect(title).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
     expect(location()).toBe("/documents/DEMO-INT-001");
   });
 
@@ -312,10 +323,15 @@ describe("Список: the preview", () => {
     expect(status).toHaveTextContent("Утверждён");
     expect(status).toHaveTextContent("DEMO-INT-001");
     expect(status).toHaveTextContent("версия 2.0");
-    expect(within(preview).getByRole("heading", { level: 2 })).toHaveClass("doc-preview__title");
+    const heading = within(preview).getByRole("heading", { level: 2 });
+    expect(heading).toHaveClass("doc-preview__title");
+    // The owner's decision: the title is a link to the document and «Открыть» is secondary — the view's one primary
+    // button is «Создать документ» in the toolbar.
+    expect(within(heading).getByRole("link", { name: "ARIS → Catalog: обзор потока (демо)" })).toHaveAttribute("href", "/documents/DEMO-INT-001");
     expect(within(preview).getByText(/^Инкрементальный поток/)).toHaveClass("doc-preview__summary");
-    expect(within(preview).getByRole("link", { name: "Открыть" })).toHaveClass("button--primary");
-    expect(preview.querySelectorAll(".button--primary")).toHaveLength(1);
+    expect(within(preview).getByRole("link", { name: "Открыть" })).toHaveClass("button--secondary");
+    expect(preview.querySelectorAll(".button--primary")).toHaveLength(0);
+    expect(Array.from(document.querySelectorAll(".button--primary")).map((b) => b.textContent)).toEqual(["Создать документ"]);
     expect(within(preview).getByRole("button", { name: "Спросить ассистента" })).toBeInTheDocument();
     expect(within(preview).getByRole("link", { name: "Предложить изменение" })).toHaveAttribute("href", "/proposals/new?document=DEMO-INT-001");
     const value = (term: string) => within(preview).getByText(term, { selector: "dt" }).nextElementSibling as HTMLElement;

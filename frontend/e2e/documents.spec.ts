@@ -55,6 +55,9 @@ test("V2-01 «Список» is the default: tree → Интеграции → A
   const api = await (await page.request.get("/api/documents/tree")).json();
   await expect(preview.getByRole("link", { name: new RegExp(`^${api.documents["DEMO-INT-001"].link_count} документ`) })).toBeVisible();
   await expect(tree.getByRole("treeitem", { name: "ARIS → Catalog: обзор потока (демо)" })).toHaveAttribute("aria-selected", "true");
+  // One primary per view (the owner's decision): «Создать документ»; «Открыть» is secondary, the title is a link.
+  await expect(page.locator(".button--primary")).toHaveText(["Создать документ"]);
+  await expect(preview.getByRole("heading", { level: 2 }).getByRole("link")).toHaveAttribute("href", "/documents/DEMO-INT-001");
 
   await preview.getByRole("link", { name: "Открыть" }).click();
   await expect(page).toHaveURL(/\/documents\/DEMO-INT-001$/);
