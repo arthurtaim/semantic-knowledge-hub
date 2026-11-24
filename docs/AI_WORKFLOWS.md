@@ -20,6 +20,7 @@ UI action (+ document / draft / selection / goal)
 | `find_related` | draft or document | WikiLink proposals `[[ID|Title]]` with evidence (mentions, not business dependencies) | links in the related section |
 | `explain_relation` | two documents | path with each edge classified: typed business edge / mention / temporary | — (link to the graph) |
 | `impact_analysis` | document | plan: typed dependants first, then mentions, template | — (plan only) |
+| `draft_template` | prompt (Template Studio) | a template structure (sections required/optional + hints, required fields, completeness rules, guidance) + similar existing templates | — via `/accept`; saved from the editor (below) |
 
 Rules: nothing is applied without Accept; reject changes nothing; a proposal whose base changed (draft saved
 elsewhere, document revised, template got a new version, link target gone) is `invalidated` with 409
@@ -33,6 +34,36 @@ API: `POST /api/ai/proposals`, `GET /api/ai/proposals[?draft_id=&document_id=]`,
 The deterministic mock serves every workflow offline (`assist` quotes / normalizes, never invents);
 live checks with the Claude CLI are opt-in and synthetic. Checks: `tests/test_ai_workflows.py`,
 eval cases `KM-AI-*`.
+
+## Template proposals («Создать с помощью AI» in Template Studio)
+
+```text
+/templates → «Создать с помощью AI» → prompt
+ -> POST /api/ai/proposals {kind: draft_template}  (needs create_proposal AND create_template)
+ -> TemplateStudioService: catalogue of ACTIVE templates (id, title, type, category, sections) as DATA
+ -> AIProvider.draft_template (optional capability; app/adapters/ai/template_protocol.py: one system prompt, one
+    delimited user message, a strict JSON reply) — internal_api, claude_cli; any chat model, no vendor logic
+ -> the backend re-validates every value and REPLACES what it cannot accept, saying so in `warnings`:
+    unknown doc_type → guide, metadata outside METADATA_FIELDS dropped, title always required, a taken / invalid
+    template_id or ID prefix → a free one
+ -> deterministic similarity with the catalogue (section titles, type, title words) + the model's `similar_to`
+    claims that name real templates → «Похоже на существующий шаблон «…» (id): …»
+ -> AiProposal {items: template (the spec), similar (note)}; stored and audited like every proposal (prompt hash only)
+ -> «Открыть в редакторе»: the person edits the proposal (sections, flags, hints, rules…)
+ -> «Сохранить черновик» = POST /api/templates/studio {spec, ai_proposal_id}: the person's version becomes a template
+    DRAFT; the proposal is `applied` with `result_template_id`
+ -> «Активировать» — a separate, confirmed step with its own right
+```
+
+- The AI never creates, saves or activates a template and has no access to the registry beyond the catalogue
+  summary it is given. `/accept` refuses a template proposal (`409 ai_proposal_use_editor`); «Отклонить» changes
+  nothing.
+- The prompt and the catalogue are data: delimited, `<<<`/`>>>` escaped; instructions inside them are ignored. An
+  unparsable reply is `502 ai_invalid_response`, never a proposal.
+- `mock`: unavailable with one line («Без языковой модели структуру шаблона не предложить…», `503
+  ai_template_unavailable`) — no fake structure; `disabled`: no button. Manual creation always works.
+- Checks: `tests/test_template_studio.py::test_s8_*` (scripted model double, keyword logic only inside the double),
+  `e2e/templateStudioAi.spec.ts` (projects `scripted`, `scripted-mobile`).
 
 ## Навыки ассистента и вложения (UI v2, фаза C)
 
