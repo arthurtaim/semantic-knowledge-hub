@@ -1,6 +1,8 @@
 import type {
   AiDraftResponse,
   AskResponse,
+  AssistantAttachment,
+  AssistantSkill,
   AuthoringCheckResponse,
   DocumentDetail,
   DocumentFacets,
@@ -552,3 +554,55 @@ export function publicationJob(overrides: Partial<PublicationJobDetail> = {}): P
     ...overrides,
   };
 }
+
+// --- UI v2 phase C: the skill registry as the mock provider reports it (GET /api/assistant/skills) ---
+
+const skill = (
+  id: string,
+  name: string,
+  description: string,
+  access: AssistantSkill["access"],
+  requires: Partial<AssistantSkill["requires"]> = {},
+  extra: Partial<AssistantSkill> = {},
+): AssistantSkill => ({
+  id,
+  name,
+  description,
+  access,
+  requires: { document: false, selection: false, attachment: false, ...requires },
+  prompt_optional: true,
+  available: true,
+  unavailable_reason: null,
+  ...extra,
+});
+
+export const skills: AssistantSkill[] = [
+  skill("answer", "Ответ по базе знаний", "Отвечает только по документам, с цитатами", "read", {}, { prompt_optional: false }),
+  skill("explain", "Объяснить", "Объяснит выделенный фрагмент или документ по утверждённым источникам", "read", { document: true }),
+  skill("summarize", "Кратко пересказать", "Коротко перескажет документ или выделенный фрагмент", "read", { document: true }),
+  skill("check_freshness", "Проверить актуальность", "Сравнит документ с более новыми источниками", "read", { document: true }),
+  skill("find_related", "Найти связи", "Покажет связанные документы и путь на карте знаний", "read"),
+  skill("compare_with_file", "Сравнить с файлом", "Сверит вложение с утверждёнными документами", "read", { attachment: true }),
+  skill("draft_document", "Черновик документа", "Подберёт шаблон и подготовит черновик на ревью", "draft", {}, { prompt_optional: false }),
+  skill(
+    "improve_section",
+    "Улучшить раздел",
+    "Предложит новую формулировку раздела; применяется только после вашего решения",
+    "draft",
+    { document: true, selection: true },
+    { available: false, unavailable_reason: "В демо-режиме нет языковой модели: переписать раздел нельзя." },
+  ),
+];
+
+export const attachmentReady = (overrides: Partial<AssistantAttachment> = {}): AssistantAttachment => ({
+  id: "ATT-0123456789abcdef",
+  conversation_id: "conv-test-0001",
+  name: "aris_export_2026-11.csv",
+  size: 48 * 1024,
+  mime: "text/csv",
+  status: "ready",
+  summary: "1 240 строк",
+  error_code: null,
+  expires_at: "2026-11-25T10:00:00Z",
+  ...overrides,
+});

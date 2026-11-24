@@ -30,7 +30,9 @@ export function mockApi(routes: MockRoute[]): RecordedCall[] {
     const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const method = (init?.method ?? "GET").toUpperCase();
     const headers = (init?.headers ?? {}) as Record<string, string>;
-    calls.push({ method, url, body: init?.body ? JSON.parse(String(init.body)) : null, headers });
+    // JSON bodies are parsed; a multipart body (FormData: attachments) is recorded as it is.
+    const sent: unknown = init?.body ? (typeof init.body === "string" ? JSON.parse(init.body) : init.body) : null;
+    calls.push({ method, url, body: sent, headers });
     const route = routes.find(
       (r) => (r.method ?? "GET") === method && (typeof r.path === "string" ? r.path === url : r.path.test(url)),
     );
