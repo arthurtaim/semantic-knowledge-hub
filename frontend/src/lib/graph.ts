@@ -533,28 +533,96 @@ function radialPlacement(
   }
 }
 
-/** Force-directed placement of a map without a centre (the whole base). */
+/** The kind whose region is the middle of the whole-base map: plain documents reference every other kind. */
+const HUB_KIND = "document";
+/** Radius of a kind's region per √(node count), in graph units (a node with its label room takes ~45 × 45). */
+const REGION_SPACING = 27;
+/** Free space between two regions. */
+const REGION_GAP = 56;
+/** Pull of every node towards its kind's region: strong enough to form regions, weak enough for links inside them. */
+const REGION_PULL = 0.2;
+/** A link between two kinds pulls this much of its usual strength: it does not drag the regions into one another. */
+const CROSS_KIND_LINK = 0.2;
+
+/**
+ * Where each kind's region is on the whole-base map: documents in the middle, the other kinds around them on a
+ * landscape ellipse in `KIND_ORDER` (source systems next to integrations, integrations next to entities…), each
+ * region given an arc that matches its size. One kind alone sits in the middle.
+ */
+export function kindRegions(counts: ReadonlyMap<string, number>): Map<string, Point> {
+  const kinds = [...counts.keys()].filter((k) => (counts.get(k) ?? 0) > 0).sort((a, b) => kindRank(a) - kindRank(b));
+  const regions = new Map<string, Point>();
+  if (kinds.length === 0) return regions;
+  const size = (kind: string) => REGION_SPACING * Math.sqrt(counts.get(kind) ?? 1);
+  const hub: string | null = kinds.length === 1 ? (kinds[0] as string) : kinds.includes(HUB_KIND) ? HUB_KIND : null;
+  if (hub) regions.set(hub, { x: 0, y: 0 });
+  const ring = kinds.filter((k) => k !== hub);
+  if (ring.length === 0) return regions;
+  const total = ring.reduce((sum, k) => sum + size(k), 0);
+  const hubSize = hub ? size(hub) : 0;
+  // Far enough from the middle region, and neighbours on the ring do not touch.
+  let radius = hubSize + Math.max(...ring.map(size)) + REGION_GAP;
+  let angle = -Math.PI / 2;
+  const arcs = ring.map((kind) => {
+    const span = (2 * Math.PI * size(kind)) / total;
+    const middle = angle + span / 2;
+    angle += span;
+    return { kind, middle, span };
+  });
+  if (ring.length > 1) {
+    arcs.forEach((arc, index) => {
+      const next = arcs[(index + 1) % arcs.length] as (typeof arcs)[number];
+      const between = Math.min(Math.PI, (arc.span + next.span) / 2);
+      radius = Math.max(radius, (size(arc.kind) + size(next.kind) + REGION_GAP) / (2 * Math.sin(between / 2)));
+    });
+  }
+  // A landscape map: wider than tall, like the canvas.
+  for (const arc of arcs) regions.set(arc.kind, { x: radius * 1.3 * Math.cos(arc.middle), y: radius * 0.8 * Math.sin(arc.middle) });
+  return regions;
+}
+
+/** Force-directed placement of a map without a centre (the whole base), each kind gathered in its own region. */
 function forcePlacement(nodes: SimNode[], pairs: Pair[], previous: ReadonlyMap<string, Point> | undefined, sparse: boolean): void {
   const room = sparse ? 1.3 : 1;
+  const counts = new Map<string, number>();
+  for (const n of nodes) counts.set(n.kind, (counts.get(n.kind) ?? 0) + 1);
+  const regions = kindRegions(counts);
+  const regionOf = (n: SimNode): Point => regions.get(n.kind) ?? { x: 0, y: 0 };
   let reused = 0;
+  const seated = new Map<string, number>();
   for (const n of nodes) {
+    if (n.fx != null) continue;
     const before = previous?.get(n.id);
-    if (n.fx == null && before) {
+    if (before) {
       n.x = before.x;
       n.y = before.y;
       reused += 1;
+      continue;
     }
+    // Start inside the node's region (a sunflower disc in input order): the forces only refine it.
+    const index = seated.get(n.kind) ?? 0;
+    seated.set(n.kind, index + 1);
+    const centre = regionOf(n);
+    const r = 14 * Math.sqrt(index + 0.5);
+    const a = index * Math.PI * (3 - Math.sqrt(5));
+    n.x = centre.x + r * Math.cos(a);
+    n.y = centre.y + r * Math.sin(a);
   }
+  const kindOf = new Map(nodes.map((n) => [n.id, n.kind]));
   const links: SimulationLinkDatum<SimNode>[] = pairs.map((p) => ({ source: p.source, target: p.target, type: p.type }));
   const typeOf = (link: SimulationLinkDatum<SimNode>) => (link as SimulationLinkDatum<SimNode> & { type: string }).type;
+  const endKind = (end: SimulationLinkDatum<SimNode>["source"]) =>
+    typeof end === "object" ? end.kind : kindOf.get(String(end));
   const linkForce = forceLink<SimNode, SimulationLinkDatum<SimNode>>(links)
     .id((d) => d.id)
     .distance((link) => (LINK_DISTANCE[typeOf(link)] ?? TYPED_LINK_DISTANCE) * room);
-  // d3's default strength (1 / the smaller degree), halved for plain references: typed relations shape the map.
+  // d3's default strength (1 / the smaller degree), halved for plain references: typed relations shape the map;
+  // a link between two kinds pulls less, so that the regions stay apart.
   const defaultStrength = linkForce.strength();
   linkForce.strength((link, index, all) => {
     const base = typeof defaultStrength === "function" ? defaultStrength(link, index, all) : defaultStrength;
-    return typeOf(link) === "references" ? base * 0.5 : base;
+    const typed = typeOf(link) === "references" ? base * 0.5 : base;
+    return endKind(link.source) === endKind(link.target) ? typed : typed * CROSS_KIND_LINK;
   });
   const count = nodes.length;
   const collide = forceCollide<SimNode>()
@@ -567,9 +635,9 @@ function forcePlacement(nodes: SimNode[], pairs: Pair[], previous: ReadonlyMap<s
     // Bigger maps repel harder, so that their nodes and labels get room.
     .force("charge", forceManyBody<SimNode>().strength(sparse ? -420 : -(160 + Math.min(count, 300) * 1.8)).distanceMax(700))
     .force("collide", late ? null : collide)
-    // A landscape map: pulled harder vertically than horizontally.
-    .force("x", forceX<SimNode>(0).strength(0.05))
-    .force("y", forceY<SimNode>(0).strength(0.085))
+    // Every node is pulled towards its kind's region (the regions lie on a landscape ellipse).
+    .force("x", forceX<SimNode>((d) => regionOf(d).x).strength(REGION_PULL))
+    .force("y", forceY<SimNode>((d) => regionOf(d).y).strength(REGION_PULL))
     .stop();
   const ticks = layoutTicks(count);
   simulation.alphaDecay(1 - Math.pow(0.001, 1 / ticks));
@@ -596,9 +664,11 @@ function forcePlacement(nodes: SimNode[], pairs: Pair[], previous: ReadonlyMap<s
  *
  * - With a centre (a neighbourhood's focus, an answer's question): the centre at (0, 0) and its neighbours on
  *   rings by distance — a radial tree (`radialPlacement`).
- * - Without one (the whole base): a force-directed layout (d3-force, seeded; it starts from a phyllotaxis spiral
- *   in input order); collision keeps the whole shape plus room for a label, bigger graphs repel harder, typed
- *   relations are shorter than plain references; `previous` keeps nodes already shown roughly in place.
+ * - Without one (the whole base): a force-directed layout grouped by kind (d3-force, seeded): every kind has its
+ *   region (`kindRegions`: documents in the middle, the other kinds around them), each node starts in its region
+ *   and `forceX` / `forceY` keep it there, links between two kinds pull less than links inside one; collision
+ *   keeps the whole shape plus room for a label, bigger graphs repel harder, typed relations are shorter than
+ *   plain references; `previous` keeps nodes already shown roughly in place.
  * - Unlinked nodes (and nodes cut off from the centre by a filter) sit in a tidy ring at the edge.
  * - `options.pinned` keeps manually placed nodes exactly where they are; a final pass guarantees that no two
  *   shapes overlap.

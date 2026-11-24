@@ -4,6 +4,7 @@ import {
   edgeGeometry,
   edgeOffsets,
   estimateTextWidth,
+  kindRegions,
   labelBox,
   layoutGraph,
   mergePositions,
@@ -16,8 +17,9 @@ import demo from "./graphDemo.json";
 
 /*
  * The initial layout of the knowledge map (docs/ui-v2/specs/04_KNOWLEDGE_GRAPH.md §3) on the synthetic demo graph
- * (97 nodes, 326 edges) and on generated graphs: no overlapping shapes, deterministic, rings around a centre,
- * unlinked nodes in a ring at the edge, pinned nodes kept, 200 nodes well within 300 ms.
+ * (97 nodes, 326 edges) and on generated graphs: no overlapping shapes, deterministic, every kind in its own region
+ * of the whole-base map, rings around a centre, unlinked nodes in a ring at the edge, pinned nodes kept, 200 nodes
+ * well within 300 ms.
  */
 
 function node(id: string, kind: GraphNodeKind = "document", label = id, status: string | null = "approved", degree = 0): GraphNode {
@@ -77,6 +79,37 @@ function overlaps(layout: Layout, gap = 0): string[] {
     }
   }
   return found;
+}
+
+interface KindGroup {
+  centroid: { x: number; y: number };
+  /** Mean distance of the kind's nodes from their centroid. */
+  spread: number;
+  /** Share of the kind's nodes nearer to their own centroid than to any other kind's. */
+  purity: number;
+}
+
+/** Per kind (with at least two nodes): where its nodes are on the map and how tightly they keep together. */
+function kindGroups(layout: Layout, nodes: GraphNode[]): Map<string, KindGroup> {
+  const points = new Map<string, { x: number; y: number }[]>();
+  for (const n of nodes) {
+    const list = points.get(n.kind) ?? [];
+    list.push(layout.positions.get(n.id)!);
+    points.set(n.kind, list);
+  }
+  const centroids = new Map(
+    [...points]
+      .filter(([, list]) => list.length >= 2)
+      .map(([kind, list]) => [kind, { x: list.reduce((s, p) => s + p.x, 0) / list.length, y: list.reduce((s, p) => s + p.y, 0) / list.length }]),
+  );
+  const groups = new Map<string, KindGroup>();
+  for (const [kind, centroid] of centroids) {
+    const list = points.get(kind)!;
+    const own = (p: { x: number; y: number }) => Math.hypot(p.x - centroid.x, p.y - centroid.y);
+    const nearest = list.filter((p) => [...centroids].every(([other, c]) => other === kind || own(p) <= Math.hypot(p.x - c.x, p.y - c.y)));
+    groups.set(kind, { centroid, spread: list.reduce((s, p) => s + own(p), 0) / list.length, purity: nearest.length / list.length });
+  }
+  return groups;
 }
 
 const distance = (layout: Layout, id: string) => {
@@ -256,6 +289,61 @@ describe("Knowledge map layout", () => {
     expect(merged.get(demoNodes[1]!.id)).toEqual({ x: 1, y: 2 });
     expect(merged.get(demoNodes[0]!.id)).toEqual(layout.positions.get(demoNodes[0]!.id));
     expect(merged.has("doc:GONE")).toBe(false);
+  });
+
+  it("gathers each kind of node in its own region of the whole-base map", () => {
+    // Unlinked nodes (the 14 unused templates) are not grouped: they keep their ring at the edge.
+    const linked = new Set(demoEdges.flatMap((e) => [e.source, e.target]));
+    const demoLayout = layoutGraph(demoNodes, demoEdges, null);
+    const groups = kindGroups(demoLayout, demoNodes.filter((n) => linked.has(n.id)));
+    expect([...groups.keys()].sort()).toEqual(["dataset", "document", "integration", "semantic_entity", "source_system"]);
+    for (const [kind, group] of groups) {
+      // Most nodes of a kind are nearer to their own region's centre than to any other region's.
+      expect(group.purity, `${kind}: share of nodes nearest to their own centroid`).toBeGreaterThanOrEqual(0.8);
+      // Regions are apart: the other centroids are further away than the nodes of either region spread.
+      for (const [other, rest] of groups) {
+        if (other === kind) continue;
+        const between = Math.hypot(group.centroid.x - rest.centroid.x, group.centroid.y - rest.centroid.y);
+        expect(between, `${kind} ↔ ${other}`).toBeGreaterThan(Math.max(group.spread, rest.spread));
+      }
+    }
+    // Plain documents reference every other kind: they are the middle region, the others around them.
+    const middle = groups.get("document")!.centroid;
+    for (const [kind, group] of groups) {
+      if (kind === "document") continue;
+      expect(Math.hypot(group.centroid.x, group.centroid.y), kind).toBeGreaterThan(Math.hypot(middle.x, middle.y) + 150);
+    }
+    // A generated graph with six kinds forms six regions too.
+    const { nodes, edges } = synthetic(200, 600);
+    const syntheticLinked = new Set(edges.flatMap((e) => [e.source, e.target]));
+    const big = layoutGraph(nodes, edges, null);
+    const bigGroups = kindGroups(big, nodes.filter((n) => syntheticLinked.has(n.id)));
+    expect(bigGroups.size).toBe(6);
+    for (const [kind, group] of bigGroups) expect(group.purity, kind).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it("places the regions of the kinds: documents in the middle, the others around them in a fixed order", () => {
+    const regions = kindRegions(
+      new Map([
+        ["template", 4],
+        ["integration", 19],
+        ["document", 40],
+        ["source_system", 12],
+      ]),
+    );
+    expect(regions.get("document")).toEqual({ x: 0, y: 0 });
+    const ring = ["source_system", "integration", "template"].map((kind) => regions.get(kind)!);
+    // Clockwise from the top in KIND_ORDER, wider than tall, clear of the middle region.
+    const angles = ring.map((p) => Math.atan2(p.y, p.x));
+    expect(angles[0]).toBeLessThan(angles[1]!);
+    for (const p of ring) expect(Math.hypot(p.x / 1.3, p.y / 0.8)).toBeGreaterThan(27 * Math.sqrt(40) + 27 * Math.sqrt(4));
+    expect(Math.max(...ring.map((p) => Math.abs(p.x)))).toBeGreaterThan(Math.max(...ring.map((p) => Math.abs(p.y))));
+    // One kind (a «Тип узла» filter) sits in the middle; no document: every kind on the ring.
+    expect([...kindRegions(new Map([["integration", 7]]))]).toEqual([["integration", { x: 0, y: 0 }]]);
+    const noHub = kindRegions(new Map([["integration", 5], ["dataset", 5]]));
+    expect(noHub.get("integration")).not.toEqual({ x: 0, y: 0 });
+    expect(noHub.get("dataset")).not.toEqual(noHub.get("integration"));
+    expect(kindRegions(new Map()).size).toBe(0);
   });
 
   it("lays out 200 nodes and 600 edges in well under 300 ms, without overlaps", () => {
