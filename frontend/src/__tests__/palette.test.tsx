@@ -1,6 +1,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { askHref, Composer } from "../components/Composer";
+import { QuickFind } from "../components/QuickFind";
+import { askHref } from "../lib/assistant";
 import { SessionContext } from "../lib/session";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -146,7 +147,7 @@ describe("«Спросить или найти»: the ⌘K palette from the side
     const tree = (value: typeof session | null) => (
       <SessionContext.Provider value={value}>
         <MemoryRouter>
-          <Composer variant="hero" inputId="c" />
+          <QuickFind variant="hero" inputId="c" />
         </MemoryRouter>
       </SessionContext.Provider>
     );

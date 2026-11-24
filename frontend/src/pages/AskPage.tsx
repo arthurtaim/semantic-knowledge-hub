@@ -20,7 +20,7 @@ import {
   NextActions,
   SupportBadge,
 } from "../components/AnswerParts";
-import { Composer } from "../components/Composer";
+import { QuickFind } from "../components/QuickFind";
 import { ErrorState, Notice } from "../components/Feedback";
 import { StateBadge } from "../components/StateBadge";
 import { StatusStamp } from "../components/StatusStamp";
@@ -568,7 +568,7 @@ function AskUnavailable() {
         <h1>Спросить базу знаний</h1>
         <p className="lead">ИИ в этой установке отключён — ответы ассистента недоступны. Поиск по документам работает полностью.</p>
       </div>
-      <Composer variant="hero" inputId="ask-search-input" />
+      <QuickFind variant="hero" inputId="ask-search-input" />
       <p className="ask__unavailable-links">
         <Link to="/documents" className="text-link">
           Открыть каталог документов

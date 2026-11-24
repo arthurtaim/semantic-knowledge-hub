@@ -1042,15 +1042,15 @@ kbd {
   }
 }
 
-/* ---------- «Спросить или найти»: the composer (phase 4) ---------- */
+/* ---------- «Спросить или найти»: the ⌘K palette field (phase 4, components/QuickFind.tsx) ---------- */
 
-.composer {
+.quick-find {
   display: grid;
   gap: var(--space-2);
   min-width: 0;
 }
 
-.composer__modes {
+.quick-find__modes {
   display: inline-flex;
   flex-wrap: wrap;
   justify-self: start;
@@ -1060,7 +1060,7 @@ kbd {
   border-radius: var(--radius-control);
 }
 
-.composer__mode {
+.quick-find__mode {
   min-height: var(--control-height-sm);
   padding: 0 var(--space-3);
   border: 1px solid transparent;
@@ -1073,29 +1073,29 @@ kbd {
   cursor: pointer;
 }
 
-.composer__mode[aria-pressed="true"] {
+.quick-find__mode[aria-pressed="true"] {
   background: var(--bg-surface);
   border-color: var(--line-strong);
   color: var(--text);
 }
 
-.composer__row {
+.quick-find__row {
   display: flex;
   gap: var(--space-2);
   align-items: flex-start;
 }
 
-.composer__field {
+.quick-find__field {
   position: relative;
   flex: 1;
   min-width: 0;
 }
 
-.composer__field input {
+.quick-find__field input {
   width: 100%;
 }
 
-.composer--hero .composer__field input {
+.quick-find--hero .quick-find__field input {
   min-height: 2.75rem;
   padding-inline: var(--space-4);
   border-radius: var(--radius-composer);
@@ -1103,12 +1103,12 @@ kbd {
   font-size: var(--fs-body);
 }
 
-.composer--hero .composer__row .button {
+.quick-find--hero .quick-find__row .button {
   min-height: 2.75rem;
   border-radius: var(--radius-composer);
 }
 
-.composer__list {
+.quick-find__list {
   position: absolute;
   top: calc(100% + var(--space-1));
   left: 0;
@@ -1125,11 +1125,11 @@ kbd {
   overflow-y: auto;
 }
 
-.composer__list[hidden] {
+.quick-find__list[hidden] {
   display: none;
 }
 
-.composer__option {
+.quick-find__option {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
@@ -1140,53 +1140,53 @@ kbd {
   cursor: pointer;
 }
 
-.composer__option.is-active {
+.quick-find__option.is-active {
   background: var(--bg-hover);
 }
 
-.composer__option--ask,
-.composer__option--all {
+.quick-find__option--ask,
+.quick-find__option--all {
   font-weight: 500;
 }
 
-.composer__option--all {
+.quick-find__option--all {
   margin-top: var(--space-1);
   box-shadow: 0 -1px 0 var(--line);
 }
 
-.composer__option-kind {
+.quick-find__option-kind {
   color: var(--accent-text);
   font-size: var(--fs-small);
   font-weight: 500;
 }
 
-.composer__option-text {
+.quick-find__option-text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.composer__option--doc {
+.quick-find__option--doc {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
-.composer__option-meta {
+.quick-find__option-meta {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   white-space: nowrap;
 }
 
-.composer__option-meta .doc-id {
+.quick-find__option-meta .doc-id {
   overflow-wrap: normal;
 }
 
-.composer__note {
+.quick-find__note {
   padding: var(--space-2) var(--space-3);
   color: var(--text-secondary);
   font-size: var(--fs-small);
 }
 
-.composer__hint {
+.quick-find__hint {
   margin: 0;
   font-size: var(--fs-small);
   color: var(--text-tertiary);
@@ -1214,7 +1214,7 @@ kbd {
   animation: layer-in var(--duration-panel) var(--ease-out);
 }
 
-.composer-dialog .composer__list {
+.composer-dialog .quick-find__list {
   position: static;
   margin-top: var(--space-2);
   max-height: 50vh;
@@ -1228,16 +1228,16 @@ kbd {
     padding-top: var(--space-4);
   }
 
-  .composer__row {
+  .quick-find__row {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .composer__option--doc {
+  .quick-find__option--doc {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .composer__option-meta {
+  .quick-find__option-meta {
     flex-wrap: wrap;
   }
 }
@@ -2283,23 +2283,23 @@ label {
   padding-inline: 0;
 }
 
-.composer--hero {
+.quick-find--hero {
   max-width: 46rem;
   margin-top: var(--space-5);
 }
 
-.composer__scope {
+.quick-find__scope {
   margin-top: var(--space-1);
 }
 
-.composer__scope legend {
+.quick-find__scope legend {
   font-size: var(--fs-small);
   color: var(--text-secondary);
   margin-bottom: 0;
   align-self: center;
 }
 
-.composer__scope .segmented__option span {
+.quick-find__scope .segmented__option span {
   padding: 0 var(--space-3);
   min-height: 2rem;
   display: inline-flex;

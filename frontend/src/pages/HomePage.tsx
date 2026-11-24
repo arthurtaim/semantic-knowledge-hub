@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { ProposalSummary } from "../api/types";
-import { Composer, askHref, type AskScope } from "../components/Composer";
+import { QuickFind } from "../components/QuickFind";
+import { askHref, type AskScope } from "../lib/assistant";
 import { EmptyState, ErrorState, Loading } from "../components/Feedback";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { OperationBadge, ProposalStateLabel } from "../components/ProposalState";
@@ -199,14 +200,14 @@ export function HomePage() {
             ? "Спросите или найдите: ответ строится только по документам и начинается с цитат, а правки проходят ревью."
             : "Ищите документы команды и предлагайте правки через ревью. ИИ в этой установке отключён — поиск работает полностью."}
         </p>
-        <Composer
+        <QuickFind
           variant="hero"
           inputId="home-composer-input"
           scope={scope}
           renderExtra={(mode) =>
             mode === "ask" ? (
               <>
-                <fieldset className="segmented composer__scope">
+                <fieldset className="segmented quick-find__scope">
                   <legend>Где искать</legend>
                   {SCOPES.map((option) => (
                     <label key={option.value} className="segmented__option">

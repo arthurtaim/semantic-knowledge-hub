@@ -3,32 +3,24 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { DocumentSummary } from "../api/types";
 import { canAsk } from "../lib/aiMode";
+import { askHref, type AskScope } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { StatusStamp } from "./StatusStamp";
 
 /** Debounce of the instant document matches while typing. */
-export const COMPOSER_DELAY_MS = 150;
+export const QUICK_FIND_DELAY_MS = 150;
 const MATCH_LIMIT = 6;
 const MIN_QUESTION = 3;
 
-export type ComposerMode = "ask" | "search";
-/** Where the AI looks when asked from the composer: team documents unless the user picks otherwise. */
-export type AskScope = "team" | "corporate" | "both";
+export type QuickFindMode = "ask" | "search";
 
 type Option =
   | { kind: "ask"; key: string }
   | { kind: "doc"; key: string; doc: DocumentSummary }
   | { kind: "all"; key: string };
 
-/** The answer screen for a question (it asks at once: `run=1`); the team scope is the default. */
-export function askHref(question: string, scope: AskScope = "team"): string {
-  const params = new URLSearchParams({ q: question, run: "1" });
-  if (scope !== "team") params.set("scope", scope);
-  return `/ask?${params.toString()}`;
-}
-
-interface ComposerProps {
+interface QuickFindProps {
   /** `palette`: inside the ⌘K dialog; `hero`: the home page's main field. */
   variant: "palette" | "hero";
   inputId: string;
@@ -36,27 +28,27 @@ interface ComposerProps {
   /** Scope for questions (the hero shows the switch); team by default. */
   scope?: AskScope;
   /** Extra controls under the field for the current mode (the hero's scope switch for questions). */
-  renderExtra?: (mode: ComposerMode) => ReactNode;
-  /** Called after the composer navigated somewhere (closes the palette). */
+  renderExtra?: (mode: QuickFindMode) => ReactNode;
+  /** Called after the field navigated somewhere (closes the palette). */
   onNavigate?: () => void;
   /** Esc on an empty or closed list (closes the palette). */
   onEscape?: () => void;
 }
 
 /**
- * «Спросить или найти»: one field for questions, search and documents. An accessible combobox (ARIA 1.2):
+ * «Спросить или найти» (the ⌘K palette, phase 4): one field for questions, search and documents. An accessible combobox (ARIA 1.2):
  * typing shows instant document matches from the existing search; Enter asks the AI (or searches); ↑/↓ pick
  * a match; Tab switches «Спросить ИИ» / «Найти в документах» while the list is open. Without an AI provider
  * (`disabled`) it is a search field only — no dead controls.
  */
-export function Composer({ variant, inputId, autoFocus, scope = "team", renderExtra, onNavigate, onEscape }: ComposerProps) {
+export function QuickFind({ variant, inputId, autoFocus, scope = "team", renderExtra, onNavigate, onEscape }: QuickFindProps) {
   const session = useSession();
   const navigate = useNavigate();
   const listId = useId();
   const hintId = useId();
   const aiAvailable = canAsk(session?.features.ai_mode);
   // The user's explicit choice; until then the default follows the session (which may arrive later).
-  const [choice, setChoice] = useState<ComposerMode | null>(null);
+  const [choice, setChoice] = useState<QuickFindMode | null>(null);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,7 +58,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
   const [announcement, setAnnouncement] = useState("");
   const requestNo = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const effectiveMode: ComposerMode = aiAvailable ? (choice ?? "ask") : "search";
+  const effectiveMode: QuickFindMode = aiAvailable ? (choice ?? "ask") : "search";
   const text = query.trim();
 
   useEffect(() => {
@@ -104,7 +96,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
         .finally(() => {
           if (no === requestNo.current) setLoading(false);
         });
-    }, COMPOSER_DELAY_MS);
+    }, QUICK_FIND_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [text]);
 
@@ -140,7 +132,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
     else go(text ? `/documents?query=${encodeURIComponent(text)}` : "/documents");
   }
 
-  function switchMode(next: ComposerMode) {
+  function switchMode(next: QuickFindMode) {
     setChoice(next);
     setActive(-1);
     setAnnouncement(next === "ask" ? "Режим: спросить ИИ" : "Режим: найти в документах");
@@ -181,12 +173,12 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
     : "Enter — найти, ↑↓ — выбрать документ. ИИ отключён: работает поиск по документам.";
 
   return (
-    <form className={`composer composer--${variant}`} role="search" onSubmit={submit}>
+    <form className={`quick-find quick-find--${variant}`} role="search" onSubmit={submit}>
       {aiAvailable ? (
-        <div className="composer__modes" role="group" aria-label="Режим поля">
+        <div className="quick-find__modes" role="group" aria-label="Режим поля">
           <button
             type="button"
-            className="composer__mode"
+            className="quick-find__mode"
             aria-pressed={effectiveMode === "ask"}
             onClick={() => {
               switchMode("ask");
@@ -197,7 +189,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
           </button>
           <button
             type="button"
-            className="composer__mode"
+            className="quick-find__mode"
             aria-pressed={effectiveMode === "search"}
             onClick={() => {
               switchMode("search");
@@ -208,11 +200,11 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
           </button>
         </div>
       ) : null}
-      <div className="composer__row">
+      <div className="quick-find__row">
         <label htmlFor={inputId} className="visually-hidden">
           {label}
         </label>
-        <div className="composer__field">
+        <div className="quick-find__field">
           <input
             ref={inputRef}
             id={inputId}
@@ -237,14 +229,14 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
             autoComplete="off"
             spellCheck={false}
           />
-          <ul id={listId} role="listbox" aria-label="Подсказки" className="composer__list" hidden={!expanded}>
+          <ul id={listId} role="listbox" aria-label="Подсказки" className="quick-find__list" hidden={!expanded}>
             {options.map((option, index) => (
               <li
                 key={option.key}
                 id={`${listId}-${index}`}
                 role="option"
                 aria-selected={index === active}
-                className={`composer__option composer__option--${option.kind}${index === active ? " is-active" : ""}`}
+                className={`quick-find__option quick-find__option--${option.kind}${index === active ? " is-active" : ""}`}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseMove={() => {
                   if (active !== index) setActive(index);
@@ -253,32 +245,32 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
               >
                 {option.kind === "ask" ? (
                   <>
-                    <span className="composer__option-kind">Спросить ИИ</span>
-                    <span className="composer__option-text">«{text}»</span>
+                    <span className="quick-find__option-kind">Спросить ИИ</span>
+                    <span className="quick-find__option-text">«{text}»</span>
                   </>
                 ) : option.kind === "doc" ? (
                   <>
-                    <span className="composer__option-text">{option.doc.title}</span>
-                    <span className="composer__option-meta">
+                    <span className="quick-find__option-text">{option.doc.title}</span>
+                    <span className="quick-find__option-meta">
                       <code className="doc-id">{option.doc.id}</code>
                       <StatusStamp status={option.doc.status} />
                     </span>
                   </>
                 ) : (
                   <>
-                    <span className="composer__option-kind">Все результаты</span>
-                    <span className="composer__option-text">поиска «{text}»</span>
+                    <span className="quick-find__option-kind">Все результаты</span>
+                    <span className="quick-find__option-text">поиска «{text}»</span>
                   </>
                 )}
               </li>
             ))}
             {expanded && loading && matches.length === 0 ? (
-              <li role="presentation" className="composer__note">
+              <li role="presentation" className="quick-find__note">
                 Ищем документы…
               </li>
             ) : null}
             {expanded && failed ? (
-              <li role="presentation" className="composer__note">
+              <li role="presentation" className="quick-find__note">
                 Подсказки недоступны — нажмите Enter, чтобы искать.
               </li>
             ) : null}
@@ -288,7 +280,7 @@ export function Composer({ variant, inputId, autoFocus, scope = "team", renderEx
           {effectiveMode === "ask" ? "Спросить" : "Найти"}
         </button>
       </div>
-      <p id={hintId} className="composer__hint">
+      <p id={hintId} className="quick-find__hint">
         {hint}
       </p>
       <p className="visually-hidden" role="status" aria-live="polite">

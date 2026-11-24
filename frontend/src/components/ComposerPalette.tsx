@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { canAsk } from "../lib/aiMode";
 import { useSession } from "../lib/session";
-import { Composer } from "./Composer";
+import { QuickFind } from "./QuickFind";
 
 /** True when the key press belongs to a text field (so `/` types a slash there). */
 export function isEditable(target: EventTarget | null): boolean {
@@ -15,7 +15,7 @@ export function isEditable(target: EventTarget | null): boolean {
 }
 
 /**
- * The ⌘K palette: a modal dialog with the composer. Esc closes it (after closing an open list) and focus
+ * The ⌘K palette: a modal dialog with the «Спросить или найти» field (QuickFind). Esc closes it (after closing an open list) and focus
  * returns to where it was; Tab stays inside the dialog.
  */
 export function ComposerPalette({ onClose }: { onClose: () => void }) {
@@ -64,7 +64,7 @@ export function ComposerPalette({ onClose }: { onClose: () => void }) {
         aria-label={ask ? "Спросить или найти" : "Найти в базе знаний"}
         onKeyDown={trapTab}
       >
-        <Composer variant="palette" inputId="palette-composer-input" autoFocus onNavigate={onClose} onEscape={onClose} />
+        <QuickFind variant="palette" inputId="palette-composer-input" autoFocus onNavigate={onClose} onEscape={onClose} />
       </div>
     </div>
   );
