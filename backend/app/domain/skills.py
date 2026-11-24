@@ -33,6 +33,8 @@ class SkillDefinition:
     requires_document: bool = False
     requires_selection: bool = False
     requires_attachment: bool = False
+    # Either a chosen document (or a selection in one) or a question of at least 3 characters.
+    requires_document_or_question: bool = False
     prompt_optional: bool = False
     needs_authoring: bool = False  # the provider must support draft_document
     # None: the deterministic mock provider serves the skill honestly (verbatim / rule-based output).
@@ -95,7 +97,8 @@ SKILLS: tuple[SkillDefinition, ...] = (
         access="read",
         runner="workflow",
         builds_on=("find_related", "explain_relation"),
-        prompt_optional=True,  # a document OR a question
+        requires_document_or_question=True,
+        prompt_optional=True,
     ),
     SkillDefinition(
         id="compare_with_file",
@@ -147,6 +150,8 @@ class SkillRequires(BaseModel):
     document: bool = False  # a chosen document (context_document_ids[0]) or a selection in one
     selection: bool = False
     attachment: bool = False
+    # «One of»: a chosen document / selection OR a question (≥ 3 characters). Additive: false for older skills.
+    document_or_question: bool = False
 
 
 class SkillInfo(BaseModel):
@@ -184,6 +189,7 @@ def skill_info(skill: SkillDefinition, mode: str, supports_authoring: bool) -> S
             document=skill.requires_document,
             selection=skill.requires_selection,
             attachment=skill.requires_attachment,
+            document_or_question=skill.requires_document_or_question,
         ),
         prompt_optional=skill.prompt_optional,
         available=reason is None,

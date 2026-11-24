@@ -87,8 +87,22 @@ def test_skill_registry_in_mock_mode(client: TestClient) -> None:
         "document": False,
         "selection": False,
         "attachment": True,
+        "document_or_question": False,
     }
-    assert items["improve_section"]["requires"] == {"document": True, "selection": True, "attachment": False}
+    assert items["improve_section"]["requires"] == {
+        "document": True,
+        "selection": True,
+        "attachment": False,
+        "document_or_question": False,
+    }
+    # «One of»: find_related runs on a document or on a question; only it declares that.
+    assert items["find_related"]["requires"] == {
+        "document": False,
+        "selection": False,
+        "attachment": False,
+        "document_or_question": True,
+    }
+    assert [s for s, v in items.items() if v["requires"]["document_or_question"]] == ["find_related"]
     assert items["answer"]["prompt_optional"] is False and items["summarize"]["prompt_optional"] is True
     assert all(v["unavailable_reason"] is None for v in items.values() if v["available"])
 
@@ -134,7 +148,10 @@ def test_missing_skill_inputs(client: TestClient) -> None:
     compare = client.post("/api/assistant/ask", json={"skill_id": "compare_with_file", "question": "Сверь"})
     assert compare.json()["details"]["missing"] == ["attachment"]
     related = client.post("/api/assistant/ask", json={"skill_id": "find_related"})
-    assert related.status_code == 422 and related.json()["details"]["missing"] == ["document"]
+    assert related.status_code == 422 and related.json()["details"]["missing"] == ["document_or_question"]
+    assert related.json()["message"] == "Для навыка «Найти связи» нужно: документ или вопрос."
+    blank = client.post("/api/assistant/ask", json={"skill_id": "find_related", "question": "   "})
+    assert blank.status_code == 422 and blank.json()["details"]["missing"] == ["document_or_question"]
 
 
 def test_question_is_optional_only_for_skills_that_allow_it(client: TestClient) -> None:

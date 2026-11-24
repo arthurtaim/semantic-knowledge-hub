@@ -266,7 +266,8 @@ Shapes:
 
 ```text
 SkillInfo { id, name, description, access: read|draft,
-            requires: {document: bool, selection: bool, attachment: bool},
+            requires: {document: bool, selection: bool, attachment: bool,
+                       document_or_question: bool},   (document_or_question: review round, default false)
             prompt_optional: bool, available: bool, unavailable_reason: string|null }
 
 AttachmentInfo { id: "ATT-<16 hex>", conversation_id, name (display only, sanitized), size, mime,
@@ -310,7 +311,8 @@ their conversation and to their uploader, never indexed into search, the graph o
 
 **Ask errors (HTTP before any stream event).** `503 assistant_disabled`; `422 skill_unknown`; `503 skill_unavailable`
 (`details.skill_id`, message = the reason); `422 skill_input_missing` (`details.missing`: `document` | `selection` |
-`attachment`; `find_related` needs a document or a question, `improve_section` a selection with `section_anchor`);
+`attachment` | `document_or_question`; `find_related` needs a document or a question, `improve_section` a selection
+with `section_anchor`);
 `404 attachment_not_found` (unknown, expired, deleted, another conversation or user — indistinguishable on purpose);
 `404 document_not_found` (chosen document or selection document not visible); `422 selection_not_found` (the
 selected text is not verbatim in the document / section, or the anchor does not exist); `403 forbidden`; `422
@@ -354,3 +356,9 @@ the «Ревью» list is usually empty (no badge).
 
 **Skill rename.** `check_freshness` is named «Что перепроверить», description «Покажет связанные документы, которые
 могли устареть» (the id and the `impact_analysis` scenario behind it are unchanged).
+
+**«One of» requirement.** `SkillInfo.requires.document_or_question` (default `false`, so older clients and skills
+are unaffected): the skill needs a chosen document / a selection in one **or** a question of at least 3
+characters. Only `find_related` sets it. Without either, `/ask` answers `422 skill_input_missing` with
+`details.missing = ["document_or_question"]` (message «… нужно: документ или вопрос.»); the composer disables
+sending and says the same in one line.

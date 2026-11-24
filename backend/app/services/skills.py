@@ -77,7 +77,9 @@ _MISSING_WORDS = {
     "document": "документ",
     "selection": "выделенный фрагмент раздела",
     "attachment": "вложение",
+    "document_or_question": "документ или вопрос",
 }
+MIN_QUESTION_CHARS = 3  # as AskRequest: a shorter question is no question
 
 
 @dataclass(frozen=True)
@@ -171,8 +173,12 @@ class AssistantSkillService:
             missing.append("selection")
         if skill.requires_attachment and not attachments:
             missing.append("attachment")
-        if skill.id == "find_related" and not (documents or selection) and len(req.question.strip()) < 3:
-            missing.append("document")  # a document or a question
+        if (
+            skill.requires_document_or_question
+            and not (documents or selection)
+            and len(req.question.strip()) < MIN_QUESTION_CHARS
+        ):
+            missing.append("document_or_question")
         if missing:
             raise ApiError(
                 422,
