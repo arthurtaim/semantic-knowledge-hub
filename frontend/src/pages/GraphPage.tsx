@@ -9,6 +9,7 @@ import { PageToolbar } from "../components/shell/PageToolbar";
 import { Button, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { Menu } from "../components/ui/Popover";
+import { SegmentedControl } from "../components/ui/SegmentedControl";
 import {
   canExpand,
   filterGraph,
@@ -379,37 +380,38 @@ export function GraphPage() {
       <h1 className="visually-hidden">{mode.kind === "trace" ? "Граф ответа" : "Карта знаний"}</h1>
 
       <div className="graph-bar">
-        <fieldset className="segmented graph-bar__modes">
-          <legend className="visually-hidden">Режим карты</legend>
-          {(
-            [
-              ["global", "Вся база", true, ""],
-              ["local", "Вокруг узла", mode.kind === "local" || localTarget !== null, "Выберите документ на карте"],
-              ["trace", "Граф ответа", mode.kind === "trace" || lastTrace !== null, "Откройте граф из ответа ассистента"],
-            ] as const
-          ).map(([value, label, enabled, hint]) => (
-            <label key={value} className="segmented__option" title={enabled ? undefined : hint}>
-              <input
-                type="radio"
-                name="graph-mode"
-                checked={mode.kind === value}
-                disabled={!enabled}
-                onChange={() => setMode(value)}
-              />
-              <span>{label}</span>
-            </label>
-          ))}
-        </fieldset>
+        <SegmentedControl
+          label="Режим карты"
+          className="graph-bar__modes"
+          value={mode.kind}
+          onChange={setMode}
+          options={[
+            { value: "global", label: "Вся база" },
+            {
+              value: "local",
+              label: "Вокруг узла",
+              disabled: !(mode.kind === "local" || localTarget !== null),
+              hint: "Выберите документ на карте",
+            },
+            {
+              value: "trace",
+              label: "Граф ответа",
+              disabled: !(mode.kind === "trace" || lastTrace !== null),
+              hint: "Откройте граф из ответа ассистента",
+            },
+          ]}
+        />
         {mode.kind === "local" ? (
-          <fieldset className="segmented graph-bar__depth">
-            <legend className="visually-hidden">Глубина</legend>
-            {([1, 2] as const).map((depth) => (
-              <label key={depth} className="segmented__option">
-                <input type="radio" name="graph-depth" checked={mode.depth === depth} onChange={() => setDepth(depth)} />
-                <span>{depth === 1 ? "1 шаг" : "2 шага"}</span>
-              </label>
-            ))}
-          </fieldset>
+          <SegmentedControl
+            label="Глубина"
+            className="graph-bar__depth"
+            value={mode.depth === 2 ? "2" : "1"}
+            onChange={(depth) => setDepth(depth === "2" ? 2 : 1)}
+            options={[
+              { value: "1", label: "1 шаг" },
+              { value: "2", label: "2 шага" },
+            ]}
+          />
         ) : null}
         <div className="graph-bar__filters" role="group" aria-label="Фильтры карты">
           <FilterChip

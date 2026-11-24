@@ -96,9 +96,11 @@ describe("SegmentedControl", () => {
           options={[
             { value: "list", label: "Список" },
             { value: "table", label: "Таблица" },
-            { value: "map", label: "Карта", disabled: true },
+            { value: "map", label: "Карта", disabled: true, hint: "Нет карты для этого списка" },
           ]}
+          describedBy="views-hint"
         />
+        <p id="views-hint">Выбор запоминается.</p>
         <output>{value}</output>
       </>
     );
@@ -112,6 +114,12 @@ describe("SegmentedControl", () => {
     expect(within(group).getByRole("radio", { name: "Список" })).toBeChecked();
     expect(screen.getByRole("status")).toHaveTextContent("list");
     expect(within(group).getByRole("radio", { name: "Карта" })).toBeDisabled();
+    // UI v2 phase F: the one segmented style (.segmented, the raised chosen segment) — the map and the create page
+    // use this component; a disabled option says why on hover; the group is described by the page's hint.
+    expect(group).toHaveClass("segmented");
+    expect(group).toHaveAccessibleDescription("Выбор запоминается.");
+    expect(within(group).getByRole("radio", { name: "Карта" }).closest("label")).toHaveAttribute("title", "Нет карты для этого списка");
+    expect(within(group).getByRole("radio", { name: "Список" }).closest("label")).not.toHaveAttribute("title");
   });
 });
 

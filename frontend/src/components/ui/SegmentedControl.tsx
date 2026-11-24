@@ -6,6 +6,8 @@ export interface SegmentOption<T extends string> {
   label: ReactNode;
   icon?: IconName;
   disabled?: boolean;
+  /** Why a disabled option cannot be chosen (shown on hover). */
+  hint?: string;
 }
 
 interface SegmentedControlProps<T extends string> {
@@ -15,13 +17,15 @@ interface SegmentedControlProps<T extends string> {
   options: SegmentOption<T>[];
   value: T;
   onChange: (value: T) => void;
-  size?: "md" | "sm";
+  /** The id of a text that explains the choice (`aria-describedby` of the group). */
+  describedBy?: string;
   className?: string;
 }
 
 /**
  * One choice out of a few: native radio buttons in a fieldset, so arrow keys move the choice and screen readers
- * announce «1 из 3». The selected segment is a raised white surface on a grey track — never a green fill.
+ * announce «1 из 3». The selected segment is a raised surface on a grey track (`.segmented`, --bg-raised) — never
+ * a green fill. The map's modes and depth and the create page's «Как создать» use it.
  */
 export function SegmentedControl<T extends string>({
   label,
@@ -29,31 +33,29 @@ export function SegmentedControl<T extends string>({
   options,
   value,
   onChange,
-  size = "md",
+  describedBy,
   className,
 }: SegmentedControlProps<T>) {
   const name = useId();
   return (
-    <fieldset className={["segmented-control", size === "sm" ? "segmented-control--sm" : "", className ?? ""].filter(Boolean).join(" ")}>
-      <legend className={showLabel ? "segmented-control__legend" : "visually-hidden"}>{label}</legend>
-      <div className="segmented-control__track">
-        {options.map((option) => (
-          <label key={option.value} className="segmented-control__option">
-            <input
-              type="radio"
-              name={name}
-              value={option.value}
-              checked={option.value === value}
-              disabled={option.disabled}
-              onChange={() => onChange(option.value)}
-            />
-            <span>
-              {option.icon ? <Icon name={option.icon} size={14} /> : null}
-              {option.label}
-            </span>
-          </label>
-        ))}
-      </div>
+    <fieldset className={["segmented", className ?? ""].filter(Boolean).join(" ")} aria-describedby={describedBy}>
+      <legend className={showLabel ? undefined : "visually-hidden"}>{label}</legend>
+      {options.map((option) => (
+        <label key={option.value} className="segmented__option" title={option.disabled ? option.hint : undefined}>
+          <input
+            type="radio"
+            name={name}
+            value={option.value}
+            checked={option.value === value}
+            disabled={option.disabled}
+            onChange={() => onChange(option.value)}
+          />
+          <span>
+            {option.icon ? <Icon name={option.icon} size={14} /> : null}
+            {option.label}
+          </span>
+        </label>
+      ))}
     </fieldset>
   );
 }
