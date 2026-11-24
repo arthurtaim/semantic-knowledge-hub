@@ -2,7 +2,7 @@
 
 These are proposed MVP HTTP contracts. Claude Code may refine field details but must document changes, keep tests consistent and preserve adapter boundaries. All routes prefixed `/api`.
 
-**Current implemented contract: v0.4 (v0.3 + UI v2 phase C: assistant skills and attachments)** — see the last two sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
+**Current implemented contract: v0.5 (v0.4 + M5.7 system facts and tool steps)** — see the last sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
 
 ## 1. Health and integrations
 - `GET /api/health` -> `{ "status": "ok", "mode": "local_demo" }` (no secrets).
@@ -24,6 +24,66 @@ These are proposed MVP HTTP contracts. Claude Code may refine field details but 
     meaning: the time of the source revision (commit date / file mtime), shown on the document page as «Дата
     ревизии». A front-matter value that is not a date is a warning `invalid_updated_at` (kept in `extra_metadata`),
     never a load error.
+  - *«Документы» v2 (additive).* Each item also carries `summary: str | null` (the document's `summary`: the
+    front-matter value, else its first meaningful paragraph — the same value as `DocumentDetail.summary`) and
+    `systems: list[str]` (the systems the document is about, rule below). Other routes that return a
+    `DocumentSummary` leave both `null`; `DocumentDetail` keeps its `summary` and also fills `systems`.
+  - *«Документы» v2 — whole-base search (no contract change).* With `query`, the list is the same search as
+    `GET /api/search` (team scope), one row per document instead of passages: the same SQLite FTS5 index and the same
+    ranking (`RetrievalService.rank_documents`: exact ID, title, full text, declared-relation expansion) over the same
+    **reader's snapshot**, which is the access check of both routes — a document the reader cannot see is found by
+    neither, not even through the shared index or a relation. The list keeps up to 1000 matches, so for a query of
+    several words it may add partial (OR) matches that the top-N of `/api/search` leaves out. Every item carries its
+    provenance: `source` (`local|gitlab|confluence`), `source_uri`, `revision` (required fields, as before). Tests:
+    `tests/test_doc_tree.py::test_a_hidden_document_is_found_by_neither_documents_query_nor_search`,
+    `::test_documents_query_ranks_like_search_and_every_result_carries_its_source`.
+- `GET /api/documents/tree` (*«Документы» v2, new*, `read_knowledge`) -> the whole visible base as sections → groups →
+  documents in one response, no paging. Spec: `docs/ui-v2/documents/specs/DOCUMENTS_V2.md` §4; code:
+  `app/domain/doc_tree.py` (rule and order), `services/knowledge.py` `document_tree`; tests `tests/test_doc_tree.py`.
+
+  ```json
+  {
+    "total": 83,
+    "attention_total": 12,
+    "sections": [
+      { "key": "integration", "label": "Интеграции", "count": 19, "attention": 3, "doc_ids": [],
+        "groups": [ { "key": "integration/aris", "label": "ARIS", "count": 8, "attention": 3,
+                      "doc_ids": ["SEM-INT-ARIS-001", "DEMO-INT-018", "…"] } ] }
+    ],
+    "documents": {
+      "DEMO-INT-001": { "title": "ARIS → Catalog: обзор потока (демо)", "type": "integration", "status": "approved",
+        "review_state": "ok", "reviewed_at": "2026-10-16", "owner": "demo-integration-team", "owner_missing": false,
+        "summary": "…", "systems": ["ARIS", "Data Catalog"], "link_count": 11, "is_demo": true, "source": "local",
+        "index_state": "current", "group": "integration/aris", "attention": false }
+    }
+  }
+  ```
+
+  - **Visibility.** Built from the reader's snapshot, exactly like `GET /api/documents` (same service, no bypass):
+    a document the reader cannot see is neither an entry nor counted, and a source system document the reader
+    cannot see names no group and no system. `link_count` is the catalog's (§2 above).
+  - **`review_state` / `reviewed_at`.** The catalog's values, unchanged: `reviewed_at` is the front-matter date;
+    `review_state` is `ok`, `stale` (the review is older than `REVIEW_STALE_DAYS`, 180 by default — the catalog's
+    «Проверка устарела»), `never_reviewed` (approved or in review without `reviewed_at`) or `not_required` (a draft or
+    a deprecated document without `reviewed_at`). It depends on today's date.
+  - **`attention`** (per document; `attention` of a section / group and `attention_total` count them): `status` ∈
+    {`in_review`, `draft`, `deprecated`} **or** `review_state` ∈ {`stale`, `never_reviewed`} **or** `owner_missing`.
+  - **Groups (computed; no `parent` field yet).** A section is a document type. Source systems are the `source`
+    documents whose title has «:» — the system's name is the part before it, its key comes from the document's
+    `sys-<key>` tag. `integration`: the system of the first `consumes` target that is a source system document, else
+    the system named by the first tag equal to a system key (`<key>` or `sys-<key>`), else «Общие правила»
+    (`integration/_common`). `standard`: a `template` / `шаблон` tag → «Шаблоны документов» (`standard/templates`),
+    else «Регламенты и качество» (`standard/rules`). Other sections have no groups: their documents are in the
+    section's `doc_ids`, and each document's `group` is `null`. A one-document group is kept. Group keys are
+    `<section>/<system key>` (a system without a key: `<section>/<lower-cased document id>`); non-system groups start
+    with `_` or are fixed words. An explicit `parent` can later become the first resolver of `GROUP_RESOLVERS`.
+  - **`systems`.** The systems of the document's `consumes` / `produces` targets that are source system documents,
+    then the systems its tags name (`<key>` or `sys-<key>`; so a system's own profile names it), without repeats, in
+    that order.
+  - **Order.** Sections: Продукт, Архитектура, Домен, Системы-источники, Интеграции, Датасеты, Процессы, Решения,
+    Стандарты, Руководства, Глоссарий (a type outside this list last); empty sections are left out. Groups by name,
+    «Общие правила» last. Documents in a group or section: those needing attention first, then by title.
+  - Declared before `GET /api/documents/{id}`: the path `tree` is never read as a document ID.
 - `GET /api/documents/{id}` -> `DocumentDetail` with rendered-safe markdown/source content, frontmatter metadata and revision.
 - `GET /api/search?q=...&source=team,corporate&limit=10` -> ranked `SearchResult[]`.
 
@@ -160,6 +220,41 @@ generates the front matter (`docs/DOCUMENT_TEMPLATES.md`).
 | `PUT /api/drafts/{id}` | `create_proposal` | `DraftUpdate {expected_version (≥ 1), reason?, origin?}` plus `proposed_content` (operation `update`) **or** `metadata` + `body` + `path?` (operation `create`) | `200 ProposalDetail`, `edit_version` + 1; for `update` the base revision is unchanged | `404 proposal_not_found`, `409 draft_not_editable` (status ≠ `draft`), `409 draft_modified` (stale version, `details.current_version`), `409 document_id_taken\|document_path_taken` (create), `422 validation_failed` (fields missing for the operation), `404 document_not_found` (update) |
 | `DELETE /api/drafts/{id}` | `create_proposal` | — | `204`; the content-free audit trail is kept | `404 proposal_not_found`, `409 draft_not_deletable` (allowed only for `draft`, or `conflict` with no submission attempt and no MR) |
 
+### Blank documents and «Применить шаблон» (additive)
+
+Templates structure documents; they do not gate their creation (`docs/TEMPLATE_HUB.md`). Without the new fields
+every request and response is the same as before.
+
+- `template_id` is **optional** in `POST /api/authoring/drafts`, `POST /api/authoring/check` and
+  `POST /api/documents/import` (with `metadata`). Without it the document is **blank**: the server allocates
+  `SEM-DOC-NNN` (once, immutable), writes `status: draft`, `owner: unassigned` when empty, origin `manual`
+  (`import` for an import) and **no** `template` / `template_version`; free Markdown — no required sections, the
+  body / size / secret / PII / unsafe-markup rules stay.
+- `NewDocumentMetadata.type?` (`DocType`): the section of a blank document; on creation empty → `guide`, on a
+  save empty → the draft's own type. For a template document it must be the template's type or absent, else
+  `422 template_type_mismatch` (`details.field = "type"`). Unknown values are `422` (only the existing types).
+- A `create` draft saved from the editor keeps every YAML key the form does not manage (`relations`,
+  `aliases`, `reviewed_at`, `synthetic`, unknown keys…), so an imported file opened in the editor loses nothing.
+- `POST /api/documents/import/preview` without any active template: a blank `SEM-DOC-NNN` preview (`template`
+  field `missing`, `type` suggested `guide`) instead of `409 no_active_template`.
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `GET /api/authoring/blank` | `read_knowledge` | — | `BlankDocumentInfo {id_prefix: "SEM-DOC", suggested_id, suggested_path, default_type: "guide"}`; the ID is a preview only | `503` source unavailable |
+| `POST /api/drafts/{id}/apply-template/preview` | `create_proposal` | `{template_id}` | `TemplateApplyPreview` (below); nothing stored | `404 proposal_not_found\|template_not_found`, `409 draft_not_editable` (status ≠ `draft`), `409 template_not_active` (draft / deprecated / archived / hidden template), `422 template_apply_invalid_document` |
+| `POST /api/drafts/{id}/apply-template` | `create_proposal` | `{template_id, template_version, expected_version}` | `200 ProposalDetail`: `create` draft — `template_id` / `template_version` re-pinned, text updated, `edit_version` + 1; `update` draft — `proposed_content` updated through the usual save. History `template_applied` | the preview's errors + `409 draft_modified` (`details.current_version`), `409 template_version_changed` (the active version is not the previewed one; `details.current_version`), `409 template_apply_no_change` |
+| `POST /api/documents/{id}/apply-template/preview` | `create_proposal` | `{template_id}` | `TemplateApplyPreview` with `base_revision`; nothing stored | `404 document_not_found\|template_not_found`, `409 template_not_active`, `422`, `503` |
+| `POST /api/documents/{id}/apply-template` | `create_proposal` | `{template_id, template_version, base_revision, reason? (3–2000)}` | `201 ProposalDetail` — a CHANGE proposal (`operation=update`, `status=draft`, default reason «Применить шаблон «…» vN»); **the document itself is not modified** | `409 revision_conflict` (`details.current_revision`, `base_revision`), `409 template_version_changed`, `409 template_not_active`, `409 template_apply_no_change`, `404` |
+
+`TemplateApplyPreview`: `{target: draft|document, document_id, draft_id?, expected_version?, base_revision?,
+template_id, template_version, template_title, previous_template_id?, previous_template_version?, type_before?,
+type_after, sections[{heading, template_heading?, state: matched|added|kept|optional_missing, required}],
+content_before, content_after, diff: DiffResult, changed, validation[]}`. Applying keeps every existing line in
+order (the body only gains lines), maps `##` headings to template sections by title (case and surrounding spaces
+ignored), adds the skeleton («Требует уточнения») of each missing **required** section after the nearest preceding
+template section present, keeps unknown sections, and rewrites only the `type`, `template` and `template_version`
+lines of the YAML (the ID never changes).
+
 ### Proposal changes
 
 - `ProposalSummary.operation`: `create | update` (stores from earlier builds are migrated to `update`).
@@ -246,8 +341,8 @@ Problem codes: `revision_superseded`, `not_merged`, `status_not_publishable`, `s
 
 | Action | Routes |
 |---|---|
-| `create_proposal` | + `POST /api/authoring/check`, `POST /api/authoring/ai-draft`, `POST /api/authoring/drafts`, `PUT /api/drafts/{id}`, `DELETE /api/drafts/{id}` |
-| `read_knowledge` | + `GET /api/authoring/templates`, `GET /api/documents/{id}/publication`, `GET /api/publications/jobs*` |
+| `create_proposal` | + `POST /api/authoring/check`, `POST /api/authoring/ai-draft`, `POST /api/authoring/drafts`, `PUT /api/drafts/{id}`, `DELETE /api/drafts/{id}`, `POST /api/drafts/{id}/apply-template[/preview]`, `POST /api/documents/{id}/apply-template[/preview]` |
+| `read_knowledge` | + `GET /api/authoring/templates`, `GET /api/authoring/blank`, `GET /api/documents/{id}/publication`, `GET /api/publications/jobs*` |
 | `prepare_publication` (new) | `POST …/publication/prepare`, `POST …/dry-run`, `POST …/reconcile` — Confluence reads only |
 | `publish_confluence` (new) | `POST …/publish`, `POST …/acknowledge-manual-edit`, `POST …/release-missing-page` |
 
@@ -395,3 +490,32 @@ are unaffected): the skill needs a chosen document / a selection in one **or** a
 characters. Only `find_related` sets it. Without either, `/ask` answers `422 skill_input_missing` with
 `details.missing = ["document_or_question"]` (message «… нужно: документ или вопрос.»); the composer disables
 sending and says the same in one line.
+
+## Implemented contract (v0.5, M5.7: AI-native system awareness)
+
+Additive only; every v0.4 field and behaviour is unchanged. Design, semantics and limits: `docs/AI_NATIVE_TOOLS.md`.
+
+| Route | Change |
+|---|---|
+| `POST /api/assistant/ask` | request: `history[i].context?: TurnFactContext[]` (≤ 5, the referent of that answer); response: `system_facts`, `tool_steps`, `general_knowledge`, `conversation_context` |
+| `POST /api/assistant/ask/stream` | new events `tool_call {call_id, round, tool, operation}` and `tool_result {call_id, step}`; `status: generating` carries `round`; `final` = the response above |
+
+- `SystemFact` = `{ref ("F1"), tool, operation, label, value, unit, effective_filters, definition,
+  access_scope: "visible_to_request_context", source: skh_document_registry | skh_knowledge_graph |
+  skh_template_registry | skh_ai_proposals, generation, as_of, items[{id, title, kind: document | template |
+  relation | proposal, status, detail, app_path}], truncated, breakdown}`. `[F1]` in `answer` refers to `ref`.
+  Render values from here; a fact is computed from the reader's own snapshot.
+- `ToolStepInfo` = `{call_id, round, tool, operation, outcome: ok | invalid | unknown_tool | not_found | denied |
+  unavailable | timeout | error, duration_ms, result_count, fact_ref, error_code, message}` — no payloads.
+- `TurnFactContext` = `{tool, operation, filters (≤ 12 keys, ≤ 1000 chars JSON), document_ids (≤ 20), value}`;
+  unknown fields → 422. Context only: IDs the reader can no longer see are dropped, every tool call re-checks access.
+- Confidence: an answer backed by `system_facts` may be `supported` without document citations; a general explanation
+  is `partial` with `general_knowledge: true` and a warning; without either the v0.4 gate applies unchanged.
+- `proposal` may now also come from a `drafts_propose` tool step (same `ProposalRef`, status `suggested`, nothing
+  applied); the route requires nothing new — the tool is offered only when the user has `create_proposal`.
+- Which answers use tools: a plain question (or `skill_id: "answer"`) with a provider that supports the loop
+  (`internal_api`, `claude_cli`) and `AI_TOOLS_ENABLED=true`. `mock`, explicit skills and `AI_TOOLS_ENABLED=false`
+  behave exactly as v0.4 (empty `system_facts` / `tool_steps`).
+- Client (UI v2, `frontend/src/api/client.ts`): passes `status.round`, `tool_call` and `tool_result` to the caller; a
+  malformed tool event is skipped like an unknown event (it only feeds a progress line). A follow-up echoes the
+  previous answer's `conversation_context` as `history[i].context`.

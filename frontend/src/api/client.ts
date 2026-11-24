@@ -11,6 +11,10 @@ import type {
   AssistantSkill,
   AuthoringCheckRequest,
   AuthoringCheckResponse,
+  BlankDocumentInfo,
+  DocumentTemplateApply,
+  DraftTemplateApply,
+  TemplateApplyPreview,
   ChangeDraftUpdate,
   CorporatePage,
   DocumentDetail,
@@ -19,6 +23,7 @@ import type {
   DocumentPublicationStatus,
   DocumentSort,
   DocumentTemplateInfo,
+  DocumentTree,
   DocumentLinks,
   DocumentTypeInfo,
   DiscoveryFeedbackResponse,
@@ -53,6 +58,7 @@ import type {
   TemplateComparison,
   TemplateDetail,
   TemplateSummary,
+  ToolStepInfo,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
@@ -212,7 +218,23 @@ function parseStreamEvent(line: string, requestId: string | null): AskStreamEven
         stage: value.stage,
         passages: typeof value.passages === "number" ? value.passages : undefined,
         provider: typeof value.provider === "string" ? (value.provider as AiMode) : undefined,
+        // M5.7: the model round of a tool loop (each round starts a new preliminary text).
+        round: typeof value.round === "number" ? value.round : undefined,
       };
+    // M5.7: the backend runs an allowlisted tool for the model / reports how it ended (no payloads). A malformed
+    // tool event is skipped like an unknown one: it only feeds a progress line, never the answer.
+    case "tool_call":
+      if (typeof value.tool !== "string" || typeof value.call_id !== "string") return null;
+      return {
+        type: "tool_call",
+        call_id: value.call_id,
+        round: typeof value.round === "number" ? value.round : 1,
+        tool: value.tool,
+        operation: typeof value.operation === "string" ? value.operation : null,
+      };
+    case "tool_result":
+      if (typeof value.call_id !== "string" || !isRecord(value.step)) return null;
+      return { type: "tool_result", call_id: value.call_id, step: value.step as unknown as ToolStepInfo };
     case "delta":
       if (typeof value.text !== "string") throw invalidStream(requestId);
       return { type: "delta", text: value.text };
@@ -378,6 +400,8 @@ export const api = {
   integrations: () => request<IntegrationsResponse>("/integrations/status"),
   documents: (params: DocumentListParams = {}) => request<DocumentPage>(`/documents${query({ ...params })}`),
   document: (id: string) => request<DocumentDetail>(`/documents/${encodeURIComponent(id)}`),
+  /** «Документы» v2: sections → groups → documents of the whole visible base, with attention counts. */
+  documentTree: () => request<DocumentTree>("/documents/tree"),
   facets: () => request<DocumentFacets>("/knowledge/facets"),
   indexStatus: () => request<SyncStatus>("/index/status"),
   syncIndex: () => request<SyncStatus>("/index/sync", { method: "POST" }),
@@ -465,6 +489,29 @@ export const api = {
   /** Persists a draft of a NEW document (proposal with operation=create). 409 when the ID/path is taken. */
   createNewDocumentDraft: (payload: NewDocumentDraftCreate) =>
     request<ProposalDetail>("/authoring/drafts", { method: "POST", body: json(payload) }),
+  /** «Пустой документ»: the ID prefix, a preview of the next ID / path and the default section. */
+  blankDocument: () => request<BlankDocumentInfo>("/authoring/blank"),
+  /** «Применить шаблон» to a draft: the result as a diff (nothing stored). */
+  previewDraftTemplate: (id: string, templateId: string) =>
+    request<TemplateApplyPreview>(`/drafts/${encodeURIComponent(id)}/apply-template/preview`, {
+      method: "POST",
+      body: json({ template_id: templateId }),
+    }),
+  /** Pins the template and updates the draft; 409 `draft_modified` / `template_version_changed` when stale. */
+  applyDraftTemplate: (id: string, payload: DraftTemplateApply) =>
+    request<ProposalDetail>(`/drafts/${encodeURIComponent(id)}/apply-template`, { method: "POST", body: json(payload) }),
+  /** «Применить шаблон» to an indexed document: the result as a diff (nothing stored). */
+  previewDocumentTemplate: (documentId: string, templateId: string) =>
+    request<TemplateApplyPreview>(`/documents/${encodeURIComponent(documentId)}/apply-template/preview`, {
+      method: "POST",
+      body: json({ template_id: templateId }),
+    }),
+  /** A change PROPOSAL (the document itself never changes here); 409 `revision_conflict` when stale. */
+  applyDocumentTemplate: (documentId: string, payload: DocumentTemplateApply) =>
+    request<ProposalDetail>(`/documents/${encodeURIComponent(documentId)}/apply-template`, {
+      method: "POST",
+      body: json(payload),
+    }),
 
   // --- publication to Confluence (M5) ---
   documentPublication: (id: string) =>

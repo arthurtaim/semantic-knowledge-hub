@@ -1,9 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /*
- * UI v2 round 2 on the offline demo stack: the catalog's «Связи» column is the API's `link_count` — the same number
- * as the document page's «Связи» — and «Обновлён» is the document's own date from its metadata (`updated_at`;
- * «—» for a fixture without one), never the time the files were loaded.
+ * «Таблица» of «Документы» v2 on the offline demo stack (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §3): «Связи» is
+ * the API's `link_count` — the same number as the document page's «Связи» — and «Проверен» the review date of the
+ * tree API, with the year. (UI v2 round 2 checked «Обновлён» here; the v2 table has «Проверен» instead — spec §3.)
  */
 
 function watch(page: Page): string[] {
@@ -20,44 +20,42 @@ async function rowCells(page: Page, title: string): Promise<string[]> {
   return row.getByRole("cell").allTextContents();
 }
 
-test("R2-01 catalog «Связи» equals the document page; «Обновлён» is the document's date, «—» without one", async ({ page }) => {
+test("R2-01 «Таблица»: «Связи» equals the document page; «Проверен» is the API's review date; sorting by «Связи»", async ({ page }) => {
   const problems = watch(page);
-  await page.goto("/documents");
+  await page.goto("/documents?view=table");
   const table = page.getByRole("table");
-  await expect(table.getByRole("columnheader")).toHaveText(["Название", "Статус", "Владелец", "Обновлён", "Связи"]);
+  await expect(table.getByRole("columnheader")).toHaveText(["Название", "Раздел", "Состояние", "Владелец", "Системы", "Проверен", "Связи"]);
+  const tree = await (await page.request.get("/api/documents/tree")).json();
 
   const title = "Semantic Layer — demonstration architecture";
   const cells = await rowCells(page, title);
   const links = Number(cells[cells.length - 1]);
-  expect(Number.isInteger(links)).toBe(true);
-  // A dated fixture shows its own front-matter `updated_at` (2026-11-20), never the load time.
-  const dated = await (await page.request.get("/api/documents/SEM-ARCH-001")).json();
-  expect(dated.metadata_updated_at).toBe("2026-11-20");
-  expect(cells[cells.length - 2]).toMatch(/^20 нояб\.? 2026/);
-  // A fixture without `updated_at` (a draft that was never reviewed) says «—».
-  const undated = await rowCells(page, "External Registry: внешний справочник");
-  expect(undated[undated.length - 2]).toBe("—");
+  expect(links).toBe(tree.documents["SEM-ARCH-001"].link_count);
+  // «Проверен»: the tree's date with the year (2026-11-20 on the demo base)
+  const reviewed: string = tree.documents["SEM-ARCH-001"].reviewed_at;
+  expect(cells[5]).toContain(reviewed.slice(0, 4));
+  expect(cells[5]).toMatch(new RegExp(`^${Number(reviewed.slice(8, 10))} `));
+  // A draft needs no review: «не требуется».
+  const draft = await rowCells(page, "External Registry: внешний справочник");
+  expect(draft[5]).toBe("не требуетсяПроверка не требуется");
   // Not a single row shows the time the workspace was seeded.
   await expect(table.getByText(/только что|мин\. назад|сегодня/)).toHaveCount(0);
+
+  // «Связи» descending: the API's link counts in order
+  await table.getByRole("columnheader", { name: "Связи" }).getByRole("button").click();
+  await expect(page).toHaveURL(/sort=links/); // the first click has landed before the second turns it around
+  await table.getByRole("columnheader", { name: "Связи" }).getByRole("button").click();
+  await expect(page).toHaveURL(/sort=-links/);
+  await expect(table.getByRole("columnheader", { name: "Связи" })).toHaveAttribute("aria-sort", "descending");
+  const shown = (await table.locator(".docs-table__row td:last-child").allTextContents()).map(Number);
+  expect(shown).toHaveLength(tree.total);
+  expect(shown).toEqual([...shown].sort((a, b) => b - a));
+  expect(shown[0]).toBe(Math.max(...Object.values(tree.documents as Record<string, { link_count: number }>).map((d) => d.link_count)));
 
   await table.getByRole("link", { name: title, exact: true }).click();
   const properties = page.locator(".doc-props");
   await expect(properties.getByRole("button", { name: /документ|нет связей/ })).toHaveText(
     links === 0 ? "нет связей" : new RegExp(`^${links} документ`),
   );
-
-  // Sorting «Сначала новые» uses the same date: newest first, documents without a date last (by title) — the
-  // documents seeded last do not jump to the top. The table shows exactly the API's order.
-  const api = await (await page.request.get("/api/documents?sort=updated&size=100")).json();
-  const dates: (string | null)[] = api.items.map((i: { metadata_updated_at: string | null }) => i.metadata_updated_at);
-  const known = dates.filter((d): d is string => d !== null);
-  expect(known.length).toBeGreaterThan(50);
-  expect(known).toEqual([...known].sort().reverse());
-  expect(dates.slice(known.length).every((d) => d === null)).toBe(true);
-  await page.goto("/documents?sort=updated");
-  await page.getByRole("button", { name: /^Группировка:/ }).click();
-  await page.getByRole("menuitemradio", { name: "Без группировки" }).click();
-  const titles = await page.locator(".catalog-row .catalog__title").allTextContents();
-  expect(titles).toEqual(api.items.map((i: { title: string }) => i.title));
   expect(problems).toEqual([]);
 });

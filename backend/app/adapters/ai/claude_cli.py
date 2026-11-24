@@ -37,6 +37,9 @@ from app.adapters.ai.base import (
     AuthoringRequest,
     ContextPassage,
     ProviderAnswer,
+    ToolTurnEvent,
+    ToolTurnReply,
+    ToolTurnRequest,
 )
 from app.adapters.ai.openai_compatible import (
     ASSIST_PROMPT,
@@ -51,6 +54,7 @@ from app.adapters.ai.openai_compatible import (
     parse_evidence,
     parse_model_json,
 )
+from app.adapters.ai.tool_protocol import ToolTurnVisibleText, build_tool_turn_message, tool_system_prompt
 from app.config import is_loopback_host
 from app.domain.instructions import RuntimeInstructions, compose
 from app.domain.models import IntegrationStatus
@@ -192,6 +196,9 @@ class ClaudeCodeCLIProvider:
     mode: AIMode = "claude_cli"
     supports_edit_suggestions = True
     supports_authoring = True
+    # M5.7: tool loop through the constrained text envelope. The CLI keeps every tool disabled (the worker flags are
+    # unchanged): SKH tools are executed by the backend, never by the CLI (docs/AI_NATIVE_TOOLS.md).
+    supports_tools = True
 
     def __init__(
         self,
@@ -303,6 +310,28 @@ class ClaudeCodeCLIProvider:
                     result = event.answer
         assert result is not None  # stream_answer always ends with AnswerComplete or raises
         return result
+
+    async def tool_turn(self, request: ToolTurnRequest) -> AsyncGenerator[ToolTurnEvent, None]:
+        """One round of the tool loop. Deltas: the prose of a final answer only (a JSON tool request is held back)."""
+        visible = ToolTurnVisibleText()
+        final: str | None = None
+        async with contextlib.aclosing(
+            self._run(
+                tool_system_prompt(self._instructions.for_task("tools"), request),
+                build_tool_turn_message(request, self._max_context_chars),
+                self._timeout,
+            )
+        ) as events:
+            async for event in events:
+                if event.get("type") == "delta":
+                    chunk = visible.feed(str(event.get("text") or ""))
+                    if chunk:
+                        yield AnswerDelta(chunk)
+                elif event.get("type") == "result":
+                    final = str(event.get("text") or "")
+        if final is None:
+            raise AIProviderError("ai_invalid_response", "Воркер Claude Code не вернул результат.")
+        yield ToolTurnReply(final)
 
     async def suggest_edit(self, instruction: str, document_markdown: str) -> str:
         text = await self._collect(

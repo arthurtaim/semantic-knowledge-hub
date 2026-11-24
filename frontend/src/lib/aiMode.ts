@@ -1,8 +1,7 @@
 import type { AiMode } from "../api/types";
 
 /**
- * How each AI mode presents itself (docs/research/SKH_UI_UX_direction_2026.md, «AI-first has to work in all
- * four AI modes»). `mock` and `disabled` are the default deployments, so the app is complete without a model.
+ * How each AI mode presents itself (AI-first has to work in all four AI modes, docs/UI_REDESIGN.md §5). `mock` and `disabled` are the default deployments, so the app is complete without a model.
  */
 export const AI_CHIP_LABEL: Record<AiMode, string> = {
   mock: "ИИ: демо",

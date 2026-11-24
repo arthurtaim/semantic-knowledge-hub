@@ -1,7 +1,6 @@
 # 02. Ассистент: диалог, поле ввода, вложения, навыки
 
-Источник: `design-01`, `design-02`, `design-03`, `design-04` (панель), `design-07` (все состояния поля),
-`design-source/Main.dc.html`, `Answer.dc.html`, `Composer.dc.html`.
+Источник: `design-01`, `design-02`, `design-03`, `design-04` (панель), `design-07` (все состояния поля).
 
 ## 1. Главная = ассистент (`design-01`, `design-02`)
 

@@ -386,6 +386,27 @@ describe("api.askStream", () => {
     expect(answer).toEqual(supportedAnswer);
   });
 
+  it("M5.7: passes the model round and the tool events on; a malformed tool event is skipped, not fatal", async () => {
+    const step = { call_id: "T1", round: 1, tool: "catalog_query", operation: "count", outcome: "ok", duration_ms: 0, result_count: 83, fact_ref: "F1", error_code: null, message: null };
+    mockApi([
+      streamRoute(
+        { type: "status", stage: "generating", round: 1, passages: 2, provider: "claude_cli" },
+        { type: "tool_call", call_id: "T1", round: 1, tool: "catalog_query", operation: "count" },
+        { type: "tool_call", round: 1 },
+        { type: "tool_result", call_id: "T1", step },
+        { type: "status", stage: "generating", round: 2, passages: 2, provider: "claude_cli" },
+        { type: "final", response: supportedAnswer },
+      ),
+    ]);
+    const seen: AskStreamEvent[] = [];
+    await api.askStream(payload, { onEvent: (e) => seen.push(e) });
+    expect(seen.map((e) => e.type)).toEqual(["status", "tool_call", "tool_result", "status", "final"]);
+    expect(seen[0]).toMatchObject({ stage: "generating", round: 1 });
+    expect(seen[1]).toEqual({ type: "tool_call", call_id: "T1", round: 1, tool: "catalog_query", operation: "count" });
+    expect(seen[2]).toEqual({ type: "tool_result", call_id: "T1", step });
+    expect(seen[3]).toMatchObject({ stage: "generating", round: 2 });
+  });
+
   it("rejects a stream that ends without a terminal event", async () => {
     mockApi([streamRoute({ type: "status", stage: "retrieving" })]);
     await expect(api.askStream(payload)).rejects.toMatchObject({ code: "stream_incomplete" });

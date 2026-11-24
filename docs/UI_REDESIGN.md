@@ -139,7 +139,7 @@ Mono only for IDs, revisions and diffs. Scale unchanged (`--step--1 … --step-4
 - No horizontal scroll at 360 px; keyboard focus visible on the dark bar and on paper.
 - No changes to API calls, routes, accessible names or Russian copy that tests rely on.
 
-## 5. Phase 4 — AI-first entry (from `docs/research/SKH_UI_UX_direction_2026.md`)
+## 5. Phase 4 — AI-first entry (UI/UX research, kept in git history)
 
 Scope: the research roadmap sections «Quick wins» and «AI-first entry (on the current component set)», on the
 current stack, without new UI libraries or backend changes. The audit in the research was made on the phase‑1
@@ -271,7 +271,7 @@ separate labelled step.
 
 ## 6. UI v2 — the new interface (phases A–F, 2026-11-24)
 
-Task: `docs/ui-v2/TASK.md`; specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
+Task: the UI v2 handoff (kept in git history); specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
 `04_KNOWLEDGE_GRAPH.md`; mockups `docs/ui-v2/screens/design/`. Branch `feature/ui-v2-workspace`. Routes, existing API
 contracts and the AI rules (`02_ASSISTANT.md` §6) are unchanged; the only new endpoints are those of `02_ASSISTANT.md`
 §5 (the review round added only optional parameters and fields, §6.8). New dependencies: `@fontsource/inter` (frontend); `pypdf`, `python-docx`, `openpyxl` (backend, attachments);
@@ -282,14 +282,14 @@ Paths below without a prefix are under `frontend/src/`; `public/` and `e2e/` are
 
 | Phase | What | Commits |
 |---|---|---|
-| A. Visual system | Colour tokens for light and dark in one block of `styles/app.css` (`tokens.test.ts`: no colour literal outside it, the two dark blocks identical, WCAG pairs); theme «Как в системе» / light / dark in the user menu (`lib/theme.ts`), applied before first paint by `public/theme-init.js`; Inter as the one typeface (Golos Text and PT Serif removed; JetBrains Mono only for Markdown source, diffs, code); `components/ui`: `Icon` (inline SVG from `design-source/`), `Button` / `IconButton`, `SegmentedControl`, `Chip`, `StatusMark`, `Popover` / `Menu` (APG keyboard), `Tooltip`; every existing screen moved onto the tokens | 4c37f92, a983929, 2125321, d4f2e2d |
+| A. Visual system | Colour tokens for light and dark in one block of `styles/app.css` (`tokens.test.ts`: no colour literal outside it, the two dark blocks identical, WCAG pairs); theme «Как в системе» / light / dark in the user menu (`lib/theme.ts`), applied before first paint by `public/theme-init.js`; Inter as the one typeface (Golos Text and PT Serif removed; JetBrains Mono only for Markdown source, diffs, code); `components/ui`: `Icon` (inline SVG from the mockup sources), `Button` / `IconButton`, `SegmentedControl`, `Chip`, `StatusMark`, `Popover` / `Menu` (APG keyboard), `Tooltip`; every existing screen moved onto the tokens | 4c37f92, a983929, 2125321, d4f2e2d |
 | B. Shell | Left sidebar (logo and workspace, «Поиск ⌘K», Ассистент, Ревью, groups Знания / Работа / Система, user), icon rail (⌘\\), drawer below 960 px; the 52 px page toolbar with the path or title, page actions, the «Демо» badge and the AI-mode chip (`components/shell/*`, `lib/routes.ts`) | 3d2f9cb, 54cb82d, b74493b, 9422c9d, 353bf56 |
 | C. Assistant | Backend: skills registry over the M5.6.3 scenarios, conversation attachments (md, txt, csv, json, yaml, sql, pdf, docx, xlsx; text only; per-dialog; TTL), new `ask` fields and the `attachment` citation (API v0.4, `docs/API_CONTRACTS.md`). Frontend: `Composer` (files by button / drag / paste, skills by button and «/», documents by button and «@», «Где искать», AI-mode label), the home page as the assistant screen, `/ask` as a dialog (markers in the text, citation card, one «Источники» block in three groups, excluded documents folded, pinned field), the ⌘K palette as `QuickFind` | 85d40d4, d7aff6b, 6546d1a, 5bd9f84, e2ee2d0, 2b21bfd, 78fa6ee, a2fb106, 4ce9cef, dbd51e9, 51e4f98, 66f23d0, e6208bf |
 | D. Document, catalog, other pages | Document: status line, 30/36 title, properties grid, segments Текст / Связи / История / Markdown, «Сведения» panel, assistant panel (⌘J) with context chips, quick actions and the compact field, floating bar over a selection (Alt+F10). Catalog: table with groups and counts, filter chips and «+ Фильтр», Список / Таблица / Карта, phone card rows and a filter sheet. Templates, import, create, proposals, publication, corporate page, integrations and 404 in the toolbar / content / right-panel pattern | e8b707f, 325da89, 80b5d31, 915dfc6, 5be8e16, 3ac55e7, fa96c5b, 59d26bf |
 | E. Knowledge map | Deterministic layout without overlaps (rings around a centre, unlinked nodes on an outer ring), type colours and shapes, label placement by priority, highlight of a node's neighbourhood, legend, node dragging with manual positions per view (`sessionStorage`), «Сбросить расположение», Alt+arrows (`docs/KNOWLEDGE_GRAPH.md`) | 6147ce9, cb7a152, bef9602, 45a0106, 5f3152d, 5c1e783 |
 | F. Polish | Dark theme pass, phone 360 / 390 px, WCAG 2.2 AA audit and fixes, dead styles and exports removed, flaky tests made robust, this section (§6.4) | §6.7 |
 
-### 6.2 Checklist — `TASK.md` §2 and the specs
+### 6.2 Checklist — the UI v2 task §2 and the specs
 
 Status: **сделано**, **частично** (what is missing is said), **нет**.
 
@@ -297,7 +297,7 @@ Status: **сделано**, **частично** (what is missing is said), **н
 |---|---|---|
 | A · tokens as CSS custom properties, light and dark, theme from the system or chosen | сделано | `styles/app.css` (token block), `lib/theme.ts`, `public/theme-init.js`, sidebar user menu «Тема» |
 | A · Inter only (`@fontsource/inter`), Golos and PT Serif removed | сделано | `package.json`, `styles/fonts.css` |
-| A · `Icon` from `design-source/` (inline SVG, no library) | сделано | `components/ui/Icon.tsx` |
+| A · `Icon` from the mockup sources (inline SVG, no library) | сделано | `components/ui/Icon.tsx` |
 | A · Button (primary / secondary / quiet / icon), SegmentedControl, Chip, StatusMark, Popover / Menu, Tooltip | сделано | `components/ui/*`; since phase F the map and the create page use `SegmentedControl` too (one segmented style) |
 | A · no hex outside the tokens | сделано | `tokens.test.ts` («uses no colour literal outside the token definitions») |
 | 01 · CiteMarker, SourceBadge | частично | markers are `CitationMarker` / `.cite-pill` (`AnswerParts.tsx`); the source is a group heading and a meta line, not a separate badge component |
@@ -451,7 +451,8 @@ Shell
   ревью» except the reader's own proposals (owner's decision; the API still has no reviewer assignment «на мне»). In
   the single-user demo it is usually 0, so no badge. The proposals page shows it as «Ревью» with a «Кроме моих»
   toggle after the status chips.
-- «Публикации» opens the Confluence publisher row of the integrations page: there is no publications list page.
+- «Публикации» opens its own list page `/publications` (§6.11). Until then it opened the Confluence publisher row of
+  the integrations page, so after a click «Интеграции» became current while «Публикации» still looked selected.
 - «Предложения» counts and opens the open proposals (`/proposals?open_only=true`: draft, ready for review, being
   sent, in a GitLab MR, sending failed — not merged, rejected or conflict), owner's decision; the page has an
   «Открытые» chip next to «Все».
@@ -625,3 +626,277 @@ Checks of the merged round (this tree, real runs):
 - Frontend: `tsc`, `eslint` clean; `vitest` 346 → 391 (33 files).
 - E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 55 passed, 1 skipped → 65 passed,
   1 skipped.
+
+### 6.10 M5.7 — system facts in the answer (2026-11-24)
+
+Minimal changes to the existing answer view for the AI-native tool loop (`docs/AI_NATIVE_TOOLS.md` «UI»); no new
+screen, ribbon, chat framework or debug view; mock mode is unchanged (it does not use tools).
+
+- **«Данные системы SKH»** (`components/SystemFacts.tsx`, `lib/systemFacts.ts`): a block of its own under the answer
+  text, apart from «Источники» (whose three groups are unchanged). One row per `system_facts` entry: «По данным реестра
+  SKH — {label}», the value with its unit from the observation (`83 документа`, never re-read from the text), the
+  filters really applied in words («Фильтр: статус: утверждён · тег: aris»; a text match is «текст содержит «ARIS»»
+  and its definition says it is not a tag), «Весь доступный вам каталог, без фильтров» when there are none, items as
+  links (`app_path`) with status, «Показаны первые N из M» when `truncated`, quietly the scope, index generation and
+  time. A zero says «Нет совпадений в этой области — это ноль, а не ошибка проверки».
+- **Markers**: `[F1]` becomes «С1» — outlined (border `--line-field`, surface background), where citation markers are
+  filled (1 / К1 / Ф1). A link with a tooltip on hover and focus; Enter or a click moves focus to its row (`tabindex
+  -1`, `:focus` wash = the same as a source row reached from its marker). A proposal fact (`drafts_propose`) has no row:
+  its marker leads to the existing proposal card (`AskProposal`, anchor `proposal-N`).
+- **General knowledge**: `general_knowledge: true` adds a quiet dashed tag «Общие знания, не данные SKH» to the answer
+  head (the server's warning stays).
+- **Honest states**: tools were used and the answer could not be confirmed → «Не удалось проверить данные системы» with
+  each failed check and its own outcome (source unavailable / no answer in time / no access / not found in your scope /
+  request refused) and «Уточнить вопрос» — instead of «В базе знаний нет ответа» with lexical near matches. Next to an
+  answer that stands, checks that did not work out and that its text does not already report are listed the same way.
+- **Conversation**: follow-ups send `history[i].context` = the answer's `conversation_context`; the stream client now
+  passes `status.round`, `tool_call` and `tool_result` on; a new model round starts a new preliminary text; one short
+  status line names the running check («Проверяю каталог…», «Ищу в документах…», «Смотрю граф связей…», «Смотрю
+  шаблоны…», «Готовлю предложение…»).
+- Tokens only (no new colour), one primary button per view kept (the cards have none), 1440 / 390 and both themes
+  checked on screenshots (`reports/m57/TEST_RESULTS.md`).
+
+### 6.11 «Публикации» — the list of publication jobs (2026-11-24)
+
+Branch `feature/publications-page`. No backend change, no new dependency, existing routes and API unchanged.
+- `/publications` (`pages/PublicationsPage.tsx`) lists `GET /api/publications/jobs` — newest first, at most 50 (the
+  endpoint has no other filter or paging; at 50 the page says only the newest are shown, so no state chips). Columns:
+  document (its title from `GET /api/documents/{id}`, one lookup per document; a document the reader cannot open
+  keeps only its ID), state (the existing `PUBLICATION_JOB_STATE_LABEL` and `.pub-state` tones for all nine job
+  states), the Confluence page the job reports (`page_id`, `version_after`; a job carries no space), revision,
+  «Обновлено». The title opens `/publications/:jobId`, the ID the document; the whole row opens the job. Card rows
+  below 720 px, as in the proposals list.
+- Empty states come from `GET /api/integrations/status` (`confluence_publisher`): disabled → «Публикация в Confluence
+  выключена», the server's message, what publication needs (Confluence REST target, GitLab as the source of merged
+  revisions, opt-in) and «Интеграции» → the publisher row; enabled → «Публикаций пока нет» and how a publication
+  starts («История» → «Публикация в Confluence» → «Подготовить публикацию», or after a merge); check failed → the
+  server's message. Without that status (another permission) the session's `confluence_publish` decides.
+- Sidebar: «Публикации» → `/publications`, current on `/publications` and `/publications/:jobId` only; «Интеграции»
+  only on `/integrations`. The job page's path starts at «Публикации» → `/publications`. `PUBLICATIONS_HREF` is
+  removed; the hash link survives as `PUBLISHER_INTEGRATION_HREF` for the empty state. Checklist and keyboard (§6.2,
+  §6.3) are unaffected.
+- Checks: `vitest` 391 → 402; E2E 65 passed, 1 skipped → 68 passed, 1 skipped (`publications.spec.ts` desktop and
+  mobile, `publication.spec.ts` E2E-37 on gitlab-mock, `/publications` in F-01).
+
+## 7. «Документы» v2 — tree, overview, table (2026-11-24)
+
+Task: the documents v2 handoff (kept in git history), spec `docs/ui-v2/documents/specs/DOCUMENTS_V2.md`, mockups
+`docs/ui-v2/documents/screens/design/docs-01…04.png`. Branch
+`feature/documents-v2`. The only API change is the spec's §4 (additive: `GET /api/documents/tree`, optional `summary`
+and `systems` on list items; the follow-up round changed no contract); no new dependencies — the tree, the menus and the sheets are the app's own components.
+Paths without a prefix are under `frontend/src/`.
+
+### 7.1 What was done, by slice
+
+| Slice | What | Commits |
+|---|---|---|
+| 1. Data | `backend/app/domain/doc_tree.py`: the computed group rule (variant 1: source systems by title and `sys-<key>` tag; integrations by the first consumed source system, else a system tag, else «Общие правила»; standards split into templates and rules; a resolver chain so an explicit `parent` can later go first); `GET /api/documents/tree` through the existing service and visibility (counts, `attention`, per-document review state, owner, systems, link count, group); `summary` / `systems` on list items; `KnowledgeService.today` to pin dates in tests | 1d25fca |
+| 2. Views | `Обзор \| Список \| Таблица \| Карта` in the toolbar, the state in the URL (`lib/docsView.ts`: view, node, doc, q — the older `query` read too —, order, the table's keys), the view remembered (`skh.documents.view`), «Список» by default; one shared tree request (`lib/useDocumentTree.ts`) and the tree model (`lib/docTree.ts`) | b3d9233 |
+| 3. Tree | `components/docs/DocTree.tsx`: «Фильтр дерева», «Свернуть всё», «Все документы» / «Требуют внимания», sections → groups → documents with the API's counts and the yellow attention counter, status by icon shape; APG Tree View; open branches remembered (`skh.documents.tree`); opens to `doc=` / `node=` from the URL | 91885f5 |
+| 4. List and preview | `BranchList.tsx` (path, count, order menu, three-line rows, status only when not approved, no paging, `content-visibility` beyond 200 rows), the toolbar search in the middle column, `DocPreview.tsx` (status, ID, version, title, summary, actions, properties, tags, «Разделы документа»; skeleton, error with retry); the document page's path follows the tree | c45051e |
+| Owner's decision | One primary per view: «Открыть» in the preview is secondary, the preview's title is a link to the document; a double click or Enter on a row opens it (slice 4, kept and tested) | fb32e0f |
+| 5. Обзор | `lib/docsOverview.ts`, `components/docs/DocsOverview.tsx`: «N документов, M утверждены», «K требуют внимания» (→ the table with «Только требующие внимания»), the matrix sections × Всего / Утверждено (number + share bar) / На ревью / Черновики / Устарели / Нужна проверка / Без владельца with a total row (a real `<table>`: table / row / rowheader / cell), zero a pale «—» with words for assistive technology, a number a chip of its tone → «Таблица» filtered by section and state, a section → «Список» with it open; «Что сделать» by action (Завершить ревью, Назначить владельца, Перепроверить, Черновики и устаревшие), three documents each and «Ещё N» → the filtered table. Counted on the client from the tree | 71476f8 |
+| 6. Таблица | `lib/docsTable.ts`, `components/docs/DocsTable.tsx`: menu-button filters (Раздел, Состояние = Статус + «Проверка и владелец», Владелец with «не назначен», Система, Тег, Источник when the base has several), «Только требующие внимания», «N из M», «Группировка: нет / Раздел / Владелец / Система», «Колонки» (remembered, `skh.documents.columns`); columns Название + ID, Раздел, Состояние, Владелец, Системы, Проверен, Связи; header sort with `aria-sort` («Проверен ↑» by default), 38 px rows under a sticky header, the whole row opens the document, ↑↓ between rows, collapsible groups, no paging; every filter, the sort and the grouping in the URL; phones: cards and a filter sheet. `Menu` gained checkbox groups and a trailing count. The old catalog table (`DocsCatalog`, `CatalogTable`, «Вид», «Обновлён», «+ Фильтр») and its CSS are gone | 26919fc |
+| 7. Widths, accessibility | «Список»: the preview a right sheet below 1280 px; below 960 px the tree a left sheet behind «Разделы»; phones one screen at a time with «Назад» in the toolbar. «Таблица» below 1280 px: tighter columns, «Системы» hidden until the reader chooses columns. No sideways scroll at 390 / 360 px; dark theme from the tokens; keyboard tests for the overview and the table | 3ca3991 |
+| Fixes | «Таблица» never shows a previous search's rows while a new search loads; e2e R2-01 waits for the first header click before the second (a race under the full suite's load) | 1f6dc34, 55da64c |
+| 8. This section | — | 3e694b9 |
+| Follow-ups (owner's answers, §7.4) | «Система» matches any of a document's systems (tests); «Проверен» keeps «не требуется» last both ways (table and «По дате проверки»); Тег / Источник in «Ещё» with chips; whole-base search verified against `/api/search` (index, ranking, access) and the source on every result row; «Системы» below 1280 px back through «Колонки» and remembered (test); «today» frozen in tests | 3cb0924, aa9df78, 3672e59, 2291e97, 2cf43ba, 6c8b591 |
+
+URL keys of «Таблица» (`lib/docsTable.ts`): `type`, `status`, `flag` (`needs_review`, `no_owner`), `owner`
+(`unassigned` = every document without an owner), `system`, `source`, `tag`, `attention=1`, `sort` (`reviewed` by
+default, `-key` descending; an old `sort=updated` falls back to the default), `group` (`type`, `owner`, `system`).
+Values of one key combine with «или», keys with «и» — so «Перепроверить» is `status=approved&flag=needs_review`.
+A link with only table keys opens «Таблица» (old links like `/documents?owner=unassigned` or `?tag=aris` keep working).
+
+Demo numbers (synthetic base, 24 Nov 2026): 83 documents, 73 approved, 12 need attention. Matrix rows (Всего,
+Утверждено, На ревью, Черновики, Устарели, Нужна проверка, Без владельца): Продукт 1/1/–/–/–/–/–; Архитектура
+1/1/–/–/–/–/–; Домен 9/7/2/–/–/1/–; Системы-источники 12/10/1/1/–/1/1; Интеграции 19/16/–/2/1/1/–; Датасеты
+3/3/–/–/–/–/–; Процессы 7/6/–/–/1/1/1; Решения 5/5/–/–/–/–/–; Стандарты 19/17/1/–/1/2/–; Руководства 5/5/–/–/–/–/–;
+Глоссарий 2/2/–/–/–/–/–; total 83/73/4/3/3/6/2. «Что сделать»: 4 / 2 / 2 / 6. «Таблица»: «Только требующие внимания»
+12 of 83; «Интеграции / Черновики» 2 rows; «Владелец: не назначен» 2; «Система: ARIS» 13.
+
+The assistant uses the same definition: M5.7 `catalog_query` with `filters.needs_attention` applies the tree's rule
+(`doc_tree.attention_reasons` via `KnowledgeService.attention_reasons`, the reader's snapshot, today's review state),
+so «Сколько документов требуют внимания?» gives the tree's `attention_total` (12 on the demo base) with the rule in
+the fact's definition and the reasons per document (`docs/AI_NATIVE_TOOLS.md`).
+
+### 7.2 Keyboard
+
+| Keys | Where | Does |
+|---|---|---|
+| ↑↓, → / ←, Home / End, Enter, letters | tree (APG Tree View) | move; open or enter / close or go to the parent; first / last; choose; type-ahead. Esc in «Фильтр дерева» clears it |
+| ↑↓, Home / End; Space; Enter or double click | branch list (one tab stop) | move between rows; show in the preview; open the document |
+| Tab, Enter | preview | the title is a link; «Открыть», «Спросить ассистента», «Предложить изменение» |
+| Tab, Enter | «Обзор» | the section (→ «Список»), then its non-zero numbers (→ «Таблица»); zero cells are text, not stops |
+| Enter / Space on a header | «Таблица» | sort by the column; again — the other direction (`aria-sort`) |
+| ↓ / Enter / Space, ↑↓, Space / Enter, Esc | filter menus, «Ещё», «Колонки» | open; move; toggle (the menu stays open); close and return to the button |
+| Tab, Enter / Space | a filter chip («Тег: aris») | its «×» («Убрать фильтр «Тег: aris»») removes the filter |
+| ↑↓, Home / End, Enter | «Таблица» rows (one tab stop) | move between rows; open the document |
+| Esc | tree and preview sheets, the filter sheet | close and return focus to «Разделы» / the row / «Фильтры» |
+
+### 7.3 Deviations from the mockups and the spec, with reasons
+
+- **One primary button per view (owner's decision).** docs-01 shows two green buttons — «Создать документ» in the
+  toolbar and «Открыть» in the preview. By the owner's decision «Открыть» is secondary, the preview's title is a link
+  to the document, and a double click or Enter on a list row opens it; the view's one primary is «Создать
+  документ» (fb32e0f).
+- **Search over the whole base uses `GET /api/documents?query=`**, not `/api/search` (spec §1 «Список ветки»): the
+  list shows documents, not passages, and this endpoint gives one row per document with the highlighted snippet and
+  «Почему найдено» the catalog already had; 100 per request, «Показать ещё». In «Таблица» the same search narrows
+  the rows (up to 500 found documents). Kept by the owner on two conditions, both checked in the code and tested:
+  (a) it is the same search as `/api/search` — `KnowledgeService.list_documents` and `SearchService.search` both call
+  `RetrievalService.rank_documents` over the same SQLite FTS5 index and the same **reader's snapshot**, which is the
+  access check (a document the reader cannot see is found by neither, even through one index of the whole base or a
+  declared relation; on the demo base both return the same documents in the same order for one-word queries; the
+  list keeps up to 1000 matches, so for several words it may add partial matches beyond `/api/search`'s top-N);
+  (b) every result carries its provenance — `source` (`local|gitlab|confluence`), `source_uri`, `revision` were
+  already required fields, so no API change — and a result row now says its source quietly («Локальный
+  workspace», «GitLab»; «Источник:» for assistive technology), in «Таблица» with a search too. Tests:
+  `tests/test_doc_tree.py::test_a_hidden_document_is_found_by_neither_documents_query_nor_search`,
+  `::test_documents_query_ranks_like_search_and_every_result_carries_its_source`; contract note in
+  `docs/API_CONTRACTS.md` §2. The composer's «@» and the assistant stay on `/api/search` / the retrieval service.
+  Finding: the ⌘K palette's instant matches (`components/QuickFind.tsx`) have used `GET /api/documents?query=` since
+  phase 4, not `/api/search`; with (a) it is the same index, ranking and access check, so it was left as it is.
+- **List rows say a little more than the spec:** «без владельца» on the meta line, the status as shape + text, and
+  the source once under the list (on every row when sources mix) — catalog features kept (spec §5).
+- **«По названию» uses Russian collation** (Cyrillic before Latin, `localeCompare("ru")`), in the list and in the
+  table's «Название».
+- **The 12 is date-dependent — in the product, not in the tests.** «Требуют внимания» counts stale reviews (older
+  than 180 days) with the server's current date; DEMO-PROC-009 becomes stale on 2026-12-07 and the count then rises
+  to 13. The UI keeps counting with the current date (the server's `attention`). The tests are frozen: pytest's
+  `client_factory` pins `KnowledgeService.today` to `TEST_TODAY` (2026-11-24) for every app it builds
+  (`tests/conftest.py`; a test about the date sets its own); vitest uses the frozen demo tree
+  (`__tests__/docsTreeDemo.json`) and one test moves the browser clock to 2027 (fake `Date`) to show the client never
+  re-dates reviews; E2E asserts no date-dependent literal — it compares the UI with the API's `attention_total` (the
+  stack has no server-date setting, so it is not pinned).
+- **«Обзор»:** rows follow the tree's order (spec), not the mockup's order by size; the matrix is a real `<table>`
+  (implicit table / row / rowheader / cell roles) instead of a grid of `div`s; «12 требуют внимания» is a link to
+  «Таблица» with «Только требующие внимания»; the hint says the numbers open the documents «в таблице» (the mockup
+  said «списком»; the spec sends cells to «Таблица»); «Черновики и устаревшие» lists three documents and «Ещё N»
+  like the other groups (spec) instead of only «Показать списком»; «Перепроверить» shows the review date, the other
+  groups the section; a narrow work area puts «Что сделать» under the matrix, a phone shows the sections as a list
+  with chips (no mockup for these widths).
+- **«Таблица»:**
+  - «Состояние» uses the app's `StatusMark` — a draft is a dashed circle (visual system), not the mockup's filled
+    amber dot.
+  - «Проверен ↑» puts «не проверялся» first (the oldest of all, as the list's «По дате проверки»); the mockup lists it
+    after the dates. «не требуется» (drafts: no review expected) is last in **both** directions (owner's decision):
+    «Проверен ↓» is the newest … the oldest, «не проверялся», then «не требуется»; the branch list's «По дате
+    проверки» (one direction) follows the same rule.
+  - Filters «Тег» (the base's 30 most used tags; a tag is answered by the server, the tree has no tags) and «Источник»
+    (only when the base has several sources, or one is chosen) keep the old catalog's facets (spec §5). By the
+    owner's decision they sit in one «Ещё» menu after «Только требующие внимания»; the panel keeps Раздел,
+    Состояние, Владелец, Система. A value chosen in «Ещё» is a chip on the panel with «×» («Тег: aris», «Источник:
+    GitLab»), so an active filter is never hidden; the phone's filter sheet lists every filter as its own group. The
+    query is a removable chip; «Сбросить фильтры»; «Спросить ИИ об этих документах» with a query.
+  - The old table's «Обновлён» column and «Вид» menu are gone: spec §3 names «Проверен» and header sorting, and the
+    tree has no update date.
+  - «Состояние» is one menu over two keys (`status`, `flag`), so «Перепроверить» (approved and overdue) is expressible.
+  - «Группировка: Система» puts a document under its first system (the one its tree group is named after), so every
+    document is counted once; groups collapse like the old table's. The owner confirmed this. A document belongs to
+    ONE tree group (its first system), the preview lists ALL its systems («Системы: ARIS, Data Catalog»), and the
+    «Система» filter matches a document by ANY of its systems (its menu counts it under each): «Data Catalog» finds
+    DEMO-INT-001 and DEMO-INT-004, whose groups are ARIS and CATIA.
+  - Below 1280 px «Системы» starts hidden (seven columns do not fit about 850 px without cutting «Название» and the
+    status); «Колонки» shows it, and an explicit choice is remembered in this browser (`skh.documents.columns`) and
+    holds at any width — accepted by the owner on that condition, pinned by a test that reopens the table at 1100 px.
+  - The table is not an ARIA grid: rows are a roving set of title links (↑↓), cells are plain text.
+- **One search field.** docs-04 names the table's field «Фильтр таблицы»; the toolbar keeps one field «Найти в
+  документах» for «Список» and «Таблица» (the same `q` in the URL).
+- **Phones:** «Назад» is an icon button labelled «Назад» (with a tooltip), so «Документы» stays readable at 390 px;
+  the branch head puts the order menu under the branch's name.
+- **Below 960 px** the tree sheet stays open while a section with groups is opened, and closes on a branch to read or a
+  document (one tap fewer than closing it each time).
+- **Dark theme** has no mockups; it follows the tokens.
+
+### 7.4 Open questions — the owner's answers (2026-11-24)
+
+1. **«Группировка: Система».** Under the first system, as now: one tree group per document (its first system); the
+   preview lists all its systems; the «Система» filter matches any of them. Verified and tested (3cb0924).
+2. **«Проверен ↑».** «не проверялся» first in ascending order (older than any date) — kept; «не требуется» always
+   last, in both directions; the same for «По дате проверки». Fixed and tested both ways (aa9df78).
+3. **«Тег» and «Источник».** Into one «Ещё» menu; an active one is a chip with «×» on the panel (3672e59).
+4. **`tags` / `updated_at` in `GET /api/documents/tree`.** Only if, without them, the preview made an extra request
+   per document that they would remove. It does not: the preview needs `GET /api/documents/{id}` anyway — for
+   «Разделы документа» (`sections`), the version, the summary and the tags (`components/docs/DocPreview.tsx`) — so
+   the tree API is unchanged. A tag filter in «Таблица» stays one server request (`GET /api/documents?tag=`).
+5. **Whole-base search.** `GET /api/documents?query=` stays, on two conditions — the same FTS5 index and access check
+   as `/api/search`, and the source on every result. Both hold (checked in the code, tested); the row now shows the
+   source (2291e97). See §7.3.
+6. **An explicit `parent`.** Not now. Plan: a separate small task after the branches are merged. `parent` becomes an
+   optional front-matter field; when set it beats the computed rule (`GROUP_RESOLVERS` in
+   `backend/app/domain/doc_tree.py` takes a resolver in front — the code is ready, see
+   `test_an_earlier_resolver_wins_so_an_explicit_parent_can_be_added_in_front`), otherwise the rule applies. It is
+   introduced through the template registry as a new template version, so existing documents and drafts keep and are
+   validated against their version and nothing is migrated. Trigger: the first document the rule places wrongly.
+7. **«Системы» below 1280 px.** Hidden by default is fine as long as «Колонки» brings it back and the choice is
+   remembered — it is (test, 2cf43ba).
+8. **«Today» in tests** (raised with the answers). Frozen in pytest, vitest and E2E as above; product code keeps the
+   current date (6c8b591).
+
+### 7.5 Checks
+
+- Frontend: `tsc`, `eslint` clean; `vitest` 391 before «Документы» v2 → 427 after slice 4 → 453 after slice 7 and
+  the fix (38 files; new: `docsOverview.test.tsx`, `docsTable.test.tsx`; updated: `explorer.test.tsx`,
+  `docsList.test.tsx`, `documentsView.test.tsx`).
+- Backend (changed in slice 1 only): `pytest` 670 passed, 6 skipped → 696 passed, 6 skipped; `make lint` (ruff,
+  ruff format, mypy; tsc, eslint) clean.
+- E2E (desktop, mobile, gitlab-mock, gitlab-mock-mobile; `E2E_DISABLED_URL` set): 65 passed, 1 skipped before
+  «Документы» v2 → 69 passed, 1 skipped after slice 4 → 73 passed, 1 skipped (new: `documents.spec.ts` V2-05 to
+  V2-08; `catalog.spec.ts` R2-01 and `scenarios.spec.ts` E2E-02 rewritten for the new table). One full run before
+  55da64c had R2-01 fail once (the double header click race); after the fix three runs of the affected specs and a
+  full run passed.
+- Screenshots of «Обзор», «Список», «Таблица» × 1440 × 900, 1100 × 800, 390 × 844 × light / dark, the 900 px tree
+  and preview sheets, and an overflow check at 360 px — outside the repository.
+- Follow-up round (§7.4): `vitest` 453 → 463 (38 files; `docsTable.test.tsx`, `docTree.test.tsx`,
+  `docsOverview.test.tsx`, `explorer.test.tsx`); `pytest` 696 passed, 6 skipped → 699 passed, 6 skipped
+  (`tests/test_doc_tree.py`: the hidden document by neither search path, the same ranking with the source on every
+  result, the pinned «today»; `tests/conftest.py` pins it for every app); `make check` clean (ruff, ruff format,
+  mypy, tsc, eslint, pytest, vitest). E2E (all four projects, `E2E_DISABLED_URL` set): 73 passed, 1 skipped, as
+  before — `documents.spec.ts` no longer asserts a date-dependent literal. Screenshots of «Ещё» with a chip, both
+  «Проверен» directions, the preview's systems, «Система: Data Catalog», search results with their source and the
+  1100 px «Колонки» choice — outside the repository.
+
+## Пустой документ и «Применить шаблон» (2026-11-24)
+
+The owner's request: create a document without choosing a template, as in Obsidian or Notion; SKH forms the
+technical metadata; free Markdown, WikiLinks and the AI assistant are available; a template can be applied to an
+existing document later. Templates help structure documentation, they do not gate its creation. API:
+`docs/API_CONTRACTS.md` («Blank documents and «Применить шаблон»»); rules: `docs/TEMPLATE_HUB.md`,
+`docs/METADATA_AND_LINKS.md`.
+
+- **«Создать документ»** (`/documents/new`): «Пустой документ» comes first — «Название», «Раздел каталога» (the
+  types of `GET /api/document-types`, «Руководства» by default, a hint says why a section is needed) and «Начать
+  писать» opens the editor. «По шаблону» below is today's flow, unchanged (also `?template=` from the Template Hub).
+  With no active template the page still creates blank documents.
+- **Editor of a blank draft**: the body starts as `# Название` only; «Раздел каталога» is a select; «Происхождение»
+  says «без шаблона»; the new «Шаблон» row says «не применён» (or the pinned template and version) next to
+  «Применить шаблон». `[[` autocomplete, diagnostics, preview, save / check / submit are the same as for template
+  drafts. The AI panel offers metadata, related documents, improve, summarize and explain; «Проверить полноту»
+  appears once a template is applied; with `AI_PROVIDER=disabled` there is no AI panel. Drafts without a template —
+  blank ones and imported files — now open in this editor (the M5.6.3 limitation is gone; the import page always
+  continues in the editor).
+- **«Применить шаблон»** (the editor's «Шаблон» row; the document page's «Ещё» menu): a modal sheet (a bottom
+  sheet on phones) — a select of the active templates with the chosen one's section and required sections, then
+  «Что изменится» (pinned template + version, section before → after, the ID stays), the sections as matched ✓ /
+  added + / kept • / optional not added ○, the validation of the result and the diff. Confirm updates the draft
+  (and reopens it with a success notice) or, on a document page, creates a change proposal and opens it — the
+  document itself is never modified. A stale preview disables the confirm and offers «Обновить предпросмотр».
+
+Deviations and open points:
+- The template chooser in the sheet is a select, not radio cards: with 12 templates the cards pushed the preview
+  below the fold. The create page keeps its cards.
+- «Применить шаблон» in the editor works on the saved draft (as the AI proposals): with unsaved edits the button is
+  disabled with the reason. «Причина / цель документа» stays required for the first save of a blank draft (same
+  rule as template drafts), so a blank document is stored when the author saves it, not when «Начать писать» opens
+  the editor.
+- Blank IDs are `SEM-DOC-NNN` and stay after a template is applied (IDs never change), so an architecture document
+  created blank keeps `SEM-DOC-…` rather than `SEM-ARCH-…`. The default section is `guide` («Руководства»).
+- The API also applies a template to an `update` draft; the change-proposal editor (`/proposals/new?edit=`) has no
+  button for it yet. The import page has no explicit «Без шаблона» choice: the server accepts an import without
+  `template_id` (a blank document) and uses it automatically when no template is active.
+
+Checks (this branch, real runs): backend `ruff`, `ruff format --check`, `mypy` clean; `pytest` 670 → 689 passed,
+6 skipped; deterministic eval unchanged (cases=200 pass=191 R@1=0.9487 R@5=0.9744 MRR=0.9647 leaks=0). Frontend
+`tsc`, `eslint` clean; `vitest` 391 → 400 (34 files). E2E desktop + mobile (`E2E_DISABLED_URL` set): 61 passed,
+1 skipped (the Confluence scenario needs a connector), 6 of them new (`e2e/blankDocument.spec.ts`).

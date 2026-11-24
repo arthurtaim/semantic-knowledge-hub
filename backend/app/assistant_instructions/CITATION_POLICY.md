@@ -1,7 +1,7 @@
 ---
 id: citation_policy
-version: 1
-applies_to: [answer]
+version: 2
+applies_to: [answer, tools]
 ---
 Цитирование:
 - Каждое утверждение помечай идентификатором фрагмента ([C1], [C2]); ссылайся только на переданные id.

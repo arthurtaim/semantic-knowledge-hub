@@ -129,7 +129,8 @@ for (const [name, tag] of [["C-04", ""], ["C-05", "@mobile "]] as const) {
     await field.fill("ARIS");
     await expect(page.getByRole("listbox", { name: "Подсказки" }).getByRole("option").first()).toBeVisible();
     await field.press("Enter");
-    await expect(page).toHaveURL(/\/documents\?query=ARIS$/);
+    // «Документы» v2: the catalog adds the view it shows to the URL (a search shows «Список»).
+    await expect(page).toHaveURL(/\/documents\?query=ARIS&view=list$/);
 
     await page.goto(`${DISABLED_URL}/ask`);
     await expect(page.getByRole("heading", { name: "Спросить базу знаний", level: 1 })).toBeVisible();

@@ -1,9 +1,9 @@
 # 04. Карта знаний: внешний вид и перетаскивание узлов
 
-Источник: `screens/design/design-06-knowledge-map.png`, `design-source/Graph.dc.html`.
+Источник: `screens/design/design-06-knowledge-map.png`.
 Формы узлов в макете условные. В приложении остаются текущие формы; из макета берутся цвета, подписи,
 подсветка, легенда, сведения и управление.
-Текущее состояние: `screens/current/current-d-graph.png`, `current-m-graph.png`. Сейчас это «клубок»:
+До UI v2 это был «клубок»:
 все узлы одного цвета, подписи наслаиваются, узел нельзя сдвинуть.
 
 **Работать только во фронтенде** (`components/GraphCanvas.tsx`, `components/GraphDetails.tsx`,

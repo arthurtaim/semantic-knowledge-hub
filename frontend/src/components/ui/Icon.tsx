@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 
 /*
  * Line icons of the visual system (docs/ui-v2/specs/01_VISUAL_SYSTEM.md, «Icon»): 24-unit paths taken from
- * docs/ui-v2/design-source/*.dc.html, drawn at 16 px with a 1.75 stroke in `currentColor`. A few shell icons
+ * the UI v2 mockups (docs/ui-v2/screens/design), drawn at 16 px with a 1.75 stroke in `currentColor`. A few shell icons
  * (menu, sidebar, home, theme) are drawn in the same style. Decorative by default (`aria-hidden`): the control
  * that holds an icon carries the accessible name.
  */
@@ -138,6 +138,16 @@ const PATHS = {
     </>
   ),
   check: <path d="m5 12.5 4.5 4.5L19 7" />,
+  /** A sorted column's direction (rotated for descending). */
+  "sort-up": <path d="M12 19V5M6 11l6-6 6 6" />,
+  // «Документы» v2 (docs/ui-v2/documents/screens/design): the tree filter and «Свернуть всё».
+  filter: <path d="M3 5h18M6 12h12M10 19h4" />,
+  collapse: (
+    <>
+      <path d="m7 15 5-5 5 5" />
+      <path d="m7 20 5-5 5 5" opacity=".45" />
+    </>
+  ),
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   sidebar: (
     <>

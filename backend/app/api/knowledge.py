@@ -18,6 +18,7 @@ from app.domain.models import (
     DocumentDetail,
     DocumentFacets,
     DocumentPage,
+    DocumentTree,
     LoadIssue,
     SearchResponse,
     SearchScope,
@@ -64,6 +65,16 @@ async def list_documents(
     return await container.knowledge.list_documents(
         user, DocumentQuery(query=query, filters=filters, page=page, size=size, sort=sort)
     )
+
+
+@router.get("/documents/tree", response_model=DocumentTree)
+async def document_tree(
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+) -> DocumentTree:
+    """«Документы» v2: sections → groups → documents of the whole visible base in one response, with attention
+    counts. Same visibility as `GET /api/documents`. Declared before `/documents/{document_id}`."""
+    return await container.knowledge.document_tree(user)
 
 
 @router.get("/documents/{document_id}", response_model=DocumentDetail)

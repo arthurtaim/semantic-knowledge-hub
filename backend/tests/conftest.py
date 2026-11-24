@@ -6,6 +6,7 @@ from __future__ import annotations
 import shutil
 import socket
 from collections.abc import Callable, Iterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES_DIR = PROJECT_ROOT / "fixtures" / "knowledge"
 QA_FILE = PROJECT_ROOT / "fixtures" / "qa" / "curated_questions.yaml"
 CLIENT_HEADERS = {"X-SKH-Client": "test"}
+# «Today» of every app the tests build (`KnowledgeService.today`). Review states — stale after `review_stale_days` —
+# and so the attention counts depend on the date: pinned, the synthetic base's numbers (12 documents needing
+# attention; DEMO-PROC-009 turns stale on 2026-12-07) never move with the calendar. Product code keeps the real date;
+# a test that is about the date sets its own.
+TEST_TODAY = date(2026, 11, 24)
 
 
 class NetworkBlockedError(RuntimeError):
@@ -115,6 +121,7 @@ def client_factory(settings_factory: Callable[..., Settings]) -> Iterator[Callab
 
     def factory(**overrides: Any) -> TestClient:
         app = create_app(settings_factory(**overrides))
+        app.state.container.knowledge.today = lambda: TEST_TODAY
         client = TestClient(app, base_url="http://localhost", headers=CLIENT_HEADERS)
         client.__enter__()
         clients.append(client)

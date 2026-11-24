@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, api, isCancelled } from "../api/client";
-import type { AiDraftResponse, DocumentTemplateInfo } from "../api/types";
+import type { AiDraftResponse, BlankDocumentInfo, DocType, DocumentTemplateInfo, ProposalDetail } from "../api/types";
 import { AI_MODE_LABEL } from "../components/AiSourcesPanel";
 import { AuthoringRoute, DocumentEditor } from "../components/DocumentEditor";
-import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
+import { ErrorState, Loading, Notice } from "../components/Feedback";
+import { SECTION_HINT, SectionSelect } from "../components/SectionSelect";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { SegmentedControl } from "../components/ui/SegmentedControl";
 import {
   fieldsFromAi,
+  fieldsFromBlank,
   fieldsFromProposal,
   fieldsFromTemplate,
   retitleBody,
@@ -26,10 +28,18 @@ function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
 }
 
+/** «Применить шаблон» changed the stored draft: the page reopens it with its new template and says so. */
+interface TemplateApplied {
+  draftId: string;
+  title: string;
+  version: number | null;
+}
+
 /**
  * `/documents/new`: Создать → Тип → Редактор → Сохранить черновик → Проверка → Ревью.
- * `?draft=<id>` resumes a stored draft (it survives reloads and restarts: drafts live on the backend);
- * `?from=<id>` starts a new draft from the text of an earlier `create` proposal (e.g. after a conflict).
+ * «Пустой документ» (first) opens the editor with a title and a section only; «По шаблону» is the template flow.
+ * `?draft=<id>` resumes a stored draft (it survives reloads and restarts: drafts live on the backend) — with or
+ * without a template; `?from=<id>` starts a new draft from the text of an earlier `create` proposal.
  */
 export function DocumentCreatePage() {
   const [params] = useSearchParams();
@@ -38,14 +48,29 @@ export function DocumentCreatePage() {
   const [adopted, setAdopted] = useState<string | null>(null);
   const [flowKey, setFlowKey] = useState(0);
   const [previousDraftId, setPreviousDraftId] = useState(draftId);
+  const [applied, setApplied] = useState<TemplateApplied | null>(null);
   if (draftId !== previousDraftId) {
     setPreviousDraftId(draftId);
+    setApplied(null);
     if (!draftId) {
       // Navigating from a draft to a plain `/documents/new` starts a fresh document.
       setFlowKey((key) => key + 1);
       setAdopted(null);
     }
   }
+  // After «Применить шаблон» the draft is reopened from the server (a fresh editor with the pinned template).
+  const onTemplateApplied = (detail: ProposalDetail) => {
+    setApplied({ draftId: detail.id, title: detail.template_id ?? "", version: detail.template_version ?? null });
+    setAdopted(null);
+    setFlowKey((key) => key + 1);
+  };
+  const appliedNotice =
+    applied && applied.draftId === draftId ? (
+      <Notice tone="success">
+        Шаблон применён и закреплён (v{applied.version ?? "?"}): недостающие разделы добавлены с пометкой «Требует
+        уточнения», весь прежний текст сохранён. Черновик сохранён.
+      </Notice>
+    ) : null;
 
   return (
     <div className="authoring">
@@ -58,9 +83,9 @@ export function DocumentCreatePage() {
         </p>
       </div>
       {draftId && draftId !== adopted ? (
-        <ResumeDraft key={draftId} id={draftId} />
+        <ResumeDraft key={`${draftId}-${flowKey}`} id={draftId} notice={appliedNotice} onTemplateApplied={onTemplateApplied} />
       ) : (
-        <NewDocumentFlow key={flowKey} onCreated={setAdopted} />
+        <NewDocumentFlow key={flowKey} onCreated={setAdopted} onTemplateApplied={onTemplateApplied} />
       )}
     </div>
   );
@@ -69,17 +94,26 @@ export function DocumentCreatePage() {
 // --- a new document ---------------------------------------------------------------------------------
 
 interface EditorStart {
-  template: DocumentTemplateInfo;
+  /** Null: a blank document. */
+  template: DocumentTemplateInfo | null;
+  blank: BlankDocumentInfo | null;
   initial: EditorFields;
   aiResult: AiDraftResponse | null;
 }
 
-function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
+interface NewDocumentFlowProps {
+  onCreated: (id: string) => void;
+  onTemplateApplied: (detail: ProposalDetail) => void;
+}
+
+function NewDocumentFlow({ onCreated, onTemplateApplied }: NewDocumentFlowProps) {
   const session = useSession();
   const [params] = useSearchParams();
   // Read once: the URL changes to `?draft=<id>` after the first save, the flow must not restart then.
   const [fromId] = useState(() => params.get("from"));
   const templates = useAsync(() => api.templates(), "authoring-templates");
+  // Only a preview (prefix, next ID, default section): the blank start never waits for it or fails on it.
+  const blank = useAsync(() => api.blankDocument(), "authoring-blank");
   const [mode, setMode] = useState<Mode>("manual");
   // `?template=<id>` from the Template Hub («Использовать шаблон») preselects the template.
   const [requestedTemplate] = useState(() => params.get("template"));
@@ -90,27 +124,21 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
   const owner = session?.user.user_id ?? "";
 
   if (fromId) return <CopyFromProposal id={fromId} owner={owner} onCreated={onCreated} />;
-  if (templates.loading && !templates.data) return <Loading label="Загрузка шаблонов…" />;
-  if (templates.error) return <ErrorState error={templates.error} onRetry={templates.reload} />;
   const list = templates.data ?? [];
-  if (list.length === 0) {
-    return (
-      <EmptyState title="Шаблоны документов не найдены">
-        <p>Без шаблона нельзя определить раздел и структуру документа. Обратитесь к администратору приложения.</p>
-      </EmptyState>
-    );
-  }
   const template = list.find((t) => t.id === templateId) ?? null;
-  const unavailableRequested = requestedTemplate && !list.some((t) => t.id === requestedTemplate) ? requestedTemplate : null;
+  const unavailableRequested =
+    requestedTemplate && templates.data && !list.some((t) => t.id === requestedTemplate) ? requestedTemplate : null;
 
   if (stage === "edit" && start) {
     return (
       <DocumentEditor
         template={start.template}
+        blank={start.blank}
         initial={start.initial}
         aiResult={start.aiResult}
         draft={null}
         onCreated={onCreated}
+        onTemplateApplied={onTemplateApplied}
       />
     );
   }
@@ -124,11 +152,11 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
         onManual={(title) => {
           const initial = fieldsFromTemplate(template, owner);
           const body = retitleBody(initial.body, initial.title, title);
-          setStart({ template, initial: { ...initial, title: title.trim(), body }, aiResult: null });
+          setStart({ template, blank: null, initial: { ...initial, title: title.trim(), body }, aiResult: null });
           setStage("edit");
         }}
         onResult={(result, input) => {
-          setStart({ template, initial: fieldsFromAi(template, result, input, owner), aiResult: result });
+          setStart({ template, blank: null, initial: fieldsFromAi(template, result, input, owner), aiResult: result });
           setStage("edit");
         }}
       />
@@ -142,7 +170,12 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
       setStage("ai");
       return;
     }
-    setStart({ template, initial: fieldsFromTemplate(template, owner), aiResult: null });
+    setStart({ template, blank: null, initial: fieldsFromTemplate(template, owner), aiResult: null });
+    setStage("edit");
+  }
+
+  function startBlank(title: string, type: DocType) {
+    setStart({ template: null, blank: blank.data, initial: fieldsFromBlank(title, type, owner), aiResult: null });
     setStage("edit");
   }
 
@@ -159,84 +192,162 @@ function NewDocumentFlow({ onCreated }: { onCreated: (id: string) => void }) {
       "Помощник (Claude Code CLI, личный тест) предложит текст по шаблону со ссылками на источники; подготовка может занять несколько минут. Текст нужно проверить и отредактировать.";
   else modeHint = "Помощник предложит текст по шаблону со ссылками на источники. Текст нужно проверить и отредактировать.";
 
+  let templateStart: ReactNode;
+  if (templates.loading && !templates.data) templateStart = <Loading label="Загрузка шаблонов…" />;
+  else if (templates.error) templateStart = <ErrorState error={templates.error} onRetry={templates.reload} />;
+  else if (list.length === 0) {
+    templateStart = (
+      <Notice tone="info">
+        Активных шаблонов нет — создайте пустой документ. Шаблон можно будет применить позже, когда он появится.
+      </Notice>
+    );
+  } else templateStart = null;
+
   return (
-    <form className="authoring__start" onSubmit={proceed} aria-labelledby="start-title">
+    <div className="authoring__start">
       <AuthoringRoute states={{ type: "current" }} />
-      <h2 id="start-title">Способ и тип документа</h2>
       <p className="authoring__alt">
         Есть готовый текст в Markdown? <Link to="/documents/import">Импортировать Markdown</Link> — метаданные (YAML)
         писать не нужно. Все шаблоны с описанием и примерами — в разделе <Link to="/templates">Шаблоны</Link>.
       </p>
-      {unavailableRequested ? (
-        <Notice tone="warning">
-          Шаблон «{unavailableRequested}» не используется для новых документов (устарел или не активен). Выберите
-          актуальный шаблон.
-        </Notice>
-      ) : null}
-      {/* No AI provider: the option is not offered at all (no dead control); otherwise it is disabled with a reason. */}
-      <SegmentedControl
-        label="Как создать"
-        showLabel
-        className="authoring__mode"
-        describedBy="mode-hint"
-        value={mode}
-        onChange={setMode}
-        options={[
-          { value: "manual", label: "Вручную" },
-          ...(aiOff ? [] : [{ value: "ai" as const, label: "С помощью AI", disabled: !aiAvailable }]),
-        ]}
-      />
-      <p id="mode-hint" className="muted authoring__mode-hint">
-        {modeHint}
-      </p>
+      <BlankStart defaultType={blank.data?.default_type ?? "guide"} onStart={startBlank} />
+      {templateStart ?? (
+        <form className="authoring__template-start" onSubmit={proceed} aria-labelledby="start-title">
+          <h2 id="start-title">По шаблону</h2>
+          <p className="muted authoring__start-lead">
+            Шаблон сразу даст структуру: обязательные разделы с подсказками, раздел каталога и теги.
+          </p>
+          {unavailableRequested ? (
+            <Notice tone="warning">
+              Шаблон «{unavailableRequested}» не используется для новых документов (устарел или не активен). Выберите
+              актуальный шаблон.
+            </Notice>
+          ) : null}
+          {/* No AI provider: the option is not offered at all (no dead control); otherwise it is disabled with a reason. */}
+          <SegmentedControl
+            label="Как создать"
+            showLabel
+            className="authoring__mode"
+            describedBy="mode-hint"
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "manual", label: "Вручную" },
+              ...(aiOff ? [] : [{ value: "ai" as const, label: "С помощью AI", disabled: !aiAvailable }]),
+            ]}
+          />
+          <p id="mode-hint" className="muted authoring__mode-hint">
+            {modeHint}
+          </p>
 
-      <fieldset className="template-cards">
-        <legend>Тип документа</legend>
-        <div className="template-cards__grid">
-          {list.map((t) => (
-            <label key={t.id} className="template-card">
-              <input
-                type="radio"
-                name="template"
-                value={t.id}
-                checked={templateId === t.id}
-                onChange={() => setTemplateId(t.id)}
-                aria-labelledby={`tpl-${t.id}-title`}
-                aria-describedby={`tpl-${t.id}-type tpl-${t.id}-desc tpl-${t.id}-sections`}
-              />
-              <span className="template-card__body">
-                <span className="template-card__title">
-                  <span id={`tpl-${t.id}-title`}>{t.title}</span>
-                  {t.version && t.version > 1 ? (
-                    <span className="template-card__version">
-                      <span className="visually-hidden">версия шаблона </span>v{t.version}
+          <fieldset className="template-cards">
+            <legend>Тип документа</legend>
+            <div className="template-cards__grid">
+              {list.map((t) => (
+                <label key={t.id} className="template-card">
+                  <input
+                    type="radio"
+                    name="template"
+                    value={t.id}
+                    checked={templateId === t.id}
+                    onChange={() => setTemplateId(t.id)}
+                    aria-labelledby={`tpl-${t.id}-title`}
+                    aria-describedby={`tpl-${t.id}-type tpl-${t.id}-desc tpl-${t.id}-sections`}
+                  />
+                  <span className="template-card__body">
+                    <span className="template-card__title">
+                      <span id={`tpl-${t.id}-title`}>{t.title}</span>
+                      {t.version && t.version > 1 ? (
+                        <span className="template-card__version">
+                          <span className="visually-hidden">версия шаблона </span>v{t.version}
+                        </span>
+                      ) : null}
                     </span>
-                  ) : null}
-                </span>
-                <span className="template-card__type" id={`tpl-${t.id}-type`}>
-                  Раздел каталога: {TYPE_LABEL[t.doc_type] ?? t.doc_type}
-                </span>
-                <span className="template-card__desc" id={`tpl-${t.id}-desc`}>
-                  {t.description}
-                </span>
-                <span className="template-card__sections" id={`tpl-${t.id}-sections`}>
-                  <span className="visually-hidden">Разделы шаблона: </span>
-                  {t.sections.join(" · ")}
-                </span>
-              </span>
-            </label>
-          ))}
+                    <span className="template-card__type" id={`tpl-${t.id}-type`}>
+                      Раздел каталога: {TYPE_LABEL[t.doc_type] ?? t.doc_type}
+                    </span>
+                    <span className="template-card__desc" id={`tpl-${t.id}-desc`}>
+                      {t.description}
+                    </span>
+                    <span className="template-card__sections" id={`tpl-${t.id}-sections`}>
+                      <span className="visually-hidden">Разделы шаблона: </span>
+                      {t.sections.join(" · ")}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="button-row">
+            <button type="submit" className="button button--primary" disabled={!template}>
+              {mode === "ai" && aiAvailable ? "Далее: запрос помощнику" : "Открыть редактор"}
+            </button>
+            <Link to="/documents" className="button button--ghost">
+              Отмена
+            </Link>
+          </div>
+          {!template ? <p className="muted">Выберите тип документа, чтобы продолжить.</p> : null}
+        </form>
+      )}
+    </div>
+  );
+}
+
+// --- a blank document -------------------------------------------------------------------------------
+
+/**
+ * «Пустой документ», as in Obsidian or Notion: a title and a section — and straight into the editor. No template and no
+ * required sections; the server fills the technical metadata (ID, status, dates, origin) at the first save.
+ */
+function BlankStart({ defaultType, onStart }: { defaultType: DocType; onStart: (title: string, type: DocType) => void }) {
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState<DocType | null>(null);
+  const chosen = type ?? defaultType;
+  const valid = title.trim().length > 0;
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (valid) onStart(title, chosen);
+  }
+
+  return (
+    <form className="panel blank-start" onSubmit={submit} aria-labelledby="blank-start-title">
+      <h2 id="blank-start-title">Пустой документ</h2>
+      <p className="muted blank-start__lead">
+        Как в Obsidian или Notion: без шаблона и обязательных разделов. Свободный Markdown, ссылки [[…]] и ИИ-помощник
+        доступны сразу; ID, статус «черновик» и другие технические поля сервер заполнит сам. Шаблон можно применить
+        позже — он добавит недостающие разделы, ничего не удаляя.
+      </p>
+      <div className="blank-start__grid">
+        <div className="field">
+          <label htmlFor="blank-title">
+            Название <span aria-hidden="true">*</span>
+          </label>
+          <input
+            id="blank-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={300}
+            required
+            placeholder="Например: Заметки о витрине клиентов"
+          />
         </div>
-      </fieldset>
-      <div className="button-row">
-        <button type="submit" className="button button--primary" disabled={!template}>
-          {mode === "ai" && aiAvailable ? "Далее: запрос помощнику" : "Открыть редактор"}
-        </button>
-        <Link to="/documents" className="button button--ghost">
-          Отмена
-        </Link>
+        <div className="field">
+          <label htmlFor="blank-type">Раздел каталога</label>
+          <SectionSelect id="blank-type" value={chosen} onChange={setType} describedBy="blank-type-hint" />
+          <p id="blank-type-hint" className="field__hint">
+            {SECTION_HINT}
+          </p>
+        </div>
       </div>
-      {!template ? <p className="muted">Выберите тип документа, чтобы продолжить.</p> : null}
+      <div className="button-row">
+        <button type="submit" className="button button--primary" disabled={!valid} aria-describedby="blank-start-hint">
+          Начать писать
+        </button>
+      </div>
+      <p id="blank-start-hint" className="muted">
+        {valid ? "Откроется редактор. Черновик сохранится, когда вы нажмёте «Сохранить черновик»." : "Укажите название, чтобы начать."}
+      </p>
     </form>
   );
 }
@@ -380,7 +491,13 @@ function AiRequestStep({ template, aiMode, onBack, onManual, onResult }: AiReque
 
 // --- an existing draft ------------------------------------------------------------------------------
 
-function ResumeDraft({ id }: { id: string }) {
+interface ResumeDraftProps {
+  id: string;
+  notice?: ReactNode;
+  onTemplateApplied: (detail: ProposalDetail) => void;
+}
+
+function ResumeDraft({ id, notice, onTemplateApplied }: ResumeDraftProps) {
   const { data, error, loading, reload } = useAsync(async () => {
     const [proposal, templates] = await Promise.all([api.draft(id), api.templates(true)]);
     return { proposal, templates };
@@ -426,37 +543,45 @@ function ResumeDraft({ id }: { id: string }) {
       </Notice>
     );
   }
-  const template = data.templates.find((t) => t.id === p.template_id);
+  // A draft without a template (a blank document, an imported file) opens in the same editor.
+  const template = p.template_id ? data.templates.find((t) => t.id === p.template_id) : null;
   const initial = fieldsFromProposal(p);
-  if (!template || !initial) {
+  if (template === undefined || !initial) {
     return (
       <Notice tone="danger">
         <p>
           Не удалось открыть черновик в редакторе:{" "}
-          {!template ? "шаблон документа больше не доступен." : "сохранённый файл не удалось разобрать."}
+          {template === undefined ? "шаблон документа больше не доступен." : "сохранённый файл не удалось разобрать."}
         </p>
         {proposalLink}
       </Notice>
     );
   }
-  return <DocumentEditor template={template} initial={initial} draft={p} />;
+  return (
+    <DocumentEditor template={template} initial={initial} draft={p} notice={notice} onTemplateApplied={onTemplateApplied} />
+  );
 }
 
 /** `?from=<id>`: a NEW draft with the text of an earlier `create` proposal and a fresh suggested ID. */
 function CopyFromProposal({ id, owner, onCreated }: { id: string; owner: string; onCreated: (id: string) => void }) {
   const { data, error, loading, reload } = useAsync(async () => {
     // Listed templates only: an external_import draft is never copied into an ordinary new document.
-    const [proposal, templates] = await Promise.all([api.draft(id), api.templates()]);
-    return { proposal, templates };
+    const [proposal, templates, blank] = await Promise.all([
+      api.draft(id),
+      api.templates(),
+      api.blankDocument().catch(() => null),
+    ]);
+    return { proposal, templates, blank };
   }, `copy-${id}`);
 
   if (loading && !data) return <Loading label="Загрузка исходного предложения…" />;
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!data) return null;
   const p = data.proposal;
-  const template = data.templates.find((t) => t.id === p.template_id);
+  // A blank source stays blank (null); a template that is no longer offered cannot be copied (undefined).
+  const template = p.template_id ? data.templates.find((t) => t.id === p.template_id) : null;
   const base = p.operation === "create" ? fieldsFromProposal(p) : null;
-  if (!template || !base) {
+  if (template === undefined || !base) {
     return (
       <Notice tone="warning">
         <p>Из этого предложения нельзя взять текст нового документа.</p>
@@ -477,6 +602,7 @@ function CopyFromProposal({ id, owner, onCreated }: { id: string; owner: string;
   return (
     <DocumentEditor
       template={template}
+      blank={data.blank}
       initial={initial}
       draft={null}
       onCreated={onCreated}

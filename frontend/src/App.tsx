@@ -20,6 +20,7 @@ import { ProposalDetailPage } from "./pages/ProposalDetailPage";
 import { ProposalEditorPage } from "./pages/ProposalEditorPage";
 import { ProposalsPage } from "./pages/ProposalsPage";
 import { PublicationJobPage } from "./pages/PublicationJobPage";
+import { PublicationsPage } from "./pages/PublicationsPage";
 import { TemplateDetailPage } from "./pages/TemplateDetailPage";
 import { TemplatesPage } from "./pages/TemplatesPage";
 
@@ -55,6 +56,7 @@ export function App() {
           <Route path="/proposals" element={<ProposalsPage />} />
           <Route path="/proposals/new" element={<ProposalEditorPage />} />
           <Route path="/proposals/:id" element={<ProposalDetailPage />} />
+          <Route path="/publications" element={<PublicationsPage />} />
           <Route path="/publications/:jobId" element={<PublicationJobPage />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/corporate/:id" element={<CorporatePage />} />

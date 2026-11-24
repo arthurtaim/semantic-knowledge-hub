@@ -40,9 +40,11 @@ interface AskProposalProps {
   primary: boolean;
   /** Inside the document panel: one heading level deeper (the answer there is an h3). */
   compact?: boolean;
+  /** M5.7: id of the card, the target of the answer's marker of this proposal (`drafts_propose`). */
+  anchorId?: string;
 }
 
-export function AskProposal({ reference, mode, primary, compact = false }: AskProposalProps) {
+export function AskProposal({ reference, mode, primary, compact = false, anchorId }: AskProposalProps) {
   const titleId = useId();
   const panelId = useId();
   const [open, setOpen] = useState(false);
@@ -105,7 +107,7 @@ export function AskProposal({ reference, mode, primary, compact = false }: AskPr
   const href = proposal ? draftHref(proposal) : null;
   const Heading = compact ? "h4" : "h3";
   return (
-    <section className="ask-proposal" aria-labelledby={titleId} data-status={status}>
+    <section id={anchorId} tabIndex={anchorId ? -1 : undefined} className="ask-proposal" aria-labelledby={titleId} data-status={status}>
       <div className="ask-proposal__head">
         <span className={generated ? "ai-label" : "demo-tag"}>{generated ? "ИИ" : "Демо"}</span>
         <Heading id={titleId}>Предложение ИИ: {AI_PROPOSAL_KIND_LABEL[kind] ?? kind}</Heading>

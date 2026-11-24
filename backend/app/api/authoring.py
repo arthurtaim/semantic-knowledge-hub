@@ -19,6 +19,7 @@ from app.domain.proposals import (
     AiDraftResponse,
     AuthoringCheckRequest,
     AuthoringCheckResponse,
+    BlankDocumentInfo,
     DocumentTemplateInfo,
     NewDocumentDraftCreate,
     ProposalDetail,
@@ -36,6 +37,15 @@ async def list_templates(
     """Templates with a suggested free document ID and file path. `include_hidden`: also templates that are
     not offered for new documents (`listed: false`, e.g. external_import) — needed to reopen their drafts."""
     return await container.authoring.templates(user, include_hidden=include_hidden)
+
+
+@router.get("/blank", response_model=BlankDocumentInfo)
+async def blank_document(
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
+) -> BlankDocumentInfo:
+    """A document without a template: the ID prefix, a preview of the next free ID and path, the default section."""
+    return await container.authoring.blank(user)
 
 
 @router.post("/check", response_model=AuthoringCheckResponse)

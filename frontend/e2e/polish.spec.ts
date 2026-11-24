@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /*
- * UI v2 phase F (docs/ui-v2/TASK.md, docs/UI_REDESIGN.md «UI v2»): what jsdom cannot see — layout at phone widths,
+ * UI v2 phase F (docs/UI_REDESIGN.md «UI v2»): what jsdom cannot see — layout at phone widths,
  * the page-toolbar path next to the badges, the skip link and focus that must not end up under the sticky toolbar or
  * the dialog's pinned field (WCAG 2.2: 2.4.7, 2.4.11, 2.5.8). Offline demo stack, synthetic documents only.
  */
@@ -17,6 +17,7 @@ const PHONE_ROUTES = [
   "/templates",
   "/templates/integration",
   "/proposals",
+  "/publications",
   "/integrations",
   "/no-such-page",
 ];
@@ -89,6 +90,8 @@ test("F-02 the toolbar path never runs under the badges; a narrow toolbar shows 
     // only after the document loads; measuring before that compared a transient toolbar (flaky under load).
     await expect(page.locator(".page-toolbar").getByRole("button", { name: "Ещё", exact: true })).toBeVisible();
     await expect(current).toContainText("ARIS");
+    // «Документы» v2: the path follows the documents tree — Документы / Интеграции / ARIS / the document.
+    await expect(page.locator(".page-toolbar .crumbs li")).toHaveCount(4);
     if (width <= 860) {
       await expect
         .poll(() =>
@@ -112,7 +115,7 @@ test("F-02 the toolbar path never runs under the badges; a narrow toolbar shows 
     expect(layout.leadRight, `${width} px`).toBeLessThanOrEqual(layout.endLeft);
     for (const right of layout.crumbRights) expect(right, `${width} px`).toBeLessThanOrEqual(layout.endLeft);
     if (width <= 860) expect(layout.shown, `${width} px: only the current page`).toBe(1);
-    else expect(layout.shown).toBe(3);
+    else expect(layout.shown).toBe(4);
   }
 });
 

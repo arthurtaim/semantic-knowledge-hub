@@ -1,299 +1,106 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { DocStatus, DocumentSort, DocumentSummary, FacetCount } from "../api/types";
-import { CatalogTable } from "../components/CatalogTable";
-import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
-import { Highlighted } from "../components/Highlighted";
+import { DocsBrowser } from "../components/docs/DocsBrowser";
+import { DocsOverview } from "../components/docs/DocsOverview";
+import { DocsTable } from "../components/docs/DocsTable";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
-import { StaleMark } from "../components/StaleMark";
-import { StatusStamp } from "../components/StatusStamp";
-import { When } from "../components/When";
 import { PageToolbar } from "../components/shell/PageToolbar";
-import { SidePanel, useSidePanelMode } from "../components/shell/SidePanel";
-import { Button, buttonClass } from "../components/ui/Button";
-import { Chip } from "../components/ui/Chip";
+import { buttonClass, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
-import { Menu, Popover } from "../components/ui/Popover";
-import { canAsk } from "../lib/aiMode";
+import { graphHref } from "../lib/catalog";
 import {
-  activeFilters,
-  defaultView,
-  FILTER_KEYS,
-  FILTER_TITLE,
-  filterValues,
-  graphHref,
-  GROUP_LABEL,
-  initialGroup,
-  rememberGroup,
-  rememberView,
-  storedView,
-  toggleValue,
-  type CatalogGroup,
-  type CatalogView,
-  type FilterKey,
-} from "../lib/catalog";
-import { pluralRu, REVIEW_LABEL, SORT_LABEL, SOURCE_LABEL, STATUS_LABEL, STATUS_ORDER, TYPE_LABEL, TYPE_ORDER } from "../lib/labels";
-import { useSession } from "../lib/session";
+  DOC_PARAM,
+  DOCS_VIEWS,
+  NODE_PARAM,
+  queryOf,
+  rememberDocsView,
+  resolveView,
+  searchChanges,
+  SINGLE_SCREEN,
+  singleShowsList,
+  VIEW_LABEL,
+  VIEW_PARAM,
+  withParams,
+  type DocsView,
+} from "../lib/docsView";
 import { useAsync } from "../lib/useAsync";
+import { useDocumentTree } from "../lib/useDocumentTree";
 import { useMediaQuery } from "../lib/useMediaQuery";
 
-/** «Список» (snippets) pages by 20; the table loads up to the API maximum so groups are whole. */
-const LIST_PAGE_SIZE = 20;
-const TABLE_PAGE_SIZE = 100;
-/** Explicit orders; relevance (with a query) and section/title order (without) are the server default. */
-const EXPLICIT_SORTS: DocumentSort[] = ["title", "updated", "status"];
-/** The search field and the view switch leave the toolbar below this width. */
+/** The view switch and the search field leave the toolbar below this width. */
 const COMPACT_TOOLBAR = "(max-width: 1279.98px)";
-/** Phones: cards instead of the table, filters in a sheet. */
-const PHONE = "(max-width: 719.98px)";
-
-function parseSort(value: string | null): DocumentSort | null {
-  return value && (EXPLICIT_SORTS as string[]).includes(value) ? (value as DocumentSort) : null;
-}
-
-function counts(facets: FacetCount[] | undefined): Map<string, number> {
-  return new Map(facets?.map((f) => [f.value, f.count]) ?? []);
-}
-
-/** «Спросить ИИ об этих документах»: the assistant page with a question about the query and the top results. */
-function askAboutResults(query: string, ids: string[]): string {
-  const top = ids.slice(0, 5);
-  const question = `Что говорят документы по запросу «${query.slice(0, 200)}»${top.length ? ` (${top.join(", ")})` : ""}? Ответь со ссылками на источники.`;
-  return `/ask?q=${encodeURIComponent(question)}`;
-}
-
-interface FacetGroupProps {
-  title: string;
-  name: FilterKey;
-  options: { value: string; label: string; count?: number }[];
-  active: string[];
-  onToggle: (name: FilterKey, value: string) => void;
-}
-
-/** One facet of «+ Фильтр»: toggle buttons; several values of one facet combine with «или». */
-function FacetGroup({ title, name, options, active, onToggle }: FacetGroupProps) {
-  if (options.length === 0) return null;
-  return (
-    <section className="facet-group" aria-label={title}>
-      <h3 className="facet-group__title">{title}</h3>
-      <ul role="group" aria-label={title}>
-        {options.map((option) => (
-          <li key={option.value}>
-            <button
-              type="button"
-              className="filter-option"
-              aria-pressed={active.includes(option.value)}
-              onClick={() => onToggle(name, option.value)}
-            >
-              <Icon name="check" size={14} className="filter-option__check" />
-              <span className="filter-option__label">{option.label}</span>
-              {option.count !== undefined ? <span className="filter-option__count">{option.count}</span> : null}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function ResultRow({ doc, singleSource }: { doc: DocumentSummary; singleSource: boolean }) {
-  return (
-    <li className="result">
-      <div className="result__head">
-        <Link to={`/documents/${doc.id}`} className="result__title">
-          {doc.title}
-        </Link>
-        <span className="result__badges">
-          {doc.related_via ? (
-            <span className="related-via" title="Найден через объявленную связь, а не по своему тексту">
-              Связан с {doc.related_via}
-            </span>
-          ) : null}
-          {doc.index_state === "stale" ? <StaleMark /> : null}
-          {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-            <span className="review-flag" title="Проверка документа">
-              {REVIEW_LABEL[doc.review_state]}
-            </span>
-          ) : null}
-          <StatusStamp status={doc.status} />
-        </span>
-      </div>
-      <p className="result__excerpt">{doc.highlights ? <Highlighted segments={doc.highlights} /> : doc.excerpt}</p>
-      <dl className="result__meta">
-        <div>
-          <dt>ID</dt>
-          <dd>
-            <code className="doc-id">{doc.id}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Раздел</dt>
-          <dd>{TYPE_LABEL[doc.type]}</dd>
-        </div>
-        <div>
-          <dt>Владелец</dt>
-          <dd className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? "не назначен" : doc.owner}</dd>
-        </div>
-        {/* One source for the whole list: shown once above it; the row keeps it for screen readers. */}
-        <div className={singleSource ? "visually-hidden" : undefined}>
-          <dt>Источник</dt>
-          <dd>{SOURCE_LABEL[doc.source]}</dd>
-        </div>
-        <div>
-          {/* The document's own date from its metadata, not the time the file was loaded or indexed. */}
-          <dt>Обновлён</dt>
-          <dd>
-            <When value={doc.metadata_updated_at} />
-          </dd>
-        </div>
-      </dl>
-      {doc.match_reasons && doc.match_reasons.length > 0 ? (
-        <p className="result__why">Почему найдено: {doc.match_reasons.join("; ")}</p>
-      ) : null}
-    </li>
-  );
-}
+/** Typing in the search field updates the results after this pause (Enter at once). */
+const SEARCH_DELAY_MS = 300;
 
 /**
- * `/documents` — the catalog (design-05): «Документы N» with Список / Таблица / Карта in the toolbar, «Найти в
- * списке» and «Создать документ»; active filters as chips, «+ Фильтр» with the facets, grouping and sorting on the
- * right. Every filter, the query, the sort and the page live in the URL; the view and grouping in this browser.
+ * `/documents` — «Документы» v2 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md): the toolbar with Обзор | Список |
+ * Таблица | Карта, the search field and «Создать документ», then the chosen view. The view, the tree node, the
+ * previewed document, the search and the table's filters live in the URL (lib/docsView.ts), so a link can be
+ * shared and «Назад» walks back; the chosen view is also remembered in this browser. «Список» is the default.
  */
 export function ExplorerPage() {
-  const session = useSession();
   const [params, setParams] = useSearchParams();
-  const query = params.get("query") ?? "";
-  const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
-  const sort = parseSort(params.get("sort"));
+  const view = resolveView(params);
+  const query = queryOf(params);
   const [draftQuery, setDraftQuery] = useState(query);
-  const [chosenView, setChosenView] = useState<CatalogView | null>(storedView);
-  const view = chosenView ?? defaultView(Boolean(query));
-  const [group, setGroup] = useState<CatalogGroup>(initialGroup);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const compact = useMediaQuery(COMPACT_TOOLBAR);
-  const phone = useMediaQuery(PHONE);
-  const sheetMode = useSidePanelMode(true);
-  const filters = activeFilters(params);
-  const values = Object.fromEntries(FILTER_KEYS.map((k) => [k, filterValues(params, k)])) as Record<FilterKey, string[]>;
-
-  useEffect(() => setDraftQuery(query), [query]);
-
-  const pageSize = view === "table" ? TABLE_PAGE_SIZE : LIST_PAGE_SIZE;
-  const facets = useAsync(() => api.facets(), "facets");
+  const single = useMediaQuery(SINGLE_SCREEN);
+  const tree = useDocumentTree();
   const index = useAsync(() => api.indexStatus(), "index-status");
-  const list = useAsync(
-    () =>
-      api.documents({
-        query,
-        page,
-        size: pageSize,
-        type: params.get("type") ?? undefined,
-        status: params.get("status") ?? undefined,
-        owner: params.get("owner") ?? undefined,
-        tag: params.get("tag") ?? undefined,
-        source: params.get("source") ?? undefined,
-        sort: sort ?? undefined,
-      }),
-    `${params.toString()}|${pageSize}`,
-  );
+  const typing = useRef<number | undefined>(undefined);
 
-  function update(changes: Record<string, string | null>) {
-    const next = new URLSearchParams(params);
-    for (const [name, value] of Object.entries(changes)) {
-      if (value === null || value === "") next.delete(name);
-      else next.set(name, value);
-    }
-    if (!("page" in changes)) next.delete("page");
-    setParams(next);
+  // The URL changed (Назад, a chip, a link): the field follows — unless it only differs by spaces still being typed.
+  useEffect(() => setDraftQuery((draft) => (draft.trim() === query ? draft : query)), [query]);
+  useEffect(() => () => window.clearTimeout(typing.current), []);
+  // The URL always names the view on screen (replacing the entry): a shared link opens the same view for a
+  // colleague whatever they chose before, and «Назад» returns to what was shown, not to the remembered choice.
+  useEffect(() => {
+    if (params.get(VIEW_PARAM) !== view) setParams(withParams(params, { [VIEW_PARAM]: view }), { replace: true });
+  }, [params, view, setParams]);
+
+  function chooseView(next: DocsView) {
+    rememberDocsView(next);
+    if (next === view) return;
+    // Pages of the list and of the table do not line up.
+    setParams(withParams(params, { [VIEW_PARAM]: next, page: null }));
   }
 
-  function toggle(name: FilterKey, value: string) {
-    update({ [name]: toggleValue(values[name], value) });
+  function search(text: string, replace: boolean) {
+    window.clearTimeout(typing.current);
+    if (text.trim() === query) return;
+    setParams(withParams(params, searchChanges(text)), { replace });
   }
 
-  function resetFilters() {
-    setParams(new URLSearchParams());
-  }
-
-  function chooseView(next: CatalogView) {
-    setChosenView(next);
-    rememberView(next);
-    if (params.has("page")) update({}); // pages of 20 and of 100 do not line up
-  }
-
-  function chooseGroup(next: CatalogGroup) {
-    setGroup(next);
-    rememberGroup(next);
+  function onType(text: string) {
+    setDraftQuery(text);
+    window.clearTimeout(typing.current);
+    typing.current = window.setTimeout(() => search(text, true), SEARCH_DELAY_MS);
   }
 
   function onSearch(event: FormEvent) {
     event.preventDefault();
-    update({ query: draftQuery.trim() || null });
+    search(draftQuery, false);
   }
 
-  const typeCounts = counts(facets.data?.types);
-  const statusCounts = counts(facets.data?.statuses);
-  const hasFilters = Boolean(query) || filters.length > 0;
-  const total = list.data?.total ?? 0;
-  const pages = Math.max(1, Math.ceil(total / pageSize));
-  const items = list.data?.items ?? [];
-  // The source is shown per row only when the results mix sources; otherwise once, above the list.
-  const sources = [...new Set(items.map((d) => d.source))];
-  const singleSource = sources.length === 1 ? sources[0] : null;
+  const notice = index.data ? <IndexStatusNotice status={index.data} /> : null;
 
-  const facetGroups = (
-    <div className="facet-groups">
-      <FacetGroup
-        title="Раздел"
-        name="type"
-        active={values.type}
-        onToggle={toggle}
-        options={TYPE_ORDER.filter((t) => typeCounts.has(t)).map((t) => ({ value: t, label: TYPE_LABEL[t], count: typeCounts.get(t) }))}
+  // A phone shows «Список» one screen at a time: «Назад» in the toolbar returns from a branch (or a search) to the tree.
+  const back =
+    view === "list" && single && singleShowsList(params) ? (
+      <IconButton
+        icon="chevron"
+        label="Назад"
+        title="Назад к разделам"
+        size="sm"
+        className="docs-back"
+        onClick={() => setParams(withParams(params, { [NODE_PARAM]: null, [DOC_PARAM]: null, ...searchChanges("") }))}
       />
-      <FacetGroup
-        title="Статус"
-        name="status"
-        active={values.status}
-        onToggle={toggle}
-        options={STATUS_ORDER.filter((s) => statusCounts.has(s)).map((s) => ({
-          value: s,
-          label: STATUS_LABEL[s as DocStatus],
-          count: statusCounts.get(s),
-        }))}
-      />
-      <FacetGroup
-        title="Владелец"
-        name="owner"
-        active={values.owner}
-        onToggle={toggle}
-        options={(facets.data?.owners ?? []).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
-      />
-      <FacetGroup
-        title="Источник"
-        name="source"
-        active={values.source}
-        onToggle={toggle}
-        options={(facets.data?.sources ?? []).map((f) => ({
-          value: f.value,
-          label: SOURCE_LABEL[f.value as keyof typeof SOURCE_LABEL] ?? f.value,
-          count: f.count,
-        }))}
-      />
-      <FacetGroup
-        title="Тег"
-        name="tag"
-        active={values.tag}
-        onToggle={toggle}
-        options={(facets.data?.tags ?? []).slice(0, 30).map((f) => ({ value: f.value, label: f.value, count: f.count }))}
-      />
-      {facets.error ? <p className="flag">Фильтры не загрузились: {facets.error.message}</p> : null}
-    </div>
-  );
+    ) : null;
 
   const viewSwitch = (
-    <div className="view-switch" role="group" aria-label="Вид каталога">
-      {(["list", "table"] as const).map((option) => (
+    <div className="view-switch" role="group" aria-label="Вид раздела">
+      {DOCS_VIEWS.map((option) => (
         <button
           key={option}
           type="button"
@@ -301,7 +108,7 @@ export function ExplorerPage() {
           aria-pressed={view === option}
           onClick={() => chooseView(option)}
         >
-          {option === "list" ? "Список" : "Таблица"}
+          {VIEW_LABEL[option]}
         </button>
       ))}
       <Link to={graphHref(params)} className="view-switch__item">
@@ -310,99 +117,33 @@ export function ExplorerPage() {
     </div>
   );
 
-  const searchForm = (
-    <form className="catalog-search" role="search" onSubmit={onSearch}>
-      <label htmlFor="explorer-search" className="visually-hidden">
-        Поиск по документам
-      </label>
-      <Icon name="search" className="catalog-search__icon" />
-      <input
-        id="explorer-search"
-        type="search"
-        value={draftQuery}
-        onChange={(e) => setDraftQuery(e.target.value)}
-        placeholder="Найти в списке"
-        title="Название, текст, теги, связанные ID"
-        maxLength={200}
-        autoComplete="off"
-      />
-    </form>
-  );
-
-  const filterCount = filters.reduce((n, f) => n + f.values.length, 0);
-  const sortMenu = (
-    <Menu
-      label="Вид списка"
-      align="end"
-      groups={[
-        {
-          label: "Сортировка",
-          radio: true,
-          items: [
-            {
-              id: "default",
-              label: query ? SORT_LABEL.relevance : "По разделам",
-              checked: sort === null,
-              onSelect: () => update({ sort: null }),
-            },
-            ...EXPLICIT_SORTS.map((value) => ({
-              id: value,
-              label: SORT_LABEL[value],
-              checked: sort === value,
-              onSelect: () => update({ sort: value }),
-            })),
-          ],
-        },
-      ]}
-      trigger={(props) => (
-        <button {...props} type="button" className={buttonClass("quiet", "sm", "catalog-bar__menu")}>
-          Вид
-          <Icon name="chevron" size={14} />
-        </button>
-      )}
-    />
-  );
-
-  const groupMenu =
-    view === "table" ? (
-      <Menu
-        label="Группировка"
-        align="end"
-        groups={[
-          {
-            radio: true,
-            items: (["type", "status", "owner", "none"] as const).map((value) => ({
-              id: value,
-              label: GROUP_LABEL[value],
-              checked: group === value,
-              onSelect: () => chooseGroup(value),
-            })),
-          },
-        ]}
-        trigger={(props) => (
-          <button {...props} type="button" className={buttonClass("quiet", "sm", "catalog-bar__menu")}>
-            Группировка: {GROUP_LABEL[group]}
-            <Icon name="chevron" size={14} />
-          </button>
-        )}
-      />
-    ) : null;
-
-  const quietSummary = view === "table" && !query && pages <= 1;
-  const summaryText = list.loading
-    ? "Поиск…"
-    : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`;
+  // The overview has nothing to search (design docs-03); the list and the table search the whole base.
+  const searchForm =
+    view === "overview" ? null : (
+      <form className="catalog-search" role="search" onSubmit={onSearch}>
+        <label htmlFor="docs-search" className="visually-hidden">
+          Найти в документах
+        </label>
+        <Icon name="search" className="catalog-search__icon" />
+        <input
+          id="docs-search"
+          type="search"
+          value={draftQuery}
+          onChange={(e) => onType(e.target.value)}
+          placeholder="Название, ID, тег или система"
+          title="Название, текст, теги, системы, связанные ID"
+          maxLength={200}
+          autoComplete="off"
+        />
+      </form>
+    );
 
   return (
-    <div className="catalog">
+    <div className={`catalog docs docs--${view}`}>
       <PageToolbar
         title="Документы"
-        meta={
-          <>
-            {list.data ? <span className="page-toolbar__count">{total}</span> : null}
-            {compact ? null : viewSwitch}
-          </>
-        }
+        lead={back}
+        meta={compact ? null : viewSwitch}
         actions={
           <>
             {compact ? null : searchForm}
@@ -423,137 +164,13 @@ export function ExplorerPage() {
         </div>
       ) : null}
 
-      <div className={compact ? "catalog-bar" : "catalog-bar catalog-bar--flush"}>
-        <ul className="catalog-bar__chips" aria-label="Активные фильтры">
-          {filters.map((f) => (
-            <li key={f.key}>
-              <Chip tone="filter" onRemove={() => update({ [f.key]: null })} removeLabel={`Убрать фильтр: ${FILTER_TITLE[f.key]}`}>
-                {f.label}
-              </Chip>
-            </li>
-          ))}
-          {query ? (
-            <li>
-              <Chip tone="filter" onRemove={() => update({ query: null })} removeLabel="Убрать запрос">
-                Запрос: «{query}»
-              </Chip>
-            </li>
-          ) : null}
-          <li>
-            {phone ? (
-              <Button size="sm" icon="plus" className="catalog-bar__add" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>
-                Фильтр{filterCount > 0 ? ` (${filterCount})` : ""}
-              </Button>
-            ) : (
-              <Popover
-                id="catalog-filters"
-                align="start"
-                panelClassName="facet-popover"
-                trigger={(props) => (
-                  <Button {...props} size="sm" icon="plus" className="catalog-bar__add">
-                    Фильтр
-                  </Button>
-                )}
-              >
-                {facetGroups}
-              </Popover>
-            )}
-          </li>
-          {hasFilters ? (
-            <li>
-              <Button variant="quiet" size="sm" onClick={resetFilters}>
-                Сбросить фильтры
-              </Button>
-            </li>
-          ) : null}
-        </ul>
-        <div className="catalog-bar__end">
-          {groupMenu}
-          {sortMenu}
-        </div>
-      </div>
-
-      {filtersOpen && phone ? (
-        <SidePanel id="catalog-filters-sheet" title="Фильтры" mode={sheetMode} onClose={() => setFiltersOpen(false)}>
-          {facetGroups}
-          {hasFilters ? (
-            <Button variant="quiet" size="sm" onClick={resetFilters}>
-              Сбросить фильтры
-            </Button>
-          ) : null}
-        </SidePanel>
-      ) : null}
-
-      {index.data ? <IndexStatusNotice status={index.data} /> : null}
-
-      <section className={quietSummary ? "results results--quiet" : "results"} aria-labelledby="results-title" aria-busy={list.loading}>
-        <div className="results__bar">
-          <div className="results__heading">
-            {/* Browsing the table, the toolbar already shows the count: the summary stays for screen readers. */}
-            <h2 id="results-title" className={quietSummary ? "visually-hidden" : "results__summary"} aria-live="polite">
-              {summaryText}
-              {quietSummary && singleSource ? `. Источник: ${SOURCE_LABEL[singleSource]}` : ""}
-            </h2>
-            {singleSource && !list.loading && !quietSummary ? (
-              <p className="results__source">Источник: {SOURCE_LABEL[singleSource]}</p>
-            ) : null}
-            {pages > 1 && !list.loading ? (
-              <p className="results__source">
-                Показаны {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)}
-                {view === "table" && group !== "none" ? "; группы считают документы этой страницы" : ""}.
-              </p>
-            ) : null}
-          </div>
-          {query && items.length > 0 && !list.loading && canAsk(session?.features.ai_mode) ? (
-            <Link to={askAboutResults(query, items.map((d) => d.id))} className={buttonClass("secondary", "sm", "results__ask")}>
-              Спросить ИИ об этих документах
-            </Link>
-          ) : null}
-        </div>
-        {list.error ? <ErrorState error={list.error} onRetry={list.reload} /> : null}
-        {list.data?.notes && list.data.notes.length > 0 && !list.loading ? (
-          <Notice tone="info" className="results__notes">
-            <ul>
-              {list.data.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
-          </Notice>
-        ) : null}
-        {list.loading && !list.data ? <Loading /> : null}
-        {list.data && items.length === 0 && !list.loading ? (
-          <EmptyState title={query ? `По запросу «${query}» ничего не найдено` : "Документов с такими фильтрами нет"}>
-            <p>Проверьте написание, попробуйте другое слово или сбросьте фильтры. Поиск ищет по названию, тексту, тегам и связанным ID.</p>
-            {hasFilters ? (
-              <Button onClick={resetFilters}>Сбросить фильтры</Button>
-            ) : null}
-          </EmptyState>
-        ) : null}
-        {items.length > 0 ? (
-          view === "table" ? (
-            <CatalogTable items={items} group={group} singleSource={singleSource !== null} cards={phone} />
-          ) : (
-            <ol className="result-list">
-              {items.map((doc) => (
-                <ResultRow key={doc.id} doc={doc} singleSource={singleSource !== null} />
-              ))}
-            </ol>
-          )
-        ) : null}
-        {pages > 1 ? (
-          <nav className="pager" aria-label="Страницы результатов">
-            <Button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })}>
-              Назад
-            </Button>
-            <span>
-              Страница {page} из {pages}
-            </span>
-            <Button disabled={page >= pages} onClick={() => update({ page: String(page + 1) })}>
-              Вперёд
-            </Button>
-          </nav>
-        ) : null}
-      </section>
+      {view === "overview" ? (
+        <DocsOverview tree={tree} notice={notice} />
+      ) : view === "list" ? (
+        <DocsBrowser tree={tree} notice={notice} />
+      ) : (
+        <DocsTable tree={tree} notice={notice} />
+      )}
     </div>
   );
 }

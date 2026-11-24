@@ -42,6 +42,8 @@ interface SidePanelProps {
   returnFocus?: () => HTMLElement | null;
   /** False when the page reopens a panel the reader left open: a docked panel then does not take the focus. */
   focusOnOpen?: boolean;
+  /** A sheet slides in from this edge (the documents tree: from the left); phones keep the bottom sheet. */
+  side?: "left" | "right";
   className?: string;
 }
 
@@ -60,6 +62,7 @@ export function SidePanel({
   initialFocus,
   returnFocus,
   focusOnOpen = true,
+  side = "right",
   className,
 }: SidePanelProps) {
   const titleId = useId();
@@ -121,7 +124,9 @@ export function SidePanel({
     }
   }
 
-  const classes = ["side-panel", `side-panel--${mode}`, className ?? ""].filter(Boolean).join(" ");
+  const classes = ["side-panel", `side-panel--${mode}`, mode === "sheet" && side === "left" ? "side-panel--left" : "", className ?? ""]
+    .filter(Boolean)
+    .join(" ");
   const body = (
     <>
       <div className="side-panel__head">

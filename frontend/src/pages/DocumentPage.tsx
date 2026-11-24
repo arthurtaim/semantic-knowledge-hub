@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, type ApiError } from "../api/client";
 import type { DocumentDetail, DocumentLinks, DocumentPublicationStatus, ProposalList, ProposalSummary } from "../api/types";
+import { ApplyTemplatePanel } from "../components/ApplyTemplate";
 import { isEditable } from "../components/ComposerPalette";
 import {
   ASSISTANT_PANEL_ID,
@@ -36,8 +37,11 @@ import {
   SOURCE_LABEL,
   TYPE_LABEL,
 } from "../lib/labels";
+import { placeOf, type TreeIndex } from "../lib/docTree";
+import type { Crumb } from "../lib/routes";
 import { captureSelection, clearSelectionMark, markSelection, type CapturedSelection } from "../lib/selection";
 import { useSession } from "../lib/session";
+import { useDocumentTree } from "../lib/useDocumentTree";
 import { readPreference, writePreference } from "../lib/storage";
 import { onTabListKeyDown } from "../lib/tabs";
 import { useAsync } from "../lib/useAsync";
@@ -288,6 +292,23 @@ function DocumentHistory({
   );
 }
 
+/**
+ * «Документы / Интеграции / ARIS / …»: the path of the documents tree («Документы» v2). The section and the group
+ * open «Список» on that branch (the group with this document chosen); without the tree, the section by its type.
+ */
+export function treeCrumbs(doc: DocumentDetail, index: TreeIndex | null): Crumb[] {
+  const place = index ? placeOf(index, doc.id) : { section: null, group: null };
+  const nodeHref = (key: string, withDoc: boolean) =>
+    `/documents?view=list&node=${encodeURIComponent(key)}${withDoc ? `&doc=${encodeURIComponent(doc.id)}` : ""}`;
+  const section = place.section ?? { key: doc.type, label: TYPE_LABEL[doc.type] ?? doc.type };
+  return [
+    { label: "Документы", to: "/documents" },
+    { label: section.label, to: nodeHref(section.key, !place.group) },
+    ...(place.group ? [{ label: place.group.label, to: nodeHref(place.group.key, true) }] : []),
+    { label: doc.title },
+  ];
+}
+
 function DocumentBody({
   doc,
   proposals,
@@ -325,6 +346,8 @@ function DocumentBody({
     }
   }
   const assistant = useDocumentAssistant(doc, aiMode);
+  // The path follows the documents tree (a recent answer is reused); until it arrives, the section alone.
+  const tree = useDocumentTree({ maxAgeMs: 60_000 });
   const tabRefs = useRef<Partial<Record<DocumentView, HTMLButtonElement | null>>>({});
   const toggleRef = useRef<HTMLButtonElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -419,6 +442,8 @@ function DocumentBody({
   }
 
   const openProposals = proposals.items.filter((p) => p.status !== "rejected" && p.status !== "merged");
+  // «Применить шаблон»: a preview, then a CHANGE PROPOSAL — the document itself never changes here.
+  const [applyOpen, setApplyOpen] = useState(false);
   const more: MenuItem[] = [
     {
       id: "details",
@@ -431,6 +456,13 @@ function DocumentBody({
       label: "Показать на карте знаний",
       icon: "map",
       onSelect: () => navigate(`/graph?focus=${encodeURIComponent(doc.id)}`),
+    },
+    {
+      id: "apply-template",
+      label: "Применить шаблон",
+      icon: "templates",
+      description: doc.template_id ? `Сейчас: ${doc.template_id} v${doc.template_version ?? 1}` : "Документ без шаблона",
+      onSelect: () => setApplyOpen(true),
     },
     ...(aiOff
       ? []
@@ -448,11 +480,7 @@ function DocumentBody({
   return (
     <article className={`document doc-page${panel && panelMode === "inline" ? " doc-page--with-panel" : ""}`}>
       <PageToolbar
-        crumbs={[
-          { label: "Документы", to: "/documents" },
-          { label: TYPE_LABEL[doc.type], to: `/documents?type=${doc.type}` },
-          { label: doc.title },
-        ]}
+        crumbs={treeCrumbs(doc, tree.index)}
         actions={
           <>
             <Link
@@ -622,6 +650,14 @@ function DocumentBody({
           />
         ) : null}
       </div>
+      {applyOpen ? (
+        <ApplyTemplatePanel
+          target={{ kind: "document", id: doc.id }}
+          currentTemplateId={doc.template_id ?? null}
+          onClose={() => setApplyOpen(false)}
+          onApplied={(proposal) => navigate(`/proposals/${encodeURIComponent(proposal.id)}`)}
+        />
+      ) : null}
     </article>
   );
 }

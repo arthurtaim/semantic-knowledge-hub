@@ -232,9 +232,10 @@ def _clean_list(values: list[str]) -> list[str]:
     return list(dict.fromkeys(v.strip() for v in values if v and v.strip()))
 
 
-def compose_document(metadata: dict[str, Any], body: str) -> str:
+def compose_document(metadata: dict[str, Any], body: str, extra: dict[str, Any] | None = None) -> str:
     """YAML frontmatter generated from form fields + the Markdown body. Values are serialized by the
-    YAML library (quoting/escaping), never concatenated by hand."""
+    YAML library (quoting/escaping), never concatenated by hand. `extra`: keys the form does not manage, kept
+    from the stored file (e.g. `relations`, `aliases`, `reviewed_at` of an imported document)."""
     data: dict[str, Any] = {}
     for key in FRONTMATTER_ORDER:
         value = metadata.get(key)
@@ -251,6 +252,9 @@ def compose_document(metadata: dict[str, Any], body: str) -> str:
         elif value is not None:
             data[key] = str(value).strip()
     data["reviewed_at"] = None
+    for key, value in (extra or {}).items():
+        if key not in FRONTMATTER_ORDER:
+            data[key] = value
     header = yaml.safe_dump(data, allow_unicode=True, sort_keys=False, default_flow_style=None, width=1000)
     normalized_body = body.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
     return f"---\n{header}---\n\n{normalized_body}\n"
