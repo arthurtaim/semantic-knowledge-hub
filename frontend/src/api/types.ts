@@ -2004,7 +2004,10 @@ export interface WorkTask {
   overdue: boolean;
   late: boolean;
   child_count: number;
-  link_count: number;
+  /** Active links to documents THIS reader can see now; null when the knowledge source cannot be read right now. */
+  link_count: number | null;
+  /** The canonical ids of those documents (the document filter); null when they cannot be checked. */
+  document_ids: string[] | null;
 }
 
 export interface WorkTaskPage {
@@ -2030,6 +2033,8 @@ export interface WorkTaskQuery {
   overdue?: boolean;
   blocked?: boolean;
   include_archived?: boolean;
+  /** a linked document the reader can see (a hidden one matches nothing) */
+  document?: string;
   sort?: TaskSort;
   order?: "asc" | "desc";
   limit?: number;
@@ -2260,4 +2265,90 @@ export interface WorkActivityEvent {
 export interface WorkActivityPage {
   items: WorkActivityEvent[];
   next_before_seq: number | null;
+}
+
+// --- M6 Step 4: task ↔ document links (docs/WORK_MANAGEMENT.md §10) ------------------------------------------------
+
+export type LinkRelation = "implements" | "requires" | "documents" | "verifies" | "blocks";
+
+/**
+ * current — the revision seen when linking (or acknowledged later); revision_changed — the document changed after
+ * linking; revision_unknown — no revision was recorded; unavailable — deleted, renamed away or no access (on purpose
+ * indistinguishable, no details); unverified — the knowledge source cannot be read right now.
+ */
+export type LinkState = "current" | "revision_changed" | "revision_unknown" | "unavailable" | "unverified";
+
+/** The document as the reader's CURRENT knowledge snapshot shows it (never copied into the work database). */
+export interface LinkedDocumentRef {
+  document_id: string;
+  title: string;
+  type: string;
+  status: DocStatus;
+  version: string | null;
+  revision: string;
+  is_demo: boolean;
+  app_path: string;
+}
+
+export interface TaskLink {
+  id: string;
+  task_id: string;
+  relation: LinkRelation;
+  source_system: "skh";
+  state: LinkState;
+  /** Only when the reader can see the document now. */
+  document: LinkedDocumentRef | null;
+  revision_at_link: string | null;
+  deprecated: boolean;
+  approved: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+export interface TaskLinks {
+  task_id: string;
+  task_key: string;
+  knowledge_available: boolean;
+  generation: string | null;
+  items: TaskLink[];
+}
+
+export interface TaskLinkCreate {
+  document_id: string;
+  relation?: LinkRelation;
+  client_request_id?: string;
+}
+
+export interface DocumentTaskRef {
+  link_id: string;
+  relation: LinkRelation;
+  state: LinkState;
+  revision_at_link: string | null;
+  task_id: string;
+  task_key: string;
+  title: string;
+  status: TaskStatus;
+  project_id: string;
+  project_key: string;
+  project_title: string;
+  app_path: string;
+}
+
+export interface DocumentTasks {
+  document_id: string;
+  revision: string;
+  items: DocumentTaskRef[];
+  total: number;
+}
+
+export interface ProjectDocumentRef {
+  document: LinkedDocumentRef;
+  task_count: number;
+  changed_count: number;
+}
+
+export interface ProjectDocuments {
+  project_id: string;
+  knowledge_available: boolean;
+  items: ProjectDocumentRef[];
 }

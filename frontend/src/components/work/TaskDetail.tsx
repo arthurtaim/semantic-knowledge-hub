@@ -207,7 +207,7 @@ export function TaskDetail(props: TaskDetailProps) {
 
       <TaskDependencySection {...props} keyOf={keyOf} />
 
-      <TaskDocuments task={task} capabilities={capabilities} canWrite={canWrite} />
+      <TaskDocuments task={task} capabilities={capabilities} canWrite={canWrite} onChanged={props.onRefresh} say={props.say} />
 
       <TaskHistory task={task} capabilities={capabilities} assignees={assignees} planRevision={props.planRevision} keyOf={keyOf} />
 

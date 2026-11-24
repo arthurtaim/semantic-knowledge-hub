@@ -26,11 +26,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from app.authz import Action
 from app.domain.models import UserContext
 from app.errors import ApiError
 from app.work.models import ProjectRole
+
+if TYPE_CHECKING:
+    from app.work.links import DocumentScope
 
 EXPOSURE_HEADER = "x-skh-exposure"
 
@@ -86,6 +90,9 @@ class WorkPrincipal:
     user: UserContext
     request_id: str
     exposed: bool = False  # the request carries the public-gateway marker
+    # The documents this identity may see NOW (its knowledge snapshot), resolved by the API layer for the request;
+    # task ↔ document links are shown and counted only against it. None = not resolved (no document facts shown).
+    documents: DocumentScope | None = None
 
 
 @dataclass(frozen=True)

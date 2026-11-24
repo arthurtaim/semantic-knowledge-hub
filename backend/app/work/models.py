@@ -326,7 +326,11 @@ class TaskOut(BaseModel):
     # planned end passed and not done
     late: bool
     child_count: int
-    link_count: int
+    # Active document links whose document THIS reader can see now (the reader's knowledge snapshot); null when the
+    # knowledge source cannot be read right now — never a count of documents the reader cannot see (M6-12/M6-34).
+    link_count: int | None
+    # The canonical ids of those documents (the document filter of List / Board / Gantt uses them).
+    document_ids: list[str] | None
 
 
 class TaskPage(BaseModel):
@@ -597,6 +601,118 @@ class ActivityPage(BaseModel):
     next_before_seq: int | None
 
 
+# --- task ↔ document links (Step 4) ----------------------------------------------------------------------------
+class LinkRelation(StrEnum):
+    """What a task does with a document. A task link is NOT a knowledge-graph relation: typed relations between
+    documents are declared by people in YAML; a link lives in the work module and never writes a document."""
+
+    implements = "implements"  # the task implements what the document specifies
+    requires = "requires"  # the task needs the document (an input, a requirement)
+    documents = "documents"  # the task writes / updates the document
+    verifies = "verifies"  # the task checks what the document states
+    blocks = "blocks"  # the task blocks the document (e.g. its approval waits for the task)
+
+
+DocumentIdField = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
+
+
+class TaskLinkCreate(_Request):
+    """Link a task to a document of the knowledge base. The document must be visible to the reader NOW; the server
+    records its canonical id and the revision it sees (`revision_at_link`) — the client never supplies them."""
+
+    document_id: DocumentIdField
+    relation: LinkRelation = LinkRelation.implements
+    client_request_id: ClientRequestId | None = None
+
+
+# current          — visible; the revision equals the one seen when linking (or acknowledged later)
+# revision_changed — visible; the document changed after linking (a person should check the task)
+# revision_unknown — visible; no revision was recorded at linking (e.g. imported data)
+# unavailable      — the reader cannot see it now: deleted, renamed away or no access (indistinguishable on purpose)
+# unverified       — the knowledge source cannot be read right now: nothing about the document is shown
+LinkState = Literal["current", "revision_changed", "revision_unknown", "unavailable", "unverified"]
+
+
+class LinkedDocumentRef(BaseModel):
+    """The document as the reader's CURRENT knowledge snapshot shows it — never copied into the work database."""
+
+    document_id: str
+    title: str
+    type: str
+    status: str  # draft | in_review | approved | deprecated — as the document states it now
+    version: str | None
+    revision: str
+    is_demo: bool
+    app_path: str
+
+
+class TaskLinkOut(BaseModel):
+    id: str
+    task_id: str
+    relation: LinkRelation
+    source_system: Literal["skh"]
+    state: LinkState
+    # Present only when the reader can see the document now; an unavailable link shows no id, title or revision.
+    document: LinkedDocumentRef | None
+    revision_at_link: str | None
+    deprecated: bool  # the document is `deprecated` now (shown, never hidden)
+    approved: bool  # the document is `approved` now (drafts and reviews are not authoritative)
+    created_by: str
+    created_at: datetime
+
+
+class TaskLinks(BaseModel):
+    task_id: str
+    task_key: str
+    knowledge_available: bool
+    generation: str | None  # knowledge index generation the states were computed from
+    items: list[TaskLinkOut]
+
+
+class TaskLinkRemoved(BaseModel):
+    link_id: str
+    task_id: str
+
+
+class DocumentTaskRef(BaseModel):
+    """One ACTIVE task linked to a document (the document page's back-links), only from projects the reader can see
+    (archived tasks keep their links as history but are not listed)."""
+
+    link_id: str
+    relation: LinkRelation
+    state: LinkState
+    revision_at_link: str | None
+    task_id: str
+    task_key: str
+    title: str
+    status: TaskStatus
+    project_id: str
+    project_key: str
+    project_title: str
+    app_path: str
+
+
+class DocumentTasks(BaseModel):
+    document_id: str
+    revision: str
+    items: list[DocumentTaskRef]
+    total: int
+
+
+class ProjectDocumentRef(BaseModel):
+    """A document linked to tasks of a project (visible ones only) — the document filter of the work views."""
+
+    document: LinkedDocumentRef
+    task_count: int
+    changed_count: int  # links whose document changed after linking
+
+
+class ProjectDocuments(BaseModel):
+    project_id: str
+    knowledge_available: bool
+    items: list[ProjectDocumentRef]
+
+
 # --- capabilities ----------------------------------------------------------------------------------------------
 class WorkIdentity(BaseModel):
     user_id: str
@@ -618,7 +734,7 @@ class WorkLimits(BaseModel):
 class WorkFeatures(BaseModel):
     critical_path: bool = False
     comments: bool = False
-    document_links: bool = False  # Step 4 turns it on together with the link API
+    document_links: bool = False  # task ↔ document links (Step 4): on whenever the module is enabled
     ai_proposals: bool = False  # Step 5 turns it on together with the proposal API
     lag: bool = False
 

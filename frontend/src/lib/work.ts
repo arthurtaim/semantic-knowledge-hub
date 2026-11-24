@@ -1,4 +1,6 @@
 import type {
+  LinkRelation,
+  LinkState,
   ProjectStatus,
   ScheduleMode,
   TaskPriority,
@@ -62,6 +64,12 @@ export const ACTIVITY_LABEL: Record<string, string> = {
   dependency_added: "добавил(а) зависимость",
   dependency_removed: "убрал(а) зависимость",
   schedule_applied: "применил(а) изменение сроков",
+  link_added: "связал(а) задачу с документом",
+  link_removed: "убрал(а) связь с документом",
+  link_revision_acknowledged: "отметил(а) изменённый документ как проверенный",
+  proposal_created: "получил(а) предложение AI",
+  proposal_applied: "создал(а) задачи по предложению AI",
+  proposal_rejected: "отклонил(а) предложение AI",
 };
 
 /** Field names of the audit `changes` map. */
@@ -83,7 +91,39 @@ export const FIELD_LABEL: Record<string, string> = {
   predecessor: "Предшественник",
   successor: "Последователь",
   seed: "Синтетические демо-данные",
+  document_id: "Документ",
+  document: "Документ",
+  relation: "Связь",
+  revision_at_link: "Ревизия документа",
+  proposal_id: "Предложение AI",
 };
+
+/** What a task does with a linked document. */
+export const LINK_RELATION_LABEL: Record<LinkRelation, string> = {
+  implements: "Реализует",
+  requires: "Опирается на",
+  documents: "Документирует",
+  verifies: "Проверяет",
+  blocks: "Блокирует",
+};
+
+export const LINK_RELATIONS: LinkRelation[] = ["implements", "requires", "documents", "verifies", "blocks"];
+
+/** The state of a link for this reader, in words (unavailable on purpose names no document). */
+export const LINK_STATE_LABEL: Record<LinkState, string> = {
+  current: "Актуальна",
+  revision_changed: "Документ изменён после связывания",
+  revision_unknown: "Ревизия при связывании не записана",
+  unavailable: "Документ недоступен — удалён или нет доступа",
+  unverified: "Не проверено: база знаний сейчас недоступна",
+};
+
+/** A short revision for display: a content hash (`sha256:9ad39e83…` → `9ad39e83`) or a commit. */
+export function shortRevision(revision: string | null | undefined): string {
+  if (!revision) return "—";
+  const value = revision.slice(revision.lastIndexOf(":") + 1);
+  return value.length > 10 ? value.slice(0, 8) : value;
+}
 
 /** Server actor ids in words: the operator, a demo role, the demo seed; an unknown id is shown as it is. */
 export function actorName(id: string, identity: { user_id: string; display_name: string } | null | undefined, assignees: { id: string; display_name: string }[]): string {
@@ -288,9 +328,13 @@ export interface TaskFilters {
   assignee: string;
   overdue: boolean;
   milestone: boolean;
+  /** A linked document id (case-insensitive), or "" (any). Only documents the reader can see are in `document_ids`. */
+  doc: string;
 }
 
-export const EMPTY_FILTERS: TaskFilters = { q: "", status: [], priority: [], assignee: "", overdue: false, milestone: false };
+export const EMPTY_FILTERS: TaskFilters = { q: "", status: [], priority: [], assignee: "", overdue: false, milestone: false, doc: "" };
+
+const DOCUMENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
 
 function listParam<T extends string>(params: URLSearchParams, name: string, allowed: readonly T[]): T[] {
   const raw = params.get(name);
@@ -306,6 +350,7 @@ export function filtersFromParams(params: URLSearchParams): TaskFilters {
     assignee: params.get("assignee") ?? "",
     overdue: params.get("overdue") === "1",
     milestone: params.get("milestone") === "1",
+    doc: DOCUMENT_ID.test(params.get("doc") ?? "") ? (params.get("doc") ?? "") : "",
   };
 }
 
@@ -318,11 +363,14 @@ export function filterParams(filters: TaskFilters): Record<string, string | null
     assignee: filters.assignee || null,
     overdue: filters.overdue ? "1" : null,
     milestone: filters.milestone ? "1" : null,
+    doc: filters.doc || null,
   };
 }
 
 export function hasFilters(filters: TaskFilters): boolean {
-  return Boolean(filters.q || filters.status.length || filters.priority.length || filters.assignee || filters.overdue || filters.milestone);
+  return Boolean(
+    filters.q || filters.status.length || filters.priority.length || filters.assignee || filters.overdue || filters.milestone || filters.doc,
+  );
 }
 
 export function countFilters(filters: TaskFilters): number {
@@ -332,7 +380,8 @@ export function countFilters(filters: TaskFilters): number {
     (filters.priority.length ? 1 : 0) +
     (filters.assignee ? 1 : 0) +
     (filters.overdue ? 1 : 0) +
-    (filters.milestone ? 1 : 0)
+    (filters.milestone ? 1 : 0) +
+    (filters.doc ? 1 : 0)
   );
 }
 
@@ -343,6 +392,10 @@ export function matchesFilters(task: WorkTask, filters: TaskFilters): boolean {
   if (filters.assignee && filters.assignee !== "none" && task.assignee_id !== filters.assignee) return false;
   if (filters.overdue && !(task.overdue || task.late)) return false;
   if (filters.milestone && !task.is_milestone) return false;
+  if (filters.doc) {
+    const wanted = filters.doc.toUpperCase();
+    if (!(task.document_ids ?? []).some((id) => id.toUpperCase() === wanted)) return false;
+  }
   if (filters.q) {
     const needle = filters.q.toLocaleLowerCase("ru");
     if (!task.title.toLocaleLowerCase("ru").includes(needle) && !task.key.toLowerCase().includes(needle)) return false;

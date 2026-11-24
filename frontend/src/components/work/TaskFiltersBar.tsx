@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import type { AssigneeRef, TaskPriority, TaskStatus } from "../../api/types";
+import type { AssigneeRef, ProjectDocumentRef, TaskPriority, TaskStatus } from "../../api/types";
 import {
   countFilters,
   EMPTY_FILTERS,
@@ -16,13 +16,16 @@ import { Menu, type MenuGroup, type MenuTriggerProps } from "../ui/Popover";
 
 /*
  * The one filter model of List, Board and Gantt (state in the URL, lib/work.ts): search by title or key, status,
- * priority, assignee, «Просроченные», «Вехи». A document filter joins in Step 4 (task ↔ document links).
+ * priority, assignee, «Просроченные», «Вехи» and «Документ» — a document linked to tasks of the project (only
+ * documents the reader can see are offered or matched; `?doc=ID` also arrives from a document page).
  */
 
 interface TaskFiltersBarProps {
   filters: TaskFilters;
   onChange: (next: TaskFilters) => void;
   assignees: AssigneeRef[];
+  /** Documents linked to the project's tasks (visible to this reader), for the «Документ» filter. */
+  documents?: ProjectDocumentRef[];
   /** How many tasks match / all, for the screen reader and the line under the bar. */
   shown: number;
   total: number;
@@ -32,7 +35,7 @@ function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-export function TaskFiltersBar({ filters, onChange, assignees, shown, total }: TaskFiltersBarProps) {
+export function TaskFiltersBar({ filters, onChange, assignees, documents = [], shown, total }: TaskFiltersBarProps) {
   const [text, setText] = useState(filters.q);
   const searchId = useId();
 
@@ -83,6 +86,20 @@ export function TaskFiltersBar({ filters, onChange, assignees, shown, total }: T
       ],
     },
   ];
+  const documentGroups: MenuGroup[] = [
+    {
+      radio: true,
+      items: [
+        { id: "any", label: "Все документы", checked: !filters.doc, onSelect: () => onChange({ ...filters, doc: "" }) },
+        ...documents.map((d) => ({
+          id: d.document.document_id,
+          label: `${d.document.document_id} — ${d.document.title}${d.changed_count ? " (изменён)" : ""}`,
+          checked: filters.doc.toUpperCase() === d.document.document_id.toUpperCase(),
+          onSelect: () => onChange({ ...filters, doc: d.document.document_id }),
+        })),
+      ],
+    },
+  ];
   const assigneeName =
     filters.assignee === "none" ? "Не назначен" : (assignees.find((a) => a.id === filters.assignee)?.display_name ?? filters.assignee);
   const active = countFilters(filters);
@@ -123,6 +140,9 @@ export function TaskFiltersBar({ filters, onChange, assignees, shown, total }: T
         groups={priorityGroups}
         trigger={menuButton("Приоритет", filters.priority.map((p) => PRIORITY_LABEL[p]))}
       />
+      {documents.length || filters.doc ? (
+        <Menu label="Документ" className="docs-filter-menu" groups={documentGroups} trigger={menuButton("Документ", filters.doc ? [filters.doc] : [])} />
+      ) : null}
       <Chip tone="filter" selected={filters.overdue} onClick={() => onChange({ ...filters, overdue: !filters.overdue })}>
         Просроченные
       </Chip>

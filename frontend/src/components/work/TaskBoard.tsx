@@ -259,7 +259,7 @@ export function TaskBoard({ tasks, canWrite, today, keyOf, taskHref, onMove, fil
                           </span>
                         ) : null}
                         {task.child_count > 0 ? <span className="muted">Подзадач: {task.child_count}</span> : null}
-                        {task.link_count > 0 ? <span className="muted">Документов: {task.link_count}</span> : null}
+                        {task.link_count ? <span className="muted">Документов: {task.link_count}</span> : null}
                       </div>
                     </article>
                   </li>

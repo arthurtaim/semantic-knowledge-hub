@@ -6,7 +6,8 @@ import { TaskPage } from "../pages/TaskPage";
 import { mockApi, renderRoutes, type MockRoute } from "./helpers";
 import { dependency, gantt, planTasks, preview, project, projectRoutes, READ_ONLY } from "./workFixtures";
 
-/* M6 task detail: fields, subtasks, dependencies (add / remove, the cycle path), history, the «Документы» seam. */
+/* M6 task detail: fields, subtasks, dependencies (add / remove, the cycle path), history; «Документы» when links are
+ * switched off (the links themselves: workLinks.test.tsx). */
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -78,7 +79,7 @@ async function openPanel() {
 }
 
 describe("Task detail", () => {
-  it("shows all fields, dependencies, history (who / when / what) and the «Документы» block for Step 4", async () => {
+  it("shows all fields, dependencies, history (who / when / what) and «Документы» off when links are disabled", async () => {
     mockApi(routes());
     const panel = await openPanel();
     expect(within(panel).getByRole("combobox", { name: "Статус ARIS-5 Загрузчик" })).toHaveValue("todo");
@@ -93,8 +94,8 @@ describe("Task detail", () => {
     expect(within(history).getByText("Описание: изменено")).toBeInTheDocument();
     expect(within(history).getByText("создал(а) задачу")).toBeInTheDocument();
     const docs = within(panel).getByRole("heading", { name: "Документы" }).closest("section") as HTMLElement;
-    expect(docs).toHaveAttribute("data-step4-seam", "task-documents");
-    expect(within(docs).getByText(/ещё не подключены/)).toBeInTheDocument();
+    expect(docs).toHaveAttribute("data-testid", "task-documents");
+    expect(within(docs).getByText(/отключены в этой конфигурации/)).toBeInTheDocument();
     expect(within(docs).queryByRole("button")).not.toBeInTheDocument();
   });
 

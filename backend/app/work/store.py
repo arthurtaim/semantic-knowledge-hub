@@ -314,15 +314,90 @@ def count_dependencies(conn: sqlite3.Connection, project_id: str) -> int:
     return int(row[0])
 
 
-# --- links (Step 4 owns the API; the counts feed task cards already) -------------------------------------------
-def link_counts(conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
-    return {
-        str(r[0]): int(r[1])
-        for r in conn.execute(
-            "SELECT task_id, COUNT(*) FROM work_task_links WHERE project_id = ? AND status = 'active' GROUP BY task_id",
+# --- task ↔ document links (Step 4) ----------------------------------------------------------------------------
+def active_document_links(conn: sqlite3.Connection, project_id: str) -> dict[str, list[str]]:
+    """Active SKH document links of a project: task id → linked document ids (stored canonical ids, link order).
+    Visibility is decided by the caller against the reader's knowledge snapshot."""
+    links: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT task_id, document_id FROM work_task_links WHERE project_id = ? AND status = 'active' "
+        "AND target_type = 'document' AND source_system = 'skh' ORDER BY created_at, id",
+        (project_id,),
+    ).fetchall():
+        links.setdefault(str(row[0]), []).append(str(row[1]))
+    return links
+
+
+def insert_link(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    columns = ", ".join(row)
+    placeholders = ", ".join(f":{k}" for k in row)
+    conn.execute(f"INSERT INTO work_task_links ({columns}) VALUES ({placeholders})", dict(row))
+
+
+def get_link(conn: sqlite3.Connection, link_id: str) -> Row | None:
+    row: Row | None = conn.execute("SELECT * FROM work_task_links WHERE id = ?", (link_id,)).fetchone()
+    return row
+
+
+def task_links(conn: sqlite3.Connection, task_id: str) -> list[Row]:
+    return list(
+        conn.execute(
+            "SELECT * FROM work_task_links WHERE task_id = ? AND status = 'active' ORDER BY created_at, id",
+            (task_id,),
+        ).fetchall()
+    )
+
+
+def find_active_link(conn: sqlite3.Connection, task_id: str, document_id: str, relation: str) -> Row | None:
+    row: Row | None = conn.execute(
+        "SELECT * FROM work_task_links WHERE task_id = ? AND source_system = 'skh' AND document_id = ? "
+        "AND relation = ? AND status = 'active'",
+        (task_id, document_id, relation),
+    ).fetchone()
+    return row
+
+
+def document_links(conn: sqlite3.Connection, document_id: str) -> list[Row]:
+    """Active links to one document across projects, with the task and project rows the caller needs."""
+    return list(
+        conn.execute(
+            "SELECT l.id AS link_id, l.relation, l.revision_at_link, l.project_id, l.task_id, t.number, t.title, "
+            "t.status, t.archived_at, p.key AS project_key, p.title AS project_title, p.status AS project_status "
+            "FROM work_task_links l JOIN work_tasks t ON t.id = l.task_id JOIN work_projects p ON p.id = l.project_id "
+            "WHERE l.source_system = 'skh' AND l.document_id = ? AND l.status = 'active' "
+            "ORDER BY p.key, t.number, l.created_at",
+            (document_id,),
+        ).fetchall()
+    )
+
+
+def project_link_rows(conn: sqlite3.Connection, project_id: str) -> list[Row]:
+    """Active document links of a project with the task's archive state (the project's linked documents)."""
+    return list(
+        conn.execute(
+            "SELECT l.id, l.task_id, l.document_id, l.revision_at_link FROM work_task_links l "
+            "JOIN work_tasks t ON t.id = l.task_id AND t.archived_at IS NULL "
+            "WHERE l.project_id = ? AND l.status = 'active' AND l.source_system = 'skh' ORDER BY l.created_at",
             (project_id,),
         ).fetchall()
-    }
+    )
+
+
+def remove_link(conn: sqlite3.Connection, link_id: str, actor: str, at: str) -> bool:
+    cursor = conn.execute(
+        "UPDATE work_task_links SET status = 'removed', removed_by = ?, removed_at = ? "
+        "WHERE id = ? AND status = 'active'",
+        (actor, at, link_id),
+    )
+    return cursor.rowcount == 1
+
+
+def set_link_revision(conn: sqlite3.Connection, link_id: str, revision: str) -> bool:
+    cursor = conn.execute(
+        "UPDATE work_task_links SET revision_at_link = ? WHERE id = ? AND status = 'active'",
+        (revision, link_id),
+    )
+    return cursor.rowcount == 1
 
 
 # --- audit (append-only: UPDATE/DELETE are refused by triggers) ------------------------------------------------

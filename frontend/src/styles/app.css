@@ -13913,3 +13913,165 @@ a.fact-item__title:hover {
 .task-dates__form .button-row {
   align-self: flex-start;
 }
+
+/* ── M6 Step 4: task ↔ document links (task card «Документы», document page «Задачи») ── */
+.task-docs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task-doc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
+}
+
+.task-doc:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.task-doc__relation {
+  flex: 0 0 auto;
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.task-doc__main {
+  display: inline-flex;
+  flex: 1 1 12rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  min-width: 0;
+}
+
+.task-doc__link {
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.task-doc__version {
+  font-size: var(--fs-caption);
+}
+
+.task-doc__unavailable {
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.task-doc__state {
+  flex: 1 1 100%;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
+.task-doc__state--changed {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--status-review-text);
+  font-weight: 500;
+}
+
+.task-doc__state--deprecated {
+  color: var(--danger-text);
+}
+
+.task-doc__actions {
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.task-docs__add {
+  align-self: flex-start;
+}
+
+.task-docs__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
+.task-docs__form input[type="search"] {
+  width: 100%;
+}
+
+.task-docs__found {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 14rem;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.task-docs__pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.task-docs__pick:hover,
+.task-docs__pick:focus-visible {
+  background: var(--bg-hover);
+}
+
+.task-docs__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.task-docs__hint {
+  margin: 4px 0 0;
+  font-size: var(--fs-caption);
+}
+
+.task-docs__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.doc-tasks__projects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-small);
+}

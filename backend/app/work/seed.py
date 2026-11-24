@@ -6,12 +6,16 @@
 - ids are deterministic (uuid5 of the seed key), rows carry `is_demo = 1`, titles/descriptions say «демо»;
 - dates are laid out relative to the Monday three weeks before «today» with a forward FS pass, so the seeded plan
   has no FS violations, has finished, running, late and future work, milestones, a locked and unscheduled tasks;
-- all names are fictional roles, no real people, systems or bank data.
+- all names are fictional roles, no real people, systems or bank data;
+- demo task ↔ document links (Step 4, `seed_demo_links`) point at SYNTHETIC documents of the knowledge base and are
+  added at start-up from the operator's knowledge snapshot (canonical id + the revision seen then); a link whose
+  document is not in the base is skipped, an existing link row (also a removed one) is never re-created.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -451,6 +455,101 @@ def seed_demo(db: WorkDatabase, *, now: datetime, timezone: str) -> SeedReport:
                         },
                     )
             report.created.append(spec.key)
+    return report
+
+
+# Demo task ↔ document links: (task local id, synthetic document id, relation). Some point at a draft and a deprecated
+# document on purpose — the UI must show those states honestly.
+DEMO_LINKS: dict[str, tuple[tuple[str, str, str], ...]] = {
+    "demo:aris-metadata-integration": (
+        ("a1", "DEMO-SRC-002", "requires"),
+        ("a1", "DEMO-INT-018", "requires"),
+        ("a2.1", "DEMO-INT-002", "implements"),
+        ("a2.2", "DEMO-SEM-006", "requires"),
+        ("a3", "DEMO-INT-001", "implements"),
+        ("a4", "DEMO-INT-003", "verifies"),
+        ("a5", "SEM-INT-ARIS-001", "documents"),
+    ),
+    "demo:dataset-quality-initiative": (
+        ("d1", "DEMO-GOV-003", "requires"),
+        ("d1.2", "DEMO-GOV-004", "requires"),
+        ("d2", "DEMO-PROC-010", "requires"),
+        ("d3", "DEMO-SRC-011", "implements"),
+    ),
+    "demo:confluence-rag-improvements": (
+        ("r1", "SEM-DEC-001", "requires"),
+        ("r3", "DEMO-ADR-004", "requires"),
+        ("r4", "DEMO-GOV-011", "verifies"),
+        ("r5", "SEM-ARCH-001", "implements"),
+    ),
+}
+
+
+@dataclass
+class LinkSeedReport:
+    created: int = 0
+    existing: int = 0
+    missing_documents: list[str] = field(default_factory=list)
+    skipped_tasks: int = 0
+
+
+def seed_demo_links(
+    db: WorkDatabase, *, document: Callable[[str], tuple[str, str] | None], now: datetime
+) -> LinkSeedReport:
+    """Idempotent demo links. `document(id)` → (canonical id, current revision) from the operator's knowledge
+    snapshot, or None when the base has no such document. Only active demo tasks of seeded projects get links; a
+    deterministic link id that already exists (active OR removed by the operator) is left alone."""
+    report = LinkSeedReport()
+    at = store.now_iso(now)
+    for seed_key, links in DEMO_LINKS.items():
+        with db.write() as conn:
+            project = store.get_project_by_seed(conn, seed_key)
+            if project is None:
+                continue
+            for local, doc_ref, relation in links:
+                link_id = _uid(seed_key, local, "link", doc_ref, relation)
+                if store.get_link(conn, link_id) is not None:
+                    report.existing += 1
+                    continue
+                task = store.get_task(conn, _uid(seed_key, local))
+                if task is None or not task["is_demo"] or task["archived_at"] is not None:
+                    report.skipped_tasks += 1
+                    continue
+                resolved = document(doc_ref)
+                if resolved is None:
+                    report.missing_documents.append(doc_ref)
+                    continue
+                doc_id, revision = resolved
+                if store.find_active_link(conn, task["id"], doc_id, relation) is not None:
+                    report.existing += 1
+                    continue
+                store.insert_link(
+                    conn,
+                    {
+                        "id": link_id,
+                        "project_id": project["id"],
+                        "task_id": task["id"],
+                        "target_type": "document",
+                        "source_system": "skh",
+                        "document_id": doc_id,
+                        "relation": relation,
+                        "revision_at_link": revision,
+                        "status": "active",
+                        "created_by": SEED_ACTOR,
+                        "created_at": at,
+                    },
+                )
+                _audit(
+                    conn,
+                    at,
+                    "link_added",
+                    "link",
+                    link_id,
+                    project["id"],
+                    task["id"],
+                    {"document_id": doc_id, "relation": relation, "revision_at_link": revision, "seed": True},
+                )
+                report.created += 1
     return report
 
 

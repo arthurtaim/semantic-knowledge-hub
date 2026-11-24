@@ -35,7 +35,7 @@ def test_fresh_database_is_migrated_with_fk_wal_and_a_migration_record(tmp_path:
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         rows = conn.execute("SELECT version, name, checksum FROM work_schema_migrations").fetchall()
-        assert [(r[0], r[1]) for r in rows] == [(1, "work_core")]
+        assert [(r[0], r[1]) for r in rows] == [(m.version, m.name) for m in migrations.MIGRATIONS]
         assert rows[0][2] == migrations.MIGRATIONS[0].checksum
         indexes = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")}
         assert {"work_tasks_by_status", "work_tasks_by_assignee", "work_tasks_by_start"} <= indexes
@@ -69,14 +69,18 @@ def test_upgrade_backs_up_first_and_the_backup_restores(
     path = tmp_path / "work.sqlite3"
     svc = service(path)
     project = svc.create_project(P, ProjectCreate(key="BAK", title="До миграции"))
-    v2 = migrations.Migration(2, "test_extra_column", ("ALTER TABLE work_projects ADD COLUMN extra TEXT",))
-    monkeypatch.setattr("app.work.db.MIGRATIONS", (*migrations.MIGRATIONS, v2))
-    monkeypatch.setattr("app.work.db.LATEST_VERSION", 2)
+    current = migrations.LATEST_VERSION
+    nxt = migrations.Migration(
+        current + 1, "test_extra_column", ("ALTER TABLE work_projects ADD COLUMN extra TEXT",)
+    )
+    monkeypatch.setattr("app.work.db.MIGRATIONS", (*migrations.MIGRATIONS, nxt))
+    monkeypatch.setattr("app.work.db.LATEST_VERSION", current + 1)
     upgraded = WorkDatabase(path)
-    assert schema_version(path) == 2
-    assert len(upgraded.backups) == 1 and upgraded.backups[0].name.startswith("work.sqlite3.pre-v2-")
+    assert schema_version(path) == current + 1
+    assert len(upgraded.backups) == 1
+    assert upgraded.backups[0].name.startswith(f"work.sqlite3.pre-v{current + 1}-")
     backup = upgraded.backups[0]
-    assert schema_version(backup) == 1 and verify_database(backup) == []
+    assert schema_version(backup) == current and verify_database(backup) == []
     # rollback = restore the backup over the database (application stopped); the previous version opens it
     restored = tmp_path / "restored.sqlite3"
     backup_database(backup, restored)
@@ -212,7 +216,7 @@ def test_work_db_tool_status_backup_verify(tmp_path: Path, capsys: pytest.Captur
     svc = service(path)
     svc.create_project(P, ProjectCreate(key="TOOL", title="Инструмент"))
     assert work_db.main(["--db", str(path), "status"]) == 0
-    assert "schema v1" in capsys.readouterr().out
+    assert f"schema v{migrations.LATEST_VERSION}" in capsys.readouterr().out
     target = tmp_path / "backups" / "copy.sqlite3"
     assert work_db.main(["--db", str(path), "backup", "--out", str(target)]) == 0
     assert work_db.main(["--db", str(target), "verify"]) == 0
@@ -220,3 +224,39 @@ def test_work_db_tool_status_backup_verify(tmp_path: Path, capsys: pytest.Captur
     assert work_db.main(["--db", str(restored), "restore", "--from", str(target)]) == 2  # needs --yes
     assert work_db.main(["--db", str(restored), "restore", "--from", str(target), "--yes"]) == 0
     assert service(restored).get_project(P, "TOOL").title == "Инструмент"
+
+
+def test_v1_database_upgrades_to_task_links_with_a_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real v1 file (Steps 1–3) is upgraded by the released v2 migration: backup first, data kept, the partial
+    unique index forbids a second ACTIVE link of the same (task, document, relation) while history rows stay."""
+    path = tmp_path / "work.sqlite3"
+    monkeypatch.setattr("app.work.db.MIGRATIONS", migrations.MIGRATIONS[:1])
+    monkeypatch.setattr("app.work.db.LATEST_VERSION", 1)
+    old = service(path)
+    project = old.create_project(P, ProjectCreate(key="UPG", title="До v2"))
+    created = old.create_task(P, project.id, TaskCreate(title="Задача"))
+    assert schema_version(path) == 1
+    monkeypatch.setattr("app.work.db.MIGRATIONS", migrations.MIGRATIONS)
+    monkeypatch.setattr("app.work.db.LATEST_VERSION", migrations.LATEST_VERSION)
+    upgraded = WorkDatabase(path)
+    assert schema_version(path) == migrations.LATEST_VERSION
+    assert len(upgraded.backups) == 1 and schema_version(upgraded.backups[0]) == 1
+    row = {
+        "project_id": project.id,
+        "task_id": created.id,
+        "target_type": "document",
+        "source_system": "skh",
+        "document_id": "SEM-ARCH-001",
+        "relation": "implements",
+        "revision_at_link": "r1",
+        "created_by": "local-demo-user",
+        "created_at": "2026-11-25T00:00:00+00:00",
+    }
+    with upgraded.write() as conn:
+        assert conn.execute("SELECT key FROM work_projects").fetchone()[0] == "UPG"
+        store.insert_link(conn, {"id": "l1", "status": "removed", **row})
+        store.insert_link(conn, {"id": "l2", "status": "active", **row})
+    with upgraded.write() as conn, pytest.raises(sqlite3.IntegrityError):
+        store.insert_link(conn, {"id": "l3", "status": "active", **row})

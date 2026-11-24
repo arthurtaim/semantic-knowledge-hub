@@ -21,7 +21,7 @@ from app.adapters.corporate.mock import MockCorporateConnector
 from app.adapters.gitlab.client import GitLabClient, validate_gitlab_config
 from app.adapters.gitlab.publisher import GitLabMRPublisher
 from app.adapters.gitlab.repository import GitLabKnowledgeRepository
-from app.adapters.knowledge.base import KnowledgeRepository
+from app.adapters.knowledge.base import KnowledgeRepository, KnowledgeSnapshot
 from app.adapters.knowledge.local import LocalKnowledgeRepository, seed_from_fixtures
 from app.adapters.publishers.base import ConfluencePublisher, ProposalPublisher
 from app.adapters.publishers.disabled import DisabledConfluencePublisher, DisabledProposalPublisher
@@ -55,7 +55,7 @@ from app.services.template_hub import TemplateHubService
 from app.services.template_studio import TemplateStudioService
 from app.work.db import WorkDatabase
 from app.work.permissions import WorkAccessMode, build_gate
-from app.work.seed import seed_demo
+from app.work.seed import seed_demo, seed_demo_links
 from app.work.service import WorkService
 
 logger = logging.getLogger("skh.container")
@@ -155,6 +155,27 @@ def build_work(settings: Settings) -> WorkService:
                 report.tasks_created,
             )
     return service
+
+
+def seed_work_links(container: Container, snapshot: KnowledgeSnapshot) -> None:
+    """Demo task ↔ document links (single-operator modes with WORK_SEED_DEMO=true), against the operator's knowledge
+    snapshot read at start-up: only documents present in the base, with the revision seen now."""
+    settings, work = container.settings, container.work
+    if not settings.work_seed_demo or work.gate.mode in (WorkAccessMode.membership, WorkAccessMode.disabled):
+        return
+
+    def document(doc_id: str) -> tuple[str, str] | None:
+        doc = None if doc_id.lower() in snapshot.duplicates else snapshot.get(doc_id)
+        return (doc.id, doc.revision) if doc is not None else None
+
+    report = seed_demo_links(work.db, document=document, now=work.now())
+    if report.created or report.missing_documents:
+        logger.info(
+            "work demo links created=%s existing=%s missing_documents=%s",
+            report.created,
+            report.existing,
+            report.missing_documents,
+        )
 
 
 def build_repository(settings: Settings) -> KnowledgeRepository:

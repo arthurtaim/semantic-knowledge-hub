@@ -30,7 +30,7 @@ from app.api import (
     work,
 )
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
-from app.container import build_container
+from app.container import build_container, seed_work_links
 from app.errors import error_body, install_error_handlers, request_id_of
 from app.middleware import CsrfGuardMiddleware, HostGuardMiddleware, RequestContextMiddleware
 
@@ -67,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             snapshot = await container.knowledge.snapshot(user)
             counts = f"documents={len(snapshot.documents)} issues={len(snapshot.issues)}"
+            seed_work_links(container, snapshot)  # M6 demo links: only to documents present in the base
         except RepositoryUnavailableError as exc:  # remote store down: start degraded, report via status
             counts = f"knowledge_unavailable={exc.code}"
         logger.info(

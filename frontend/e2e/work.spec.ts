@@ -6,6 +6,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  *
  * - desktop: create project / task / subtask (M6-01), inline edit (M6-17 path), board drag (M6-02), Gantt drag →
  *   preview → apply → dependants shifted (M6-03, M6-04), cancel writes nothing (M6-30), one plan revision (M6-36);
+ *   task ↔ document links both ways and the document filter (M6-11), seeded draft / deprecated marks;
  * - @mobile: the overview, a project's three views at 390 / 360 px without sideways scrolling, a status change on the
  *   phone, the Gantt as a timeline whose dates change through the task form;
  * - read-only (M6-20, M6-35): only when E2E_WORK_READONLY_URL points at a stack with WORK_PUBLIC_EXPOSURE=true or
@@ -231,6 +232,57 @@ test.describe("M6 work management", () => {
   });
 });
 
+test.describe("M6 task ↔ document links", () => {
+  test("M6-11 links a task to a document and navigates both ways; the document filter narrows the views", async ({ page }) => {
+    const key = await createProject(page.request, "LK");
+    const linked = await call<Task>(page.request, "POST", `/api/projects/${key}/tasks`, { title: "Реализовать архитектуру" });
+    await call<Task>(page.request, "POST", `/api/projects/${key}/tasks`, { title: "Без документа" });
+    await page.goto(`/projects/${key}?view=list&task=${linked.key}`);
+    const panel = page.getByRole("complementary", { name: `${linked.key}: Реализовать архитектуру` });
+    const docs = panel.getByTestId("task-documents");
+    await expect(docs.getByText("Связанных документов нет.")).toBeVisible();
+    await docs.getByRole("button", { name: "Связать с документом" }).click();
+    const form = docs.getByRole("form", { name: "Связать с документом" });
+    await form.getByLabel("Документ", { exact: true }).fill("SEM-ARCH");
+    await form.getByRole("button", { name: /SEM-ARCH-001/ }).click();
+    await form.getByLabel("Связь").selectOption("implements");
+    await form.getByRole("button", { name: "Связать" }).click();
+    await expect(page.getByText(`${linked.key} связана с SEM-ARCH-001.`)).toBeVisible();
+    const item = docs.locator("[data-link-state]").first();
+    await expect(item).toHaveAttribute("data-link-state", "current");
+    await expect(item.getByText("Реализует")).toBeVisible();
+    // the filter: only the linked task stays, in every view
+    await page.goto(`/projects/${key}?view=list&doc=SEM-ARCH-001`);
+    await expect(page.locator(`tr[data-task-key="${linked.key}"]`)).toBeVisible();
+    await expect(page.locator(`tr[data-task-key="${key}-2"]`)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Документ: SEM-ARCH-001/ })).toBeVisible();
+    await page.getByRole("button", { name: "Доска", exact: true }).click();
+    await expect(page.locator(`.board-card[data-task-key="${linked.key}"]`)).toBeVisible();
+    await expect(page.locator(`.board-card[data-task-key="${key}-2"]`)).toHaveCount(0);
+    // task → document → back to the task
+    await page.goto(`/tasks/${linked.key}`);
+    await page.getByTestId("task-documents").getByRole("link", { name: /SEM-ARCH-001/ }).click();
+    await expect(page).toHaveURL(/\/documents\/SEM-ARCH-001/);
+    await page.getByRole("tab", { name: /Связи/ }).click();
+    const back = page.getByTestId("document-tasks");
+    await expect(back.getByRole("link", { name: new RegExp(`${linked.key} Реализовать архитектуру`) })).toBeVisible();
+    await back.getByRole("link", { name: new RegExp(`${linked.key} Реализовать архитектуру`) }).click();
+    await expect(page).toHaveURL(new RegExp(`/tasks/${linked.key}$`));
+    // removal keeps the task; the document no longer lists it
+    await page.getByTestId("task-documents").getByRole("button", { name: "Убрать связь с SEM-ARCH-001" }).click();
+    await expect(page.getByTestId("task-documents").getByText("Связанных документов нет.")).toBeVisible();
+    const back2 = await call<{ items: { task_key: string }[] }>(page.request, "GET", "/api/documents/SEM-ARCH-001/tasks");
+    expect(back2.items.map((i) => i.task_key)).not.toContain(linked.key);
+  });
+
+  test("seeded demo links show draft and deprecated documents honestly", async ({ page }) => {
+    await page.goto("/tasks/ARIS-1");
+    const docs = page.getByTestId("task-documents");
+    await expect(docs.getByRole("link", { name: /DEMO-INT-018/ })).toBeVisible();
+    await expect(docs.getByText(/устарел \(deprecated\)/)).toBeVisible();
+  });
+});
+
 test.describe("M6 on a phone", () => {
   test("@mobile projects, list, board and Gantt fit 390 / 360 px; status changes on the phone", async ({ page }) => {
     const key = await createProject(page.request, "MO");
@@ -255,6 +307,15 @@ test.describe("M6 on a phone", () => {
     await page.locator(`.gantt-name[data-task-key="${key}-1"] .gantt-name__open`).click();
     const sheet = page.getByRole("dialog", { name: new RegExp(`${key}-1`) });
     await expect(sheet.getByRole("button", { name: "Изменить сроки" })).toBeVisible();
+    // the task's documents on a phone: the link form fits the screen
+    await call(page.request, "POST", `/api/tasks/${key}-1/links`, { document_id: "SEM-ARCH-001", relation: "requires" });
+    await page.goto(`/tasks/${key}-1`);
+    const docs = page.getByTestId("task-documents");
+    await expect(docs.getByRole("link", { name: /SEM-ARCH-001/ })).toBeVisible();
+    await docs.getByRole("button", { name: "Связать с документом" }).click();
+    await docs.getByLabel("Документ", { exact: true }).fill("DEMO-INT");
+    await expect(docs.getByRole("button", { name: /DEMO-INT-00/ }).first()).toBeVisible();
+    expect(await sideways(page), "task documents at 360 px").toEqual([]);
   });
 });
 
@@ -281,5 +342,11 @@ test.describe("M6 read-only exposure", () => {
     const refused = await page.request.post(`${base}/api/projects/ARIS/tasks`, { headers: HEADERS, data: { title: "Нельзя" } });
     expect(refused.status()).toBe(403);
     expect((await refused.json()).details.mode).toBe("read_only");
+    // documents of a task are readable, not editable
+    await page.goto(`${base}/tasks/ARIS-1`);
+    await expect(page.getByTestId("task-documents").getByRole("link", { name: /DEMO-SRC-002/ })).toBeVisible();
+    await expect(page.getByTestId("task-documents").getByRole("button")).toHaveCount(0);
+    const link = await page.request.post(`${base}/api/tasks/ARIS-1/links`, { headers: HEADERS, data: { document_id: "SEM-ARCH-001" } });
+    expect(link.status()).toBe(403);
   });
 });

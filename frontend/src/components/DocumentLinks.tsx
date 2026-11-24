@@ -124,6 +124,7 @@ export function DocumentLinksPanel({
   loading,
   onRetry,
   actions,
+  extra,
 }: {
   links: DocumentLinks | null;
   error: ApiError | null;
@@ -131,6 +132,8 @@ export function DocumentLinksPanel({
   onRetry: () => void;
   /** Controls next to the heading («Связи на графе»). */
   actions?: ReactNode;
+  /** A section after the document's own links (M6: the tasks linked to the document). */
+  extra?: ReactNode;
 }) {
   return (
     <section className="links-panel" id="doc-links" aria-labelledby="doc-links-title">
@@ -168,8 +171,11 @@ export function DocumentLinksPanel({
               <UnresolvedRow key={`${link.line}-${link.raw_target}`} link={link} />
             ))}
           </Group>
+          {extra}
         </div>
-      ) : null}
+      ) : (
+        extra
+      )}
     </section>
   );
 }

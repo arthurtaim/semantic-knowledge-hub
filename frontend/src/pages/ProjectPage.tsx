@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import type { ScheduleApplyResult, ScheduleOperation, SchedulePreview, TaskDateChange, TaskStatus, WorkTask } from "../api/types";
+import { api } from "../api/client";
+import type { ProjectDocumentRef, ScheduleApplyResult, ScheduleOperation, SchedulePreview, TaskDateChange, TaskStatus, WorkTask } from "../api/types";
 import { EmptyState, ErrorState, Loading } from "../components/Feedback";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { SidePanel, useSidePanelMode } from "../components/shell/SidePanel";
@@ -68,7 +69,27 @@ export function ProjectPage() {
   const [creating, setCreating] = useState<{ parent: WorkTask | null } | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRequest | null>(null);
   const [previewOps, setPreviewOps] = useState<ScheduleOperation[] | null>(null);
+  const [documents, setDocuments] = useState<ProjectDocumentRef[]>([]);
   const { snapshot, project, capabilities, canWrite, say, message, clearMessage } = ws;
+  const projectId = project?.id;
+  const linksOn = Boolean(capabilities?.features.document_links);
+
+  // Documents linked to the project's tasks (visible ones) for the «Документ» filter; re-read with every snapshot.
+  useEffect(() => {
+    if (!projectId || !linksOn) return undefined;
+    let live = true;
+    api
+      .workProjectDocuments(projectId)
+      .then((result) => {
+        if (live) setDocuments(result.items);
+      })
+      .catch(() => {
+        if (live) setDocuments([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [projectId, linksOn, snapshot]);
 
   // A success message fades after a while; warnings and errors stay until closed.
   useEffect(() => {
@@ -268,7 +289,7 @@ export function ProjectPage() {
             <WorkModeNote capabilities={capabilities} />
           </header>
           {phone ? <div className="project-page__views">{viewSwitch}</div> : null}
-          <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} shown={shownCount} total={tasks.length} />
+          <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} documents={documents} shown={shownCount} total={tasks.length} />
           {message ? (
             <div className={`work-message work-message--${message.tone}`} role={message.tone === "danger" ? "alert" : "status"} key={message.nonce}>
               <Icon name={message.tone === "success" ? "check" : message.tone === "info" ? "info" : "alert"} size={14} />

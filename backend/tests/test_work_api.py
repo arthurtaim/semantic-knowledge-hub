@@ -70,12 +70,24 @@ WORK_ROUTES = {
     ("GET", "/api/projects/{project_id}/gantt"): Action.view_tasks,
     ("POST", "/api/projects/{project_id}/schedule/preview"): Action.schedule_task,
     ("POST", "/api/projects/{project_id}/schedule/apply"): Action.schedule_task,
+    # Step 4: task ↔ document links
+    ("GET", "/api/tasks/{task_id}/links"): Action.view_tasks,
+    ("POST", "/api/tasks/{task_id}/links"): Action.edit_task,
+    ("DELETE", "/api/tasks/{task_id}/links/{link_id}"): Action.edit_task,
+    ("POST", "/api/tasks/{task_id}/links/{link_id}/acknowledge"): Action.edit_task,
+    ("GET", "/api/projects/{project_id}/documents"): Action.view_tasks,
+    ("GET", "/api/documents/{document_id}/tasks"): Action.view_tasks,
 }
 
 
 def test_every_work_route_declares_its_action(wc: TestClient) -> None:
     seen = {(m, r.path): _actions(r.dependant) for r in api_routes(wc) for m in r.methods}
-    work_paths = {k for k in seen if k[1].startswith(("/api/projects", "/api/tasks", "/api/work"))}
+    work_paths = {
+        k
+        for k in seen
+        if k[1].startswith(("/api/projects", "/api/tasks", "/api/work"))
+        or k[1] == "/api/documents/{document_id}/tasks"
+    }
     assert work_paths == set(WORK_ROUTES)
     for key, action in WORK_ROUTES.items():
         assert seen[key] == {action}, key
@@ -469,6 +481,9 @@ WRITE_CALLS: list[tuple[str, str, dict[str, Any] | None, dict[str, Any] | None]]
         {"preview_id": "x", "expected_plan_revision": 1, "client_request_id": "abcdefgh"},
         None,
     ),
+    ("POST", "/api/tasks/ARIS-1/links", {"document_id": "SEM-ARCH-001"}, None),
+    ("DELETE", "/api/tasks/ARIS-1/links/x", None, None),
+    ("POST", "/api/tasks/ARIS-1/links/x/acknowledge", None, None),
     ("GET", "/api/tasks/ARIS-1/activity", None, None),  # the private audit is not public either
     ("GET", "/api/projects/ARIS/activity", None, None),
 ]

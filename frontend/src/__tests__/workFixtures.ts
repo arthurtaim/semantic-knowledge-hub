@@ -128,6 +128,7 @@ export function task(overrides: Partial<WorkTask> & { key: string }): WorkTask {
     late: false,
     child_count: 0,
     link_count: 0,
+    document_ids: [],
   };
   const merged = { ...base, ...overrides };
   if (merged.start_date && merged.end_exclusive) merged.scheduled = true;

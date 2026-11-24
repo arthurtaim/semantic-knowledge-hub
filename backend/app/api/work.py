@@ -6,7 +6,10 @@ and whether the request came through the public gateway (`X-SKH-Exposure`, which
 Path ids accept the internal id or the human key (`ARIS`, `ARIS-12`) for deep links.
 
 Routes are plain `def`: FastAPI runs them in its thread pool, and the work database gives each request its own
-connection and transaction.
+connection and transaction. The principal also carries the reader's CURRENT knowledge snapshot (resolved here, on the
+event loop): task ↔ document links are shown and counted only against it, so a hidden or deleted document never
+leaks a title, a revision or a count. When the knowledge source is down the work module keeps working; document
+facts are then reported as unverifiable, never guessed.
 """
 
 from __future__ import annotations
@@ -14,13 +17,15 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 
+from app.adapters.knowledge.base import RepositoryUnavailableError
 from app.api.deps import csv_values, get_container
-from app.authz import Action, require
+from app.authz import Action, ensure_allowed, require
 from app.container import Container
 from app.domain.models import UserContext
 from app.errors import request_id_of
+from app.work.links import DocumentScope
 from app.work.models import (
     PAGE_MAX,
     ActivityPage,
@@ -28,8 +33,10 @@ from app.work.models import (
     DependencyCreate,
     DependencyMutation,
     DependencyRemoved,
+    DocumentTasks,
     GanttOut,
     ProjectCreate,
+    ProjectDocuments,
     ProjectList,
     ProjectMembers,
     ProjectOut,
@@ -42,6 +49,10 @@ from app.work.models import (
     TaskArchiveResult,
     TaskCreate,
     TaskDependencies,
+    TaskLinkCreate,
+    TaskLinkOut,
+    TaskLinkRemoved,
+    TaskLinks,
     TaskOut,
     TaskPage,
     TaskPriority,
@@ -62,11 +73,28 @@ def acting(action: Action) -> Callable[..., Awaitable[WorkPrincipal]]:
 
     # A default (not `Annotated`): with postponed annotations a closure variable cannot be resolved by FastAPI.
     async def dependency(request: Request, user: UserContext = Depends(required)) -> WorkPrincipal:  # noqa: B008
+        container = get_container(request)
         return WorkPrincipal(
-            user=user, request_id=request_id_of(request), exposed=bool(request.headers.get(EXPOSURE_HEADER))
+            user=user,
+            request_id=request_id_of(request),
+            exposed=bool(request.headers.get(EXPOSURE_HEADER)),
+            documents=await reader_documents(container, user),
         )
 
     return dependency
+
+
+async def reader_documents(container: Container, user: UserContext) -> DocumentScope:
+    """The documents this identity may read now — its own knowledge snapshot (the repository is the access
+    boundary). Without `read_knowledge` the reader sees no document at all; a source that is down gives an
+    «unavailable» scope (the work module keeps working, document facts are not shown)."""
+    if not container.policy.allows(user, Action.read_knowledge):
+        return DocumentScope(available=True, documents={}, generation=None)
+    try:
+        snapshot = await container.knowledge.snapshot(user)
+    except RepositoryUnavailableError:
+        return DocumentScope.unavailable()
+    return DocumentScope.from_snapshot(snapshot, container.knowledge.generation_label(snapshot))
 
 
 # --- capabilities / directory ----------------------------------------------------------------------------------
@@ -164,6 +192,7 @@ def list_tasks(
     overdue: bool | None = None,
     blocked: bool | None = None,
     include_archived: bool = False,
+    document: Annotated[str | None, Query(max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")] = None,
     sort: Literal[
         "key", "title", "status", "priority", "start_date", "due_date", "updated_at", "sort_order"
     ] = "sort_order",
@@ -172,7 +201,8 @@ def list_tasks(
     offset: Annotated[int, Query(ge=0, le=100_000)] = 0,
 ) -> TaskPage:
     """Filters: `status`/`priority` (comma lists), `assignee` (id or `none`), `parent` (id or `root`), `q` (title or
-    key, case-insensitive), `milestone`, `scheduled`, `overdue`, `blocked`, `include_archived`."""
+    key, case-insensitive), `milestone`, `scheduled`, `overdue`, `blocked`, `include_archived`, `document` (a linked
+    document the reader can see; a hidden one matches nothing)."""
     return container.work.list_tasks(
         principal,
         project_id,
@@ -186,6 +216,7 @@ def list_tasks(
         overdue=overdue,
         blocked=blocked,
         include_archived=include_archived,
+        document=document,
         sort=sort,
         order=order,
         limit=limit,
@@ -324,3 +355,70 @@ def schedule_apply(
     when it has conflicts or unaccepted warnings; a replay with the same `client_request_id` returns the first
     result (`replayed: true`) and writes nothing."""
     return container.work.apply(principal, project_id, body)
+
+
+# --- task ↔ document links (Step 4) ----------------------------------------------------------------------------
+@router.get("/tasks/{task_id}/links", response_model=TaskLinks)
+def task_links(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.view_tasks))],
+    task_id: str,
+) -> TaskLinks:
+    """Documents of a task, read from the reader's CURRENT knowledge snapshot: title, status and revision now,
+    `revision_changed` / `deprecated` marks; a document the reader cannot see is `unavailable` with no details."""
+    return container.work.task_links(principal, task_id)
+
+
+@router.post("/tasks/{task_id}/links", response_model=TaskLinkOut, status_code=201)
+def link_document(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.edit_task))],
+    task_id: str,
+    body: TaskLinkCreate,
+) -> TaskLinkOut:
+    """Link to a document visible to the reader (`404` otherwise); the server records the revision it sees. Not a
+    knowledge-graph relation: the document is never changed."""
+    return container.work.link_document(principal, task_id, body)
+
+
+@router.delete("/tasks/{task_id}/links/{link_id}", response_model=TaskLinkRemoved)
+def unlink_document(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.edit_task))],
+    task_id: str,
+    link_id: Annotated[str, Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+) -> TaskLinkRemoved:
+    return container.work.unlink_document(principal, task_id, link_id)
+
+
+@router.post("/tasks/{task_id}/links/{link_id}/acknowledge", response_model=TaskLinkOut)
+def acknowledge_link(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.edit_task))],
+    task_id: str,
+    link_id: Annotated[str, Path(max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+) -> TaskLinkOut:
+    """A person checked a changed document: the link records its current revision (never done automatically)."""
+    return container.work.acknowledge_link(principal, task_id, link_id)
+
+
+@router.get("/projects/{project_id}/documents", response_model=ProjectDocuments)
+def project_documents(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.view_tasks))],
+    project_id: str,
+) -> ProjectDocuments:
+    """Documents linked to the project's tasks (visible ones only): the document filter of List / Board / Gantt."""
+    return container.work.project_documents(principal, project_id)
+
+
+@router.get("/documents/{document_id}/tasks", response_model=DocumentTasks)
+def document_tasks(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.view_tasks))],
+    document_id: Annotated[str, Path(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")],
+) -> DocumentTasks:
+    """Back-links of a document: active tasks linked to it, from projects this reader may view. A document the
+    reader cannot see is `404 document_not_found` (as for its links)."""
+    ensure_allowed(container.policy, principal.user, Action.read_knowledge)
+    return container.work.document_tasks(principal, document_id)

@@ -184,7 +184,19 @@ _V1 = (
     "CREATE INDEX work_previews_by_project ON work_schedule_previews (project_id, created_at)",
 )
 
-MIGRATIONS: tuple[Migration, ...] = (Migration(1, "work_core", _V1),)
+# v2 (Step 4): task ↔ document links get their read paths indexed and at most ONE active link per
+# (task, document, relation) — a partial unique index (SQLite ≥ 3.8 and PostgreSQL both support `WHERE`), so a race
+# can never create a duplicate even outside the service's own check. Removed links stay as history rows.
+_V2 = (
+    "CREATE INDEX work_links_by_project ON work_task_links (project_id, status)",
+    """CREATE UNIQUE INDEX work_links_active_unique ON work_task_links (task_id, source_system, document_id, relation)
+        WHERE status = 'active'""",
+)
+
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(1, "work_core", _V1),
+    Migration(2, "task_document_links", _V2),
+)
 LATEST_VERSION = MIGRATIONS[-1].version
 
 # Tables every migrated database must have (checked after migrating; a missing one fails the start).

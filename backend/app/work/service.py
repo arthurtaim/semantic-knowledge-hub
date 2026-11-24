@@ -40,6 +40,7 @@ from app.work.calendar import (
 )
 from app.work.db import WorkDatabase
 from app.work.directory import AssigneeDirectory
+from app.work.links import DocumentScope, document_ref, is_approved, is_deprecated, link_state
 from app.work.models import (
     MAX_DEPENDENCIES_PER_PROJECT,
     MAX_DEPTH,
@@ -54,9 +55,14 @@ from app.work.models import (
     DependencyOut,
     DependencyRemoved,
     DependencyWithTask,
+    DocumentTaskRef,
+    DocumentTasks,
     GanttOut,
+    LinkRelation,
     MilestoneRef,
     ProjectCreate,
+    ProjectDocumentRef,
+    ProjectDocuments,
     ProjectList,
     ProjectMemberOut,
     ProjectMembers,
@@ -74,6 +80,10 @@ from app.work.models import (
     TaskBrief,
     TaskCreate,
     TaskDependencies,
+    TaskLinkCreate,
+    TaskLinkOut,
+    TaskLinkRemoved,
+    TaskLinks,
     TaskOut,
     TaskPage,
     TaskPriority,
@@ -206,9 +216,12 @@ class _Ctx:
     project: sqlite3.Row
     skeleton: dict[str, sqlite3.Row]
     deps: list[sqlite3.Row]
-    links: dict[str, int]
+    links: dict[str, list[str]]
     today: date
     members: frozenset[str] | None = None
+    # The reader's knowledge snapshot (None: not known in this context — e.g. a scheduling computation that returns
+    # no task to anyone). Document links are counted only against it.
+    docs: DocumentScope | None = None
     preds: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
     succs: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
     children: dict[str, int] = field(default_factory=dict)
@@ -225,6 +238,17 @@ class _Ctx:
             if row["parent_task_id"] and row["archived_at"] is None:
                 children[row["parent_task_id"]] += 1
         self.children = dict(children)
+
+    def visible_documents(self, task_id: str) -> list[str] | None:
+        """Canonical ids of the task's linked documents the reader can see now; None when that cannot be checked."""
+        if self.docs is None or not self.docs.available:
+            return None
+        seen: list[str] = []
+        for document_id in self.links.get(task_id, []):
+            doc = self.docs.get(document_id)
+            if doc is not None and doc.id not in seen:
+                seen.append(doc.id)
+        return seen
 
     def key(self, task_id: str) -> str:
         row = self.skeleton.get(task_id)
@@ -374,7 +398,9 @@ class WorkService:
                 409, "conflict", "Проект в архиве: задачи только для чтения.", {"reason": "project_archived"}
             )
 
-    def _ctx(self, conn: sqlite3.Connection, project: sqlite3.Row) -> _Ctx:
+    def _ctx(
+        self, conn: sqlite3.Connection, project: sqlite3.Row, principal: WorkPrincipal | None = None
+    ) -> _Ctx:
         members = None
         if self.gate.role_based():
             members = frozenset(r["user_id"] for r in store.list_members(conn, project["id"]) if r["active"])
@@ -382,9 +408,10 @@ class WorkService:
             project=project,
             skeleton={r["id"]: r for r in store.task_skeleton(conn, project["id"])},
             deps=store.project_dependencies(conn, project["id"]),
-            links=store.link_counts(conn, project["id"]),
+            links=store.active_document_links(conn, project["id"]),
             today=self._today(project["timezone"]),
             members=members,
+            docs=principal.documents if principal is not None else None,
         )
 
     def _task_out(self, row: RowLike, ctx: _Ctx) -> TaskOut:
@@ -397,6 +424,7 @@ class WorkService:
         due = _d(row["due_date"])
         blocked = ctx.blocked_by(row["id"]) if active else []
         point = start if milestone else last_day
+        documents = ctx.visible_documents(row["id"])
         return TaskOut(
             id=row["id"],
             project_id=row["project_id"],
@@ -433,7 +461,8 @@ class WorkService:
             overdue=active and not done and due is not None and due < ctx.today,
             late=active and not done and point is not None and point < ctx.today,
             child_count=ctx.children.get(row["id"], 0),
-            link_count=ctx.links.get(row["id"], 0),
+            link_count=None if documents is None else len(documents),
+            document_ids=documents,
         )
 
     def _stats(self, ctx: _Ctx, tasks: list[TaskOut]) -> ProjectStats:
@@ -603,9 +632,9 @@ class WorkService:
             priorities=[p.value for p in TaskPriority],
             project_statuses=[s.value for s in ProjectStatus],
             schedule_modes=[m.value for m in ScheduleMode],
-            link_relations=["implements", "requires", "documents", "verifies", "blocks"],
+            link_relations=[r.value for r in LinkRelation],
             limits=WorkLimits(preview_ttl_seconds=self.preview_ttl_seconds),
-            features=WorkFeatures(),
+            features=WorkFeatures(document_links=True),
         )
 
     @staticmethod
@@ -642,7 +671,7 @@ class WorkService:
             items = []
             for row in rows:
                 role = self._role(conn, principal, row["id"])
-                ctx = self._ctx(conn, row)
+                ctx = self._ctx(conn, row, principal)
                 tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, row["id"])]
                 items.append(self._project_out(row, principal, role, self._stats(ctx, tasks)))
         return ProjectList(items=items, total=len(items))
@@ -650,7 +679,7 @@ class WorkService:
     def get_project(self, principal: WorkPrincipal, ref: str) -> ProjectOut:
         with self.db.read() as conn:
             project, role = self._project_for(conn, principal, ref, Action.view_projects)
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, project["id"])]
             return self._project_out(project, principal, role, self._stats(ctx, tasks))
 
@@ -754,7 +783,7 @@ class WorkService:
             )
             created = store.get_project(conn, project_id)
             assert created is not None
-            ctx = self._ctx(conn, created)
+            ctx = self._ctx(conn, created, principal)
             out = self._project_out(created, principal, role, self._stats(ctx, []))
             self._remember(
                 conn,
@@ -810,7 +839,7 @@ class WorkService:
                     self._now_iso() if fields["status"] == ProjectStatus.archived.value else None
                 )
             if not fields:
-                ctx = self._ctx(conn, project)
+                ctx = self._ctx(conn, project, principal)
                 tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, project["id"])]
                 return self._project_out(project, principal, role, self._stats(ctx, tasks))
             at = self._now_iso()
@@ -832,7 +861,7 @@ class WorkService:
             )
             updated = store.get_project(conn, project["id"])
             assert updated is not None
-            ctx = self._ctx(conn, updated)
+            ctx = self._ctx(conn, updated, principal)
             tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, updated["id"])]
             return self._project_out(updated, principal, role, self._stats(ctx, tasks))
 
@@ -852,14 +881,17 @@ class WorkService:
         overdue: bool | None = None,
         blocked: bool | None = None,
         include_archived: bool = False,
+        document: str | None = None,
         sort: str = "sort_order",
         order: str = "asc",
         limit: int = 200,
         offset: int = 0,
     ) -> TaskPage:
+        if document is not None and (principal.documents is None or not principal.documents.available):
+            raise _knowledge_unavailable("отфильтровать задачи по документу нельзя")
         with self.db.read() as conn:
             project, _ = self._project_for(conn, principal, project_ref, Action.view_tasks)
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             rows = store.project_tasks(
                 conn,
                 project["id"],
@@ -881,6 +913,10 @@ class WorkService:
             tasks = [t for t in tasks if t.overdue == overdue]
         if blocked is not None:
             tasks = [t for t in tasks if t.is_blocked == blocked]
+        if document is not None:
+            # `document_ids` hold only documents the reader can see: a hidden id matches nothing (no leak).
+            wanted = document.casefold()
+            tasks = [t for t in tasks if any(d.casefold() == wanted for d in t.document_ids or [])]
         tasks.sort(key=_sort_key(sort), reverse=order == "desc")
         total = len(tasks)
         return TaskPage(
@@ -896,7 +932,7 @@ class WorkService:
     def get_task(self, principal: WorkPrincipal, ref: str) -> TaskOut:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_tasks)
-            return self._task_out(task, self._ctx(conn, project))
+            return self._task_out(task, self._ctx(conn, project, principal))
 
     def _bump_and_read(self, conn: sqlite3.Connection, project_id: str) -> tuple[int, sqlite3.Row]:
         revision = store.bump_plan_revision(conn, project_id)
@@ -960,7 +996,7 @@ class WorkService:
                 raise ApiError(
                     409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
                 )
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             if body.parent_task_id is not None:
                 self._validate_parent(conn, ctx, body.parent_task_id)
             self._check_assignee(conn, project["id"], body.assignee_id)
@@ -1022,7 +1058,7 @@ class WorkService:
             )
             created = store.get_task(conn, task_id)
             assert created is not None
-            out = self._task_out(created, self._ctx(conn, project))
+            out = self._task_out(created, self._ctx(conn, project, principal))
             self._remember(
                 conn, scope, principal, body.client_request_id, request_hash, out.model_dump(mode="json"), 201
             )
@@ -1047,7 +1083,7 @@ class WorkService:
                     409, "conflict", "Задача в архиве — сначала восстановите её.", {"reason": "task_archived"}
                 )
             given = body.model_fields_set - {"expected_version"}
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             fields: dict[str, Any] = {}
 
             for name in ("title", "description", "status", "priority", "estimate_workdays", "sort_order"):
@@ -1124,7 +1160,7 @@ class WorkService:
             )
             updated = store.get_task(conn, task["id"])
             assert updated is not None
-            return self._task_out(updated, self._ctx(conn, project))
+            return self._task_out(updated, self._ctx(conn, project, principal))
 
     @staticmethod
     def _merge_schedule(
@@ -1269,7 +1305,7 @@ class WorkService:
                     at=at,
                 )
             revision, project = self._bump_and_read(conn, project["id"])
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             archived = [self._task_out(_must(store.get_task(conn, t)), ctx) for t, _ in targets]
             return TaskArchiveResult(
                 archived=archived, removed_dependency_ids=removed, plan_revision=revision
@@ -1332,7 +1368,7 @@ class WorkService:
             _, project = self._bump_and_read(conn, project["id"])
             restored = store.get_task(conn, task["id"])
             assert restored is not None
-            return self._task_out(restored, self._ctx(conn, project))
+            return self._task_out(restored, self._ctx(conn, project, principal))
 
     # --- dependencies ------------------------------------------------------------------------------------------
     def _dependency_out(self, row: RowLike, ctx: _Ctx, tasks: Mapping[str, RowLike]) -> DependencyOut:
@@ -1357,7 +1393,7 @@ class WorkService:
     def dependencies(self, principal: WorkPrincipal, ref: str) -> TaskDependencies:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_tasks)
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             rows = {r["id"]: r for r in store.project_tasks(conn, project["id"], include_archived=True)}
             preds: list[DependencyWithTask] = []
             succs: list[DependencyWithTask] = []
@@ -1449,7 +1485,7 @@ class WorkService:
                     "Достигнут предел числа зависимостей в проекте.",
                     {"reason": "dependency_limit"},
                 )
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             pred_id = body.predecessor_task_id or task["id"]
             succ_id = body.successor_task_id or task["id"]
             pred, succ = self._validate_new_edge(
@@ -1527,7 +1563,7 @@ class WorkService:
                 )
             store.delete_dependency(conn, dependency_id)
             revision, project = self._bump_and_read(conn, project["id"])
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             self._audit(
                 conn,
                 principal,
@@ -1551,7 +1587,7 @@ class WorkService:
         """One snapshot: project, tasks, dependencies and violations at the same plan_revision."""
         with self.db.read() as conn:
             project, _ = self._project_for(conn, principal, project_ref, Action.view_tasks)
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             rows = store.project_tasks(conn, project["id"])
             snapshot_at = self.now()
         by_id = {r["id"]: r for r in rows}
@@ -1579,7 +1615,7 @@ class WorkService:
     def _plan(
         self, conn: sqlite3.Connection, project: sqlite3.Row, request: SchedulePreviewRequest
     ) -> tuple[sched.PlanResult, list[DependencyAdd]]:
-        ctx = self._ctx(conn, project)
+        ctx = self._ctx(conn, project)  # scheduling only: no task leaves here, no document scope needed
         rows = store.project_tasks(conn, project["id"])
         stasks = {r["id"]: _sched_task(r, ctx.key(r["id"])) for r in rows}
         edges = [_sched_edge(d) for d in ctx.deps]
@@ -1738,7 +1774,7 @@ class WorkService:
                     },
                 )
             at = self._now_iso()
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             added_out: list[str] = []
             for dep in normalized:
                 dep_id = store.new_id()
@@ -1815,7 +1851,7 @@ class WorkService:
             revision, project = self._bump_and_read(conn, project["id"])
             if not store.mark_preview_applied(conn, body.preview_id, at, revision):
                 raise _stale_schedule("already_applied", "Этот предпросмотр уже применён — сделайте новый.")
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             changed = [
                 self._task_out(_must(store.get_task(conn, op.task_id)), ctx) for op in result.operations
             ]
@@ -1837,6 +1873,254 @@ class WorkService:
             )
             return out
 
+    # --- task ↔ document links (Step 4) ------------------------------------------------------------------------
+    @staticmethod
+    def _link_out(row: RowLike, scope: DocumentScope) -> TaskLinkOut:
+        state = link_state(scope, row["document_id"], row["revision_at_link"])
+        doc = scope.get(row["document_id"]) if state not in ("unavailable", "unverified") else None
+        return TaskLinkOut(
+            id=row["id"],
+            task_id=row["task_id"],
+            relation=LinkRelation(row["relation"]),
+            source_system="skh",
+            state=state,
+            # Nothing about a document the reader cannot see: no id, title, status or revision (M6-12/M6-34).
+            document=document_ref(doc) if doc is not None else None,
+            revision_at_link=row["revision_at_link"] if doc is not None else None,
+            deprecated=is_deprecated(doc),
+            approved=is_approved(doc),
+            created_by=row["created_by"],
+            created_at=_dt(row["created_at"]),
+        )
+
+    @staticmethod
+    def _scope(principal: WorkPrincipal) -> DocumentScope:
+        return principal.documents or DocumentScope.unavailable()
+
+    def task_links(self, principal: WorkPrincipal, ref: str) -> TaskLinks:
+        scope = self._scope(principal)
+        with self.db.read() as conn:
+            task, project, _ = self._task_for(conn, principal, ref, Action.view_tasks)
+            rows = [
+                r
+                for r in store.task_links(conn, task["id"])
+                if r["target_type"] == "document" and r["source_system"] == "skh"
+            ]
+        return TaskLinks(
+            task_id=task["id"],
+            task_key=f"{project['key']}-{task['number']}",
+            knowledge_available=scope.available,
+            generation=scope.generation,
+            items=[self._link_out(r, scope) for r in rows],
+        )
+
+    def _writable_task(self, conn: sqlite3.Connection, principal: WorkPrincipal, ref: str) -> sqlite3.Row:
+        task, project, _ = self._task_for(conn, principal, ref, Action.edit_task)
+        self._require_open(project)
+        if task["archived_at"] is not None:
+            raise ApiError(
+                409, "conflict", "Задача в архиве — сначала восстановите её.", {"reason": "task_archived"}
+            )
+        return task
+
+    def link_document(self, principal: WorkPrincipal, ref: str, body: TaskLinkCreate) -> TaskLinkOut:
+        """Link a task to a document the reader can see NOW; the server records its canonical id and current
+        revision. Does not touch the task (no version bump) or the plan, and never writes the document."""
+        scope = self._scope(principal)
+        request_hash = _hash(body.model_dump(mode="json", exclude={"client_request_id"}))
+        with self.db.write() as conn:
+            task = self._writable_task(conn, principal, ref)
+            idem = f"link_create:{task['id']}"
+            replay = self._replay(conn, idem, principal, body.client_request_id, request_hash)
+            if replay is not None:
+                return TaskLinkOut.model_validate(replay)
+            if not scope.available:
+                raise _knowledge_unavailable("связать задачу с документом нельзя")
+            doc = scope.get(body.document_id)
+            if doc is None:  # missing and not visible are the same answer
+                raise ApiError(
+                    404, "not_found", "Документ не найден или недоступен.", {"field": "document_id"}
+                )
+            if store.find_active_link(conn, task["id"], doc.id, body.relation.value) is not None:
+                raise ApiError(
+                    409,
+                    "conflict",
+                    f"Задача уже связана с {doc.id} так же.",
+                    {"reason": "link_exists"},
+                )
+            at = self._now_iso()
+            link_id = store.new_id()
+            store.insert_link(
+                conn,
+                {
+                    "id": link_id,
+                    "project_id": task["project_id"],
+                    "task_id": task["id"],
+                    "target_type": "document",
+                    "source_system": "skh",
+                    "document_id": doc.id,
+                    "relation": body.relation.value,
+                    "revision_at_link": doc.revision,
+                    "status": "active",
+                    "created_by": principal.user.user_id,
+                    "created_at": at,
+                },
+            )
+            self._audit(
+                conn,
+                principal,
+                operation="link_added",
+                entity_type="link",
+                entity_id=link_id,
+                project_id=task["project_id"],
+                task_id=task["id"],
+                changes={
+                    "document_id": doc.id,
+                    "relation": body.relation.value,
+                    "revision_at_link": doc.revision,
+                },
+                at=at,
+            )
+            out = self._link_out(_must(store.get_link(conn, link_id)), scope)
+            self._remember(
+                conn, idem, principal, body.client_request_id, request_hash, out.model_dump(mode="json"), 201
+            )
+            return out
+
+    def unlink_document(self, principal: WorkPrincipal, ref: str, link_id: str) -> TaskLinkRemoved:
+        """Remove a link (also one whose document is unavailable now — by link id). The row stays as history."""
+        with self.db.write() as conn:
+            task = self._writable_task(conn, principal, ref)
+            row = store.get_link(conn, link_id)
+            if row is None or row["task_id"] != task["id"] or row["status"] != "active":
+                raise _not_found("Связь не найдена.")
+            at = self._now_iso()
+            if not store.remove_link(conn, link_id, principal.user.user_id, at):
+                raise _not_found("Связь не найдена.")
+            self._audit(
+                conn,
+                principal,
+                operation="link_removed",
+                entity_type="link",
+                entity_id=link_id,
+                project_id=task["project_id"],
+                task_id=task["id"],
+                changes={"document_id": row["document_id"], "relation": row["relation"]},
+                at=at,
+            )
+            return TaskLinkRemoved(link_id=link_id, task_id=task["id"])
+
+    def acknowledge_link(self, principal: WorkPrincipal, ref: str, link_id: str) -> TaskLinkOut:
+        """A person checked the changed document: the link now records its CURRENT revision. Explicit only —
+        the server never does this by itself, and it changes nothing in the task or the document."""
+        scope = self._scope(principal)
+        with self.db.write() as conn:
+            task = self._writable_task(conn, principal, ref)
+            row = store.get_link(conn, link_id)
+            if row is None or row["task_id"] != task["id"] or row["status"] != "active":
+                raise _not_found("Связь не найдена.")
+            if not scope.available:
+                raise _knowledge_unavailable("подтвердить ревизию документа нельзя")
+            doc = scope.get(row["document_id"])
+            if doc is None:
+                raise ApiError(
+                    404,
+                    "not_found",
+                    "Документ недоступен: подтвердить его ревизию нельзя.",
+                    {"field": "link_id"},
+                )
+            if row["revision_at_link"] == doc.revision:
+                return self._link_out(row, scope)
+            store.set_link_revision(conn, link_id, doc.revision)
+            self._audit(
+                conn,
+                principal,
+                operation="link_revision_acknowledged",
+                entity_type="link",
+                entity_id=link_id,
+                project_id=task["project_id"],
+                task_id=task["id"],
+                changes={
+                    "document_id": doc.id,
+                    "revision_at_link": {"before": row["revision_at_link"], "after": doc.revision},
+                },
+            )
+            return self._link_out(_must(store.get_link(conn, link_id)), scope)
+
+    def document_tasks(self, principal: WorkPrincipal, document_id: str) -> DocumentTasks:
+        """Back-links of a document: active tasks linked to it, only from projects this principal may view and only
+        when the document itself is visible to them (otherwise `404`, exactly like `/api/documents/{id}/links`)."""
+        self._check_global(principal, Action.view_tasks)
+        scope = self._scope(principal)
+        if not scope.available:
+            raise _knowledge_unavailable("показать задачи документа нельзя")
+        doc = scope.get(document_id)
+        if doc is None:
+            raise ApiError(404, "document_not_found", "Документ не найден.")
+        items: list[DocumentTaskRef] = []
+        with self.db.read() as conn:
+            allowed: dict[str, bool] = {}
+            for row in store.document_links(conn, doc.id):
+                if row["archived_at"] is not None:
+                    continue
+                project_id = row["project_id"]
+                if project_id not in allowed:
+                    role = self._role(conn, principal, project_id)
+                    visible = not self.gate.role_based() or role is not None
+                    allowed[project_id] = visible and self.gate.allows(principal, Action.view_tasks, role)
+                if not allowed[project_id]:
+                    continue  # a project the principal cannot see: not even counted
+                key = f"{row['project_key']}-{row['number']}"
+                items.append(
+                    DocumentTaskRef(
+                        link_id=row["link_id"],
+                        relation=LinkRelation(row["relation"]),
+                        state=link_state(scope, doc.id, row["revision_at_link"]),
+                        revision_at_link=row["revision_at_link"],
+                        task_id=row["task_id"],
+                        task_key=key,
+                        title=row["title"],
+                        status=TaskStatus(row["status"]),
+                        project_id=project_id,
+                        project_key=row["project_key"],
+                        project_title=row["project_title"],
+                        app_path=f"/tasks/{key}",
+                    )
+                )
+        return DocumentTasks(document_id=doc.id, revision=doc.revision, items=items, total=len(items))
+
+    def project_documents(self, principal: WorkPrincipal, ref: str) -> ProjectDocuments:
+        """Documents linked to the project's active tasks — visible ones only — with task and «changed» counts."""
+        scope = self._scope(principal)
+        with self.db.read() as conn:
+            project, _ = self._project_for(conn, principal, ref, Action.view_tasks)
+            rows = store.project_link_rows(conn, project["id"])
+        if not scope.available:
+            return ProjectDocuments(project_id=project["id"], knowledge_available=False, items=[])
+        tasks: dict[str, set[str]] = defaultdict(set)
+        changed: dict[str, int] = defaultdict(int)
+        docs: dict[str, Any] = {}
+        for row in rows:
+            doc = scope.get(row["document_id"])
+            if doc is None:
+                continue
+            docs[doc.id] = doc
+            tasks[doc.id].add(row["task_id"])
+            if link_state(scope, doc.id, row["revision_at_link"]) == "revision_changed":
+                changed[doc.id] += 1
+        return ProjectDocuments(
+            project_id=project["id"],
+            knowledge_available=True,
+            items=[
+                ProjectDocumentRef(
+                    document=document_ref(docs[doc_id]),
+                    task_count=len(tasks[doc_id]),
+                    changed_count=changed[doc_id],
+                )
+                for doc_id in sorted(docs, key=str.casefold)
+            ],
+        )
+
     # --- activity ----------------------------------------------------------------------------------------------
     def _activity(
         self, conn: sqlite3.Connection, ctx: _Ctx, rows: list[sqlite3.Row], limit: int
@@ -1855,7 +2139,7 @@ class WorkService:
                 task_id=r["task_id"],
                 task_key=ctx.key(r["task_id"]) if r["task_id"] else None,
                 correlation_id=r["correlation_id"],
-                changes=json.loads(r["changes_json"]),
+                changes=_visible_changes(r["entity_type"], json.loads(r["changes_json"]), ctx.docs),
             )
             for r in rows
         ]
@@ -1867,7 +2151,7 @@ class WorkService:
     ) -> ActivityPage:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_work_audit)
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             rows = store.audit_page(
                 conn, project_id=project["id"], task_id=task["id"], before_seq=before_seq, limit=limit
             )
@@ -1878,7 +2162,7 @@ class WorkService:
     ) -> ActivityPage:
         with self.db.read() as conn:
             project, _ = self._project_for(conn, principal, ref, Action.view_work_audit)
-            ctx = self._ctx(conn, project)
+            ctx = self._ctx(conn, project, principal)
             rows = store.audit_page(
                 conn, project_id=project["id"], task_id=None, before_seq=before_seq, limit=limit
             )
@@ -1890,6 +2174,29 @@ def _must(row: sqlite3.Row | None) -> sqlite3.Row:
     if row is None:  # a row written in this very transaction
         raise ApiError(500, "internal_error", "Внутренняя ошибка сервера.")
     return row
+
+
+def _knowledge_unavailable(what: str) -> ApiError:
+    return ApiError(
+        503,
+        "knowledge_unavailable",
+        f"База знаний сейчас недоступна: {what} (документ не проверить). Задачи работают как обычно.",
+    )
+
+
+def _visible_changes(
+    entity_type: str, changes: dict[str, Any], scope: DocumentScope | None
+) -> dict[str, Any]:
+    """Activity of a link names its document only when the reader can see that document now."""
+    if entity_type != "link" or not changes.get("document_id"):
+        return changes
+    if scope is not None and scope.get(str(changes["document_id"])) is not None:
+        return changes
+    return {
+        "document_id": None,
+        "document": "недоступен",
+        **({"relation": changes["relation"]} if "relation" in changes else {}),
+    }
 
 
 def _full(ctx: _Ctx, task_id: str) -> RowLike:

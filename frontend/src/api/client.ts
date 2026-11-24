@@ -88,6 +88,11 @@ import type {
   WorkTask,
   WorkTaskPage,
   WorkTaskQuery,
+  TaskLink,
+  TaskLinkCreate,
+  TaskLinks,
+  ProjectDocuments,
+  DocumentTasks,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
@@ -758,4 +763,18 @@ export const api = {
    *  client_request_id when retrying the same confirmation (the server replays the first result). */
   workScheduleApply: (projectId: string, payload: ScheduleApplyRequest) =>
     request<ScheduleApplyResult>(`/projects/${seg(projectId)}/schedule/apply`, { method: "POST", body: json(payload) }),
+  // --- M6 Step 4: task ↔ document links — read from the reader's CURRENT knowledge snapshot on every request. ---
+  // Errors: 404 not_found (a document the reader cannot see — the same answer as a missing one), 409 conflict
+  // (link_exists, task_archived), 503 knowledge_unavailable (the knowledge source cannot be read; tasks still work).
+  workTaskLinks: (taskId: string) => request<TaskLinks>(`/tasks/${seg(taskId)}/links`),
+  workLinkDocument: (taskId: string, payload: TaskLinkCreate) =>
+    request<TaskLink>(`/tasks/${seg(taskId)}/links`, { method: "POST", body: json(payload) }),
+  workUnlinkDocument: (taskId: string, linkId: string) =>
+    request<{ link_id: string; task_id: string }>(`/tasks/${seg(taskId)}/links/${seg(linkId)}`, { method: "DELETE" }),
+  /** A person checked the changed document: the link records its current revision (never automatic). */
+  workAcknowledgeLink: (taskId: string, linkId: string) =>
+    request<TaskLink>(`/tasks/${seg(taskId)}/links/${seg(linkId)}/acknowledge`, { method: "POST" }),
+  workProjectDocuments: (projectId: string) => request<ProjectDocuments>(`/projects/${seg(projectId)}/documents`),
+  /** Back-links of a document (tasks from projects the reader may view); 404 when the document is not visible. */
+  workDocumentTasks: (documentId: string) => request<DocumentTasks>(`/documents/${seg(documentId)}/tasks`),
 };
