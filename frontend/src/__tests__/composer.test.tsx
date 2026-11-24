@@ -196,7 +196,8 @@ describe("Composer: skills («Навык» and «/»)", () => {
     // «Найти связи» needs a document OR a question (requires.document_or_question): an empty field no longer
     // sends a request the server would refuse with skill_input_missing.
     await userEvent.type(field, "/связи{Enter}");
-    expect(field).toHaveAttribute("placeholder", expect.stringContaining("оставьте поле пустым"));
+    // The placeholder no longer offers an empty field to a skill that needs a document or a question.
+    expect(field).toHaveAttribute("placeholder", "Напишите вопрос или выберите документ");
     const hint = "Навыку «Найти связи» нужен документ или вопрос: кнопка «Документ», @ в тексте или напишите вопрос.";
     expect(screen.getByText(hint)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Отправить" })).toBeDisabled();

@@ -473,11 +473,13 @@ export function Composer({
     placeholder ??
     (searchMode
       ? "Найти в базе знаний"
-      : skill?.prompt_optional
-        ? "Уточните задачу или оставьте поле пустым — Enter запустит навык"
-        : draft.files.length > 0 && !skill
-          ? "Что сделать с файлами?"
-          : "Спросите, опишите задачу или перетащите файл");
+      : missing === "document_or_question"
+        ? "Напишите вопрос или выберите документ"
+        : skill?.prompt_optional
+          ? "Уточните задачу или оставьте поле пустым — Enter запустит навык"
+          : draft.files.length > 0 && !skill
+            ? "Что сделать с файлами?"
+            : "Спросите, опишите задачу или перетащите файл");
   const shownDocuments = contextChips ? draft.documents : [];
   const shownSelection = contextChips ? draft.selection : null;
   const chips = !searchMode && (skill || draft.files.length > 0 || shownDocuments.length > 0 || shownSelection);
