@@ -39,8 +39,8 @@
   --info: var(--ink-soft);
   --info-wash: var(--surface-sunk);
 
-  --font-ui: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-read: "PT Serif", Georgia, "Times New Roman", serif;
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-read: var(--font-ui);
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   --step--1: 0.8125rem;
