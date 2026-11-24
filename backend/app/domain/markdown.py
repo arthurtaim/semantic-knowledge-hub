@@ -11,6 +11,7 @@ import re
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 from urllib.parse import quote
 
@@ -178,6 +179,74 @@ def parse_markdown(body: str, title_fallback: str = "") -> ParsedMarkdown:
         paragraphs=paragraphs,
         wikilinks=wikilinks_from_tokens(tokens, body),
     )
+
+
+@dataclass(frozen=True)
+class TextBlock:
+    """A prose block of a section (paragraph, list item, code): its plain text, as in `Section.text`."""
+
+    text: str
+
+
+@dataclass(frozen=True)
+class TableBlock:
+    """A Markdown table of a section: the header row and the body rows, cells as plain text (pipes escaped as
+    `\\|` in the source are plain `|` here; the alignment row is not a row)."""
+
+    headers: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+
+Block = TextBlock | TableBlock
+
+
+@lru_cache(maxsize=128)
+def section_blocks(body: str) -> tuple[tuple[str, tuple[Block, ...]], ...]:
+    """(anchor, blocks) of every section, in document order, from the SAME token stream and anchors as
+    `parse_markdown`: a table cell is exactly the line it contributes to `Section.text`, so the words of a
+    passage (and of a quote from it) can be traced back to the table, row and cell they come from.
+    Display only — retrieval and quote verification keep using `Section.text`."""
+    tokens = _PARSER.parse(body)
+    anchors = AnchorRegistry()
+    result: list[tuple[str, tuple[Block, ...]]] = []
+    current_anchor = ""
+    blocks: list[Block] = []
+    in_heading = False
+    table: list[list[str]] | None = None
+
+    def flush() -> None:
+        if blocks or current_anchor:
+            result.append((current_anchor, tuple(blocks)))
+
+    for token in tokens:
+        if token.type == "heading_open":
+            in_heading = True
+        elif token.type == "heading_close":
+            in_heading = False
+        elif token.type == "inline" and in_heading:
+            flush()
+            current_anchor = anchors.assign(_inline_plain(token).strip())
+            blocks = []
+        elif token.type == "table_open":
+            table = []
+        elif token.type == "tr_open" and table is not None:
+            table.append([])
+        elif token.type == "inline" and table is not None and table:
+            table[-1].append(_inline_plain(token).strip())
+        elif token.type == "table_close" and table is not None:
+            if table:
+                blocks.append(TableBlock(tuple(table[0]), tuple(tuple(row) for row in table[1:])))
+            table = None
+        elif token.type == "inline":
+            text = _inline_plain(token).strip()
+            if text:
+                blocks.append(TextBlock(text))
+        elif token.type in ("fence", "code_block"):
+            code = token.content.strip()
+            if code:
+                blocks.append(TextBlock(code))
+    flush()
+    return tuple(result)
 
 
 class _SafeRenderer(RendererHTML):

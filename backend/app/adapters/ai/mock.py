@@ -21,7 +21,7 @@ from app.adapters.ai.base import (
 )
 from app.domain.models import Confidence, IntegrationStatus
 from app.domain.safety import INJECTION_PLACEHOLDER, looks_like_prompt_injection
-from app.domain.text import QueryTerm, split_sentences, term_matches_text, tokenize
+from app.domain.text import QueryTerm, reportable_terms, split_sentences, term_matches_text, tokenize
 
 MAX_QUOTES = 4
 MAX_QUOTES_PER_PASSAGE = 2
@@ -210,10 +210,15 @@ class MockAIProvider:
             # Terms of an attached file: the absent ones are reported with the quotes ("не встречаются: …"),
             # they do not cancel the comparison. Nothing at all in common is still insufficient.
             if len(options.unmatched_terms) == len(terms):
+                listed = reportable_terms(terms)[:12]
                 return insufficient(
-                    "Недостаточно данных: в документах базы знаний не встречаются "
-                    f"{_format_terms(terms[:12])}. Демо-ассистент не делает предположений о том, чего нет в "
-                    "документах."
+                    "Недостаточно данных: в документах базы знаний "
+                    + (
+                        f"не встречаются {_format_terms(listed)}"
+                        if listed
+                        else "нет совпадений со словами вопроса"
+                    )
+                    + ". Демо-ассистент не делает предположений о том, чего нет в документах."
                 )
             return self._quote_team(passages, options)
 
@@ -228,10 +233,15 @@ class MockAIProvider:
         # Half of the question is absent from every allowed document: whatever matched is not an answer.
         missing = options.unmatched_terms
         if len(terms) >= 2 and len(missing) * 2 >= len(terms):
+            listed = reportable_terms(missing)  # function words are counted, never named
             return insufficient(
-                "Недостаточно данных: в доступных источниках не встречаются "
-                f"{_format_terms(missing)} — подтверждённого ответа на вопрос нет. Демо-ассистент не делает "
-                "предположений о том, чего нет в документах."
+                "Недостаточно данных: в доступных источниках "
+                + (
+                    f"не встречаются {_format_terms(listed)} — подтверждённого ответа на вопрос нет"
+                    if listed
+                    else "нет подтверждённого ответа на вопрос"
+                )
+                + ". Демо-ассистент не делает предположений о том, чего нет в документах."
             )
         return self._quote_team(passages, options)
 
@@ -334,7 +344,7 @@ class MockAIProvider:
         # "supported" only when ONE source covers the question; scattered matches stay "partial".
         confidence: Confidence = "supported" if best_single >= SUPPORTED_COVERAGE else "partial"
         answer = MOCK_PREFIX + "\n\n" + "\n".join(lines)
-        not_covered = [t for t in terms if t.stem not in covered]
+        not_covered = reportable_terms([t for t in terms if t.stem not in covered])
         if not_covered and confidence == "partial":
             answer += f"\n\nВ процитированных фрагментах не встречаются: {_format_terms(not_covered)}."
         return ProviderAnswer(answer=answer, confidence=confidence, evidence=evidence, warnings=warnings)

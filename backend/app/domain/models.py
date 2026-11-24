@@ -269,6 +269,15 @@ class SearchResponse(BaseModel):
     warnings: list[str]
 
 
+class ExcerptPart(BaseModel):
+    """A piece of a cited excerpt: prose of the quote (`text`), or a table (`headers` + the touched `rows`)."""
+
+    kind: Literal["text", "table"]
+    text: str | None = None
+    headers: list[str] | None = None
+    rows: list[list[str]] | None = None
+
+
 class Citation(BaseModel):
     """Provenance of a cited excerpt. `ref` is the stable number shown in the answer ([1], [2]…)."""
 
@@ -298,6 +307,10 @@ class Citation(BaseModel):
     attachment_id: str | None = None
     attachment_name: str | None = None
     locator: str | None = None
+    # Display of `excerpt` when the verified quote touches a Markdown table: the quote's prose and the table rows
+    # it touches, taken by the server from the cited section of the same revision (app/domain/excerpts.py).
+    # None: show `excerpt` as is. `excerpt` stays the verbatim quote the server verified.
+    excerpt_parts: list[ExcerptPart] | None = None
 
 
 class ExcludedSource(BaseModel):

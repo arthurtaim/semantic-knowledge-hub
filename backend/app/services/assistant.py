@@ -6,7 +6,7 @@ import contextlib
 import logging
 import re
 from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -25,19 +25,21 @@ from app.adapters.ai.base import (
 from app.adapters.corporate.base import CorporateKnowledgeConnector
 from app.adapters.knowledge.base import KnowledgeSnapshot
 from app.adapters.search.base import SearchFilters
+from app.domain.excerpts import citation_excerpt_parts
 from app.domain.markdown import truncate
 from app.domain.models import (
     AskRequest,
     AskResponse,
     Citation,
     DocStatus,
+    ExcerptPart,
     ExcludedSource,
     ScopeStatus,
     SkillRef,
     UserContext,
 )
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
-from app.domain.text import QueryTerm, term_matches_text, tokenize
+from app.domain.text import QueryTerm, reportable_terms, term_matches_text, tokenize
 from app.services.attachments import Unit, format_locator
 from app.services.discovery import DiscoveryStore, SourceLink, acl_scope_key
 from app.services.external import ExternalEvidenceService, ExternalRetrieval
@@ -127,6 +129,18 @@ def prepare_passage_text(text: str) -> tuple[str, bool]:
     return redact_prompt_injection(neutralize_citation_markers(text))
 
 
+def excerpt_display(source: tuple[str, str | None] | None, quote: str) -> list[ExcerptPart] | None:
+    """`Citation.excerpt_parts` of a VERIFIED quote from (Markdown body, section anchor) of a team document: tables
+    shown as rows. A display aid only: any failure leaves the plain excerpt, never fails the answer."""
+    if source is None:
+        return None
+    try:
+        return citation_excerpt_parts(source[0], source[1], quote)
+    except Exception:
+        logger.exception("excerpt layout failed")
+        return None
+
+
 @dataclass
 class _Prepared:
     terms: list[QueryTerm]
@@ -140,6 +154,8 @@ class _Prepared:
     mode: str = "local_only"
     external: ExternalRetrieval | None = None
     index_generation: str = ""
+    # cid → (Markdown body, section anchor) of a team passage: display of table excerpts only.
+    sources: dict[str, tuple[str, str | None]] = field(default_factory=dict)
 
 
 def local_insufficiency(
@@ -287,6 +303,7 @@ class AssistantService:
         # Attachments have their own (already bounded) budget: they never crowd out the team documents.
         budget = self._max_context_chars - sum(len(p.text) for p in extras.attachments)
         seen: set[tuple[str, str]] = set()
+        snapshot: KnowledgeSnapshot | None = None
 
         def next_cid() -> str:
             return f"C{len(passages) + 1}"
@@ -450,6 +467,17 @@ class AssistantService:
         for attached in extras.attachments:
             passages.append(replace(attached, cid=next_cid()))
 
+        # The Markdown a team passage comes from (same revision): only for DISPLAY of a cited excerpt that touches a
+        # table (Citation.excerpt_parts). The provider and the quote verification never see it.
+        sources: dict[str, tuple[str, str | None]] = {}
+        team_passages = [p for p in passages if p.source_type in ("local", "gitlab")]
+        if team_passages:
+            snapshot = snapshot if snapshot is not None else await self._knowledge.snapshot(user)
+            for p in team_passages:
+                origin = snapshot.get(p.document_id)
+                if origin is not None and origin.revision == p.revision:
+                    sources[p.cid] = (origin.body, p.section_anchor)
+
         unmatched = [t for t in terms if t.stem not in matched_terms]
         history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
         return _Prepared(
@@ -466,6 +494,7 @@ class AssistantService:
             mode=mode,
             external=external_result,
             index_generation=f"g{self._knowledge.generation}",
+            sources=sources,
         )
 
     def _record(
@@ -545,7 +574,14 @@ class AssistantService:
         # Server-composed text (no passages, or the extractive mock) may be shown even when insufficient.
         trusted_text = not passages or self._provider.mode == "mock"
         response = self._validated_response(
-            result, passages, warnings, prepared.excluded, prepared.scopes, prepared.unmatched, trusted_text
+            result,
+            passages,
+            warnings,
+            prepared.excluded,
+            prepared.scopes,
+            prepared.unmatched,
+            trusted_text,
+            sources=prepared.sources,
         )
         logger.info(
             "ask mode=%s scopes=%s passages=%d citations=%d confidence=%s history=%d",
@@ -598,7 +634,8 @@ class AssistantService:
     def _no_passages_message(terms: list[QueryTerm], unmatched: list[QueryTerm]) -> str:
         if not terms:
             return "Вопрос не содержит значимых слов для поиска. Переформулируйте вопрос."
-        missing = [t for t in unmatched if t.is_entity_like] or unmatched
+        # Function words («через», «который») are never named: their absence says nothing about the topic.
+        missing = [t for t in unmatched if t.is_entity_like] or reportable_terms(unmatched)
         listed = ", ".join(f"«{t.original}»" for t in missing[:6])
         return (
             "Недостаточно данных: в доступных источниках не найдено подтверждённых сведений по вопросу"
@@ -615,8 +652,10 @@ class AssistantService:
         scopes: list[ScopeStatus],
         unmatched: list[QueryTerm],
         trusted_text: bool,
+        sources: dict[str, tuple[str, str | None]] | None = None,
     ) -> AskResponse:
         by_cid = {p.cid: p for p in passages}
+        sources = sources or {}
         retrieved_at = datetime.now(UTC)
         citations: list[Citation] = []
         cid_to_ref: dict[str, int] = {}
@@ -698,6 +737,7 @@ class AssistantService:
                     external_status=(passage.external_status or "unknown") if external else None,
                     fragment_id=passage.fragment_id or passage.section_anchor,
                     content_hash=passage.content_hash,
+                    excerpt_parts=excerpt_display(sources.get(cid), text),
                 )
             )
 
@@ -775,5 +815,5 @@ class AssistantService:
             warnings=deduped,
             excluded_sources=excluded,
             scopes=scopes,
-            unmatched_terms=[t.original for t in unmatched],
+            unmatched_terms=[t.original for t in reportable_terms(unmatched)],
         )

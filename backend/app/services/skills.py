@@ -53,6 +53,7 @@ from app.services.assistant import (
     MIN_QUOTE_CHARS,
     AskExtras,
     AssistantService,
+    excerpt_display,
     prepare_passage_text,
     quote_is_verbatim,
 )
@@ -463,6 +464,7 @@ class AssistantSkillService:
                         source_kind="gitlab_approved" if doc.source == "gitlab" else "local_markdown",
                         source_id=f"{doc.source}:{doc.id}",
                         fragment_id=anchor,
+                        excerpt_parts=excerpt_display((doc.body, anchor), quote),
                     )
                 )
         return citations
