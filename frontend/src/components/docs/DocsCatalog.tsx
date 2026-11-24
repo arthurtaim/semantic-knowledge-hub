@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../../api/client";
-import type { DocStatus, DocumentSort, DocumentSummary, FacetCount } from "../../api/types";
+import type { DocStatus, DocumentSort, FacetCount } from "../../api/types";
 import { canAsk } from "../../lib/aiMode";
 import {
   activeFilters,
@@ -16,25 +16,20 @@ import {
   type FilterKey,
 } from "../../lib/catalog";
 import { queryOf, searchChanges, withParams } from "../../lib/docsView";
-import { pluralRu, REVIEW_LABEL, SORT_LABEL, SOURCE_LABEL, STATUS_LABEL, STATUS_ORDER, TYPE_LABEL, TYPE_ORDER } from "../../lib/labels";
+import { pluralRu, SORT_LABEL, SOURCE_LABEL, STATUS_LABEL, STATUS_ORDER, TYPE_LABEL, TYPE_ORDER } from "../../lib/labels";
 import { useSession } from "../../lib/session";
 import { useAsync } from "../../lib/useAsync";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { CatalogTable } from "../CatalogTable";
 import { EmptyState, ErrorState, Loading, Notice } from "../Feedback";
-import { Highlighted } from "../Highlighted";
 import { SidePanel, useSidePanelMode } from "../shell/SidePanel";
-import { StaleMark } from "../StaleMark";
-import { StatusStamp } from "../StatusStamp";
 import { Button, buttonClass } from "../ui/Button";
 import { Chip } from "../ui/Chip";
 import { Icon } from "../ui/Icon";
 import { Menu, Popover } from "../ui/Popover";
-import { When } from "../When";
 
-/** «Список» (snippets) pages by 20; the table loads up to the API maximum so groups are whole. */
-const LIST_PAGE_SIZE = 20;
-const TABLE_PAGE_SIZE = 100;
+/** The table loads up to the API maximum so groups are whole. */
+const PAGE_SIZE = 100;
 /** Explicit orders; relevance (with a query) and section/title order (without) are the server default. */
 const EXPLICIT_SORTS: DocumentSort[] = ["title", "updated", "status"];
 /** Phones: cards instead of the table, filters in a sheet. */
@@ -89,67 +84,7 @@ function FacetGroup({ title, name, options, active, onToggle }: FacetGroupProps)
   );
 }
 
-function ResultRow({ doc, singleSource }: { doc: DocumentSummary; singleSource: boolean }) {
-  return (
-    <li className="result">
-      <div className="result__head">
-        <Link to={`/documents/${doc.id}`} className="result__title">
-          {doc.title}
-        </Link>
-        <span className="result__badges">
-          {doc.related_via ? (
-            <span className="related-via" title="Найден через объявленную связь, а не по своему тексту">
-              Связан с {doc.related_via}
-            </span>
-          ) : null}
-          {doc.index_state === "stale" ? <StaleMark /> : null}
-          {doc.review_state === "stale" || doc.review_state === "never_reviewed" ? (
-            <span className="review-flag" title="Проверка документа">
-              {REVIEW_LABEL[doc.review_state]}
-            </span>
-          ) : null}
-          <StatusStamp status={doc.status} />
-        </span>
-      </div>
-      <p className="result__excerpt">{doc.highlights ? <Highlighted segments={doc.highlights} /> : doc.excerpt}</p>
-      <dl className="result__meta">
-        <div>
-          <dt>ID</dt>
-          <dd>
-            <code className="doc-id">{doc.id}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>Раздел</dt>
-          <dd>{TYPE_LABEL[doc.type]}</dd>
-        </div>
-        <div>
-          <dt>Владелец</dt>
-          <dd className={doc.owner_missing ? "flag" : undefined}>{doc.owner_missing ? "не назначен" : doc.owner}</dd>
-        </div>
-        {/* One source for the whole list: shown once above it; the row keeps it for screen readers. */}
-        <div className={singleSource ? "visually-hidden" : undefined}>
-          <dt>Источник</dt>
-          <dd>{SOURCE_LABEL[doc.source]}</dd>
-        </div>
-        <div>
-          {/* The document's own date from its metadata, not the time the file was loaded or indexed. */}
-          <dt>Обновлён</dt>
-          <dd>
-            <When value={doc.metadata_updated_at} />
-          </dd>
-        </div>
-      </dl>
-      {doc.match_reasons && doc.match_reasons.length > 0 ? (
-        <p className="result__why">Почему найдено: {doc.match_reasons.join("; ")}</p>
-      ) : null}
-    </li>
-  );
-}
-
 interface DocsCatalogProps {
-  /** `table`: the grouped table (cards on a phone); `list`: rows with snippets, paged by 20. */
-  layout: "list" | "table";
   /** The filter row sits right under the toolbar (the view switch and the search are in the toolbar). */
   flush?: boolean;
   /** The index-state notice, under the filter row. */
@@ -157,12 +92,12 @@ interface DocsCatalogProps {
 }
 
 /**
- * The catalog of UI v2 (design-05): active filters as chips, «+ Фильтр» with the facets, grouping and sorting on
- * the right, then the documents as a table or as rows with snippets. Every filter, the query, the sort and the
+ * The catalog table of UI v2 (design-05): active filters as chips, «+ Фильтр» with the facets, grouping and sorting
+ * on the right, then the documents as a grouped table (cards on a phone). Every filter, the query, the sort and the
  * page live in the URL; the grouping in this browser. «Документы» v2 keeps it as the «Таблица» view until that
  * view gets its own filters (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §3).
  */
-export function DocsCatalog({ layout, flush = false, notice }: DocsCatalogProps) {
+export function DocsCatalog({ flush = false, notice }: DocsCatalogProps) {
   const session = useSession();
   const [params, setParams] = useSearchParams();
   const query = queryOf(params);
@@ -175,7 +110,7 @@ export function DocsCatalog({ layout, flush = false, notice }: DocsCatalogProps)
   const filters = activeFilters(params);
   const values = Object.fromEntries(FILTER_KEYS.map((k) => [k, filterValues(params, k)])) as Record<FilterKey, string[]>;
 
-  const pageSize = layout === "table" ? TABLE_PAGE_SIZE : LIST_PAGE_SIZE;
+  const pageSize = PAGE_SIZE;
   const facets = useAsync(() => api.facets(), "facets");
   const listKey = [query, page, pageSize, sort, ...FILTER_KEYS.map((k) => params.get(k))].join("|");
   const list = useAsync(
@@ -308,9 +243,8 @@ export function DocsCatalog({ layout, flush = false, notice }: DocsCatalogProps)
     />
   );
 
-  const groupMenu =
-    layout === "table" ? (
-      <Menu
+  const groupMenu = (
+    <Menu
         label="Группировка"
         align="end"
         groups={[
@@ -331,9 +265,9 @@ export function DocsCatalog({ layout, flush = false, notice }: DocsCatalogProps)
           </button>
         )}
       />
-    ) : null;
+  );
 
-  const quietSummary = layout === "table" && !query && pages <= 1;
+  const quietSummary = !query && pages <= 1;
   const summaryText = list.loading
     ? "Поиск…"
     : `${total} ${pluralRu(total, "документ", "документа", "документов")}${query ? ` по запросу «${query}»` : ""}`;
@@ -417,7 +351,7 @@ export function DocsCatalog({ layout, flush = false, notice }: DocsCatalogProps)
             {pages > 1 && !list.loading ? (
               <p className="results__source">
                 Показаны {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)}
-                {layout === "table" && group !== "none" ? "; группы считают документы этой страницы" : ""}.
+                {group !== "none" ? "; группы считают документы этой страницы" : ""}.
               </p>
             ) : null}
           </div>
@@ -444,17 +378,7 @@ export function DocsCatalog({ layout, flush = false, notice }: DocsCatalogProps)
             {hasFilters ? <Button onClick={resetFilters}>Сбросить фильтры</Button> : null}
           </EmptyState>
         ) : null}
-        {items.length > 0 ? (
-          layout === "table" ? (
-            <CatalogTable items={items} group={group} singleSource={singleSource !== null} cards={phone} />
-          ) : (
-            <ol className="result-list">
-              {items.map((doc) => (
-                <ResultRow key={doc.id} doc={doc} singleSource={singleSource !== null} />
-              ))}
-            </ol>
-          )
-        ) : null}
+        {items.length > 0 ? <CatalogTable items={items} group={group} singleSource={singleSource !== null} cards={phone} /> : null}
         {pages > 1 ? (
           <nav className="pager" aria-label="Страницы результатов">
             <Button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })}>

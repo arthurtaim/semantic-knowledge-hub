@@ -153,7 +153,7 @@ test("@gitlab E2E-18/19/20 new document → branch + create commit → one MR �
   await expect(page.getByText(/Синхронизировано с базой знаний/)).toBeVisible();
   // …and searchable after the confirmed merge + sync
   await page.goto(`/documents?query=${encodeURIComponent(marker)}`);
-  await expect(page.locator(".result").first()).toContainText(id);
+  await expect(page.locator(".docs-row").first()).toContainText(id); // «Документы» v2: a row of «Список»
   await page.goto(`/documents/${id}`);
   await expect(page.locator(".doc-props")).toContainText("GitLab"); // UI v2: «Источник» in the properties
 });

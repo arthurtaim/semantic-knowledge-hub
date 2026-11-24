@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
+import { DocsBrowser } from "../components/docs/DocsBrowser";
 import { DocsCatalog } from "../components/docs/DocsCatalog";
 import { DocsOverview } from "../components/docs/DocsOverview";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
@@ -149,8 +150,10 @@ export function ExplorerPage() {
           {notice}
           <DocsOverview tree={tree} />
         </>
+      ) : view === "list" ? (
+        <DocsBrowser tree={tree} notice={notice} />
       ) : (
-        <DocsCatalog layout={view === "table" ? "table" : "list"} flush={!compact} notice={notice} />
+        <DocsCatalog flush={!compact} notice={notice} />
       )}
     </div>
   );

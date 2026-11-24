@@ -82,6 +82,18 @@ function Marked({ text, needle }: { text: string; needle: string }) {
   );
 }
 
+/**
+ * What a document or node given from outside needs open, and the row to show: the document's section and group;
+ * for a node (no document), its section and the node itself when it has children.
+ */
+function revealKeys(index: TreeIndex, node: string, doc: string | null): { target: string | null; open: string[] } {
+  if (doc && index.tree.documents[doc]) return { target: docKey(doc), open: ancestorsOf(index, doc) };
+  const nodeData = index.nodes.get(node);
+  if (!nodeData || nodeData.level === 0) return { target: null, open: [] };
+  const hasChildren = nodeData.groups.length > 0 || nodeData.docIds.length > 0;
+  return { target: node, open: [nodeData.parent, hasChildren ? node : null].filter((key): key is string => Boolean(key)) };
+}
+
 function nodeName(node: TreeNode): string {
   const count = `${node.count} ${pluralRu(node.count, "документ", "документа", "документов")}`;
   if (node.key === ATTENTION_NODE || node.key === ALL_NODE) return `${node.label}, ${count}`;
@@ -92,7 +104,8 @@ function nodeName(node: TreeNode): string {
 
 export function DocTree({ index, node, doc, onSelectNode, onSelectDoc }: DocTreeProps) {
   const idBase = useId();
-  const [expanded, setExpanded] = useState<Set<string>>(readExpanded);
+  // Opened already on the first paint: the remembered branches plus the way to the given document or node.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([...readExpanded(), ...revealKeys(index, node, doc).open]));
   const [filter, setFilter] = useState("");
   const [focusKey, setFocusKey] = useState<string | null>(null);
   const [reveal, setReveal] = useState<string | null>(null);
@@ -102,25 +115,21 @@ export function DocTree({ index, node, doc, onSelectNode, onSelectDoc }: DocTree
   const documents = index.tree.documents;
 
   function changeExpanded(update: (current: Set<string>) => Set<string>) {
-    setExpanded((current) => {
-      const next = update(current);
-      writeExpanded(next);
-      return next;
-    });
+    setExpanded(update);
   }
 
-  // A document chosen anywhere (the URL on arrival, the list, a search result) opens its branch and is shown.
+  // A document chosen anywhere (the URL on arrival, the list, a search result) opens its branch and is shown;
+  // so does a node given by the URL (a breadcrumb, an overview link): its section and the node itself open.
   useEffect(() => {
-    if (!doc || !documents[doc]) return;
-    const above = ancestorsOf(index, doc);
-    setExpanded((current) => {
-      if (above.every((key) => current.has(key))) return current;
-      const next = new Set([...current, ...above]);
-      writeExpanded(next);
-      return next;
-    });
-    setReveal(doc);
-  }, [doc, index, documents]);
+    const { target, open: keys } = revealKeys(index, node, doc);
+    if (!target) return;
+    setExpanded((current) => (keys.every((key) => current.has(key)) ? current : new Set([...current, ...keys])));
+    setReveal(target);
+    // Only a new document or node from outside: a click on the open node closes it without reopening.
+  }, [doc, node, index]);
+
+  // The open branches are remembered in this browser (whatever opened them).
+  useEffect(() => writeExpanded(expanded), [expanded]);
 
   // While filtering: the documents whose title or ID matches (or whose section / group name does), with their
   // branches open; a node shows when its name matches or something under it does.
@@ -203,10 +212,10 @@ export function DocTree({ index, node, doc, onSelectNode, onSelectDoc }: DocTree
   const tabStop = focusKey && keys.includes(focusKey) ? focusKey : keys.includes(selectedKey) ? selectedKey : keys[0];
   const trail = doc && documents[doc] ? new Set(ancestorsOf(index, doc)) : new Set<string>();
 
-  // Scroll the revealed document into view once its branch is rendered.
+  // Scroll the revealed row into view once its branch is rendered.
   useEffect(() => {
     if (!reveal) return;
-    const element = refs.current.get(docKey(reveal));
+    const element = refs.current.get(reveal);
     if (!element) return;
     element.scrollIntoView({ block: "nearest" });
     setReveal(null);

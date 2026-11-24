@@ -5,6 +5,7 @@ import type { DocumentPage, DocumentSummary } from "../api/types";
 import { activeFilters, graphHref, groupDocuments, toggleValue } from "../lib/catalog";
 import { formatWhen } from "../lib/labels";
 import { ExplorerPage } from "../pages/ExplorerPage";
+import { demoTree } from "./docsTreeFixture";
 import { arisSummary, documentPage, emptyPage, facets, staleSync } from "./fixtures";
 import { memoryStorage, mockApi, mockViewport, renderAt, renderRoutes } from "./helpers";
 
@@ -54,85 +55,172 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Catalog: the list with snippets (a search)", () => {
-  it("shows search results with status, provenance and highlighted snippet", async () => {
+/*
+ * «Документы» v2: a search shows its results in the middle column of «Список» (the tree stays), in the same rows as
+ * a branch — status (only when not «Утверждён»), the highlighted snippet, ID, systems, review date — plus «Почему
+ * найдено», «Связан с …» and the query's notes. These tests replace the snippet list of the old catalog: the
+ * features are the same, the markup is the branch list's (a row is a link named by its title and status).
+ */
+describe("Список: search results", () => {
+  const searchRoutes = (page: DocumentPage, extra: Parameters<typeof mockApi>[0] = []) =>
     mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      { path: "/api/documents?query=ARIS&page=1&size=20", body: documentPage },
+      { path: "/api/documents/tree", body: demoTree },
+      { path: "/api/documents?query=ARIS&page=1&size=100", body: page },
+      ...extra,
     ]);
+  const row = (name: RegExp) => screen.getByRole("link", { name });
+
+  it("shows search results with status, provenance and highlighted snippet", async () => {
+    searchRoutes(documentPage);
     renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
 
-    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery, Черновик" });
     expect(link).toHaveAttribute("href", "/documents/SEM-INT-ARIS-001");
-    const result = link.closest("li") as HTMLElement;
-    expect(within(result).getByText("Черновик")).toBeInTheDocument();
-    expect(within(result).getByText("SEM-INT-ARIS-001")).toBeInTheDocument();
-    expect(within(result).getByText("Локальный workspace")).toBeInTheDocument();
-    expect(within(result).getByText("ARIS", { selector: "mark" })).toBeInTheDocument();
-    expect(screen.getByText(/1 документ по запросу «ARIS»/)).toBeInTheDocument();
+    expect(within(link).getByText("Черновик")).toBeInTheDocument();
+    expect(within(link).getByText("SEM-INT-ARIS-001")).toBeInTheDocument();
+    expect(within(link).getByText("Источник: Локальный workspace")).toHaveClass("visually-hidden");
+    expect(within(link).getByText("ARIS", { selector: "mark" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Результаты: «ARIS»" })).toBeInTheDocument();
+    expect(screen.getByText("1 документ по запросу «ARIS»")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Создать документ" })).toHaveAttribute("href", "/documents/new");
     expect(screen.getByRole("button", { name: "Список" })).toHaveAttribute("aria-pressed", "true");
-    // the query itself is a removable chip
-    expect(screen.getByRole("button", { name: "Убрать запрос" })).toBeInTheDocument();
+    // the tree stays next to the results
+    expect(screen.getByRole("tree", { name: "Разделы и документы" })).toBeInTheDocument();
+  });
+
+  it("clears the search with «Сбросить поиск» and returns to the branch", async () => {
+    searchRoutes(documentPage);
+    renderRoutes("/documents?query=ARIS", { "/documents": <ExplorerPage /> });
+    await screen.findByRole("heading", { level: 2, name: "Результаты: «ARIS»" });
+    await userEvent.click(screen.getByRole("button", { name: "Сбросить поиск" }));
+    await waitFor(() => expect(location()).toBe("/documents?view=list"));
+    expect(await screen.findByRole("heading", { level: 2, name: "Все документы" })).toBeInTheDocument();
   });
 
   it("shows an explicit empty state instead of inventing results", async () => {
     mockApi([
-      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/documents/tree", body: demoTree },
       { path: /\/api\/documents\?query=/, body: emptyPage },
     ]);
     renderAt("/documents?query=nothing", "/documents", <ExplorerPage />);
     expect(await screen.findByText("По запросу «nothing» ничего не найдено")).toBeInTheDocument();
-    expect(screen.queryAllByRole("listitem", { name: /ARIS/ })).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Сбросить поиск" })).toBeInTheDocument();
   });
 
-  it("reports server errors with the request id", async () => {
+  it("reports server errors with the request id (the tree and a search)", async () => {
+    const failure = { code: "internal_error", message: "Внутренняя ошибка сервера.", request_id: "abc123" };
+    mockApi([{ path: "/api/documents/tree", status: 500, body: failure }]);
+    const { unmount } = renderAt("/documents", "/documents", <ExplorerPage />);
+    expect((await screen.findAllByRole("alert"))[0]).toHaveTextContent("Внутренняя ошибка сервера.");
+    expect(screen.getAllByText("abc123").length).toBeGreaterThan(0);
+    unmount();
+    vi.restoreAllMocks();
     mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, status: 500, body: { code: "internal_error", message: "Внутренняя ошибка сервера.", request_id: "abc123" } },
+      { path: "/api/documents/tree", body: demoTree },
+      { path: /\/api\/documents\?query=/, status: 500, body: { ...failure, request_id: "def456" } },
     ]);
-    renderAt("/documents", "/documents", <ExplorerPage />);
+    renderAt("/documents?query=x", "/documents", <ExplorerPage />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Внутренняя ошибка сервера.");
-    expect(screen.getByText("abc123")).toBeInTheDocument();
+    expect(screen.getByText("def456")).toBeInTheDocument();
   });
 
-  // «Документы» v2: the toolbar field of the mockup («Найти в документах», «Название, ID, тег или система») writes
-  // `q` to the URL; a search always shows «Список».
-  it("searches from the toolbar field through the URL", async () => {
-    const calls = mockApi([
+  it("shows the source once under the list when all results share it", async () => {
+    searchRoutes(documentPage);
+    renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
+    await screen.findByRole("link", { name: /^ARIS integration/ });
+    expect(screen.getByText("Источник: Локальный workspace", { selector: "p" })).toBeInTheDocument();
+  });
+
+  it("shows the source on every row when the results mix sources (list and table)", async () => {
+    const gitlabDoc = { ...arisSummary, id: "SEM-GL-001", title: "GitLab document", source: "gitlab" as const };
+    mockApi([
+      { path: "/api/documents/tree", body: demoTree },
       { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: documentPage },
+      { path: /\/api\/documents\?/, body: { ...documentPage, items: [arisSummary, gitlabDoc], total: 2 } },
     ]);
-    renderRoutes("/documents?view=table", { "/documents": <ExplorerPage /> });
-    const field = await screen.findByRole("searchbox", { name: "Найти в документах" });
-    expect(field).toHaveAttribute("placeholder", "Название, ID, тег или система");
-    await userEvent.type(field, "ARIS{Enter}");
-    await waitFor(() => expect(location()).toBe("/documents?view=table&q=ARIS"));
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=100")).toBe(true));
-    // the query chip removes `q` and keeps the view
-    await userEvent.click(screen.getByRole("button", { name: "Убрать запрос" }));
-    expect(location()).toBe("/documents?view=table");
+    renderAt("/documents?query=x", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: /^GitLab document/ });
+    expect(screen.queryByText(/^Источник:/)).toBeNull();
+    expect(within(link).getByText("GitLab")).not.toHaveClass("visually-hidden");
+    await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    const tableRow = (await screen.findByRole("link", { name: "GitLab document" })).closest("tr") as HTMLElement;
+    expect(within(tableRow).getByText("GitLab")).toBeInTheDocument();
   });
 
-  // Round 2: «Обновлён» is the document's own date (`metadata_updated_at`), not the revision / load time.
+  it("marks an overdue review: the date in amber, said as «проверка устарела»", async () => {
+    searchRoutes({ ...documentPage, items: [{ ...arisSummary, status: "approved", review_state: "stale", reviewed_at: "2025-01-15" }] });
+    renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
+    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
+    const review = link.querySelector(".docs-row__review") as HTMLElement;
+    expect(review).toHaveClass("docs-row__review--warn");
+    expect(review).toHaveTextContent("15 янв. 2025");
+    expect(within(review).getByText("Проверен 15 янв. 2025, проверка устарела")).toHaveClass("visually-hidden");
+    // an approved document has no status word in its row
+    expect(within(link).queryByText("Утверждён")).toBeNull();
+  });
+
+  it("explains why each result was found, marks results found through a relation and shows query notes", async () => {
+    mockApi([
+      { path: "/api/documents/tree", body: demoTree },
+      {
+        path: "/api/documents?query=MDM&page=1&size=100",
+        body: {
+          ...documentPage,
+          items: [
+            { ...arisSummary, match_reasons: ["Слова запроса в названии: MDM", "Теги: mdm"], related_via: null, version: "1.0" },
+            {
+              ...arisSummary,
+              id: "SEM-ARCH-001",
+              title: "Semantic Layer — demonstration architecture",
+              status: "approved" as const,
+              highlights: null,
+              match_reasons: ["Связь из метаданных документа"],
+              related_via: "SEM-INT-ARIS-001",
+            },
+          ],
+          total: 2,
+          notes: ["Аббревиатура MDM неоднозначна: master data management / модель метаданных. Уточните вопрос."],
+        },
+      },
+    ]);
+    renderAt("/documents?query=MDM", "/documents", <ExplorerPage />);
+    expect(await screen.findByText(/Аббревиатура MDM неоднозначна/)).toBeInTheDocument();
+    const first = row(/^ARIS integration/);
+    expect(within(first).getByText("Почему найдено: Слова запроса в названии: MDM; Теги: mdm")).toBeInTheDocument();
+    expect(within(first).queryByText(/Связан с/)).toBeNull();
+    const related = row(/^Semantic Layer/);
+    expect(within(related).getByText("Связан с SEM-INT-ARIS-001")).toBeInTheDocument();
+    expect(within(related).getByText("Почему найдено: Связь из метаданных документа")).toBeInTheDocument();
+  });
+
+  it("shows no reasons line for a branch", async () => {
+    mockApi([{ path: "/api/documents/tree", body: demoTree }]);
+    renderAt("/documents", "/documents", <ExplorerPage />);
+    await screen.findByRole("heading", { level: 2, name: "Все документы" });
+    expect(screen.queryByText(/Почему найдено/)).toBeNull();
+  });
+});
+
+describe("Таблица: a search", () => {
+  // Round 2: «Обновлён» is the document's own date (`metadata_updated_at`), not the revision / load time. The «Вид»
+  // sort belongs to «Таблица» now («Список» lists a search by relevance and a branch by its own order menu).
   it("sorts through the «Вид» menu (URL-backed) and shows the document's own update date", async () => {
     const dated = { ...documentPage, items: [{ ...arisSummary, metadata_updated_at: "2026-10-05" }] };
     const calls = mockApi([
       { path: "/api/knowledge/facets", body: facets },
       { path: /\/api\/documents\?/, body: dated },
     ]);
-    renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
+    renderAt("/documents?view=table&query=ARIS", "/documents", <ExplorerPage />);
     const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
-    const result = link.closest("li") as HTMLElement;
-    expect(within(result).getByText("Обновлён")).toBeInTheDocument();
-    expect(within(result).getByText(formatWhen("2026-10-05").text, { exact: false })).toBeInTheDocument();
-    expect(within(result).queryByText(formatWhen(arisSummary.updated_at).text, { exact: false })).toBeNull();
+    const cells = within(link.closest("tr") as HTMLElement).getAllByRole("cell");
+    expect(cells[cells.length - 2]).toHaveTextContent(formatWhen("2026-10-05").text);
+    expect(cells[cells.length - 2]).not.toHaveTextContent(formatWhen(arisSummary.updated_at).text);
 
     await userEvent.click(screen.getByRole("button", { name: "Вид" }));
     const menu = screen.getByRole("menu", { name: "Вид списка" });
     expect(within(menu).getByRole("menuitemradio", { name: "Релевантность" })).toHaveAttribute("aria-checked", "true");
     await userEvent.click(within(menu).getByRole("menuitemradio", { name: "Сначала новые" }));
-    await waitFor(() => expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=20&sort=updated")).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/documents?query=ARIS&page=1&size=100&sort=updated")).toBe(true));
     await userEvent.click(screen.getByRole("button", { name: "Вид" }));
     expect(screen.getByRole("menuitemradio", { name: "Сначала новые" })).toHaveAttribute("aria-checked", "true");
   });
@@ -148,10 +236,10 @@ describe("Catalog: the list with snippets (a search)", () => {
     ]);
     renderAt("/documents?sort=status", "/documents", <ExplorerPage />);
     const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
-    const row = link.closest("tr") as HTMLElement;
-    expect(within(row).getByText("Версия может быть устаревшей")).toBeInTheDocument();
-    expect(within(row).getAllByRole("cell").map((cell) => cell.textContent).slice(-2)).toEqual(["—", "2"]);
-    expect(within(row).queryByText(/только что|сегодня/)).toBeNull();
+    const tableRow = link.closest("tr") as HTMLElement;
+    expect(within(tableRow).getByText("Версия может быть устаревшей")).toBeInTheDocument();
+    expect(within(tableRow).getAllByRole("cell").map((cell) => cell.textContent).slice(-2)).toEqual(["—", "2"]);
+    expect(within(tableRow).queryByText(/только что|сегодня/)).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Вид" }));
     expect(screen.getByRole("menuitemradio", { name: "Статус" })).toHaveAttribute("aria-checked", "true");
     expect(screen.queryByRole("menuitemradio", { name: "Релевантность" })).toBeNull();
@@ -161,95 +249,16 @@ describe("Catalog: the list with snippets (a search)", () => {
 
   it("says when the listed documents come from a stale index", async () => {
     mockApi([
+      { path: "/api/documents/tree", body: demoTree },
       { path: "/api/knowledge/facets", body: facets },
       { path: "/api/index/status", body: staleSync },
       { path: /\/api\/documents\?/, body: documentPage },
     ]);
-    renderAt("/documents", "/documents", <ExplorerPage />);
+    const { unmount } = renderAt("/documents", "/documents", <ExplorerPage />);
     expect(await screen.findByText("Данные могут быть устаревшими.")).toBeInTheDocument();
-  });
-
-  it("shows the source once above the list when all results share it", async () => {
-    mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: documentPage },
-    ]);
-    renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
-    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
-    expect(screen.getByText("Источник: Локальный workspace")).toBeInTheDocument();
-    // the row still names its source for screen readers
-    const source = within(link.closest("li") as HTMLElement).getByText("Локальный workspace");
-    expect(source.closest("div")).toHaveClass("visually-hidden");
-  });
-
-  it("shows the source on every row when the results mix sources (list and table)", async () => {
-    const gitlabDoc = { ...arisSummary, id: "SEM-GL-001", title: "GitLab document", source: "gitlab" as const };
-    mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: { ...documentPage, items: [arisSummary, gitlabDoc], total: 2 } },
-    ]);
-    renderAt("/documents?query=x", "/documents", <ExplorerPage />);
-    const link = await screen.findByRole("link", { name: "GitLab document" });
-    expect(screen.queryByText(/^Источник:/)).toBeNull();
-    expect(within(link.closest("li") as HTMLElement).getByText("GitLab").closest("div")).not.toHaveClass("visually-hidden");
-    await userEvent.click(screen.getByRole("button", { name: "Таблица" }));
-    const row = (await screen.findByRole("link", { name: "GitLab document" })).closest("tr") as HTMLElement;
-    expect(within(row).getByText("GitLab")).toBeInTheDocument();
-  });
-
-  it("puts an overdue review next to the status stamp", async () => {
-    mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: { ...documentPage, items: [{ ...arisSummary, review_state: "stale" }] } },
-    ]);
-    renderAt("/documents?query=ARIS", "/documents", <ExplorerPage />);
-    const link = await screen.findByRole("link", { name: "ARIS integration — questions for discovery" });
-    const head = link.closest(".result__head") as HTMLElement;
-    expect(within(head).getByText("Проверка устарела")).toBeInTheDocument();
-    expect(within(head).getByText("Черновик")).toBeInTheDocument();
-  });
-
-  it("explains why each result was found, marks results found through a relation and shows query notes", async () => {
-    mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      {
-        path: "/api/documents?query=MDM&page=1&size=20",
-        body: {
-          ...documentPage,
-          items: [
-            { ...arisSummary, match_reasons: ["Слова запроса в названии: MDM", "Теги: mdm"], related_via: null, version: "1.0" },
-            {
-              ...arisSummary,
-              id: "SEM-ARCH-001",
-              title: "Semantic Layer — demonstration architecture",
-              highlights: null,
-              match_reasons: ["Связь из метаданных документа"],
-              related_via: "SEM-INT-ARIS-001",
-            },
-          ],
-          total: 2,
-          notes: ["Аббревиатура MDM неоднозначна: master data management / модель метаданных. Уточните вопрос."],
-        },
-      },
-    ]);
-    renderAt("/documents?query=MDM", "/documents", <ExplorerPage />);
-    expect(await screen.findByText(/Аббревиатура MDM неоднозначна/)).toBeInTheDocument();
-    const first = screen.getByRole("link", { name: "ARIS integration — questions for discovery" }).closest("li") as HTMLElement;
-    expect(within(first).getByText("Почему найдено: Слова запроса в названии: MDM; Теги: mdm")).toBeInTheDocument();
-    expect(within(first).queryByText(/Связан с/)).toBeNull();
-    const related = screen.getByRole("link", { name: "Semantic Layer — demonstration architecture" }).closest("li") as HTMLElement;
-    expect(within(related).getByText("Связан с SEM-INT-ARIS-001")).toBeInTheDocument();
-    expect(within(related).getByText("Почему найдено: Связь из метаданных документа")).toBeInTheDocument();
-  });
-
-  it("shows no reasons line for a plain listing", async () => {
-    mockApi([
-      { path: "/api/knowledge/facets", body: facets },
-      { path: /\/api\/documents\?/, body: documentPage },
-    ]);
-    renderAt("/documents", "/documents", <ExplorerPage />);
-    await screen.findByRole("link", { name: /ARIS integration/ });
-    expect(screen.queryByText(/Почему найдено/)).toBeNull();
+    unmount();
+    renderAt("/documents?view=table", "/documents", <ExplorerPage />);
+    expect(await screen.findByText("Данные могут быть устаревшими.")).toBeInTheDocument();
   });
 });
 

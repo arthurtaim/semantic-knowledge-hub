@@ -3002,14 +3002,6 @@ a.assistant-home__row:hover {
   margin-bottom: var(--space-3);
 }
 
-.result__badges {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: center;
-  justify-content: flex-end;
-}
-
 /* Review overdue / never reviewed: text plus a hollow ring (the stamp has a filled dot), never colour alone. */
 .review-flag {
   display: inline-flex;
@@ -3030,47 +3022,6 @@ a.assistant-home__row:hover {
   border-radius: 50%;
 }
 
-.result-list {
-  list-style: none;
-  margin: 0 0 var(--space-5);
-  padding: 0;
-  border-top: 1px solid var(--line);
-}
-
-.result {
-  padding: var(--space-4) 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.result__head {
-  display: flex;
-  gap: var(--space-3);
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.result__title {
-  font-size: var(--fs-ui);
-  font-weight: 500;
-}
-
-a.result__title {
-  color: var(--text);
-  text-decoration: none;
-}
-
-a.result__title:hover {
-  color: var(--accent-text);
-  text-decoration: underline;
-}
-
-.result__excerpt {
-  margin: var(--space-2) 0;
-  color: var(--text-secondary);
-  max-width: 75ch;
-}
-
-.result__meta,
 .inline-meta {
   display: flex;
   flex-wrap: wrap;
@@ -3079,19 +3030,16 @@ a.result__title:hover {
   font-size: var(--fs-small);
 }
 
-.result__meta div,
 .inline-meta div {
   display: flex;
   gap: var(--space-2);
   align-items: baseline;
 }
 
-.result__meta dt,
 .inline-meta dt {
   color: var(--text-secondary);
 }
 
-.result__meta dd,
 .inline-meta dd {
   margin: 0;
 }
@@ -8120,13 +8068,6 @@ a.source__title:hover {
   opacity: 0.6;
 }
 
-.result__why {
-  margin: var(--space-2) 0 0;
-  font-size: var(--fs-small);
-  color: var(--text-tertiary);
-  max-width: 75ch;
-}
-
 .related-via {
   display: inline-flex;
   align-items: center;
@@ -8242,10 +8183,6 @@ a.source__title:hover {
 
   .mr-panel__fields dd {
     margin-bottom: var(--space-2);
-  }
-
-  .result__head {
-    flex-wrap: wrap;
   }
 }
 
@@ -10065,4 +10002,523 @@ a.source__title:hover {
   margin: var(--space-3) var(--space-2);
   font-size: var(--fs-small);
   color: var(--text-secondary);
+}
+
+/* «Список» (DocsBrowser, docs-01 / docs-02): three columns under the toolbar, each scrolling on its own — the tree
+   300 px, the branch list 400–480 px, the preview the rest. Below 1280 px the preview is a sheet; below 960 px one
+   screen at a time. */
+.content:has(> .content__inner > .docs--list) {
+  padding: 0;
+}
+
+.docs--list {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--toolbar-height));
+  height: calc(100dvh - var(--toolbar-height));
+}
+
+.docs--list .catalog__top {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.docs-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-browser__notice {
+  padding: var(--space-3) var(--space-4) 0;
+}
+
+.docs-browser__columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Each column scrolls on its own and is the containing block of what it holds (visually hidden text included),
+   so nothing inside stretches the page. */
+.docs-browser__tree,
+.docs-browser__list,
+.docs-browser__preview {
+  position: relative;
+}
+
+.docs-browser__tree {
+  flex: 0 0 18.75rem;
+  min-width: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: var(--bg-subtle);
+}
+
+.docs-browser__list {
+  flex: 1 1 25rem;
+  min-width: 21.25rem;
+  max-width: 30rem;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+
+.docs-browser--two .docs-browser__list {
+  max-width: none;
+  border-right: 0;
+}
+
+.docs-browser__preview {
+  flex: 1 1 23.75rem;
+  min-width: 20rem;
+  overflow-y: auto;
+}
+
+.docs-browser__tree > .doc-tree {
+  min-height: 100%;
+}
+
+/* The branch list: path, count and order, then rows of three lines. */
+.docs-branch__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.875rem;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-surface);
+}
+
+.docs-branch__parent {
+  flex: none;
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+}
+
+.docs-branch__sep {
+  color: var(--text-tertiary);
+}
+
+.docs-branch__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  font-weight: 600;
+}
+
+.docs-branch__count {
+  flex: none;
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-branch__order-menu {
+  flex: 0 3 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.docs-branch__order {
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+}
+
+.docs-branch__order .icon {
+  flex: none;
+  color: var(--text-tertiary);
+}
+
+.docs-branch__order-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-branch__action {
+  flex: none;
+  margin-left: auto;
+}
+
+.docs-branch__tools {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.docs-branch__notes {
+  margin: var(--space-3) var(--space-3) 0;
+}
+
+.docs-branch__empty,
+.docs-branch__source {
+  margin: var(--space-3) var(--space-4);
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+}
+
+.docs-branch .empty-state {
+  margin: var(--space-4);
+}
+
+.docs-branch__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2) 0;
+}
+
+.docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0.375rem;
+  list-style: none;
+}
+
+/* Long branches: rows off screen are not laid out (the spec: no paging up to 500 documents). */
+.docs-list--long .docs-list__item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 4.5rem;
+}
+
+.docs-row {
+  display: block;
+  padding: 0.625rem var(--space-3);
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.docs-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.docs-row--selected,
+.docs-row--selected:hover {
+  background: var(--accent-wash);
+}
+
+.docs-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.docs-row__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.docs-row__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+  font-weight: 500;
+}
+
+.docs-row--deprecated .docs-row__title {
+  color: var(--status-deprecated);
+  text-decoration: line-through;
+}
+
+.docs-row__status {
+  flex: none;
+  font-size: var(--fs-caption);
+}
+
+.docs-row__status.status-mark--deprecated {
+  text-decoration: none;
+}
+
+.docs-row__summary {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+  color: var(--text-secondary);
+}
+
+/* A search snippet may take two lines: the highlighted words are the point of it. */
+.docs-row__summary--snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+
+.docs-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.125rem var(--space-3);
+  margin-top: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.docs-row__systems {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docs-row__flag {
+  color: var(--status-draft-text);
+}
+
+.docs-row__review {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.docs-row__review--warn {
+  color: var(--status-draft-text);
+}
+
+.docs-row__why {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+/* The preview (docs-01): status and ID, the 22/28 title, the summary, three actions, properties, tags, sections. */
+.doc-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 1.375rem 1.625rem var(--space-6);
+}
+
+.doc-preview__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0;
+  font-size: 0.78125rem;
+  color: var(--text-secondary);
+}
+
+.doc-preview__status .status-mark {
+  font-size: 0.78125rem;
+}
+
+.doc-preview__title {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+}
+
+.doc-preview__title--deprecated {
+  color: var(--status-deprecated);
+  text-decoration: line-through;
+}
+
+.doc-preview__summary {
+  margin: 0;
+  font-size: var(--fs-ui);
+  line-height: 1.375rem;
+  color: var(--text);
+}
+
+.doc-preview__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.doc-preview__props {
+  margin: 0;
+  padding: var(--space-1) 0 0.625rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.doc-preview__props > div {
+  display: grid;
+  grid-template-columns: 6.875rem minmax(0, 1fr);
+  gap: 0.625rem;
+  padding: 0.3125rem 0;
+  font-size: var(--fs-small);
+}
+
+.doc-preview__props dt {
+  color: var(--text-tertiary);
+}
+
+.doc-preview__props dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-preview__warn {
+  color: var(--status-draft-text);
+}
+
+.doc-preview__muted {
+  color: var(--text-tertiary);
+}
+
+.doc-preview__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-preview__toc-title {
+  margin: 0;
+  padding: var(--space-1) var(--space-2) 0.375rem;
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.doc-preview__toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-preview__toc a {
+  display: flex;
+  align-items: center;
+  min-height: 1.875rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-nav);
+  color: var(--text);
+  font-size: var(--fs-small);
+  text-decoration: none;
+}
+
+.doc-preview__toc a:hover {
+  background: var(--bg-hover);
+  text-decoration: none;
+}
+
+.doc-preview__placeholder {
+  margin: var(--space-6) 1.625rem;
+  font-size: var(--fs-small);
+  color: var(--text-tertiary);
+}
+
+.doc-preview--error {
+  align-items: flex-start;
+}
+
+.doc-preview__error {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--danger-text);
+}
+
+.doc-preview__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.doc-preview__bone {
+  display: block;
+  height: 0.875rem;
+  border-radius: 4px;
+  background: var(--bg-hover);
+}
+
+.doc-preview__bone--short {
+  width: 40%;
+}
+
+.doc-preview__bone--title {
+  height: 1.75rem;
+  width: 75%;
+}
+
+.side-panel .doc-preview {
+  padding: 0;
+}
+
+/* One screen at a time (below 960 px): the tree, then the list of the chosen branch. */
+.docs-browser--single {
+  padding: var(--space-3) var(--space-4) var(--space-6);
+}
+
+.docs-browser--single .doc-tree {
+  padding: 0;
+  background: none;
+}
+
+.docs-browser--single .docs-branch__head {
+  position: static;
+  padding: 0 0 var(--space-2);
+}
+
+.docs-browser--single .docs-list {
+  padding: var(--space-2) 0;
+}
+
+.docs-browser__back {
+  margin: 0 0 var(--space-2) calc(-1 * var(--space-2));
+}
+
+.docs-browser__back-icon {
+  transform: rotate(90deg);
+}
+
+@media (max-width: 959.98px) {
+  .docs--list {
+    height: auto;
+  }
+}
+
+/* The toolbar of «Документы»: the view switch keeps its size; the search field (280 px in the mockup) gives way
+   first when the toolbar is narrow, down to 10 rem (below 1280 px both move into the content). */
+.page-toolbar__lead:has(.view-switch) {
+  flex: 1 0 auto;
+  container-type: normal; /* sized by its content (the title and the switch), never clipped */
+}
+
+.page-toolbar__end:has(.catalog-search),
+.page-toolbar__actions:has(> .catalog-search) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.page-toolbar__actions > .catalog-search {
+  flex: 0 1 17.5rem;
+  width: 17.5rem;
+  min-width: 10rem;
 }

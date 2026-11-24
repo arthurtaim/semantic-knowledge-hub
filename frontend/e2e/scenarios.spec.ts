@@ -41,7 +41,8 @@ test("E2E-02 search: query, sort by date, empty result", async ({ page }) => {
   await palette.getByRole("combobox", { name: "Поиск по базе знаний" }).fill("ревизия");
   await palette.getByRole("button", { name: "Найти", exact: true }).click();
   await expect(page).toHaveURL(/\/documents\?query=/);
-  await expect(page.locator(".result").first()).toBeVisible();
+  // «Документы» v2: the results are rows of «Список»
+  await expect(page.locator(".docs-row").first()).toBeVisible();
 
   // UI v2: the sort of the catalog table is in the «Вид» menu («Документы» v2: the table is the «Таблица» view).
   await page.goto("/documents?view=table");

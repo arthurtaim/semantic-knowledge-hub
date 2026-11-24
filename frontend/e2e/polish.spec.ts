@@ -89,6 +89,8 @@ test("F-02 the toolbar path never runs under the badges; a narrow toolbar shows 
     // only after the document loads; measuring before that compared a transient toolbar (flaky under load).
     await expect(page.locator(".page-toolbar").getByRole("button", { name: "Ещё", exact: true })).toBeVisible();
     await expect(current).toContainText("ARIS");
+    // «Документы» v2: the path follows the documents tree — Документы / Интеграции / ARIS / the document.
+    await expect(page.locator(".page-toolbar .crumbs li")).toHaveCount(4);
     if (width <= 860) {
       await expect
         .poll(() =>
@@ -112,7 +114,7 @@ test("F-02 the toolbar path never runs under the badges; a narrow toolbar shows 
     expect(layout.leadRight, `${width} px`).toBeLessThanOrEqual(layout.endLeft);
     for (const right of layout.crumbRights) expect(right, `${width} px`).toBeLessThanOrEqual(layout.endLeft);
     if (width <= 860) expect(layout.shown, `${width} px: only the current page`).toBe(1);
-    else expect(layout.shown).toBe(3);
+    else expect(layout.shown).toBe(4);
   }
 });
 
