@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import type { DocStatus, GraphEdge, GraphNode } from "../api/types";
 import {
@@ -11,31 +11,43 @@ import {
   nodeShapePath,
   nodeStatusClass,
   nodeStatusText,
-  ORIGIN_ORDER,
   SOURCE_KIND_LABEL,
   type GraphLabels,
 } from "../lib/graph";
 import { formatDateTime, provenanceText, STATUS_LABEL, STATUS_ORDER } from "../lib/labels";
+import { readPreference, writePreference } from "../lib/storage";
 import { AiProposalCard, useAiProposal } from "./AiProposal";
 import { ErrorState } from "./Feedback";
 import { StatusStamp } from "./StatusStamp";
+import { buttonClass } from "./ui/Button";
+import { Icon } from "./ui/Icon";
 
 const isDocStatus = (value: string | null): value is DocStatus => value !== null && value in STATUS_LABEL;
 
 /** The shape of a node kind (legend, lists, details); decorative — the kind is always named in text too. */
 export function ShapeIcon({ kind, status = "none" }: { kind: string; status?: string }) {
   return (
-    <svg className={`graph-icon graph-node--status-${status}`} width="20" height="20" viewBox="-11 -11 22 22" aria-hidden="true" focusable="false">
+    <svg
+      className={`graph-icon graph-node--${kind} graph-node--status-${status}`}
+      width="16"
+      height="16"
+      viewBox="-11 -11 22 22"
+      aria-hidden="true"
+      focusable="false"
+    >
       <path className="graph-node__shape" d={nodeShapePath(kind, 7)} />
     </svg>
   );
 }
 
+/** Outline class of a kind in the legend (templates and pages are outlined, the rest filled). */
+const LEGEND_STATUS: Record<string, string> = { external_page: "external", query_context: "query", template: "template" };
+
 function EdgeSample({ unconfirmed }: { unconfirmed: boolean }) {
   return (
-    <svg className="graph-icon graph-icon--edge" width="36" height="12" viewBox="0 0 36 12" aria-hidden="true" focusable="false">
-      <path className={`graph-edge${unconfirmed ? " graph-edge--unconfirmed" : ""}`} d="M1,6H29" />
-      <path className="graph-arrow" d="M27,2L35,6L27,10Z" />
+    <svg className="graph-icon graph-icon--edge" width="24" height="12" viewBox="0 0 24 12" aria-hidden="true" focusable="false">
+      <path className={`graph-edge graph-edge--sample${unconfirmed ? " graph-edge--unconfirmed" : ""}`} d="M1,6H18" />
+      <path className="graph-arrow graph-arrow--lit" d="M16,2.5L23,6L16,9.5Z" />
     </svg>
   );
 }
@@ -134,11 +146,11 @@ function GraphAiActions({ node, focusNode }: { node: GraphNode; focusNode: Graph
   const busy = state.preparing !== null;
   return (
     <section className="graph-ai" aria-label="ИИ о связях узла">
-      <div className="graph-details__actions">
+      <div className="graph-details__actions graph-details__actions--ai">
         {other ? (
           <button
             type="button"
-            className="button button--secondary"
+            className={buttonClass("secondary", "sm")}
             disabled={busy}
             onClick={() =>
               void state.run({ kind: "explain_relation", document_id: other.document_id ?? "", target_id: documentId })
@@ -149,7 +161,7 @@ function GraphAiActions({ node, focusNode }: { node: GraphNode; focusNode: Graph
         ) : null}
         <button
           type="button"
-          className="button button--secondary"
+          className={buttonClass("secondary", "sm")}
           disabled={busy}
           onClick={() => void state.run({ kind: "impact_analysis", document_id: documentId })}
         >
@@ -160,7 +172,7 @@ function GraphAiActions({ node, focusNode }: { node: GraphNode; focusNode: Graph
         {busy ? (
           <p className="muted">
             Готовим ответ ИИ…{" "}
-            <button type="button" className="button button--ghost" onClick={state.cancel}>
+            <button type="button" className={buttonClass("quiet", "sm")} onClick={state.cancel}>
               Отменить
             </button>
           </p>
@@ -235,7 +247,11 @@ export function NodeDetails({
       <p className="graph-details__kind">
         <ShapeIcon kind={node.kind} status={nodeStatusClass(node)} /> {labels.kind(node.kind)}
       </p>
-      <h2 className="graph-details__title" ref={headingRef} tabIndex={-1}>
+      <h2
+        className={`graph-details__title${node.status === "deprecated" ? " is-deprecated" : ""}`}
+        ref={headingRef}
+        tabIndex={-1}
+      >
         {node.label}
       </h2>
       <dl className="graph-details__facts">
@@ -268,27 +284,27 @@ export function NodeDetails({
       </dl>
       <div className="graph-details__actions">
         {isDocument ? (
-          <Link to={`/documents/${encodeURIComponent(node.document_id ?? "")}`} className="button button--secondary">
+          <Link to={`/documents/${encodeURIComponent(node.document_id ?? "")}`} className={buttonClass("secondary", "sm")}>
             Открыть документ
           </Link>
         ) : null}
         {node.kind === "external_page" && inAppUrl ? (
-          <Link to={inAppUrl} className="button button--secondary">
+          <Link to={inAppUrl} className={buttonClass("secondary", "sm")}>
             Открыть страницу
           </Link>
         ) : null}
         {canExpand(node) && !isFocus ? (
-          <Link to={`/graph?focus=${encodeURIComponent(focusParam(node))}`} className="button button--secondary">
+          <Link to={`/graph?focus=${encodeURIComponent(focusParam(node))}`} className={buttonClass("secondary", "sm")}>
             Показать соседей
           </Link>
         ) : null}
         {isFocus && canLoadMore ? (
-          <button type="button" className="button button--secondary" onClick={onLoadMore} disabled={loadingMore}>
+          <button type="button" className={buttonClass("secondary", "sm")} onClick={onLoadMore} disabled={loadingMore}>
             {loadingMore ? "Загружаем соседей…" : "Показать соседей"}
           </button>
         ) : null}
         {isDocument ? (
-          <Link to={`/documents?query=${encodeURIComponent(node.document_id ?? "")}`} className="button button--quiet">
+          <Link to={`/documents?query=${encodeURIComponent(node.document_id ?? "")}`} className={buttonClass("quiet", "sm")}>
             Открыть в списке
           </Link>
         ) : null}
@@ -424,7 +440,7 @@ export function GraphListView({ nodes, edges, labels, center, selectedId, matche
           ))}
         </ul>
         {edges.length > shownEdges.length && !allEdges ? (
-          <button type="button" className="button button--secondary graph-list__more" onClick={() => setAllEdges(true)}>
+          <button type="button" className={buttonClass("secondary", "sm", "graph-list__more")} onClick={() => setAllEdges(true)}>
             Показать все связи ({Math.min(edges.length, EDGE_LIST_LIMIT)})
           </button>
         ) : null}
@@ -438,71 +454,72 @@ export function GraphListView({ nodes, edges, labels, center, selectedId, matche
   );
 }
 
-// --- legend ---------------------------------------------------------------------------------------------
+// --- legend: a collapsible card over the canvas, only what is on the map -------------------------------------
 
-export function GraphLegendView({ labels, kinds, relations }: { labels: GraphLabels; kinds: string[]; relations: string[] }) {
+const LEGEND_PREFERENCE = "skh.graph.legend";
+const STATUS_HINT: Partial<Record<DocStatus, string>> = {
+  draft: "пунктир",
+  in_review: "точки",
+  deprecated: "бледный",
+};
+
+export interface GraphLegendProps {
+  labels: GraphLabels;
+  /** Node kinds present on the map. */
+  kinds: string[];
+  /** Statuses present on the map that change a node's look (draft, in review, deprecated). */
+  statuses: DocStatus[];
+  /** Open until the user collapses it (the choice is remembered in this browser). */
+  defaultOpen: boolean;
+}
+
+export function GraphLegendView({ labels, kinds, statuses, defaultOpen }: GraphLegendProps) {
+  const [open, setOpen] = useState(() => {
+    const saved = readPreference(LEGEND_PREFERENCE);
+    return saved === null ? defaultOpen : saved === "open";
+  });
+  const bodyId = useId();
+  const toggle = () => {
+    setOpen(!open);
+    writePreference(LEGEND_PREFERENCE, open ? "closed" : "open");
+  };
   return (
-    <section className="graph-legend" aria-labelledby="graph-legend-title">
-      <h2 id="graph-legend-title">Условные обозначения</h2>
-      <div className="graph-legend__cols">
-        <div>
-          <h3>Узлы — форма по типу</h3>
-          <ul className="graph-legend__list">
-            {KIND_ORDER.filter((k) => kinds.includes(k)).map((kind) => (
-              <li key={kind}>
-                <ShapeIcon
-                  kind={kind}
-                  status={kind === "external_page" ? "external" : kind === "query_context" ? "query" : "neutral"}
-                />
-                <span>{labels.kind(kind)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h3>Связи — линия по происхождению</h3>
-          <ul className="graph-legend__list">
-            {ORIGIN_ORDER.map((origin) => (
-              <li key={origin}>
-                <EdgeSample unconfirmed={origin === "query_trace" || origin === "external_discovery" || origin === "ai_suggestion"} />
-                <span>{labels.origin(origin)}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="graph-legend__note">
-            Сплошная линия — подтверждённая связь, пунктир — временная или не подтверждённая. Стрелка направлена от
-            документа, который объявил связь.
-          </p>
-          <p className="graph-legend__note">Типы связей: {relations.map((r) => labels.relation(r)).join(", ")}.</p>
-        </div>
-        <div>
-          <h3>Статус — контур узла</h3>
-          <ul className="graph-legend__list">
-            {STATUS_ORDER.map((status) => (
-              <li key={status}>
-                <ShapeIcon kind="document" status={status} />
-                <span>
-                  {STATUS_LABEL[status]}
-                  <span className="muted">
-                    {status === "approved"
-                      ? " — сплошной контур"
-                      : status === "in_review"
-                        ? " — точечный контур"
-                        : status === "draft"
-                          ? " — штриховой контур"
-                          : " — серый, подпись зачёркнута"}
-                  </span>
-                </span>
-              </li>
-            ))}
-            <li>
-              <ShapeIcon kind="external_page" status="external" />
+    <section className={`graph-legend${open ? " is-open" : ""}`} aria-labelledby={`${bodyId}-title`}>
+      <h2 className="graph-legend__title" id={`${bodyId}-title`}>
+        <button type="button" className="graph-legend__toggle" aria-expanded={open} aria-controls={bodyId} onClick={toggle}>
+          <Icon name="chevron" size={14} className="graph-legend__chevron" />
+          Условные обозначения
+        </button>
+      </h2>
+      <div id={bodyId} className="graph-legend__body" hidden={!open}>
+        <ul className="graph-legend__list">
+          {KIND_ORDER.filter((k) => kinds.includes(k)).map((kind) => (
+            <li key={kind}>
+              <ShapeIcon kind={kind} status={LEGEND_STATUS[kind] ?? "none"} />
+              <span>{labels.kind(kind)}</span>
+            </li>
+          ))}
+          {STATUS_ORDER.filter((s) => statuses.includes(s) && STATUS_HINT[s]).map((status) => (
+            <li key={status}>
+              <ShapeIcon kind="document" status={status} />
               <span>
-                Внешняя страница<span className="muted"> — статус не подтверждён, хранится временно</span>
+                {STATUS_LABEL[status]}
+                <span className="muted"> — {STATUS_HINT[status]}</span>
               </span>
             </li>
-          </ul>
-        </div>
+          ))}
+        </ul>
+        <ul className="graph-legend__list">
+          <li>
+            <EdgeSample unconfirmed={false} />
+            <span>Подтверждённая связь</span>
+          </li>
+          <li>
+            <EdgeSample unconfirmed />
+            <span>Временная или не подтверждённая</span>
+          </li>
+        </ul>
+        <p className="graph-legend__note">Стрелка — от документа, который объявил связь.</p>
       </div>
     </section>
   );

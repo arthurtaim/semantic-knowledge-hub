@@ -117,8 +117,14 @@ describe("Knowledge graph", () => {
     const calls = mockApi(routes([{ path: "/api/graph/overview?limit=150", body: overview }]));
     renderRoutes("/graph", GRAPH);
     await screen.findByRole("group", { name: /Схема графа: 3 узла, 2 связи/ });
+    expect(screen.getByText("3 узла, 2 связи")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Карта знаний", level: 1 })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("radio", { name: "Списком" }));
+    // «Списком» is a toggle: the map and the list are two views of the same graph.
+    const listToggle = screen.getByRole("button", { name: "Списком" });
+    expect(listToggle).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(listToggle);
+    expect(listToggle).toHaveAttribute("aria-pressed", "true");
     const nodes = screen.getByRole("heading", { name: "Узлы (3)" }).closest("section") as HTMLElement;
     expect(within(nodes).getByText("DEMO-INT-002")).toBeInTheDocument();
     const edges = screen.getByRole("heading", { name: "Связи (2)" }).closest("section") as HTMLElement;
@@ -185,8 +191,11 @@ describe("Knowledge graph", () => {
     );
     renderRoutes("/graph", GRAPH);
     await screen.findByRole("group", { name: /Схема графа/ });
-    await userEvent.selectOptions(screen.getByLabelText("Тип узла"), "integration");
+    // Filters are chips that open a menu of choices.
+    await userEvent.click(screen.getByRole("button", { name: "Тип узла: все" }));
+    await userEvent.click(screen.getByRole("menuitemradio", { name: "Интеграция" }));
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/graph?kind=integration"));
+    expect(screen.getByRole("button", { name: "Тип узла: Интеграция" })).toBeInTheDocument();
     expect(await screen.findByText("Связей между показанными узлами нет — измените фильтр.")).toBeInTheDocument();
     expect(calls.some((c) => c.url === "/api/graph/overview?limit=150&kind=integration")).toBe(true);
   });
@@ -229,7 +238,7 @@ describe("Knowledge graph", () => {
     expect(within(panel()).queryByRole("link", { name: "Показать соседей" })).toBeNull();
 
     await userEvent.click(within(panel()).getByRole("button", { name: "Показать соседей" }));
-    await userEvent.click(screen.getByRole("radio", { name: "Списком" }));
+    await userEvent.click(screen.getByRole("button", { name: "Списком" }));
     const nodes = (await screen.findByRole("heading", { name: "Узлы (3)" })).closest("section") as HTMLElement;
     expect(within(nodes).getByRole("button", { name: "Интеграционные ошибки и retry" })).toBeInTheDocument();
     expect(calls.some((c) => c.url === `${NEIGHBOURS}?depth=1&limit=100&cursor=1`)).toBe(true);
