@@ -9,8 +9,7 @@ M4 Integration Readiness и M5 (публикация в Confluence Data Center).
 > С реальными корпоративными системами соединений не было. Приложение **не готово к промышленному
 > использованию** — см. раздел 11.
 
-Код: ветка `feature/m4-m5-knowledge-workflow` (локальные коммиты, в удалённый репозиторий не отправлялись;
-`main` не менялся).
+Код: ветка `main` (с 2026-11-24 все feature-ветки слиты в `main` и удалены).
 
 ---
 
@@ -28,7 +27,7 @@ M4 Integration Readiness и M5 (публикация в Confluence Data Center).
 | Режимы запуска и защита от небезопасной конфигурации | Готово, проверено локально |
 | SSO, RBAC, пользовательские права GitLab/Confluence | **Не реализовано** (точки авторизации подготовлены) |
 | Проверка на реальных GitLab и Confluence | **Не проводилась** |
-| Экспериментальный AI-провайдер Claude Code CLI (личный тест) | Реализован в ветке `feature/claude-cli-personal-test`, см. §3.7 и `docs/CLAUDE_CODE_CLI_INTEGRATION.md` |
+| Экспериментальный AI-провайдер Claude Code CLI (личный тест) | Реализован (в `main`), см. §3.7 и `docs/CLAUDE_CODE_CLI_INTEGRATION.md` |
 
 ---
 
@@ -457,6 +456,7 @@ GitLab и не Confluence: они живут только в тестах и в 
 | Документация | Процессы, архитектура публикации, runbook, готовность к интеграции | `b160026` |
 
 Ветка M0–M4.5 — `feature/initial-mvp`; M4.6–M5 — `feature/m4-m5-knowledge-workflow`, ответвлена от неё.
+С 2026-11-24 вся история (включая Claude CLI, M5.6.2, M5.6.3 и UI phase 4) слита в `main`, feature-ветки удалены.
 
 ---
 

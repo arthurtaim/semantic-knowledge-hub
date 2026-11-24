@@ -196,7 +196,7 @@ SKH_LIVE_TESTS=1 SKH_CLAUDE_LIVE_URL=http://127.0.0.1:5180 \
 **Обновление и откат.**
 
 ```bash
-cd /opt/semantic-kb-claude-test/app && deploy/claude-test/deploy.sh            # последняя версия ветки
+cd /opt/semantic-kb-claude-test/app && deploy/claude-test/deploy.sh            # последняя версия main
 deploy/claude-test/deploy.sh <commit-sha>                                        # конкретная версия
 deploy/claude-test/rollback.sh                                                   # предыдущая развёрнутая версия
 ```

@@ -3,11 +3,11 @@
 # Run ON THE SERVER as root. Idempotent. Touches only /opt/semantic-kb-claude-test and the compose project
 # `semantic-kb-claude-test`; other compose projects, containers, networks and firewall rules are not touched.
 #
-#   ROOT=/opt/semantic-kb-claude-test BRANCH=feature/claude-cli-personal-test ./deploy.sh [<commit-or-branch>]
+#   ROOT=/opt/semantic-kb-claude-test [BRANCH=main] ./deploy.sh [<commit-or-branch>]
 set -euo pipefail
 
 ROOT=${ROOT:-/opt/semantic-kb-claude-test}
-BRANCH=${BRANCH:-feature/claude-cli-personal-test}
+BRANCH=${BRANCH:-main}
 REPO_URL=${REPO_URL:-git@github.com:arthurtaim/semantic-knowledge-hub.git}
 DEPLOY_KEY=${DEPLOY_KEY:-$ROOT/deploy_key}       # read-only GitHub deploy key for this repository only
 TARGET=${1:-origin/$BRANCH}
