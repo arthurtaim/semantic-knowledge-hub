@@ -56,6 +56,8 @@ interface BranchListProps {
   onOrder?: (order: ListOrder) => void;
   /** At the end of the header instead of the order menu (a search: «Сбросить поиск»). */
   action?: ReactNode;
+  /** At the start of the header (below 960 px: «Разделы», which opens the tree). */
+  lead?: ReactNode;
   /** Show a row in the preview (click, Space). */
   onPreview: (id: string) => void;
   /** A click opens the document instead of previewing it (phones). */
@@ -80,6 +82,7 @@ export function BranchList({
   order,
   onOrder,
   action,
+  lead,
   onPreview,
   openOnClick = false,
   before,
@@ -178,6 +181,7 @@ export function BranchList({
   return (
     <section className="docs-branch" aria-labelledby={`${idBase}-title`} aria-busy={busy}>
       <div className="docs-branch__head">
+        {lead ? <span className="docs-branch__lead">{lead}</span> : null}
         {parentLabel ? (
           <>
             <span className="docs-branch__parent">{parentLabel}</span>

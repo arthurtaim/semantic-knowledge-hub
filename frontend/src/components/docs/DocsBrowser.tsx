@@ -13,7 +13,17 @@ import {
   type ListOrder,
   type TreeIndex,
 } from "../../lib/docTree";
-import { askAboutResults, DOC_PARAM, NODE_PARAM, ORDER_PARAM, queryOf, searchChanges, withParams } from "../../lib/docsView";
+import {
+  askAboutResults,
+  DOC_PARAM,
+  NODE_PARAM,
+  ORDER_PARAM,
+  queryOf,
+  searchChanges,
+  SINGLE_SCREEN,
+  singleShowsList,
+  withParams,
+} from "../../lib/docsView";
 import { pluralRu } from "../../lib/labels";
 import { useSession } from "../../lib/session";
 import { useAsync } from "../../lib/useAsync";
@@ -22,7 +32,6 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 import { EmptyState, ErrorState, Loading, Notice } from "../Feedback";
 import { SidePanel, useSidePanelMode } from "../shell/SidePanel";
 import { Button, buttonClass, IconButton } from "../ui/Button";
-import { Icon } from "../ui/Icon";
 import { BranchList, type BranchRowData } from "./BranchList";
 import { DocPreview } from "./DocPreview";
 import { DocTree } from "./DocTree";
@@ -32,15 +41,17 @@ import { DocTree } from "./DocTree";
  * the documents of the chosen branch (or the results of the toolbar search over the whole base) and the preview
  * of the chosen document. Node, document, order and search live in the URL (lib/docsView.ts).
  *
- * Widths (the next slice refines them): from 1280 px three columns; below, the preview is a sheet over the page
- * once a document is chosen; below 960 px one screen at a time — the tree, then the list of the chosen branch
- * (a document opens its page).
+ * Widths (spec §1 «Ширина и телефон»): from 1280 px three columns; below, the preview slides in as a sheet from the
+ * right once a document is chosen (tree and list stay); below 960 px the tree too is a sheet, from the left, opened
+ * by «Разделы» at the head of the list; on a phone one screen at a time — the tree, then the list of the chosen
+ * branch (a document opens its page), «Назад» in the toolbar (ExplorerPage).
  */
 
 /** The preview is a column from this width, a sheet below it. */
 const PREVIEW_SHEET = "(max-width: 1279.98px)";
-/** One screen at a time below this width. */
-const SINGLE_SCREEN = "(max-width: 959.98px)";
+/** The tree is a column from this width, a sheet from the left below it. */
+const TREE_SHEET = "(max-width: 959.98px)";
+
 /** The API's page size: a search shows this many results at a time («Показать ещё» for more). */
 const SEARCH_PAGE = 100;
 
@@ -122,11 +133,14 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
   const doc = params.get(DOC_PARAM);
   const order = parseOrder(params.get(ORDER_PARAM));
   const sheetPreview = useMediaQuery(PREVIEW_SHEET);
+  const sheetTree = useMediaQuery(TREE_SHEET);
   const single = useMediaQuery(SINGLE_SCREEN);
   const panelMode = useSidePanelMode(true);
   const aiOn = canAsk(session?.features.ai_mode);
   // Below 1280 px the preview is a sheet the reader opens by choosing a document (never by itself on arrival).
   const [sheetFor, setSheetFor] = useState<string | null>(null);
+  // Below 960 px the tree is a sheet opened by «Разделы».
+  const [treeOpen, setTreeOpen] = useState(false);
   const search = useSearch(query);
 
   function update(changes: Record<string, string | null>) {
@@ -135,6 +149,9 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
 
   function selectNode(key: string) {
     update({ [NODE_PARAM]: key });
+    // The tree sheet stays while the reader opens a section with groups; a branch to read closes it.
+    const chosen = index?.nodes.get(key);
+    if (sheetTree && !(chosen && chosen.level === 1 && chosen.groups.length > 0)) setTreeOpen(false);
   }
 
   /** A document from the tree: the list follows it to its branch (unless it shows all or those needing attention). */
@@ -146,6 +163,7 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
     const holder = index?.nodeOfDoc.get(id);
     const keep = node === ALL_NODE || node === ATTENTION_NODE || query;
     update({ [DOC_PARAM]: id, ...(keep || !holder ? {} : { [NODE_PARAM]: holder }) });
+    setTreeOpen(false);
     if (sheetPreview) setSheetFor(id);
   }
 
@@ -153,6 +171,13 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
     update({ [DOC_PARAM]: id });
     if (sheetPreview) setSheetFor(id);
   }
+
+  const treeButton =
+    sheetTree && !single ? (
+      <Button size="sm" icon="sidebar" aria-expanded={treeOpen} aria-controls={`${sheetId}-tree`} onClick={() => setTreeOpen(true)}>
+        Разделы
+      </Button>
+    ) : null;
 
   const nodeData = index?.nodes.get(node);
   const parent = nodeData?.parent ? index?.nodes.get(nodeData.parent) : undefined;
@@ -172,6 +197,7 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
         parentLabel={null}
         title={`Результаты: «${query}»`}
         count={total}
+        lead={treeButton}
         rows={rows}
         selected={doc}
         action={<IconButton icon="close" label="Сбросить поиск" size="sm" onClick={() => update(searchChanges(""))} />}
@@ -223,6 +249,7 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
         parentLabel={parent?.label ?? null}
         title={nodeData.label}
         count={nodeData.count}
+        lead={treeButton}
         rows={branchRows(index, node, order)}
         selected={doc}
         order={order}
@@ -244,25 +271,12 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
     <Loading />
   );
 
-  // One screen at a time: the tree until a branch (or a search) is chosen, then its list.
+  // One screen at a time: the tree until a branch (or a search) is chosen, then its list («Назад» in the toolbar).
   if (single) {
-    const showList = Boolean(query) || params.has(NODE_PARAM);
     return (
       <div className="docs-browser docs-browser--single">
         {notice}
-        {showList ? (
-          <>
-            {!query ? (
-              <Button variant="quiet" size="sm" className="docs-browser__back" onClick={() => update({ [NODE_PARAM]: null, [DOC_PARAM]: null })}>
-                <Icon name="chevron" size={14} className="docs-browser__back-icon" />
-                Разделы
-              </Button>
-            ) : null}
-            {middle}
-          </>
-        ) : (
-          treeColumn
-        )}
+        {singleShowsList(params) ? middle : treeColumn}
       </div>
     );
   }
@@ -274,10 +288,10 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
   );
 
   return (
-    <div className={sheetPreview ? "docs-browser docs-browser--two" : "docs-browser"}>
+    <div className={["docs-browser", sheetPreview ? "docs-browser--two" : "", sheetTree ? "docs-browser--one" : ""].filter(Boolean).join(" ")}>
       {notice ? <div className="docs-browser__notice">{notice}</div> : null}
       <div className="docs-browser__columns">
-        <div className="docs-browser__tree">{treeColumn}</div>
+        {sheetTree ? null : <div className="docs-browser__tree">{treeColumn}</div>}
         <div className="docs-browser__list">{middle}</div>
         {sheetPreview ? null : (
           <section className="docs-browser__preview" aria-label="Просмотр документа">
@@ -285,6 +299,11 @@ export function DocsBrowser({ tree, notice }: { tree: DocumentTreeState; notice?
           </section>
         )}
       </div>
+      {sheetTree && treeOpen ? (
+        <SidePanel id={`${sheetId}-tree`} title="Разделы" mode={panelMode} side="left" className="side-panel--tree" onClose={() => setTreeOpen(false)}>
+          {treeColumn}
+        </SidePanel>
+      ) : null}
       {sheetPreview && doc && sheetFor === doc ? (
         <SidePanel id={`${sheetId}-preview`} title="Просмотр документа" mode={panelMode} onClose={() => setSheetFor(null)}>
           <DocPreview id={doc} index={index} canAskAssistant={aiOn} />

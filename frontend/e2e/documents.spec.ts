@@ -196,8 +196,67 @@ test("@mobile V2-04 phone: the tree, then the branch, then the document page", a
   await list.getByRole("link", { name: "CRM: карточки и идентификаторы" }).click();
   await expect(page).toHaveURL(/\/documents\/DEMO-SRC-004$/);
   await page.goBack();
-  await page.getByRole("button", { name: "Разделы" }).click();
+  // slice 7: «Назад» is in the toolbar
+  await page.locator(".page-toolbar").getByRole("button", { name: "Назад" }).click();
+  await expect(page).toHaveURL(/\/documents\?view=list$/);
   await expect(page.getByRole("tree")).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+test("@mobile V2-07 phone: «Обзор» lists the sections with chips, «Таблица» shows cards; no sideways scroll", async ({ page }) => {
+  const problems = watch(page);
+  await fresh(page);
+  const api = await (await page.request.get("/api/documents/tree")).json();
+  await page.goto("/documents?view=overview");
+  await expect(page.getByRole("table")).toHaveCount(0);
+  const sections = page.getByRole("list", { name: "Документы по разделам и состояниям" });
+  await expect(sections).toBeVisible();
+  const drafts = countOf(api, "integration", (d) => d.status === "draft");
+  const chip = sections.getByRole("link", { name: new RegExp(`^Интеграции: ${drafts} черновик`) });
+  await expect(chip).toHaveText(`Черновики: ${drafts}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  await chip.click();
+  await expect(page).toHaveURL(/view=table&type=integration&status=draft$/);
+  await expect(page.locator(".docs-card")).toHaveCount(drafts);
+  await expect(page.getByRole("table")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  // the filters are a sheet
+  await page.getByRole("button", { name: /^Фильтры \(2\)$/ }).click();
+  const sheet = page.getByRole("dialog", { name: "Фильтры" });
+  await sheet.getByRole("button", { name: /Только требующие внимания/ }).click();
+  await page.keyboard.press("Escape");
+  await expect(page).toHaveURL(/attention=1/);
+  await expect(page.locator(".docs-card")).toHaveCount(countOf(api, "integration", (d) => d.status === "draft" && d.attention));
+  expect(problems).toEqual([]);
+});
+
+test("V2-08 narrower screens: the preview is a sheet below 1280 px, the tree a sheet from the left below 960 px", async ({ page }) => {
+  const problems = watch(page);
+  await fresh(page);
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await page.goto("/documents?view=list&node=integration%2Faris");
+  const list = page.getByRole("region", { name: "Интеграции / ARIS" });
+  await expect(page.getByRole("tree")).toBeVisible();
+  await list.getByRole("link", { name: "ARIS → Catalog: обзор потока (демо)" }).click();
+  const preview = page.getByRole("dialog", { name: "Просмотр документа" });
+  await expect(preview.getByRole("article", { name: "ARIS → Catalog: обзор потока (демо)" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+
+  await page.setViewportSize({ width: 900, height: 800 });
+  await expect(page.getByRole("tree")).toHaveCount(0);
+  const open = page.getByRole("button", { name: "Разделы" });
+  await open.click();
+  const sheet = page.getByRole("dialog", { name: "Разделы" });
+  await expect(sheet.getByRole("tree")).toBeVisible();
+  // from the left edge (once its slide-in has finished)
+  await expect.poll(async () => Math.round((await sheet.boundingBox())?.x ?? -1)).toBe(0);
+  expect((await sheet.boundingBox())?.width ?? 900).toBeLessThan(450);
+  await sheet.getByRole("treeitem", { name: /^CATIA, / }).locator(".doc-tree__row").first().click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Интеграции / CATIA" })).toBeVisible();
+  await expect(open).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  expect(problems).toEqual([]);
 });

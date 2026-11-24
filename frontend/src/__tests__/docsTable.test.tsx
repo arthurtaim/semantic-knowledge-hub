@@ -19,7 +19,7 @@ import { forgetDocumentTree } from "../lib/useDocumentTree";
 import { ExplorerPage } from "../pages/ExplorerPage";
 import demo from "./docsTreeDemo.json";
 import { facets } from "./fixtures";
-import { memoryStorage, mockApi, renderRoutes } from "./helpers";
+import { memoryStorage, mockApi, mockViewport, renderRoutes } from "./helpers";
 
 /*
  * «Документы» v2, slice 6 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §3, design docs-04): «Таблица» on the synthetic
@@ -308,6 +308,19 @@ describe("Таблица: grouping, columns, keyboard", () => {
     expect(within(table()).getAllByRole("columnheader")).toHaveLength(6);
   });
 
+  it("below 1280 px «Системы» starts hidden until the reader chooses the columns", async () => {
+    mockViewport(1100);
+    renderTable();
+    await screen.findByRole("table");
+    expect(within(table()).queryByRole("columnheader", { name: "Системы" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Колонки" }));
+    const systems = within(screen.getByRole("menu", { name: "Колонки" })).getByRole("menuitemcheckbox", { name: "Системы" });
+    expect(systems).toHaveAttribute("aria-checked", "false");
+    await userEvent.click(systems);
+    expect(within(table()).getByRole("columnheader", { name: "Системы" })).toBeInTheDocument();
+    expect(localStorage.getItem("skh.documents.columns")).toBe("[]"); // the choice holds at any width
+  });
+
   it("one tab stop for the rows; ↑↓ Home End move between rows; Enter opens the document", async () => {
     renderTable("/documents?view=table&attention=1");
     await screen.findByRole("table");
@@ -323,6 +336,24 @@ describe("Таблица: grouping, columns, keyboard", () => {
     expect(links[1]).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     await waitFor(() => expect(location()).toBe(links[1]?.getAttribute("href")));
+  });
+
+  it("works from the keyboard: a header sorts with Enter, a filter menu opens with ↓ and toggles with Space", async () => {
+    renderTable();
+    await screen.findByRole("table");
+    const sortLinks = within(header("Связи")).getByRole("button");
+    sortLinks.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(header("Связи")).toHaveAttribute("aria-sort", "ascending");
+    const section = screen.getByRole("button", { name: "Раздел: все" });
+    section.focus();
+    await userEvent.keyboard("{ArrowDown}");
+    const first = within(screen.getByRole("menu", { name: "Раздел" })).getAllByRole("menuitemcheckbox")[0] as HTMLElement;
+    expect(first).toHaveFocus();
+    await userEvent.keyboard(" ");
+    expect(location()).toBe("/documents?view=table&sort=links&type=overview");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Раздел: Продукт" })).toHaveFocus();
   });
 
   it("restores everything from a shared link", async () => {

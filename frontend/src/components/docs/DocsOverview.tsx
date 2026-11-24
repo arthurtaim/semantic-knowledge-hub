@@ -18,11 +18,10 @@ import {
 } from "../../lib/docsOverview";
 import { tableHref } from "../../lib/docsTable";
 import type { TreeIndex } from "../../lib/docTree";
-import { pluralRu } from "../../lib/labels";
+import { pluralRu, STATUS_LABEL } from "../../lib/labels";
 import type { DocumentTreeState } from "../../lib/useDocumentTree";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { ErrorState, Loading } from "../Feedback";
-import { StatusMark } from "../ui/StatusMark";
 
 /*
  * «Обзор» of «Документы» v2 (docs/ui-v2/documents/specs/DOCUMENTS_V2.md §2, design docs-03): the totals, the matrix
@@ -232,11 +231,8 @@ function Todo({ index, groups }: { index: TreeIndex; groups: TodoGroup[] }) {
                     <Link to={docHref(id)} className="docs-todo__row" title={entry.title}>
                       <TodoShape group={group.key} status={entry.status} />
                       <span className="docs-todo__name">{entry.title}</span>
-                      {group.key === "drafts" ? (
-                        <StatusMark status={entry.status} className="docs-todo__note docs-todo__status" />
-                      ) : (
-                        <span className="docs-todo__note">{todoNote(index, group.key, id)}</span>
-                      )}
+                      {/* drafts and deprecated: the status in words next to its shape (not by colour alone) */}
+                      <span className="docs-todo__note">{group.key === "drafts" ? STATUS_LABEL[entry.status] : todoNote(index, group.key, id)}</span>
                     </Link>
                   </li>
                 );

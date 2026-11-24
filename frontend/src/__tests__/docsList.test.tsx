@@ -289,26 +289,68 @@ describe("Список: tree, list and preview together", () => {
     expect(within(tree).getByRole("treeitem", { name: "ARIS → Catalog: обзор потока (демо)" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("below 1280 px the preview is a sheet opened by a choice; below 960 px a document opens its page", async () => {
+  // Slice 7 (spec §1 «Ширина и телефон»): below 960 px the tree is a sheet from the left (it was one screen at a time
+  // there); one screen at a time is a phone's (< 720 px), and its «Назад» moved from the content to the toolbar.
+  it("below 1280 px the preview is a sheet opened by a choice", async () => {
     mockViewport(1100);
     routes();
-    const { unmount } = renderList("/documents?view=list&node=integration/aris&doc=DEMO-INT-001");
+    renderList("/documents?view=list&node=integration/aris&doc=DEMO-INT-001");
     await screen.findByRole("region", { name: "Интеграции / ARIS" });
+    expect(screen.getByRole("tree")).toBeInTheDocument(); // the tree and the list stay
+    expect(screen.queryByRole("article")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull(); // never opens by itself
     await userEvent.click(screen.getByRole("link", { name: "ARIS → Catalog: маппинг полей (демо)" }));
     const sheet = await screen.findByRole("dialog", { name: "Просмотр документа" });
+    expect(sheet).toHaveClass("side-panel--sheet");
+    expect(sheet).not.toHaveClass("side-panel--left");
     expect(within(sheet).getByRole("link", { name: "Открыть" })).toHaveAttribute("href", "/documents/DEMO-INT-002");
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).toBeNull();
-    unmount();
+  });
 
+  it("below 960 px the tree is a sheet from the left, opened by «Разделы»", async () => {
+    mockViewport(900);
+    routes();
+    renderList("/documents?view=list&node=integration/aris");
+    await screen.findByRole("region", { name: "Интеграции / ARIS" });
+    expect(screen.queryByRole("tree")).toBeNull();
+    const open = screen.getByRole("button", { name: "Разделы" });
+    expect(open).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(open);
+    const sheet = screen.getByRole("dialog", { name: "Разделы" });
+    expect(sheet).toHaveClass("side-panel--left");
+    expect(within(sheet).getByRole("button", { name: "Закрыть: Разделы" })).toHaveFocus();
+    // a section with groups opens in the sheet; a branch to read closes it and becomes the list
+    await userEvent.click(within(sheet).getByText("Стандарты"));
+    expect(screen.getByRole("dialog", { name: "Разделы" })).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByText("Шаблоны документов"));
+    expect(screen.queryByRole("dialog", { name: "Разделы" })).toBeNull();
+    expect(location()).toBe("/documents?view=list&node=standard%2Ftemplates");
+    expect(screen.getByRole("region", { name: "Стандарты / Шаблоны документов" })).toBeInTheDocument();
+    expect(open).toHaveFocus(); // focus returns to «Разделы»
+    // a document from the tree closes the tree and shows the preview sheet
+    await userEvent.click(open);
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Разделы" })).getByText("Шаблон: Integration Specification"));
+    expect(screen.queryByRole("dialog", { name: "Разделы" })).toBeNull();
+    expect(await screen.findByRole("dialog", { name: "Просмотр документа" })).toBeInTheDocument();
+    expect(location()).toBe("/documents?view=list&node=standard%2Ftemplates&doc=DEMO-PROC-006");
+  });
+
+  it("on a phone: the tree, then the branch («Назад» in the toolbar), and a document opens its page", async () => {
     mockViewport(390);
+    routes();
     renderList("/documents?view=list");
     const tree = await screen.findByRole("tree");
     expect(screen.queryByRole("region", { name: "Все документы" })).toBeNull(); // one screen: the tree first
+    expect(screen.queryByRole("button", { name: "Назад" })).toBeNull();
     await userEvent.click(within(tree).getByText("Системы-источники"));
     expect(await screen.findByRole("region", { name: "Системы-источники" })).toBeInTheDocument();
     expect(screen.queryByRole("tree")).toBeNull();
+    const back = screen.getByRole("button", { name: "Назад" });
+    expect(back.closest(".page-toolbar")).not.toBeNull();
+    await userEvent.click(back);
+    expect(location()).toBe("/documents?view=list");
+    await userEvent.click(within(await screen.findByRole("tree")).getByText("Системы-источники"));
     await userEvent.click(screen.getByRole("link", { name: "CRM: карточки и идентификаторы" }));
     expect(location()).toBe("/documents/DEMO-SRC-004");
   });

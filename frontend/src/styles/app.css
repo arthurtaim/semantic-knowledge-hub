@@ -3944,6 +3944,15 @@ dd a.button {
   animation: sheet-in-right var(--duration-panel) var(--ease-out);
 }
 
+/* A sheet from the left (the documents tree below 960 px). */
+.side-panel--sheet.side-panel--left {
+  right: auto;
+  left: 0;
+  border-left: 0;
+  border-right: 1px solid var(--line-popover);
+  animation-name: sheet-in-left;
+}
+
 .side-panel--bottom {
   left: 0;
   right: 0;
@@ -4330,6 +4339,17 @@ dd a.button {
   .selection-toolbar__item {
     padding: 0 6px;
     font-size: var(--fs-caption);
+  }
+}
+
+@keyframes sheet-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-1rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
@@ -9785,10 +9805,6 @@ a.source__title:hover {
   color: var(--text-tertiary);
 }
 
-.docs-todo__status {
-  gap: var(--space-1);
-}
-
 .docs-todo__more {
   display: inline-block;
   padding: var(--space-2) 0.625rem;
@@ -9997,7 +10013,7 @@ a.source__title:hover {
 
 .docs-table {
   width: 100%;
-  min-width: 50rem;
+  min-width: 46rem;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -10258,6 +10274,45 @@ a.source__title:hover {
   gap: var(--space-1) var(--space-3);
   font-size: var(--fs-small);
   color: var(--text-secondary);
+}
+
+/* Below 1280 px (a work area of about 850 px): tighter columns and «Системы» hidden until the reader shows it, so
+   «Название» keeps room; long owners and section names end with «…» and show in full in their tooltip. */
+@media (max-width: 1279.98px) {
+  .docs-table__col-type {
+    width: 8.9rem;
+  }
+
+  .docs-table__col-status {
+    width: 7rem;
+  }
+
+  .docs-table__col-owner {
+    width: 9.75rem;
+  }
+
+  .docs-table__col-systems {
+    width: 7rem;
+  }
+
+  .docs-table__col-reviewed {
+    width: 8.25rem;
+  }
+
+  .docs-table__col-links {
+    width: 3.6rem;
+  }
+
+  .docs-table__name-line {
+    gap: var(--space-2);
+  }
+
+  .docs-table__id {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 @media (max-width: 719.98px) {
@@ -10999,22 +11054,57 @@ a.source__title:hover {
 
 .docs-browser--single .docs-branch__head {
   position: static;
+  flex-wrap: wrap;
+  row-gap: 0;
   padding: 0 0 var(--space-2);
+}
+
+/* A phone: the branch's name keeps the first line, the order menu goes under it. */
+.docs-browser--single .docs-branch__order-menu {
+  order: 1;
+  flex: 1 0 100%;
+  margin-left: calc(-1 * var(--space-2));
 }
 
 .docs-browser--single .docs-list {
   padding: var(--space-2) 0;
 }
 
-.docs-browser__back {
-  margin: 0 0 var(--space-2) calc(-1 * var(--space-2));
+/* Below 960 px the tree is a sheet from the left («Разделы» at the head of the list); the list takes the width. */
+.docs-browser--one .docs-browser__list {
+  border-right: 0;
 }
 
-.docs-browser__back-icon {
+.side-panel--tree .side-panel__body {
+  padding: 0;
+}
+
+.side-panel--tree .doc-tree {
+  min-height: 100%;
+}
+
+.docs-branch__lead {
+  flex: none;
+  margin-right: var(--space-1);
+}
+
+/* A phone's «Назад» in the toolbar (one screen at a time): the chevron points back. */
+.page-toolbar__before {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-right: var(--space-1);
+}
+
+.docs-back .icon {
   transform: rotate(90deg);
 }
 
-@media (max-width: 959.98px) {
+.page-toolbar__before + .page-toolbar__title {
+  min-width: 0;
+}
+
+@media (max-width: 719.98px) {
   .docs--list {
     height: auto;
   }

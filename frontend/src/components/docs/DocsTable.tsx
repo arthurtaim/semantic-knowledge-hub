@@ -12,6 +12,7 @@ import {
   groupIds,
   LIST_FILTERS,
   matchesFilters,
+  NARROW_HIDDEN,
   nextSort,
   ownerOptions,
   parseGroup,
@@ -66,6 +67,8 @@ import { StatusMark } from "../ui/StatusMark";
 
 /** Phones: cards instead of the table, the filters in a sheet. */
 const PHONE = "(max-width: 719.98px)";
+/** Below this width «Системы» starts hidden (until the reader chooses the columns). */
+const NARROW = "(max-width: 1279.98px)";
 /** The API's page size, and how many pages a search or a tag may fill (500 documents, the table's limit). */
 const SERVER_PAGE = 100;
 const SERVER_PAGES = 5;
@@ -194,7 +197,10 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   const phone = useMediaQuery(PHONE);
   const sheetMode = useSidePanelMode(true);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [hidden, setHidden] = useState<Set<ColumnKey>>(readHiddenColumns);
+  const narrow = useMediaQuery(NARROW);
+  // The reader's choice of columns (null: never chosen — then the width decides).
+  const [chosen, setChosen] = useState<Set<ColumnKey> | null>(readHiddenColumns);
+  const hidden = chosen ?? new Set<ColumnKey>(narrow ? NARROW_HIDDEN : []);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [focusId, setFocusId] = useState<string | null>(null);
   const refs = useRef(new Map<string, HTMLAnchorElement>());
@@ -246,13 +252,11 @@ export function DocsTable({ tree, notice }: { tree: DocumentTreeState; notice?: 
   }
 
   function toggleColumn(key: ColumnKey) {
-    setHidden((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      rememberHiddenColumns(next);
-      return next;
-    });
+    const next = new Set(hidden);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    rememberHiddenColumns(next);
+    setChosen(next);
   }
 
   function toggleGroup(key: string) {
@@ -685,8 +689,14 @@ function Row({ id, entry, index, columns, mixedSources, tabStop, linkRef, onOpen
             </span>
           </td>
         );
-      case "type":
-        return <td key={key}>{index.nodes.get(entry.type)?.label ?? entry.type}</td>;
+      case "type": {
+        const section = index.nodes.get(entry.type)?.label ?? entry.type;
+        return (
+          <td key={key} title={section}>
+            {section}
+          </td>
+        );
+      }
       case "status":
         return (
           <td key={key}>

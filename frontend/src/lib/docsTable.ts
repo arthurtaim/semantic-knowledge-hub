@@ -278,19 +278,28 @@ export const TABLE_COLUMNS: readonly TableColumn[] = [
 
 export const COLUMNS_KEY = "skh.documents.columns";
 
-/** The columns hidden in this browser (storage may be unavailable: then every column shows). */
-export function readHiddenColumns(): Set<ColumnKey> {
+/** Below 1280 px «Системы» starts hidden (seven columns do not fit about 850 px); «Колонки» shows it again. */
+export const NARROW_HIDDEN: readonly ColumnKey[] = ["systems"];
+
+/**
+ * The columns the reader hid in this browser; null when they never chose (the width decides then). Storage may be
+ * unavailable: then nothing was chosen.
+ */
+export function readHiddenColumns(): Set<ColumnKey> | null {
   try {
-    const stored = JSON.parse(readPreference(COLUMNS_KEY) ?? "[]") as unknown;
+    const raw = readPreference(COLUMNS_KEY);
+    if (raw === null) return null;
+    const stored = JSON.parse(raw) as unknown;
     const hideable = TABLE_COLUMNS.filter((c) => c.hideable).map((c) => c.key as string);
     return new Set(Array.isArray(stored) ? (stored.filter((v) => typeof v === "string" && hideable.includes(v)) as ColumnKey[]) : []);
   } catch {
-    return new Set();
+    return null;
   }
 }
 
+/** Remembers the reader's choice, an empty one too (every column shown, whatever the width). */
 export function rememberHiddenColumns(hidden: Set<ColumnKey>): void {
-  writePreference(COLUMNS_KEY, hidden.size > 0 ? JSON.stringify([...hidden]) : null);
+  writePreference(COLUMNS_KEY, JSON.stringify([...hidden]));
 }
 
 // --- cells --------------------------------------------------------------------------------------------------------

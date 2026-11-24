@@ -87,3 +87,11 @@ export function askAboutResults(query: string, ids: string[]): string {
   const question = `Что говорят документы по запросу «${query.slice(0, 200)}»${top.length ? ` (${top.join(", ")})` : ""}? Ответь со ссылками на источники.`;
   return `/ask?q=${encodeURIComponent(question)}`;
 }
+
+/** Phones: «Список» shows one screen at a time — the tree, then the list of a branch or a search. */
+export const SINGLE_SCREEN = "(max-width: 719.98px)";
+
+/** On a phone: the list is the screen once a branch or a search is chosen; else the tree. */
+export function singleShowsList(params: URLSearchParams): boolean {
+  return Boolean(queryOf(params)) || params.has(NODE_PARAM);
+}

@@ -6,15 +6,19 @@ import { DocsOverview } from "../components/docs/DocsOverview";
 import { DocsTable } from "../components/docs/DocsTable";
 import { IndexStatusNotice } from "../components/IndexStatusNotice";
 import { PageToolbar } from "../components/shell/PageToolbar";
-import { buttonClass } from "../components/ui/Button";
+import { buttonClass, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { graphHref } from "../lib/catalog";
 import {
+  DOC_PARAM,
   DOCS_VIEWS,
+  NODE_PARAM,
   queryOf,
   rememberDocsView,
   resolveView,
   searchChanges,
+  SINGLE_SCREEN,
+  singleShowsList,
   VIEW_LABEL,
   VIEW_PARAM,
   withParams,
@@ -41,6 +45,7 @@ export function ExplorerPage() {
   const query = queryOf(params);
   const [draftQuery, setDraftQuery] = useState(query);
   const compact = useMediaQuery(COMPACT_TOOLBAR);
+  const single = useMediaQuery(SINGLE_SCREEN);
   const tree = useDocumentTree();
   const index = useAsync(() => api.indexStatus(), "index-status");
   const typing = useRef<number | undefined>(undefined);
@@ -79,6 +84,19 @@ export function ExplorerPage() {
   }
 
   const notice = index.data ? <IndexStatusNotice status={index.data} /> : null;
+
+  // A phone shows «Список» one screen at a time: «Назад» in the toolbar returns from a branch (or a search) to the tree.
+  const back =
+    view === "list" && single && singleShowsList(params) ? (
+      <IconButton
+        icon="chevron"
+        label="Назад"
+        title="Назад к разделам"
+        size="sm"
+        className="docs-back"
+        onClick={() => setParams(withParams(params, { [NODE_PARAM]: null, [DOC_PARAM]: null, ...searchChanges("") }))}
+      />
+    ) : null;
 
   const viewSwitch = (
     <div className="view-switch" role="group" aria-label="Вид раздела">
@@ -124,6 +142,7 @@ export function ExplorerPage() {
     <div className={`catalog docs docs--${view}`}>
       <PageToolbar
         title="Документы"
+        lead={back}
         meta={compact ? null : viewSwitch}
         actions={
           <>

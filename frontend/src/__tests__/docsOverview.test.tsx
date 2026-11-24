@@ -158,6 +158,18 @@ describe("Обзор: the matrix", () => {
     expect(screen.queryByRole("searchbox")).toBeNull();
   });
 
+  it("is reachable from the keyboard: the section, then its non-zero numbers in reading order; zero is no stop", async () => {
+    renderOverview();
+    const product = await screen.findByRole("link", { name: "Продукт" });
+    product.focus();
+    await userEvent.tab();
+    expect(screen.getByRole("link", { name: "Продукт: 1 документ" })).toHaveFocus();
+    await userEvent.tab();
+    expect(screen.getByRole("link", { name: "Продукт: 1 утверждённый документ из 1" })).toHaveFocus();
+    await userEvent.tab(); // the zero cells are text, not stops: on to the next section
+    expect(screen.getByRole("link", { name: "Архитектура" })).toHaveFocus();
+  });
+
   it("a cell opens «Таблица» with Раздел = the row and Состояние = the column", async () => {
     renderOverview();
     await userEvent.click(await screen.findByRole("link", { name: "Интеграции: 2 черновика" }));
