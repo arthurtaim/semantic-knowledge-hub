@@ -30,6 +30,7 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «почему <A> связан с <B>» | graph_inspect path |
 | «шаблон» | templates_inspect list (doc_type integration when «интеграц») |
 | «утвержд» + «aris» + «пробел» | composite: count + knowledge_search in one round, then a cited analysis |
+| «оформи» | count + knowledge_search «ARIS», then a MARKDOWN answer (heading, bold, list, code, table) with [F1]/[Cn] |
 | «черновик» | drafts_propose draft_from_prompt (proposal only) |
 | «метаданные <ID>» | catalog_query get_metadata |
 | «что такое rag» / «what is rag» | general knowledge, no tools |
@@ -244,6 +245,9 @@ def tool_script(r: Round) -> str:
             text += f" Документы описывают: «{quote}» [{cid}]."
         text += " Возможный пробел (вывод, не факт): нет утверждённых правил частоты выгрузки."
         return final(text, facts=[count["fact_id"]], citations=cites)
+
+    if "оформи" in q:
+        return _markdown_script(r)
 
     if "черновик" in q or "draft" in q:
         if not r.results:
@@ -485,6 +489,44 @@ def _real_data_script(r: Round, facts: list[dict[str, Any]]) -> str:
             f"[{fact['fact_id']}]; остальные такой пометки не имеют."
         )
     return final(text, facts=[fact["fact_id"]])
+
+
+def _markdown_script(r: Round) -> str:
+    """A rich Markdown final answer (UI Workstream A): verified markers in a paragraph, bold, a list item and table
+    cells; a marker inside inline code (a code sample, not a reference) and a literal [7] that is no citation."""
+    if not r.results:
+        return tool_request(
+            ("catalog_query", {"operation": "count"}),
+            ("knowledge_search", {"operation": "search", "query": "ARIS"}),
+        )
+    count = r.facts("catalog_query")[0]
+    found = [p for p in r.passages if p[0] in _searched_ids(r)]
+    if not found:
+        return final(
+            f"В доступном вам каталоге SKH — {count['count']} документов [{count['fact_id']}].",
+            facts=[count["fact_id"]],
+        )
+    cid, _meta, body = found[0]
+    quote = _verbatim(body)
+    f = count["fact_id"]
+    text = "\n".join(
+        [
+            "## Сводка по ARIS",
+            "",
+            f"**Что нашлось:** в доступном вам каталоге SKH — {count['count']} документов [{f}].",
+            "",
+            f"- Документы описывают: *«{quote}»* [{cid}]",
+            f"- Пример сущности: `BusinessProcess`; запись `[{cid}]` в коде — не ссылка",
+            "",
+            "| Что | Подтверждение |",
+            "| --- | --- |",
+            f"| Число документов | [{f}] |",
+            f"| Цитата | [{cid}] |",
+            "",
+            "Пометка [7] не проверена сервером и остаётся текстом.",
+        ]
+    )
+    return final(text, facts=[f], citations=[{"id": cid, "quote": quote}])
 
 
 def _searched_ids(r: Round) -> set[str]:

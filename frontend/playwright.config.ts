@@ -7,14 +7,15 @@ import { defineConfig, devices } from "@playwright/test";
  *   Confluence Data Center REST (:8931) from backend/tests/support, a backend in
  *   INTEGRATION_PROFILE=integration_mock (e2e/gitlab-stack.sh) and a Vite dev server proxying to it.
  *   Scenarios tagged @gitlab run there. Passing against doubles is NOT evidence about real systems.
- * - "scripted" / "scripted-mobile" (M5.7, only when E2E_SCRIPTED_URL is set): e2e/m57.spec.ts against a UI whose
+ * - "scripted" / "scripted-mobile" (M5.7, only when E2E_SCRIPTED_URL is set): e2e/m57.spec.ts and
+ *   e2e/answerMarkdown.spec.ts (Markdown answers with markers) against a UI whose
  *   backend talks to the SCRIPTED MODEL double (backend/tests/support/scripted_model.py, docs/AI_NATIVE_TOOLS.md
  *   «Scripted model»). The double stands in for a model that chooses tools; it is not evidence about a real model.
  *   Without the variable these specs are not selected at all, so the ordinary suites stay as they are.
  */
 const withGitLabStack = !process.env.E2E_SKIP_GITLAB_STACK;
 const scriptedUrl = process.env.E2E_SCRIPTED_URL;
-const SCRIPTED_SPECS = /m57\.spec\.ts$/;
+const SCRIPTED_SPECS = /(m57|answerMarkdown)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./e2e",

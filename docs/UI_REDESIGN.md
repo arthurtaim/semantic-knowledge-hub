@@ -900,3 +900,47 @@ Checks (this branch, real runs): backend `ruff`, `ruff format --check`, `mypy` c
 6 skipped; deterministic eval unchanged (cases=200 pass=191 R@1=0.9487 R@5=0.9744 MRR=0.9647 leaks=0). Frontend
 `tsc`, `eslint` clean; `vitest` 391 → 400 (34 files). E2E desktop + mobile (`E2E_DISABLED_URL` set): 61 passed,
 1 skipped (the Confluence scenario needs a connector), 6 of them new (`e2e/blankDocument.spec.ts`).
+
+## Ответ ассистента в Markdown (2026-11-24)
+
+Root cause of the literal `**…**`, backticks and list dashes in answers: `AnswerText` split the raw model text on blank
+lines and newlines and `MarkedLine` put the markers in with a regex — there was no Markdown parser (reproduced by
+`frontend/src/__tests__/answerMarkdown.test.tsx` against the previous code). The model's final answer is Markdown
+(`docs/AI_NATIVE_TOOLS.md` «Provider protocol»), so the UI now renders it as such.
+
+- **One pipeline** (`lib/answerMarkdown.ts`, `components/AnswerMarkdown.tsx`): `react-markdown` 10.1.0 + `remark-gfm`
+  4.0.1 (MIT, React ≥ 18, pinned exactly; `unified` / `remark-parse` declared for the copy path, no extra bundle).
+  Bold, italic, strikethrough (`~~x~~` only — «~100 документов» is not struck through), inline and fenced code,
+  headings, ordered / unordered / task lists, block quotes, links, GFM tables; the model's single line breaks stay line
+  breaks. Used for the final answer, the mock remainder lines and the preliminary text.
+- **Markers are AST nodes.** A remark plugin finds `[n]` and `[Fn]` in mdast TEXT nodes only — never in inline / fenced
+  code, link text, URLs or titles — and only for references the server verified (`citations[].ref`,
+  `system_facts[].ref`); anything else (`[7]`, `[F9]`, a raw `[C1]`) stays literal. `CitationMarker` and `FactMarker`
+  are unchanged (labels 1 / К1 / Ф1 / С1, cards on hover and focus, navigation). Grouped forms like `[1, 2]` are not
+  produced by the server and are not interpreted (they read as intervals in prose). The element components are
+  module-level, so a re-render never remounts a marker (its card and focus survive); labels and facts are memoised per
+  answer, so streaming another turn does not re-parse earlier answers.
+- **Untrusted text.** Raw HTML is shown as text (`<script>` is visible, never run; no `skipHtml`, no rehype-raw, no
+  `dangerouslySetInnerHTML`). Links keep only `http(s):`, `mailto:` and app paths (`/…`, never `//host`); app paths
+  navigate inside the app, external links open in a new tab with `rel="noopener noreferrer"`; any other link is its
+  text only. Images are never loaded (their alt text stands in: `[изображение: …]`). Link reference definitions are
+  switched off, so a model-written `[1]: https://…` cannot turn the marker `[1]` into its link; GFM footnotes stay text
+  (they would add page-wide ids).
+- **Streaming.** Preliminary text gets the same formatting with nothing interactive: no markers (`[C1]` stays text) and
+  links as plain text; the validated answer replaces it.
+- **«Копировать с источниками»** copies readable text built from the same tree — no Markdown syntax, `- ` / `1. ` items,
+  table rows `a | b`, code as written, markers relabelled `[1]` / `[К1]` / `[С1]` (code is not relabelled).
+- **Layout** (tokens only): prose keeps the 68ch measure, a table or code block may use the answer's full width and
+  scrolls sideways in its own frame (a named tab stop when it overflows); compact sizes in the document panel; Markdown
+  headings go below the answer's heading (`#` → h3 in the dialog, h4 in the panel). A marker inside a table frame is
+  not a containing block, so its card is not clipped by the frame.
+
+Bundle: JS 867.37 → 1 041.22 kB minified (gzip 259.59 → 313.24 kB, +53.65 kB); CSS 176.20 → 178.45 kB. Measured
+alone, `react-markdown` + `remark-gfm` are 166 kB minified / 50.6 kB gzip, of which the micromark parser with GFM is
+23.8 kB gzip. If the size matters later: a lazy chunk for the answer renderer, or rendering mdast directly without the
+hast layer.
+
+Checks: `vitest` 504 → 519 (15 new in `answerMarkdown.test.tsx`; no existing test changed); pytest
+`tests/test_answer_markdown_scripted.py` (the server keeps the Markdown and the verified markers, openai and claude
+transports); Playwright `e2e/answerMarkdown.spec.ts` on the scripted projects (desktop and phone; scripted-model
+scenario «оформи»).

@@ -375,6 +375,7 @@ a:hover {
 p a,
 .prose a,
 .answer__text a,
+.answer-md a,
 .notice a,
 .feedback a,
 .field-hint a,
@@ -386,6 +387,7 @@ dd a {
 p a:hover,
 .prose a:hover,
 .answer__text a:hover,
+.answer-md a:hover,
 .notice a:hover,
 .feedback a:hover,
 dd a:hover {
@@ -4238,8 +4240,32 @@ dd a.button {
   line-height: 1.3125rem;
 }
 
-.answer--compact .answer__text p {
+.answer--compact .answer-md > :is(p, ul, ol, blockquote, .answer-md__frame) {
   margin-bottom: var(--space-2);
+}
+
+.answer--compact .answer-md > :last-child {
+  margin-bottom: 0;
+}
+
+.answer--compact .answer-md .answer-md__h {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.answer--compact .answer-md table {
+  font-size: var(--fs-small);
+  line-height: var(--lh-small);
+}
+
+.answer--compact .answer-md th,
+.answer--compact .answer-md td {
+  padding: 2px var(--space-2);
+}
+
+.answer--compact .answer-md pre {
+  padding: var(--space-2) var(--space-3);
 }
 
 .answer--compact .demo-tag,
@@ -4676,7 +4702,6 @@ dd a.button {
 
 .answer-preliminary__text {
   font-family: var(--font-ui);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -4783,22 +4808,157 @@ dd a.button {
 }
 
 .answer__text {
-  max-width: 68ch;
   font-size: var(--fs-body);
   line-height: var(--lh-body);
   overflow-wrap: anywhere;
 }
 
-.answer__text p {
+/*
+ * Markdown of an answer (components/AnswerMarkdown.tsx), final and preliminary alike: prose keeps a reading
+ * measure, a table or code block may use the answer's full width and scrolls sideways in its own frame.
+ */
+.answer-md > * {
+  max-width: 68ch;
+}
+
+.answer-md > .answer-md__frame {
+  max-width: 100%;
+}
+
+.answer-md p,
+.answer-md ul,
+.answer-md ol,
+.answer-md blockquote,
+.answer-md .answer-md__frame {
   margin: 0 0 var(--space-3);
 }
 
-.answer__text p:last-child {
+.answer-md > :last-child,
+.answer-md li > :last-child {
   margin-bottom: 0;
 }
 
-.answer__line {
-  display: block;
+.answer-md .answer-md__h {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  font-weight: 600;
+  letter-spacing: var(--tracking-title);
+}
+
+.answer-md .answer-md__h--1 {
+  font-size: var(--fs-doc);
+  line-height: var(--lh-doc);
+}
+
+.answer-md .answer-md__h--3 {
+  color: var(--text-secondary);
+}
+
+.answer-md > .answer-md__h:first-child {
+  margin-top: 0;
+}
+
+.answer-md ul,
+.answer-md ol {
+  padding-left: 1.4rem;
+}
+
+.answer-md li + li,
+.answer-md li > ul,
+.answer-md li > ol {
+  margin-top: var(--space-1);
+}
+
+.answer-md li > p {
+  margin-bottom: var(--space-1);
+}
+
+.answer-md li::marker {
+  color: var(--text-secondary);
+}
+
+.answer-md blockquote {
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--line-strong);
+  color: var(--text-secondary);
+}
+
+.answer-md hr {
+  margin: var(--space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.answer-md :not(pre) > code {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-cite);
+  background: var(--bg-subtle);
+  overflow-wrap: anywhere;
+}
+
+.answer-md .answer-md__frame {
+  overflow-x: auto;
+}
+
+/*
+ * A marker inside a table or code frame: the frame scrolls, so it would clip the marker's card. The marker is not a
+ * containing block there — the card's containing block lies outside the frame, which therefore never clips it — and
+ * the card keeps its static position: under the marker's line, at the cell's start.
+ */
+.answer-md .answer-md__frame .cite-marker {
+  position: static;
+}
+
+.answer-md .answer-md__frame .cite-card {
+  top: auto;
+  left: auto;
+  margin-top: 6px;
+}
+
+.answer-md .answer-md__frame:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.answer-md pre {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+  line-height: 1.6;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+/* Cells break between words only: «anywhere» would let a column shrink to one letter instead of scrolling. */
+.answer-md table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+}
+
+.answer-md th,
+.answer-md td {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+
+.answer-md th {
+  background: var(--bg-subtle);
+  font-weight: 600;
+}
+
+/* An image of model text is never loaded: its alt text stands in, quietly. */
+.answer-md__image {
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 /* «Не найдено в документах»: amber, only for what the server reports (unmatched terms, never function words). */

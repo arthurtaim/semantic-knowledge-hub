@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import type { ApiError } from "../api/client";
 import type { AiMode, AskRequest, AskResponse, AskSkillRef, ExternalRetrievalSummary, SearchScope } from "../api/types";
@@ -5,6 +6,7 @@ import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeLabel, scopeOfSources
 import { pluralRu } from "../lib/labels";
 import { useSession } from "../lib/session";
 import { failedChecks, proposalCardId, toolChecksFailed } from "../lib/systemFacts";
+import { AnswerMarkdown } from "./AnswerMarkdown";
 import { AnswerActions, AnswerText, DemoAnswerText, factRefsOf, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
 import { AnswerSources } from "./AnswerSources";
 import { AskProposal } from "./AskProposal";
@@ -196,11 +198,12 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
   const question = request.question;
   const insufficient = answer.confidence === "insufficient_evidence";
   const traceId = answer.retrieval_trace_id ?? null;
-  const labels = citationLabels(answer.citations);
+  // Stable per answer: the Markdown of the text is parsed again only when the answer itself changes.
+  const labels = useMemo(() => citationLabels(answer.citations), [answer.citations]);
   const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
   const demoExcerpts = answer.mode === "mock" && !answer.proposal;
-  const facts = factRefsOf(answer);
-  const textProps = { citations: answer.citations, labels, turnNo, question, facts };
+  const facts = useMemo(() => factRefsOf(answer), [answer]);
+  const textProps = { citations: answer.citations, labels, turnNo, question, facts, compact };
   const showText = !insufficient || Boolean(answer.proposal);
   // M5.7: system tools were used and some did not work out — an answer that could not be confirmed says what could
   // not be checked instead of «В базе знаний нет ответа» with near matches (a metric is not a document).
@@ -430,7 +433,9 @@ export function TurnView({ turn, turnNo, onRetry, onRefine, onAskCorporate, comp
           <p className="answer-preliminary__label" id={`preliminary-title-${turnNo}`}>
             Предварительный текст модели — цитаты ещё не проверены
           </p>
-          <div className="answer-preliminary__text">{turn.preliminary}</div>
+          <div className="answer-preliminary__text answer-md">
+            <AnswerMarkdown text={turn.preliminary} markers={null} headingLevel={compact ? 3 : 2} />
+          </div>
         </section>
       ) : null}
 

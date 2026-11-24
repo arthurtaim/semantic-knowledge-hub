@@ -172,6 +172,8 @@ skipped by the client.
   (a text match is named as such), the definition, items as links (`app_path`), «Показаны первые N из M» when
   `truncated`, scope · generation · time. `[F1]` → an outlined marker «С1» (citations stay 1 / К1 / Ф1); it leads to
   its row, or — for a `drafts_propose` fact — to the existing proposal card (Accept/Reject unchanged).
+- The answer text is rendered as Markdown (`docs/UI_REDESIGN.md` «Ответ ассистента в Markdown»); `[n]` and `[F1]`
+  become markers only in Markdown text nodes and only for verified citations / facts — never inside code or links.
 - `general_knowledge` → a quiet tag «Общие знания, не данные SKH».
 - Failed steps: `unavailable` / `timeout` / `denied` / `not_found` / `error` are shown with their server message and
   their own wording; an unconfirmed answer of the tool loop says «Не удалось проверить данные системы», never «В базе
@@ -219,7 +221,8 @@ Point Vite at that backend (`SKH_BACKEND_URL=http://127.0.0.1:8021`). Useful que
 «Сколько документов по ARIS?» (13 tagged / 52 text), «Сколько документов в базе и сколько требуют внимания?» (83 / 12,
 as the documents tree), «Какие документы требуют внимания и почему?», «Сколько утверждённых документов об ARIS и где пробелы?»
 (9 + a verified quote), «Что такое RAG?» (general), «Покажи действующие шаблоны интеграции», «Сломанный формат: …»,
-«Неизвестный инструмент: …», «Бесконечный цикл: …», «Упади …»; answer quality: «Какая у нас модель данных?» (catalog list +
+«Неизвестный инструмент: …», «Бесконечный цикл: …», «Упади …», «Оформи сводку по ARIS в Markdown» (a Markdown answer
+with markers in a list and a table; `e2e/answerMarkdown.spec.ts`); answer quality: «Какая у нас модель данных?» (catalog list +
 search → a scoped overview), then «нам интересны демо-файлы» (searches the previous question's subject), «Это реальные
 данные банка?» (`facets` → `breakdown.provenance`).
 
