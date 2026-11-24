@@ -35,6 +35,7 @@ from app.domain.template_registry import TemplateRegistry
 from app.domain.templates import DEFAULT_TEMPLATES_DIR
 from app.services.ai_workflows import AiProposalStore, AiWorkflowService
 from app.services.assistant import AssistantService
+from app.services.attachments import AttachmentService, AttachmentStore
 from app.services.authoring import AuthoringService
 from app.services.discovery import DiscoveryStore
 from app.services.external import ExternalEvidenceService, ExternalLimits
@@ -46,6 +47,7 @@ from app.services.metadata import MetadataService
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
 from app.services.search import SearchService
+from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
 
 logger = logging.getLogger("skh.container")
@@ -80,6 +82,8 @@ class Container:
     metadata: MetadataService
     template_hub: TemplateHubService
     ai_workflows: AiWorkflowService
+    attachments: AttachmentService
+    skills: AssistantSkillService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
@@ -97,6 +101,7 @@ class Container:
         self.search_provider.close()
         self.proposal_store.close()
         self.publication_store.close()
+        self.attachments.close()
 
 
 def build_repository(settings: Settings) -> KnowledgeRepository:
@@ -357,6 +362,12 @@ def build_container(settings: Settings) -> Container:
         graph=graph_service,
         assistant=assistant_service,
     )
+    attachments = AttachmentService(
+        AttachmentStore(settings.app_state_file), ttl_seconds=settings.attachments_ttl_hours * 3600.0
+    )
+    skills = AssistantSkillService(
+        assistant=assistant_service, workflows=ai_workflows, attachments=attachments, knowledge=knowledge
+    )
     return Container(
         settings=settings,
         repository=repository,
@@ -389,6 +400,8 @@ def build_container(settings: Settings) -> Container:
         links=link_service,
         metadata=metadata_service,
         ai_workflows=ai_workflows,
+        attachments=attachments,
+        skills=skills,
         template_hub=TemplateHubService(authoring, knowledge),
         discovery=discovery,
         external=external,

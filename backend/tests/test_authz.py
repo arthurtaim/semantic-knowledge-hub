@@ -76,6 +76,9 @@ def test_write_routes_require_write_actions(client: TestClient) -> None:
         ("POST", "/api/publications/jobs/{job_id}/publish"): Action.publish_confluence,
         ("POST", "/api/publications/jobs/{job_id}/acknowledge-manual-edit"): Action.publish_confluence,
         ("POST", "/api/publications/jobs/{job_id}/release-missing-page"): Action.publish_confluence,
+        ("GET", "/api/assistant/skills"): Action.ask_assistant,
+        ("POST", "/api/assistant/attachments"): Action.ask_assistant,
+        ("DELETE", "/api/assistant/attachments/{attachment_id}"): Action.ask_assistant,
     }
     seen = {(m, r.path): _actions(r.dependant) for r in api_routes(client) for m in r.methods}
     for key, action in expected.items():

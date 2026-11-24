@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.domain.skills import SKILL_BY_ID
 
 
 class DocType(StrEnum):
@@ -50,6 +52,11 @@ class DocStatus(StrEnum):
 
 
 SourceType = Literal["local", "gitlab", "confluence"]
+# Where a cited excerpt comes from: a knowledge source, or a file attached to the conversation (UI v2). An
+# attachment is never a knowledge-base document: a separate evidence group, never indexed.
+CitationSourceType = Literal["local", "gitlab", "confluence", "attachment"]
+CONVERSATION_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$"
+ATTACHMENT_ID_PATTERN = r"^ATT-[0-9a-f]{16}$"
 SyncState = Literal["fresh", "stale", "error", "never_synced"]
 IndexState = Literal["current", "stale"]
 IntegrationState = Literal["connected", "disabled", "mock", "error"]
@@ -266,8 +273,8 @@ class Citation(BaseModel):
     """Provenance of a cited excerpt. `ref` is the stable number shown in the answer ([1], [2]…)."""
 
     ref: int
-    source_type: SourceType
-    document_id: str
+    source_type: CitationSourceType
+    document_id: str  # for an attachment: its id (ATT-…)
     title: str
     source_uri: str
     revision: str
@@ -286,6 +293,11 @@ class Citation(BaseModel):
     external_status: str | None = None
     fragment_id: str | None = None
     content_hash: str | None = None
+    # UI v2: an excerpt of a file attached to this conversation (source_type "attachment"). The locator
+    # («строка 1», «стр. 4», «лист Fields, строка 12») is computed by the server from the cited fragment.
+    attachment_id: str | None = None
+    attachment_name: str | None = None
+    locator: str | None = None
 
 
 class ExcludedSource(BaseModel):
@@ -308,10 +320,26 @@ class ConversationTurnIn(BaseModel):
     answer: str = Field(max_length=4000)
 
 
+class AskSelection(BaseModel):
+    """A fragment the user selected in a document (UI v2). The server verifies that `text` really is in the
+    document (in the section of `section_anchor` when given) before it becomes context."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    document_id: str = Field(min_length=1, max_length=128)
+    section_anchor: str | None = Field(default=None, max_length=200)
+    text: str = Field(default="", max_length=8000)
+
+
+AttachmentId = Annotated[str, Field(pattern=ATTACHMENT_ID_PATTERN)]
+DocumentRef = Annotated[str, Field(min_length=1, max_length=128)]
+
+
 class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    question: str = Field(min_length=3, max_length=2000)
+    # At least 3 characters, unless the chosen skill has an optional prompt (UI v2: Enter runs the skill).
+    question: str = Field(default="", max_length=2000)
     sources: list[SearchScope] = Field(default_factory=_default_scopes, min_length=1, max_length=2)
     include_drafts: bool = False
     include_deprecated: bool = False
@@ -319,6 +347,39 @@ class AskRequest(BaseModel):
     search_external: bool = False
     # Earlier turns (oldest first). Context for the model only — never evidence, never stored.
     history: list[ConversationTurnIn] = Field(default_factory=list, max_length=6)
+    # --- UI v2 (docs/ui-v2/specs/02_ASSISTANT.md §5); all optional, the defaults behave exactly as before ---
+    conversation_id: str | None = Field(default=None, pattern=CONVERSATION_ID_PATTERN)
+    skill_id: str | None = Field(default=None, min_length=1, max_length=64)  # GET /api/assistant/skills
+    attachment_ids: list[AttachmentId] = Field(default_factory=list, max_length=10)
+    # Documents the user chose («@документ»): cited first when relevant.
+    context_document_ids: list[DocumentRef] = Field(default_factory=list, max_length=5)
+    selection: AskSelection | None = None
+
+    @model_validator(mode="after")
+    def _question_and_conversation(self) -> AskRequest:
+        skill = SKILL_BY_ID.get(self.skill_id or "")
+        if len(self.question) < 3 and not (skill is not None and skill.prompt_optional):
+            raise ValueError("question must have at least 3 characters for this skill")
+        if self.attachment_ids and not self.conversation_id:
+            raise ValueError("attachment_ids require conversation_id")
+        return self
+
+
+class SkillRef(BaseModel):
+    """The skill that produced an answer (echoed when the request named one)."""
+
+    id: str
+    name: str
+    access: Literal["read", "draft"]
+
+
+class ProposalRef(BaseModel):
+    """An AI proposal created by a skill (GET /api/ai/proposals/{id}); nothing was applied."""
+
+    id: str
+    kind: str
+    status: str
+    graph_link: str | None = None
 
 
 class AskResponse(BaseModel):
@@ -335,6 +396,10 @@ class AskResponse(BaseModel):
     index_generation: str | None = None
     instructions_version: str | None = None
     external: dict[str, Any] | None = None  # external retrieval summary (called, trigger, calls, cache…)
+    # UI v2: the skill used (null for a plain question) and, for skills built on the AI workflows, the stored
+    # proposal the dialog shows as a card with a link (null otherwise). Nothing is ever applied by /ask.
+    skill: SkillRef | None = None
+    proposal: ProposalRef | None = None
 
 
 IntegrationTarget = Literal["none", "local", "mock", "real"]

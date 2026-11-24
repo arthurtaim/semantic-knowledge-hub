@@ -6,7 +6,7 @@ import contextlib
 import logging
 import re
 from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -33,10 +33,12 @@ from app.domain.models import (
     DocStatus,
     ExcludedSource,
     ScopeStatus,
+    SkillRef,
     UserContext,
 )
 from app.domain.safety import neutralize_citation_markers, redact_prompt_injection
 from app.domain.text import QueryTerm, term_matches_text, tokenize
+from app.services.attachments import Unit, format_locator
 from app.services.discovery import DiscoveryStore, SourceLink, acl_scope_key
 from app.services.external import ExternalEvidenceService, ExternalRetrieval
 from app.services.knowledge import KnowledgeService
@@ -55,10 +57,62 @@ FIXED_INSUFFICIENT = (
 )
 
 DEMO_WARNING = "Используются только демо-документы (синтетические данные) — они не являются фактами о банке."
+ATTACHMENT_ONLY_WARNING = (
+    "Ответ опирается только на вложение этого диалога: это не утверждённый документ базы знаний."
+)
+
+
+@dataclass(frozen=True)
+class AskExtras:
+    """Inputs the user chose explicitly (UI v2), already resolved and verified by the skill layer.
+
+    `context`: passages of documents the user picked («@документ») or selected — handed to the provider FIRST.
+    `attachments`: fragments of files attached to the conversation — a separate evidence group, last.
+    `retrieval_text`: replaces the question for knowledge-base retrieval (e.g. the question + a file header).
+    Cids are assigned by the service; the placeholders in these passages are ignored."""
+
+    context: tuple[ContextPassage, ...] = ()
+    attachments: tuple[ContextPassage, ...] = ()
+    retrieval_text: str | None = None
+    skill: SkillRef | None = None
+    compare_terms: bool = False  # compare_with_file: see AnswerOptions.compare_terms
+    # What the discovery memory records as the query when attachments are involved: the user's own question
+    # only — never words of a file (a header line in `retrieval_text`) or its name. None: the question as is.
+    trace_text: str | None = None
+
+
+NO_EXTRAS = AskExtras()
 
 
 def _normalize(text: str) -> str:
     return " ".join(text.split()).casefold()
+
+
+def locate_quote(passage: ContextPassage, quote: str) -> str | None:
+    """Human locator of the lines of an attachment fragment that contain the (verified) quote."""
+    lines = passage.text.split("\n")
+    if not passage.locators or len(passage.locators) != len(lines):
+        return passage.locator or None
+    normalized = [_normalize(line) for line in lines]
+    parts = [p.strip().rstrip("…").strip() for p in quote.split(" … ")]
+    parts = [_normalize(p) for p in parts if p.strip()]
+    if not parts:
+        return passage.locator or None
+
+    def span(needle: str, start: int) -> tuple[int, int] | None:
+        for end in range(start, len(lines)):
+            for begin in range(end, start - 1, -1):
+                if needle in " ".join(n for n in normalized[begin : end + 1] if n):
+                    return begin, end
+        return None
+
+    first = span(parts[0], 0)
+    if first is None:
+        return passage.locator or None
+    last = span(parts[-1], first[0]) if len(parts) > 1 else first
+    end = last[1] if last else first[1]
+    a, b = passage.locators[first[0]], passage.locators[end]
+    return format_locator(Unit(a[0], a[1], a[2], ""), Unit(b[0], b[1], b[2], ""))  # type: ignore[arg-type]
 
 
 def quote_is_verbatim(quote: str, source_text: str) -> bool:
@@ -145,21 +199,27 @@ class AssistantService:
     def provider(self) -> AIProvider:
         return self._provider
 
-    async def ask(self, user: UserContext, req: AskRequest) -> AskResponse:
-        prepared = await self._prepare(user, req)
+    @property
+    def instructions_version(self) -> str:
+        return self._instructions_version()
+
+    async def ask(self, user: UserContext, req: AskRequest, extras: AskExtras = NO_EXTRAS) -> AskResponse:
+        prepared = await self._prepare(user, req, extras)
         if prepared.passages:
             result = await self._provider.answer(req.question, prepared.passages, prepared.options)
         else:
             result = self._no_passages_result(prepared)
-        return self._record(user, req, prepared, self._finish(req, prepared, result))
+        return self._record(user, req, prepared, self._finish(req, prepared, result), extras)
 
-    async def ask_stream(self, user: UserContext, req: AskRequest) -> AsyncGenerator[dict[str, Any], None]:
+    async def ask_stream(
+        self, user: UserContext, req: AskRequest, extras: AskExtras = NO_EXTRAS
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Same pipeline as `ask`, as events: status stages, PRELIMINARY text deltas (only from providers
         that stream; never validated, the UI labels them as such) and one `final` validated AskResponse.
         Provider errors become an `error` event. Closing the iterator cancels the generation."""
         yield {"type": "status", "stage": "retrieving"}
         try:
-            prepared = await self._prepare(user, req)
+            prepared = await self._prepare(user, req, extras)
             if not prepared.passages:
                 result = self._no_passages_result(prepared)
             else:
@@ -188,7 +248,7 @@ class AssistantService:
                         raise AIProviderError("ai_invalid_response", "Провайдер не вернул ответ.")
                     result = final
                 yield {"type": "status", "stage": "validating"}
-            response = self._record(user, req, prepared, self._finish(req, prepared, result))
+            response = self._record(user, req, prepared, self._finish(req, prepared, result), extras)
         except AIProviderError as exc:
             logger.info("ask_stream failed mode=%s code=%s", self._provider.mode, exc.code)
             yield {
@@ -207,13 +267,14 @@ class AssistantService:
             evidence=[],
         )
 
-    async def _prepare(self, user: UserContext, req: AskRequest) -> _Prepared:
+    async def _prepare(self, user: UserContext, req: AskRequest, extras: AskExtras = NO_EXTRAS) -> _Prepared:
         if self._provider.mode == "disabled":
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
             )
         # A follow-up ("а какие у неё ограничения?") is retrieved together with the previous question.
-        retrieval_text = req.question if not req.history else f"{req.question} {req.history[-1].question}"
+        base_text = extras.retrieval_text or req.question
+        retrieval_text = base_text if not req.history else f"{base_text} {req.history[-1].question}"
         analysis = self._knowledge.retrieval.analyze(retrieval_text)
         terms = analysis.terms
         allowed = _allowed_statuses(req)
@@ -223,25 +284,36 @@ class AssistantService:
         passages: list[ContextPassage] = []
         excluded: list[ExcludedSource] = []
         matched_terms: set[str] = set()
-        budget = self._max_context_chars
+        # Attachments have their own (already bounded) budget: they never crowd out the team documents.
+        budget = self._max_context_chars - sum(len(p.text) for p in extras.attachments)
+        seen: set[tuple[str, str]] = set()
 
         def next_cid() -> str:
             return f"C{len(passages) + 1}"
+
+        # Context the user chose explicitly comes first, so it is cited first when relevant.
+        for chosen in extras.context:
+            passages.append(replace(chosen, cid=next_cid()))
+            seen.add((chosen.document_id, chosen.section_anchor or ""))
+            budget -= len(chosen.text)
+            words = tokenize(f"{chosen.title} {chosen.section or ''} {chosen.text}")
+            matched_terms |= {t.stem for t in terms if term_matches_text(t, words)}
 
         if "team" in req.sources:
             snapshot = await self._knowledge.snapshot(user)
             search = self._knowledge.search_provider
             team_filters = SearchFilters(statuses=frozenset(s.value for s in allowed))
-            seen: set[tuple[str, str]] = set()
             selected, _ranked = self._knowledge.retrieval.passages(
                 snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
             )
+            team_count = 0
             for passage in selected:
                 doc = passage.document
                 key = (doc.id, passage.section_anchor or "")
-                if key in seen or len(passages) >= MAX_PASSAGES or budget <= 0:
+                if key in seen or team_count >= MAX_PASSAGES or budget <= 0:
                     continue
                 seen.add(key)
+                team_count += 1
                 text, suspicious = prepare_passage_text(
                     truncate(passage.text, min(MAX_PASSAGE_CHARS, budget))
                 )
@@ -373,6 +445,11 @@ class AssistantService:
                     )
                 )
 
+        # Files of this conversation: a separate group after the knowledge sources. Their words do not count as
+        # matched by the knowledge base (an attachment is not evidence of what the team documents say).
+        for attached in extras.attachments:
+            passages.append(replace(attached, cid=next_cid()))
+
         unmatched = [t for t in terms if t.stem not in matched_terms]
         history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
         return _Prepared(
@@ -382,7 +459,9 @@ class AssistantService:
             warnings=warnings,
             excluded=excluded,
             scopes=scopes,
-            options=AnswerOptions(terms=terms, unmatched_terms=unmatched, history=history),
+            options=AnswerOptions(
+                terms=terms, unmatched_terms=unmatched, history=history, compare_terms=extras.compare_terms
+            ),
             normalized_query=analysis.normalized,
             mode=mode,
             external=external_result,
@@ -390,18 +469,27 @@ class AssistantService:
         )
 
     def _record(
-        self, user: UserContext, req: AskRequest, prepared: _Prepared, response: AskResponse
+        self,
+        user: UserContext,
+        req: AskRequest,
+        prepared: _Prepared,
+        response: AskResponse,
+        extras: AskExtras = NO_EXTRAS,
     ) -> AskResponse:
         """Attach provenance (generation, instructions) and, when allowed, store the retrieval trace:
-        which fragments were in context and which were cited — never the answer text."""
+        which fragments were in context and which were cited — never the answer text. Attachments of a
+        conversation are never written to the discovery memory."""
         response.index_generation = prepared.index_generation
         response.instructions_version = self._instructions_version()
         response.external = prepared.external.summary() if prepared.external else None
+        response.skill = extras.skill
         if self._discovery is None:
             return response
         cited = {c.source_id for c in response.citations if c.source_id}
         links: dict[str, SourceLink] = {}
         for passage in prepared.passages:
+            if passage.source_type == "attachment":
+                continue
             if passage.source_type == "confluence":
                 key = passage.source_key or f"confluence:-:{passage.document_id}:{passage.revision}"
                 kind = "confluence_mcp"
@@ -424,12 +512,21 @@ class AssistantService:
             )
             link.fragment_ids.append(passage.fragment_id or passage.section_anchor or passage.cid)
             link.cited = link.cited or key in cited
+        query_text, normalized, intent = (
+            req.question,
+            prepared.normalized_query,
+            [t.stem for t in prepared.terms],
+        )
+        if extras.trace_text is not None:
+            own = self._knowledge.retrieval.analyze(extras.trace_text) if extras.trace_text.strip() else None
+            query_text = extras.trace_text
+            normalized, intent = (own.normalized, [t.stem for t in own.terms]) if own else ("", [])
         try:
             response.retrieval_trace_id = self._discovery.record(
                 acl_scope=acl_scope_key(user),
-                normalized_query=prepared.normalized_query,
-                intent=[t.stem for t in prepared.terms],
-                query_text=req.question,
+                normalized_query=normalized,
+                intent=intent,
+                query_text=query_text,
                 mode=prepared.mode,
                 trigger=prepared.external.trigger if prepared.external else "-",
                 confidence=response.confidence,
@@ -541,6 +638,32 @@ class AssistantService:
                 return
             ref = len(citations) + 1
             cid_to_ref[cid] = ref
+            if passage.source_type == "attachment":
+                # The fragment is a verbatim window of the file's extracted text, so a verified quote really
+                # exists in the attachment; the locator is computed here, never taken from a model.
+                citations.append(
+                    Citation(
+                        ref=ref,
+                        source_type="attachment",
+                        document_id=passage.document_id,
+                        title=passage.title,
+                        source_uri=passage.source_uri,
+                        revision=passage.revision,
+                        status=None,
+                        section=None,
+                        section_anchor=None,
+                        excerpt=text,
+                        retrieved_at=retrieved_at,
+                        is_demo=False,
+                        app_path=None,
+                        source_id=f"attachment:{passage.document_id}",
+                        content_hash=passage.content_hash,
+                        attachment_id=passage.attachment_id,
+                        attachment_name=passage.title,
+                        locator=locate_quote(passage, text),
+                    )
+                )
+                return
             app_path = None
             if passage.source_type in ("local", "gitlab"):
                 app_path = f"/documents/{passage.document_id}" + (
@@ -602,6 +725,14 @@ class AssistantService:
             warnings.append("Ответ без проверяемых цитат отклонён.")
         if confidence == "supported" and (rejected or unverified):
             confidence = "partial"
+        if (
+            confidence != "insufficient_evidence"
+            and citations
+            and all(c.source_type == "attachment" for c in citations)
+        ):
+            # A file the user attached is not an approved source: it can never make an answer "supported".
+            confidence = "partial" if confidence == "supported" else confidence
+            warnings.append(ATTACHMENT_ONLY_WARNING)
         if confidence == "insufficient_evidence":
             citations, cid_to_ref = [], {}
             # Model-written text is not shown when evidence is insufficient: it may contain claims.
