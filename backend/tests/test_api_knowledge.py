@@ -197,9 +197,13 @@ def test_integration_status_offline_defaults(client: TestClient) -> None:
     assert items["ai_provider"]["state"] == "mock"
     assert items["confluence_publisher"]["state"] == "disabled"
     assert items["gitlab_proposals"]["state"] == "disabled"
-    assert items["task_system"]["state"] == "disabled"
+    # M6: the built-in Work Management module (local, not an external task system); TASK_SYSTEM=disabled turns it off
+    assert items["task_system"]["state"] == "connected"
+    assert (items["task_system"]["target"], items["task_system"]["access"]) == ("local", "read_write")
     assert not any(
-        i["state"] == "connected" for n, i in items.items() if n not in ("local_knowledge", "search_index")
+        i["state"] == "connected"
+        for n, i in items.items()
+        if n not in ("local_knowledge", "search_index", "task_system")
     )
 
 
@@ -222,4 +226,5 @@ def test_session_reports_demo_mode(client: TestClient) -> None:
         "corporate_search": "disabled",
         "gitlab_proposals": False,
         "confluence_publish": False,
+        "work_management": "local_operator",  # M6, additive
     }

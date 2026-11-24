@@ -27,6 +27,7 @@ from app.api import (
     template_apply,
     template_studio,
     templates,
+    work,
 )
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
 from app.container import build_container
@@ -102,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_origin_list,
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Content-Type", "X-SKH-Client"],
         )
     app.add_middleware(CsrfGuardMiddleware)
@@ -124,6 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         templates.router,
         template_apply.router,
         ai.router,
+        work.router,
     ):
         app.include_router(router)
     return app

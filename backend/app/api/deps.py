@@ -21,8 +21,11 @@ def get_container(request: Request) -> Container:
 
 
 def get_user(request: Request) -> UserContext:
-    """Local demo identity only. Production must replace this with SSO-backed identity (fail closed)."""
+    """Local demo identity, or the configured server-side IdentityProvider (the SSO seam; tests use a fake-but-server-
+    side provider). Without either: fail closed."""
     container = get_container(request)
+    if container.identity is not None:
+        return container.identity.resolve(request)
     if container.settings.auth_mode != "local_demo":
         raise ApiError(401, "unauthenticated", "Требуется корпоративная аутентификация.")
     return container.demo_user()

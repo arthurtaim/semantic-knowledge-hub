@@ -27,7 +27,8 @@ from app.adapters.publishers.base import ConfluencePublisher, ProposalPublisher
 from app.adapters.publishers.disabled import DisabledConfluencePublisher, DisabledProposalPublisher
 from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
-from app.authz import Action, AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
+from app.adapters.tasks.native import NativeTaskSystem
+from app.authz import Action, AuthorizationPolicy, DenyAllPolicy, IdentityProvider, LocalDemoPolicy
 from app.config import Settings, tls_verify
 from app.domain.instructions import DEFAULT_INSTRUCTIONS_DIR, RuntimeInstructions, load_instructions
 from app.domain.models import UserContext
@@ -52,6 +53,10 @@ from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
 from app.services.template_studio import TemplateStudioService
+from app.work.db import WorkDatabase
+from app.work.permissions import WorkAccessMode, build_gate
+from app.work.seed import seed_demo
+from app.work.service import WorkService
 
 logger = logging.getLogger("skh.container")
 
@@ -88,24 +93,68 @@ class Container:
     attachments: AttachmentService
     skills: AssistantSkillService
     template_studio: TemplateStudioService
+    work: WorkService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
+    # Server-side identity provider (the SSO seam; tests install a fake-but-server-side one). None = local demo.
+    identity: IdentityProvider | None = None
 
     def demo_user(self) -> UserContext:
-        return UserContext(
-            user_id="local-demo-user",
-            display_name="Демо-пользователь (localhost)",
-            roles=["reader", "editor"],
-            allowed_spaces=None,
-            is_demo=True,
-        )
+        return demo_operator()
 
     def close(self) -> None:
         self.search_provider.close()
         self.proposal_store.close()
         self.publication_store.close()
         self.attachments.close()
+
+
+def demo_operator() -> UserContext:
+    return UserContext(
+        user_id="local-demo-user",
+        display_name="Демо-пользователь (localhost)",
+        roles=["reader", "editor"],
+        allowed_spaces=None,
+        is_demo=True,
+    )
+
+
+def build_work(settings: Settings) -> WorkService:
+    """M6 Work Management: the access gate from configuration, the work database (migrated, backed up before a
+    migration), and the synthetic demo projects in the single-operator modes."""
+    gate = build_gate(
+        task_system=settings.task_system,
+        auth_mode=settings.auth_mode,
+        public_exposure=settings.work_public_exposure,
+        writes_enabled=settings.work_writes_enabled,
+    )
+    timezone = settings.work_default_timezone
+    if not WorkService.valid_timezone(timezone):
+        logger.warning("WORK_DEFAULT_TIMEZONE=%s is not a known IANA zone here; using UTC", timezone)
+        timezone = "UTC"
+    db = (
+        WorkDatabase(settings.work_state_file, backup_before_migrate=settings.work_backup_on_migrate)
+        if gate.mode != WorkAccessMode.disabled
+        else None
+    )
+    service = WorkService(
+        db,
+        gate,
+        operator=demo_operator(),
+        default_timezone=timezone,
+        preview_ttl_seconds=settings.work_preview_ttl_seconds,
+    )
+    if db is not None and settings.work_seed_demo and gate.mode != WorkAccessMode.membership:
+        report = seed_demo(db, now=service.now(), timezone=timezone)
+        if report.created or report.skipped_key_conflict:
+            logger.info(
+                "work demo seed created=%s skipped_key_conflict=%s tasks=%s",
+                report.created,
+                report.skipped_key_conflict,
+                report.tasks_created,
+            )
+    return service
 
 
 def build_repository(settings: Settings) -> KnowledgeRepository:
@@ -281,7 +330,10 @@ def build_container(settings: Settings) -> Container:
     corporate = build_corporate(settings)
     proposal_publisher = build_proposal_publisher(settings, repository)
     confluence_publisher = build_confluence_publisher(settings)
-    tasks = DisabledTaskSystem()
+    work = build_work(settings)
+    tasks: TaskSystemAdapter = (
+        DisabledTaskSystem() if work.gate.mode == WorkAccessMode.disabled else NativeTaskSystem(work.gate)
+    )
     store = ProposalStore(settings.app_state_file)
     discovery = (
         DiscoveryStore(
@@ -448,6 +500,7 @@ def build_container(settings: Settings) -> Container:
         skills=skills,
         template_hub=template_hub,
         template_studio=template_studio,
+        work=work,
         discovery=discovery,
         external=external,
         instructions=instructions,

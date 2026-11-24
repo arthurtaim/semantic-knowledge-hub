@@ -12,6 +12,8 @@
 	}
 	reverse_proxy frontend:8080 {
 		header_up Host 127.0.0.1
+		# M6: requests through this public gateway are marked; the task module answers them read-only.
+		header_up X-SKH-Exposure public
 		flush_interval -1
 	}
 }

@@ -32,6 +32,8 @@ class SessionFeatures(BaseModel):
     corporate_search: str
     gitlab_proposals: bool
     confluence_publish: bool
+    # M6: local_operator | read_only | membership | disabled (details: GET /api/work/capabilities)
+    work_management: str = "disabled"
 
 
 class SessionResponse(BaseModel):
@@ -69,6 +71,7 @@ async def session(
             corporate_search=corporate_status.state,
             gitlab_proposals=container.proposal_publisher.enabled,
             confluence_publish=container.confluence_publisher.enabled,
+            work_management=container.work.gate.mode.value,
         ),
     )
 

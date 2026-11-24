@@ -74,6 +74,8 @@ class IntegrationService:
                 if s.confluence_connector == "mock":
                     return "local", "read"  # built-in synthetic pages
                 return s.target_kind(s.confluence_mcp_url), "read"
+            case "task_system":
+                return "local", self._tasks.access  # the built-in M6 module, never an external service
             case "confluence_publisher":
                 pub = self._confluence_publisher
                 if not pub.enabled:
