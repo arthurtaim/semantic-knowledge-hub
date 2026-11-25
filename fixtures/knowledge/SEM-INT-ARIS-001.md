@@ -4,6 +4,7 @@ title: ARIS integration — questions for discovery
 type: integration
 status: draft
 owner: demo-team
+synthetic: true
 tags: [aris, metadata, integration, demo]
 related_ids: [SEM-ARCH-001]
 reviewed_at: null

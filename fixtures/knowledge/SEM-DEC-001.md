@@ -4,6 +4,7 @@ title: ADR-демо — локальный полнотекстовый поис
 type: decision
 status: approved
 owner: demo-team
+synthetic: true
 tags: [adr, search, sqlite, demo]
 related_ids: [SEM-ARCH-001]
 reviewed_at: 2026-11-19

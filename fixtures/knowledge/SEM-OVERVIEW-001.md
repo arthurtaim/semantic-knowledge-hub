@@ -4,6 +4,7 @@ title: Semantic Knowledge Hub — обзор демо-продукта
 type: overview
 status: approved
 owner: demo-team
+synthetic: true
 tags: [overview, product, demo]
 related_ids: [SEM-ARCH-001, SEM-PROC-001, SEM-GLOSS-001]
 reviewed_at: 2026-11-20

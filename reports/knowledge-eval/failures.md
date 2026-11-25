@@ -1,7 +1,8 @@
 # Failures (after, 216 cases): classification
 
 Run: `make knowledge-eval` on 2026-11-25 (code `96f133c` + the exit-code change, KB hash `53968dee67abb249`,
-cases hash `395a00146d3c1d34`, mock AI, no network). Raw output: `after.json`, `after_failures.md`.
+cases hash `395a00146d3c1d34`, mock AI, no network). The run after `synthetic: true` was added to the 9 SEM-*
+(KB `4cc6e409e5231bb3`, same cases) gives identical per-case results. Raw output: `after.json`, `after_failures.md`.
 **216 cases, 207 pass, 9 fail, 0 error, 0 unsupported**; the command now exits non-zero (module exit 1,
 `make` exit 2) while any of these remain.
 

@@ -7,7 +7,7 @@ states how a real bank uses them. Documents are data for testing retrieval, sync
 ## 1. Layout
 
 ```
-fixtures/knowledge/            9 original SEM-* documents (the demo application itself) — kept as is
+fixtures/knowledge/            9 original SEM-* documents (the demo application itself) — content kept as is
 fixtures/knowledge/sources/    DEMO-SRC-*    source system profiles            type: source
 fixtures/knowledge/semantics/  DEMO-SEM-*    glossary, entities, models, datasets  type: glossary | domain | dataset
 fixtures/knowledge/integrations/ DEMO-INT-*  integrations and flows           type: integration
@@ -34,7 +34,7 @@ type: integration            # overview | architecture | source | domain | datas
 status: approved             # draft | in_review | approved | deprecated ("superseded" = deprecated + supersedes edge)
 owner: demo-integration-team
 version: "1.2"               # human document version MAJOR.MINOR (content revision is computed separately)
-synthetic: true              # mandatory for every DEMO-* document
+synthetic: true              # mandatory for EVERY fixture document (SEM-*, DEMO-*, knowledge_updates) — see below
 reviewed_at: 2026-10-15      # approved/in_review: a date; draft: null
 tags: [aris, catalog, mapping, маппинг, integration]
 aliases: ["ARIS mapping", "сопоставление полей ARIS"]   # optional alternative names (search)
@@ -45,6 +45,18 @@ relations:                   # typed, directed edges FROM this document TO each 
   maps_to: [DEMO-SEM-002]
 ---
 ```
+
+**`synthetic: true` is per-document provenance metadata, not a naming convention.** Every Markdown document under
+`fixtures/knowledge/` (the 9 core SEM-* included) and `fixtures/knowledge_updates/` carries it (AGENTS.md: "every
+synthetic document carries `synthetic: true`"). Exceptions are a `README.md` (not a document) and
+`knowledge_updates/invalid/broken.md`, whose front matter is broken on purpose so that the loader rejects it.
+`make mock-kb-validate` (`kb_validate --strict-synthetic`) fails on any document without the flag, whatever its id
+prefix; `not_synthetic` in `validation.json` lists them. `tests/test_repo_hygiene.py` checks both fixture trees, so
+an unmarked fixture cannot come back. Adding the flag to an existing document is a metadata-only change. It changes
+the computed `revision` (content hash), but not the human `version`: the 9 SEM-* have no `version` field, and the
+flag changes no rule or fact. `updated_at` also keeps its fictional date. The mock Confluence
+corpus (`fixtures/confluence_mock/pages.yaml`) is not a set of knowledge documents. Its pages have no front matter,
+and the mock connector marks every page synthetic (`is_mock`).
 
 Relation vocabulary (edge `A —type→ B`, declared in A):
 

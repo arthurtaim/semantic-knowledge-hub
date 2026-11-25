@@ -1,7 +1,8 @@
 """Validate a synthetic knowledge base directory (make mock-kb-validate).
 
 Checks: frontmatter validity, duplicate ids/paths, unresolved references, typed relation counts,
-required multi-hop chains, `synthetic` marking, secrets/personal data, orphans. Prints a short human
+required multi-hop chains, `synthetic: true` on every document (an error with --strict-synthetic),
+secrets/personal data, orphans. Prints a short human
 report and (optionally) writes the full result as JSON. Exit code 1 when an error-level problem exists.
 
     python -m app.tools.kb_validate ../fixtures/knowledge [--json out.json] [--strict-synthetic]
@@ -68,7 +69,9 @@ def validate(root: Path, *, strict_synthetic: bool = False) -> dict[str, Any]:
 
     linked = {e["from"].lower() for e in edges} | {e["to"].lower() for e in edges}
     orphans = sorted(d.id for d in docs if d.id.lower() not in linked)
-    not_synthetic = sorted(d.id for d in docs if not d.synthetic and d.id.upper().startswith("DEMO-"))
+    # Every document of a synthetic base carries `synthetic: true`, whatever its id prefix (core SEM-* included):
+    # provenance is per-document metadata, not a naming convention.
+    not_synthetic = sorted(d.id for d in docs if not d.synthetic)
     secrets = sorted(d.id for d in docs if find_secrets(d.raw))
     personal = sorted(d.id for d in docs if find_personal_identifiers(d.raw))
     paths = Counter(d.path.lower() for d in docs)
@@ -91,7 +94,7 @@ def validate(root: Path, *, strict_synthetic: bool = False) -> dict[str, Any]:
     if len(edges) < MIN_EDGES:
         errors.append(f"only {len(edges)} resolvable edges (need ≥ {MIN_EDGES})")
     if strict_synthetic and not_synthetic:
-        errors.append("DEMO-* documents without `synthetic: true`")
+        errors.append(f"{len(not_synthetic)} document(s) without `synthetic: true`")
 
     return {
         "root": str(root),
@@ -146,7 +149,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("root", type=Path)
     parser.add_argument("--json", type=Path, default=None, help="write the full report as JSON")
-    parser.add_argument("--strict-synthetic", action="store_true", help="DEMO-* documents must be synthetic")
+    parser.add_argument(
+        "--strict-synthetic",
+        action="store_true",
+        help="every document must carry `synthetic: true` (an error otherwise; always listed in not_synthetic)",
+    )
     args = parser.parse_args(argv)
     report = validate(args.root.resolve(), strict_synthetic=args.strict_synthetic)
     report["root"] = args.root.as_posix()  # as given (relative): no machine-specific path in the report

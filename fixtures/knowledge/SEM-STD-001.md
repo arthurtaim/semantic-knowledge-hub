@@ -4,6 +4,7 @@ title: Стандарт оформления документов базы зн�
 type: standard
 status: approved
 owner: demo-team
+synthetic: true
 tags: [standard, metadata, demo]
 related_ids: [SEM-GLOSS-001]
 reviewed_at: 2025-01-15

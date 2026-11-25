@@ -167,3 +167,29 @@ validator scope, so the target is **red on purpose** until those are fixed.
 
 `metrics.csv` and `baseline*.{json,csv,md}` above stay the M5.6.2 baseline-vs-after record (160 cases).
 `failures.md` now describes the current 216-case run.
+
+### `synthetic: true` on the 9 core SEM-* fixtures (SYS-012): before / after on the same cases
+
+The change adds one front-matter line, `synthetic: true`, to each of SEM-ARCH-001, SEM-DEC-001, SEM-DOM-001,
+SEM-GLOSS-001, SEM-INT-ARIS-001, SEM-OVERVIEW-001, SEM-PROC-001, SEM-PROC-OLD-001 and SEM-STD-001. No content
+changed. `kb_validate --strict-synthetic` now requires the flag on every document, not only on DEMO-*. Steps
+(CLAUDE.md §6):
+
+- `make mock-kb-validate`: OK. 83 documents, 375 edges (85 typed), 6/6 chains, `not_synthetic` [] (before the
+  fixture change, the stricter rule reported the 9 SEM-* and exit 1). `validation.json` is otherwise identical.
+- `make mock-kb-sync` into a workspace seeded from the previous fixtures: add 0, update 9, unchanged 74,
+  conflicts 0. The index sync on that workspace went to generation 1 → 2, still 83 documents. The 9 revisions
+  changed. Graph neighbours and edge counts of all 9, searches (`SEM-ARCH-001`, `SQLite FTS5`, «глоссарий
+  демо-базы», `synthetic`) and an assistant answer's citations are identical. That citation carries the new
+  revision of SEM-DEC-001, with provenance `synthetic` as before.
+- `make knowledge-eval`:
+
+| | before (KB `53968dee67abb249`) | after (KB `4cc6e409e5231bb3`) |
+|---|---|---|
+| cases (hash `395a00146d3c1d34`) | 216 | 216 |
+| pass / fail / error / unsupported | 207 / 9 / 0 / 0 | 207 / 9 / 0 / 0 |
+| R@1 / R@5 / MRR / leaks | 0.9487 / 0.9744 / 0.9647 / 0 | 0.9487 / 0.9744 / 0.9647 / 0 |
+| context_ok (overall / holdout) | 0.9057 / 0.7143 | 0.9057 / 0.7143 |
+
+Per case: 0 status flips, and returned ids, ranks, `context_ok` and failure details are identical for all 216.
+The same 9 cases fail (`failures.md`).
