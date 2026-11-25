@@ -13628,6 +13628,29 @@ a.fact-item__title:hover {
   list-style: none;
 }
 
+/* A long column renders a window of its cards (B2): «Показать ещё» and the line that grows it when it comes into view. */
+.board__more {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.board__more-count {
+  font-size: var(--fs-caption);
+}
+
+.board__sentinel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
 .board-card {
   position: relative;
   display: flex;
