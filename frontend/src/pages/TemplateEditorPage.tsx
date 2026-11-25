@@ -11,6 +11,7 @@ import { SectionBuilder } from "../components/studio/SectionBuilder";
 import { StudioHistory } from "../components/studio/StudioHistory";
 import { TemplatePropertiesForm } from "../components/studio/TemplatePropertiesForm";
 import { Button } from "../components/ui/Button";
+import { useBeforeUnloadGuard } from "../components/UnsavedChangesGuard";
 import { ACTIVATION_TEXT, formatDateTime, STUDIO_ERROR_TITLE, TEMPLATE_FIELD_LABEL } from "../lib/labels";
 import { onTabListKeyDown } from "../lib/tabs";
 import {
@@ -90,12 +91,7 @@ function StudioEditor({ options, initialState, initialSpec, proposal, initialNot
   const fromAi = proposal !== null && isNew;
 
   // Leaving with unsaved edits asks first.
-  useEffect(() => {
-    if (!dirty || readOnly) return undefined;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty, readOnly]);
+  useBeforeUnloadGuard(dirty && !readOnly);
 
   // A link in the issue summary: open the field's tab, then focus the field.
   useEffect(() => {

@@ -1345,6 +1345,44 @@ kbd {
   animation: layer-in var(--duration-panel) var(--ease-out);
 }
 
+/* «Есть несохранённые изменения»: leaving an editor with unsaved edits (components/UnsavedChangesGuard.tsx).
+   Above every other layer, including a sheet. */
+.leave-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: var(--scrim);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 18vh var(--space-4) var(--space-4);
+  animation: layer-fade var(--duration-fast) var(--ease-out);
+}
+
+.leave-confirm__dialog {
+  width: min(30rem, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--line-popover);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-5);
+  animation: layer-in var(--duration-panel) var(--ease-out);
+}
+
+.leave-confirm__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-section);
+}
+
+.leave-confirm__text {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+}
+
+.leave-confirm__actions {
+  margin-bottom: 0;
+}
+
 .composer-dialog .quick-find__list {
   position: static;
   margin-top: var(--space-2);

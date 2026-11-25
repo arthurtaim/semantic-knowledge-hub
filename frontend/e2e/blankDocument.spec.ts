@@ -155,6 +155,73 @@ test("@mobile B-04 on a phone: blank document → [[ link → save → apply a t
   await expect(page).toHaveURL(/\/proposals\/[0-9a-f]{32}$/);
 });
 
+test("B-07 unsaved edits: the sidebar, Back and a reload ask first; «Остаться» keeps the text (SYS-007)", async ({ page }) => {
+  // Reached through in-app links, so Back has an in-app page to go to.
+  await page.goto("/documents");
+  await page.getByRole("link", { name: "Создать документ" }).click();
+  await expect(page).toHaveURL(/\/documents\/new$/);
+  await page.getByLabel(/^Название/).fill(unique("Уход B-07"));
+  await page.getByRole("button", { name: "Начать писать" }).click();
+  const body = page.getByLabel(/^Текст в формате Markdown/);
+  await expect(body).toBeVisible();
+  await save(page, "E2E B-07");
+  const draftUrl = page.url();
+  const id = draftIdFrom(page);
+  const sidebar = page.getByRole("navigation", { name: "Основная навигация" });
+  const projects = sidebar.getByRole("link", { name: "Проекты", exact: true });
+  const confirm = page.getByRole("alertdialog", { name: "Есть несохранённые изменения" });
+
+  // Saved: leaving does not ask.
+  await projects.click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(confirm).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(draftUrl);
+  await expect(page.getByText(/Черновик сохранён в/)).toBeVisible();
+
+  const added = "Новый абзац, который ещё не сохранён.";
+  await body.evaluate((el: HTMLTextAreaElement) => {
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  });
+  await page.keyboard.type(`\n${added}`);
+  await expect(page.getByText("Есть несохранённые изменения", { exact: true })).toBeVisible();
+
+  // The sidebar: the dialog, focus on «Остаться»; staying keeps the URL and the text.
+  await projects.click();
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole("button", { name: "Остаться" })).toBeFocused();
+  await confirm.getByRole("button", { name: "Остаться" }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(page).toHaveURL(draftUrl);
+  await expect(body).toHaveValue(new RegExp(`${added}$`));
+
+  // The browser's Back: the same dialog; Esc stays and the address returns to the draft.
+  await page.goBack();
+  await expect(confirm).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(confirm).toHaveCount(0);
+  await expect(page).toHaveURL(draftUrl);
+  await expect(body).toHaveValue(new RegExp(`${added}$`));
+
+  // A reload: the browser's own beforeunload dialog; dismissing it keeps the page.
+  const dialogs: string[] = [];
+  page.once("dialog", (dialog) => {
+    dialogs.push(dialog.type());
+    void dialog.dismiss();
+  });
+  await page.evaluate(() => window.location.reload());
+  await expect.poll(() => dialogs).toEqual(["beforeunload"]);
+  await expect(body).toHaveValue(new RegExp(`${added}$`));
+
+  // «Выйти без сохранения»: leaves, and the stored draft never got the paragraph.
+  await projects.click();
+  await confirm.getByRole("button", { name: "Выйти без сохранения" }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(confirm).toHaveCount(0);
+  expect((await draftJson(page.request, id)).new_document.body).not.toContain(added);
+});
+
 for (const [name, tag] of [["B-05", ""], ["B-06", "@mobile "]] as const) {
   test(`${tag}${name} AI_PROVIDER=disabled: the blank editor has no AI panel and still saves`, async ({ page }) => {
     test.skip(!DISABLED_URL, "E2E_DISABLED_URL (a stack with AI_PROVIDER=disabled) is not set");

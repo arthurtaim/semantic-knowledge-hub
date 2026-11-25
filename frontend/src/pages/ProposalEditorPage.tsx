@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
+import { useState, type FormEvent, type MouseEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { DocumentDetail, ProposalDetail } from "../api/types";
 import { ChangeContentEditor } from "../components/ChangeContentEditor";
 import { EmptyState, ErrorState, Loading, Notice } from "../components/Feedback";
 import { StatusStamp } from "../components/StatusStamp";
+import { useBeforeUnloadGuard } from "../components/UnsavedChangesGuard";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { AUTHORING_ERROR_TITLE, PROPOSAL_STATUS_LABEL } from "../lib/labels";
 import { useSession } from "../lib/session";
@@ -335,15 +336,7 @@ function ChangeDraftForm({ proposal: p, previousText, onReload }: ChangeDraftFor
   const dirty = content !== p.proposed_content || reason.trim() !== p.reason;
   const back = `/proposals/${encodeURIComponent(p.id)}`;
 
-  useEffect(() => {
-    if (!dirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  useBeforeUnloadGuard(dirty);
 
   async function save(event: FormEvent) {
     event.preventDefault();
