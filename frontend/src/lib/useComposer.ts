@@ -122,6 +122,8 @@ function uploadFailure(error: unknown): string {
 export interface ComposerController {
   draft: ComposerDraft;
   conversationId: string;
+  /** Where the draft is remembered in memory (lib/conversation.ts), if anywhere. */
+  persistKey?: string;
   inputRef: RefObject<HTMLTextAreaElement | null>;
   /** The last change worth announcing (files read or rejected) — the composer's live region. */
   announcement: string;
@@ -154,6 +156,12 @@ export interface ComposerController {
    * the new dialog id.
    */
   reset: (options?: { handedOver?: boolean }) => string;
+  /**
+   * Continues another dialog in this field (the document panel resumes its stored conversation, or starts a new
+   * one): the dialog id and the draft are replaced; files of the previous dialog stay on the server (that dialog
+   * is kept in the history). Uploads in flight are cancelled.
+   */
+  switchConversation: (conversationId: string, draft?: ComposerDraft) => void;
   focus: () => void;
 }
 
@@ -419,10 +427,21 @@ export function useComposer({ persistKey, initial, defaults, onDiscard }: UseCom
         setAnnouncement("");
         return id;
       },
+      switchConversation: (id, next) => {
+        for (const controller of uploads.current.values()) controller.abort();
+        uploads.current.clear();
+        const draft: ComposerDraft = next ?? { ...EMPTY_DRAFT, ...defaults, scope: draftRef.current.scope };
+        draftRef.current = draft;
+        setDraft(draft);
+        conversationRef.current = id;
+        setConversationId(id);
+        setAnnouncement("");
+      },
       focus: () => inputRef.current?.focus(),
+      persistKey,
     }),
     // `defaults` is read at reset time only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [draft, conversationId, announcement, setText, update, addFiles, removeFile, markUnavailable, discardAll],
+    [draft, conversationId, announcement, setText, update, addFiles, removeFile, markUnavailable, discardAll, persistKey],
   );
 }

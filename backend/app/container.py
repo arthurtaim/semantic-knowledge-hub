@@ -40,6 +40,7 @@ from app.services.assistant_loop import ToolLoop, ToolLoopLimits
 from app.services.assistant_tools import SystemToolExecutor
 from app.services.attachments import AttachmentService, AttachmentStore
 from app.services.authoring import AuthoringService
+from app.services.conversations import ConversationLimits, ConversationService, ConversationStore
 from app.services.discovery import DiscoveryStore
 from app.services.external import ExternalEvidenceService, ExternalLimits
 from app.services.graph import GraphService
@@ -97,6 +98,7 @@ class Container:
     template_studio: TemplateStudioService
     work: WorkService
     work_ai: WorkAiService
+    conversations: ConversationService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
@@ -111,6 +113,7 @@ class Container:
         self.proposal_store.close()
         self.publication_store.close()
         self.attachments.close()
+        self.conversations.close()
 
 
 def demo_operator() -> UserContext:
@@ -477,6 +480,22 @@ def build_container(settings: Settings) -> Container:
     # the disabled provider have none, so the feature says it is unavailable instead of faking a plan).
     work_ai = WorkAiService(work, knowledge, ai)
     work.ai_planning = work_ai.available
+    conversations = ConversationService(
+        ConversationStore(
+            settings.app_state_file,
+            ConversationLimits(
+                retention_seconds=settings.assistant_history_retention_days * 86400.0,
+                max_conversations=settings.assistant_history_max_conversations,
+                max_turns=settings.assistant_history_max_turns,
+                max_answer_chars=settings.assistant_history_max_answer_kb * 1024,
+            ),
+        ),
+        knowledge=knowledge,
+        attachments=attachments,
+        policy=policy,
+        external=external,
+        enabled=settings.assistant_history_enabled,
+    )
     # M5.7: the tool loop. Off when disabled by configuration or when the runtime policy fell back to the built-in
     # safe text (which forbids tools): fail closed, never a tool loop under a weaker prompt.
     if settings.ai_tools_enabled and not instructions.fallback:
@@ -533,6 +552,7 @@ def build_container(settings: Settings) -> Container:
         template_studio=template_studio,
         work=work,
         work_ai=work_ai,
+        conversations=conversations,
         discovery=discovery,
         external=external,
         instructions=instructions,

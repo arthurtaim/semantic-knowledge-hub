@@ -23,7 +23,7 @@ async function askFromHome(page: Page) {
   const field = page.getByRole("textbox", { name: "Вопрос" });
   await field.fill(QUESTION);
   await field.press("Enter");
-  await expect(page).toHaveURL(/\/ask\?q=/);
+  await expect(page).toHaveURL(/\/ask\?c=conv-/); // the dialog is named in the URL (chat history)
   await expect(page.getByRole("heading", { name: "Ассистент", exact: true }).first()).toBeVisible();
   return page.locator(".answer__text").first();
 }

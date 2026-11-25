@@ -482,6 +482,83 @@ export interface AskRequest {
   /** Documents chosen with «@», at most 5: cited first when relevant. */
   context_document_ids?: string[];
   selection?: AskSelection | null;
+  /** Chat history (v0.7): where the conversation lives — the dialog (default) or a document's assistant panel. */
+  origin?: "dialog" | "document";
+}
+
+// --- Chat history (docs/API_CONTRACTS.md v0.7): this user's conversations in THIS browser ---
+
+export type StoredTurnStatus = "done" | "failed" | "interrupted" | "pending";
+
+/** A file of a stored turn: id and name; size, summary and expiry only while the server still keeps it. */
+export interface StoredAttachmentRef {
+  id: string;
+  name: string;
+  available: boolean;
+  size: number | null;
+  mime: string | null;
+  summary: string | null;
+  expires_at: string | null;
+}
+
+/** What a stored turn was asked with (no contents: a selection is a reference). */
+export interface StoredTurnRequest {
+  question: string;
+  skill: AskSkillRef | null;
+  sources: SearchScope[];
+  include_drafts: boolean;
+  include_deprecated: boolean;
+  search_external: boolean;
+  documents: { id: string; title: string }[];
+  attachments: StoredAttachmentRef[];
+  selection: { document_id: string; section_anchor: string | null; section?: string | null; lines: number } | null;
+}
+
+export interface StoredTurn {
+  seq: number;
+  status: StoredTurnStatus;
+  created_at: string;
+  completed_at: string | null;
+  request: StoredTurnRequest;
+  /** The AskResponse as it was sent; null unless `done` and not withheld. */
+  response: AskResponse | null;
+  error: { code: string; message: string; status: number } | null;
+  /** Why a completed answer is not shown: its sources are no longer visible to the reader, too large, unreadable. */
+  withheld: "sources_unavailable" | "too_large" | "unreadable" | null;
+  /** Neutral server notes: the index generation changed, a file is gone, why the answer is withheld. */
+  notes: string[];
+  answer_generation: string | null;
+  generation_changed: boolean;
+}
+
+export interface ConversationSummary {
+  id: string;
+  /** The first question (or the skill's name). */
+  title: string;
+  origin: "dialog" | "document";
+  document: { id: string; title: string } | null;
+  turn_count: number;
+  created_at: string;
+  updated_at: string;
+  last_status: StoredTurnStatus | null;
+  last_skill: AskSkillRef | null;
+  last_sources: number | null;
+  /** The last turn's first file name or chosen document title. */
+  context: string | null;
+}
+
+export interface StoredConversation extends ConversationSummary {
+  /** The generation the reader's snapshot is at now. */
+  index_generation: string | null;
+  turns: StoredTurn[];
+}
+
+export interface ConversationList {
+  items: ConversationSummary[];
+  total: number;
+  /** False when the server keeps no history (ASSISTANT_HISTORY_ENABLED=false). */
+  enabled: boolean;
+  retention_days: number;
 }
 
 /** The skill that produced an answer (echoed when the request named one). */

@@ -3,13 +3,15 @@ import { CONVERSATION_ID_PATTERN, newConversationId } from "./assistant";
 import { EMPTY_DRAFT, type ComposerDocument, type ComposerDraft, type ComposerFile } from "./useComposer";
 
 /**
- * The user's recent dialogs for the home page («Недавние диалоги»). A per-viewer convenience: kept only in this
+ * The user's recent dialogs as THIS browser remembers them — since the chat history (docs/API_CONTRACTS.md v0.7)
+ * only the OFFLINE FALLBACK of the home page's «Недавние диалоги»: the list comes from the server (with the
+ * answers); these entries are shown only when it cannot be read or the server keeps no history. Kept only in this
  * browser (localStorage, per user id), never sent anywhere, at most RECENT_LIMIT entries; answers and file
- * contents are never stored — only the question, the skill (id and name), the dialog id, what was attached (a
+ * contents are never stored here — only the question, the skill (id and name), the dialog id, what was attached (a
  * file's id, name, size, the server's summary and expiry; a chosen document's id and title), the number of
- * sources of the answer and the time. Reopening an entry puts all of it back into the dialog's field
- * (`restoreDialog`). Storage can be unavailable (private mode, policy): every access is guarded and the UI works
- * without it.
+ * sources of the answer and the time. Reopening an entry opens its dialog (stored turns if the server has them)
+ * and puts the rest back into the field (`restoreDialog`) — it is never asked again by itself. Storage can be
+ * unavailable (private mode, policy): every access is guarded and the UI works without it.
  *
  * Stored format (key `skh.recent-questions.v1:<user>`, a JSON array): phase 4 stored plain strings; later entries
  * are objects `{question, at, skill, sources, context}` with `skill` the skill's NAME. Round 2 adds fields only —
@@ -254,6 +256,14 @@ export function markAttachmentsGone(userId: string | null | undefined, ids: stri
   if (changed) write(userId, next);
 }
 
+/** The dialog was deleted from the history: its entry goes too. */
+export function forgetRecentDialog(userId: string | null | undefined, conversationId: string): void {
+  if (!userId) return;
+  const items = readRecentDialogs(userId);
+  const next = items.filter((item) => item.conversationId !== conversationId);
+  if (next.length !== items.length) write(userId, next);
+}
+
 export function clearRecentQuestions(userId: string | null | undefined): void {
   if (!userId) return;
   try {
@@ -265,24 +275,34 @@ export function clearRecentQuestions(userId: string | null | undefined): void {
 
 // --- reopening -----------------------------------------------------------------------------------------------
 
-/** The file can still be sent: not deleted, not past its expiry, and its dialog is known. */
-export function attachmentAvailable(item: RecentDialog, attachment: RecentAttachment, now: number = Date.now()): boolean {
-  if (attachment.gone || !item.conversationId) return false;
+/** The file can still be sent: not deleted, not past its expiry, and it belongs to the dialog it is sent in. */
+export function attachmentAvailable(
+  item: RecentDialog,
+  attachment: RecentAttachment,
+  now: number = Date.now(),
+  conversationId: string | null = item.conversationId,
+): boolean {
+  if (attachment.gone || !item.conversationId || item.conversationId !== conversationId) return false;
   const expires = attachment.expiresAt ? Date.parse(attachment.expiresAt) : Number.NaN;
   return Number.isNaN(expires) || expires > now;
 }
 
 /**
  * The dialog's field as it was sent: the question, the files (a live file as a ready chip, an expired or deleted
- * one as an unavailable chip that is never sent), the chosen documents, in the same dialog. The skill comes from
- * the registry (`findSkill`) — the page adds it once the registry is loaded.
+ * one — or one of another dialog — as an unavailable chip that is never sent), the chosen documents. In the entry's
+ * own dialog unless the page opens another (`conversationId`). The skill comes from the registry (`findSkill`) —
+ * the page adds it once the registry is loaded.
  */
-export function restoreDialog(item: RecentDialog, now: number = Date.now()): { conversationId: string; draft: ComposerDraft } {
-  const conversationId = item.conversationId ?? newConversationId();
+export function restoreDialog(
+  item: RecentDialog,
+  now: number = Date.now(),
+  target: string | null = null,
+): { conversationId: string; draft: ComposerDraft } {
+  const conversationId = target ?? item.conversationId ?? newConversationId();
   const files: ComposerFile[] = item.attachments.map((a) => {
     const base = { key: `saved-${a.id}`, name: a.name, size: a.size ?? 0, error: null };
     // Without a known size the file was no longer in the field when it was remembered (removed, so deleted).
-    if (!attachmentAvailable(item, a, now) || a.size === null) return { ...base, status: "unavailable", attachment: null };
+    if (!attachmentAvailable(item, a, now, conversationId) || a.size === null) return { ...base, status: "unavailable", attachment: null };
     const attachment: AssistantAttachment = {
       id: a.id,
       conversation_id: conversationId,
@@ -305,12 +325,4 @@ export function findSkill(items: AssistantSkill[] | null, skill: RecentSkill | n
   if (!items || !skill) return null;
   const found = skill.id ? items.find((s) => s.id === skill.id) : items.find((s) => s.name === skill.name);
   return found?.available ? found : null;
-}
-
-/**
- * A plain question (no skill, no files) is asked again at once — its answer opens as before. Anything with a
- * skill or files waits in the field: a skill may create a draft, and an unavailable file would change the answer.
- */
-export function rerunsAtOnce(item: RecentDialog): boolean {
-  return item.question.trim().length >= 3 && !item.skill && item.attachments.length === 0;
 }

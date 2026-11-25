@@ -599,7 +599,82 @@ operator has both). Design and rules: `docs/TEMPLATE_HUB.md` «Template Studio»
   draft (status `draft`, no history); `/versions/{v}` is `404` for it.
 - `AiProposal.kind` gains `draft_template`; `AiProposal.result_template_id`.
 
-## Implemented contract (v0.7, M6 Work Management — steps 1–5)
+## Implemented contract (v0.7, chat history)
+
+Additive only: without the new header (or without `conversation_id`) `/ask` and `/ask/stream` behave and answer
+exactly as before, and the answer never depends on the history. Code: `app/services/conversations.py`,
+`app/api/assistant.py`; tests `tests/test_conversation_history.py`. Security: `docs/SECURITY.md` «Chat history».
+UI: `docs/UI_REDESIGN.md` «История диалогов».
+
+**Ownership.** A conversation is keyed by the server's user id AND the header `X-SKH-Browser`: 128 random bits as
+32 lowercase hex digits (`^[0-9a-f]{32}$`), generated once by the UI and kept in `localStorage`. A missing or
+malformed value counts as absent: nothing is stored, nothing is listed, every read is `404`. The same conversation
+id sent from another browser is a different conversation. This is a convenience scope for one shared login
+(`local_demo`), **not authentication**: with real SSO the user id is the boundary.
+
+| Route | Action | Request | Response | Errors |
+|---|---|---|---|---|
+| `POST /api/assistant/ask`, `/ask/stream` | `ask_assistant` (as before) | v0.6 body + `origin?: "dialog" \| "document"` (default `dialog`; labels the stored conversation only) + header `X-SKH-Browser` | unchanged. With `conversation_id` and a valid browser id the turn is recorded: `pending` when it starts (after the input checks: a `4xx` before the answer stores nothing), then the final `AskResponse` exactly as sent (`/ask` response, the stream's `final`), or the error (`/ask` HTTP error, the stream's `error` event), or `interrupted` (client gone, stream closed before `final`) | as before |
+| `GET /api/assistant/conversations?limit=&origin=&document_id=` | `ask_assistant` | `limit` 1–100 (default 20); `origin` `dialog` \| `document`; `document_id` (the document panel looks up its document's latest conversation) | `ConversationList {items: ConversationSummary[], total, enabled, retention_days}`, newest activity first; `items: []` without a browser id, with `enabled: false` when the history is off | `422` (bounds, unknown `origin`) |
+| `GET /api/assistant/conversations/{id}` | `ask_assistant` | `id` `^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$` | `ConversationDetail` = summary + `index_generation` (now) + `turns: StoredTurn[]` by `seq` | `404 conversation_not_found` — unknown id, another browser's or user's conversation, no browser id, history off: indistinguishable; `422` malformed id |
+| `DELETE /api/assistant/conversations/{id}` | `ask_assistant` | — | `204`, idempotent; deletes the conversation and, when it was this browser's, the files attached to it (`assistant_attachments` of that conversation) | `422` malformed id |
+| `DELETE /api/assistant/conversations` | `ask_assistant` | — | `{deleted: n}` — every conversation of this user in this browser (with their files); other browsers keep theirs | — |
+
+Shapes:
+
+```text
+ConversationSummary { id, title (the first question, ≤ 200; or the skill's name), origin: dialog|document,
+                      document: {id, title}|null (origin document, while the reader can see it), turn_count,
+                      created_at, updated_at, last_status: done|failed|interrupted|pending|null,
+                      last_skill: {id, name, access}|null, last_sources: int|null (verified sources of the last
+                      answer), context: string|null (the last turn's first file name or visible chosen document) }
+StoredTurn { seq, status: done|failed|interrupted|pending, created_at, completed_at,
+             request: { question, skill, sources, include_drafts, include_deprecated, search_external,
+                        documents: [{id, title}] (visible ones only), attachments: [{id, name, available,
+                        size?, mime?, summary?, expires_at?}] (details only while the server keeps the file),
+                        selection: {document_id, section_anchor, section, lines}|null (a reference: never the text) },
+             response: AskResponse|null (done and not withheld), error: {code, message, status}|null (failed),
+             withheld: sources_unavailable|too_large|unreadable|null, notes: string[],
+             answer_generation, generation_changed }
+```
+
+**Reading re-checks the reader, now** (the reader's snapshot; nothing of a hidden document is returned):
+
+- At store time the server records the ids of what the answer relies on (`evidence`): team documents of its
+  citations, documents named by its system facts (items, relation ends, `/documents/…` links, `document_id` /
+  `target_id` / `document_ids` filters — kept only when the asker's snapshot knows them as documents), the chosen
+  documents and the selection's document, Confluence pages (page id + version) and attachment ids.
+- If any of those documents is no longer in the reader's snapshot (ACL changed, deleted), or a Confluence page fails
+  the re-check (`read_corporate` and `ExternalEvidenceService.revalidate`: same access and version; at most 10 pages
+  per read, beyond that unavailable), the answer is **withheld**: `response: null`, `withheld: "sources_unavailable"`
+  and the neutral note «Ответ скрыт: часть его источников вам сейчас недоступна. Задайте вопрос заново — ответ будет
+  построен по доступным документам.» — no title, id, quote or count of the hidden source. The question (the
+  reader's own words) stays.
+- Otherwise the stored response is returned unchanged except: `excluded_sources` and
+  `conversation_context[].document_ids` keep only visible documents; an attachment citation whose file the server no
+  longer keeps loses its `excerpt` / `excerpt_parts` (note «Файл больше недоступен: его фрагменты в этом ответе не
+  показываются.»).
+- A different index generation is said, never silently re-answered: `generation_changed: true`, note «Ответ дан по
+  поколению g5; база с тех пор обновлена (сейчас g7).»
+- `pending` older than 30 minutes reads as `interrupted` (nobody will finish it). A new turn in the conversation
+  replaces a `failed` or `interrupted` one (the dialog shows it so).
+
+**Limits** (`ASSISTANT_HISTORY_*`, `.env.example`): `ENABLED` (true), `RETENTION_DAYS` 30 (1–365; conversations
+without activity are purged on access), `MAX_CONVERSATIONS` 100 per user and browser (1–1000; the least recently
+active are pruned), `MAX_TURNS` 50 per conversation (2–500; the oldest turns are pruned, the title stays),
+`MAX_ANSWER_KB` 512 (16–8192; a larger answer is not stored: `withheld: "too_large"`, note «Ответ не сохранён в
+истории: он больше допустимого размера.»). Turn numbers come from the conversation row inside a
+`BEGIN IMMEDIATE` transaction: two tabs appending to one conversation never collide or reorder.
+
+**Stored where.** The app-state SQLite (`APP_STATE_PATH`, the persistent volume), tables `assistant_conversations`
+(actor, browser, id, origin, document_id, title, created/updated, next_seq) and `assistant_turns` (actor, browser,
+conversation_id, seq, status, request_json, response_json, evidence_json, sources, error code/message/status,
+omitted, created/completed), created on startup like the other stores. Not stored: prompts sent to the model,
+retrieved passages beyond what the response already contains, tokens, the `history` a client sends, attachment
+contents (only ids and names), selection text. Logs: `history turn seq=… done stored=… chars=…` / `failed code=…`
+/ `interrupted` — no question, answer or ids.
+
+## Implemented contract (v0.8, M6 Work Management — steps 1–5)
 
 Additive only. Design, semantics and the identity gate: `docs/WORK_MANAGEMENT.md`. Every route declares one action
 on the global policy; the work gate then applies `local_operator` / `read_only` / `shared_login` / `membership` (§4 there). `{project_id}`

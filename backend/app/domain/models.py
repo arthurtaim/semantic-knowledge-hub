@@ -499,7 +499,8 @@ class TurnFactContext(BaseModel):
 
 
 class ConversationTurnIn(BaseModel):
-    """A previous turn of the same conversation, sent back by the client (the server keeps no chat state)."""
+    """A previous turn of the same conversation, sent back by the client. The answer never reads the stored chat
+    history (v0.7, app/services/conversations.py): the context of a follow-up is what the client sends here."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -543,6 +544,10 @@ class AskRequest(BaseModel):
     # Documents the user chose («@документ»): cited first when relevant.
     context_document_ids: list[DocumentRef] = Field(default_factory=list, max_length=5)
     selection: AskSelection | None = None
+    # Chat history (v0.7, additive): where the conversation lives in the UI — the dialog (/ask) or the assistant
+    # panel of a document (its document is the selection's or the first chosen one). Labels the stored
+    # conversation only; the answer does not depend on it.
+    origin: Literal["dialog", "document"] = "dialog"
 
     @model_validator(mode="after")
     def _question_and_conversation(self) -> AskRequest:

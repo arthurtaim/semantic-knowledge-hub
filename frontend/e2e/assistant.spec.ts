@@ -53,7 +53,7 @@ test("C-01 a skill via «/», a document via «@», a csv → «Сравнить
 
   await field.fill("Что отправляет ARIS в каталог? Совпадает ли выгрузка с маппингом?");
   await field.press("Enter");
-  await expect(page).toHaveURL(/\/ask\?q=/);
+  await expect(page).toHaveURL(/\/ask\?c=conv-/); // the dialog is named in the URL (chat history)
   const dialog = page.getByRole("region", { name: "Диалог" });
   await expect(dialog.getByRole("list", { name: "Приложено к сообщению" })).toContainText("Сравнить с файлом");
   await expect(dialog.getByRole("list", { name: "Приложено к сообщению" })).toContainText("aris_export_synthetic.csv");

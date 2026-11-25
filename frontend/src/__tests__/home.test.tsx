@@ -1,7 +1,7 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DocumentPage, ProposalList } from "../api/types";
+import type { ConversationList, ConversationSummary, DocumentPage, ProposalList } from "../api/types";
 import { askHref } from "../lib/assistant";
 import { peekHandOff } from "../lib/conversation";
 import { HomePage, type HomeHandOff } from "../pages/HomePage";
@@ -130,26 +130,99 @@ describe("Home page: the assistant", () => {
     expect(screen.queryByRole("list", { name: "Приложено к сообщению" })).toBeNull();
   });
 
-  it("lists recent dialogs of this browser: question, skill and sources or the file, time; clears them", async () => {
+  it("lists this browser's conversations from the server's chat history; a row opens the stored dialog; clears them", async () => {
+    const recentRow = (overrides: Partial<ConversationSummary>): ConversationSummary => ({
+      id: "conv-home-0001",
+      title: "Что отправляет ARIS в каталог?",
+      origin: "dialog",
+      document: null,
+      turn_count: 1,
+      created_at: new Date(Date.now() - 6 * 60_000).toISOString(),
+      updated_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      last_status: "done",
+      last_skill: null,
+      last_sources: 3,
+      context: null,
+      ...overrides,
+    });
+    const list: ConversationList = {
+      items: [
+        recentRow({ turn_count: 2 }),
+        recentRow({
+          id: "conv-home-0002",
+          title: "Сверить выгрузку с маппингом ARIS",
+          last_skill: { id: "compare_with_file", name: "Сравнить с файлом", access: "read" },
+          context: "aris_export_2026-11.csv",
+          updated_at: "2026-11-20T10:00:00Z",
+        }),
+        recentRow({ id: "conv-home-0003", title: "Кто владелец?", last_status: "interrupted", last_sources: null }),
+        recentRow({ id: "conv-home-0004", title: "Объяснить", origin: "document", document: { id: "SEM-ARCH-001", title: "Архитектура" } }),
+      ],
+      total: 4,
+      enabled: true,
+      retention_days: 30,
+    };
+    let cleared = false;
+    const calls = mockApi([
+      ...homeRoutes(),
+      { path: "/api/assistant/conversations?limit=5", body: () => (cleared ? { ...list, items: [], total: 0 } : list) },
+      {
+        method: "DELETE",
+        path: "/api/assistant/conversations",
+        respond: () => {
+          cleared = true;
+          return new Response(JSON.stringify({ deleted: 4 }), { status: 200, headers: { "Content-Type": "application/json" } });
+        },
+      },
+    ]);
+    renderRoutes("/", routes);
+    const recent = (await screen.findByRole("heading", { name: "Недавние диалоги" })).closest("section") as HTMLElement;
+    const first = within(recent).getByRole("link", { name: /Что отправляет ARIS в каталог\?/ });
+    // The stored dialog — never `?q=…&run=1`, which would ask again.
+    expect(first.getAttribute("href")).toBe("/ask?c=conv-home-0001");
+    expect(first).toHaveTextContent("Ответ по базе, 3 источника · 2 вопроса");
+    expect(first).toHaveTextContent("5 мин. назад");
+    expect(within(recent).getByRole("link", { name: /Сверить выгрузку/ })).toHaveTextContent("Сравнить с файлом, aris_export_2026-11.csv");
+    expect(within(recent).getByRole("link", { name: /Кто владелец\?/ })).toHaveTextContent("Ответ по базе, ответ не получен");
+    expect(within(recent).getByRole("link", { name: /Объяснить/ })).toHaveTextContent("По документу «Архитектура»");
+    expect(within(recent).getByText(/Хранятся на сервере для этого браузера 30 дней/)).toBeInTheDocument();
+    const browser = calls.find((call) => call.url === "/api/assistant/conversations?limit=5")?.headers["X-SKH-Browser"];
+    expect(browser).toMatch(/^[0-9a-f]{32}$/);
+
+    // «Очистить историю» asks first; «Отмена» keeps everything.
+    await userEvent.click(within(recent).getByRole("button", { name: "Очистить историю" }));
+    expect(within(recent).getByText(/Удалить всю историю диалогов этого браузера\?/)).toBeInTheDocument();
+    await userEvent.click(within(recent).getByRole("button", { name: "Отмена" }));
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
+    await userEvent.click(within(recent).getByRole("button", { name: "Очистить историю" }));
+    await userEvent.click(within(recent).getByRole("button", { name: "Очистить историю" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Недавние диалоги" })).toBeNull());
+    expect(calls.filter((call) => call.method === "DELETE").map((call) => call.url)).toEqual(["/api/assistant/conversations"]);
+  });
+
+  it("without the server's history shows what this browser remembered: rows put the dialog back, never ask again", async () => {
     window.localStorage.setItem(
       "skh.recent-questions.v1:local-demo-user",
       JSON.stringify([
-        { question: "Что отправляет ARIS в каталог?", at: new Date(Date.now() - 5 * 60_000).toISOString(), skill: null, sources: 3, context: null },
+        { question: "Что отправляет ARIS в каталог?", at: new Date(Date.now() - 5 * 60_000).toISOString(), skill: null, sources: 3, context: null, conversation_id: "conv-local-0001" },
         { question: "Сверить выгрузку с маппингом ARIS", at: "2026-11-20T10:00:00Z", skill: "Сравнить с файлом", sources: 2, context: "aris_export_2026-11.csv" },
         "Старый вопрос из фазы 4",
       ]),
     );
-    mockApi(homeRoutes());
+    mockApi([...homeRoutes(), { path: "/api/assistant/conversations?limit=5", status: 503, body: { code: "unavailable", message: "Нет связи." } }]);
     renderRoutes("/", routes);
-    const recent = screen.getByRole("heading", { name: "Недавние диалоги" }).closest("section") as HTMLElement;
+    const recent = (await screen.findByRole("heading", { name: "Недавние диалоги" })).closest("section") as HTMLElement;
     const first = within(recent).getByRole("link", { name: /Что отправляет ARIS в каталог\?/ });
-    expect(first.getAttribute("href")).toBe(askHref("Что отправляет ARIS в каталог?"));
+    expect(first.getAttribute("href")).toBe("/ask?c=conv-local-0001");
     expect(first).toHaveTextContent("Ответ по базе, 3 источника");
     expect(first).toHaveTextContent("5 мин. назад");
+    const old = within(recent).getByRole("link", { name: /Старый вопрос из фазы 4/ });
+    expect(old).toHaveTextContent("Ответ по базе");
+    expect(old.getAttribute("href")).not.toContain("run=1");
     expect(within(recent).getByRole("link", { name: /Сверить выгрузку/ })).toHaveTextContent("Сравнить с файлом, aris_export_2026-11.csv");
-    expect(within(recent).getByRole("link", { name: /Старый вопрос из фазы 4/ })).toHaveTextContent("Ответ по базе");
-    expect(within(recent).getByText(/Хранятся только в этом браузере/)).toBeInTheDocument();
-    await userEvent.click(within(recent).getByRole("button", { name: "Очистить" }));
+    expect(within(recent).getByText(/История на сервере недоступна — показаны записи этого браузера/)).toBeInTheDocument();
+    await userEvent.click(within(recent).getByRole("button", { name: "Очистить историю" }));
+    await userEvent.click(within(recent).getByRole("button", { name: "Очистить историю" }));
     expect(screen.queryByRole("heading", { name: "Недавние диалоги" })).toBeNull();
     expect(window.localStorage.getItem("skh.recent-questions.v1:local-demo-user")).toBeNull();
   });

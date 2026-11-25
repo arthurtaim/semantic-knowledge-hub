@@ -10,14 +10,15 @@ import { defineConfig, devices } from "@playwright/test";
  * - "scripted" / "scripted-mobile" (M5.7, only when E2E_SCRIPTED_URL is set): e2e/m57.spec.ts,
  *   e2e/answerMarkdown.spec.ts (Markdown answers with markers), e2e/answerProvenance.spec.ts (the origin of the
  *   sources as one quiet line, «По происхождению»), e2e/templateStudioAi.spec.ts (Template Studio «Создать с
- *   помощью AI») and e2e/workAi.spec.ts (M6 «AI план» and `work_inspect` in the chat) against a UI whose
+ *   помощью AI»), e2e/chatHistoryScripted.spec.ts (a Markdown answer restored from the chat history) and
+ *   e2e/workAi.spec.ts (M6 «AI план» and `work_inspect` in the chat) against a UI whose
  *   backend talks to the SCRIPTED MODEL double (backend/tests/support/scripted_model.py, docs/AI_NATIVE_TOOLS.md
  *   «Scripted model»). The double stands in for a model that chooses tools; it is not evidence about a real model.
  *   Without the variable these specs are not selected at all, so the ordinary suites stay as they are.
  */
 const withGitLabStack = !process.env.E2E_SKIP_GITLAB_STACK;
 const scriptedUrl = process.env.E2E_SCRIPTED_URL;
-const SCRIPTED_SPECS = /(m57|answerMarkdown|answerProvenance|templateStudioAi|workAi)\.spec\.ts$/;
+const SCRIPTED_SPECS = /(m57|answerMarkdown|answerProvenance|templateStudioAi|chatHistoryScripted|workAi)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./e2e",

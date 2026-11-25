@@ -5,9 +5,9 @@ from __future__ import annotations
 import contextlib
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Path, Request, Response
+from fastapi import APIRouter, Depends, Path, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.adapters.ai.base import AIProviderError, ai_error_status
@@ -15,10 +15,24 @@ from app.api.deps import get_container
 from app.api.multipart import MultipartError, read_form
 from app.authz import Action, ensure_allowed, require
 from app.container import Container
-from app.domain.models import ATTACHMENT_ID_PATTERN, AskRequest, AskResponse, UserContext
+from app.domain.models import (
+    ATTACHMENT_ID_PATTERN,
+    CONVERSATION_ID_PATTERN,
+    AskRequest,
+    AskResponse,
+    UserContext,
+)
 from app.domain.skills import SkillInfo
 from app.errors import ApiError
 from app.services.attachments import AttachmentInfo, valid_conversation_id
+from app.services.conversations import (
+    BROWSER_HEADER,
+    ConversationClear,
+    ConversationDetail,
+    ConversationList,
+    TurnHandle,
+    valid_browser_id,
+)
 from app.services.skills import AskPlan
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
@@ -36,19 +50,58 @@ async def _plan(container: Container, user: UserContext, payload: AskRequest) ->
     return plan
 
 
+def browser_id(request: Request) -> str | None:
+    """`X-SKH-Browser`: the per-browser id of the chat history; a malformed value counts as absent."""
+    return valid_browser_id(request.headers.get(BROWSER_HEADER))
+
+
 @router.post("/ask", response_model=AskResponse)
 async def ask(
     payload: AskRequest,
+    request: Request,
     container: Annotated[Container, Depends(get_container)],
     user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
 ) -> AskResponse:
     """Without the UI v2 fields this is the plain grounded answer, exactly as before. With `skill_id` the
-    skill runs on top of the existing pipelines; draft skills return a proposal reference, never apply."""
+    skill runs on top of the existing pipelines; draft skills return a proposal reference, never apply.
+    With `conversation_id` and `X-SKH-Browser` the completed turn is stored in the chat history (v0.7)."""
     plan = await _plan(container, user, payload)
+    history = container.conversations
+    turn = history.begin(user, browser_id(request), plan)
     try:
-        return await container.skills.run(user, plan)
+        response = await container.skills.run(user, plan)
     except AIProviderError as exc:
-        raise ApiError(ai_error_status(exc.code), exc.code, exc.message) from exc
+        status = ai_error_status(exc.code)
+        history.fail(turn, exc.code, exc.message, status)
+        raise ApiError(status, exc.code, exc.message) from exc
+    except ApiError as exc:
+        history.fail(turn, exc.code, exc.message, exc.status_code)
+        raise
+    except Exception:
+        history.fail(turn, "internal_error", "Не удалось получить ответ ассистента.", 500)
+        raise
+    except BaseException:  # cancelled: the client went away
+        history.interrupt(turn)
+        raise
+    history.finish(turn, response.model_dump(mode="json"))
+    return response
+
+
+def _record(container: Container, turn: TurnHandle | None, event: dict[str, Any]) -> bool:
+    """Stores the outcome of a terminal stream event; True when the event was terminal."""
+    kind = event.get("type")
+    if kind == "final":
+        container.conversations.finish(turn, event["response"])
+        return True
+    if kind == "error":
+        container.conversations.fail(
+            turn,
+            str(event.get("code") or "ai_upstream_error"),
+            str(event.get("message") or ""),
+            int(event.get("status") or 502),
+        )
+        return True
+    return False
 
 
 @router.post(
@@ -58,20 +111,29 @@ async def ask(
 )
 async def ask_stream(
     payload: AskRequest,
+    request: Request,
     container: Annotated[Container, Depends(get_container)],
     user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
 ) -> StreamingResponse:
     """NDJSON events: `status` (retrieving → generating → validating), `delta` (PRELIMINARY model text, not
     validated), then exactly one `final` (the validated AskResponse, same as /ask) or `error`. Closing the
     connection cancels the generation (the CLI worker kills the process). Input errors (unknown or unavailable
-    skill, foreign attachment, …) are HTTP errors before the stream starts."""
+    skill, foreign attachment, …) are HTTP errors before the stream starts. The chat history (v0.7) stores the
+    `final` answer (or the `error`); a stream closed before either is an interrupted turn."""
     plan = await _plan(container, user, payload)
+    turn = container.conversations.begin(user, browser_id(request), plan)
 
     async def body() -> AsyncIterator[bytes]:
-        # aclosing: a client disconnect closes the whole chain down to the worker (which kills the CLI).
-        async with contextlib.aclosing(container.skills.run_stream(user, plan)) as events:
-            async for event in events:
-                yield (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+        ended = False
+        try:
+            # aclosing: a client disconnect closes the whole chain down to the worker (which kills the CLI).
+            async with contextlib.aclosing(container.skills.run_stream(user, plan)) as events:
+                async for event in events:
+                    ended = _record(container, turn, event) or ended
+                    yield (json.dumps(event, ensure_ascii=False) + "\n").encode("utf-8")
+        finally:
+            if not ended:
+                container.conversations.interrupt(turn)
 
     return StreamingResponse(
         body(),
@@ -170,6 +232,59 @@ async def delete_attachment(
     """Idempotent: 204 also when the attachment was already deleted, expired or never stored (an error result)."""
     container.attachments.delete(user, attachment_id)
     return Response(status_code=204)
+
+
+# --- chat history (v0.7): this user's conversations in THIS browser --------------------------------------------
+
+
+@router.get("/conversations", response_model=ConversationList)
+async def conversations(
+    request: Request,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
+    origin: Annotated[Literal["dialog", "document"] | None, Query()] = None,
+    document_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ConversationList:
+    """Newest first, bounded. Without a valid `X-SKH-Browser` the list is empty (another browser sees nothing)."""
+    return await container.conversations.list_conversations(
+        user, browser_id(request), origin=origin, document_id=document_id, limit=limit
+    )
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
+async def conversation(
+    conversation_id: Annotated[str, Path(pattern=CONVERSATION_ID_PATTERN)],
+    request: Request,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
+) -> ConversationDetail:
+    """The stored turns, re-checked for the reader now: an answer relying on a document the reader can no longer
+    see is withheld; a changed index generation is noted. 404 `conversation_not_found` for an unknown id, another
+    browser's or user's conversation and a missing browser id alike."""
+    return await container.conversations.get(user, browser_id(request), conversation_id)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204)
+async def delete_conversation(
+    conversation_id: Annotated[str, Path(pattern=CONVERSATION_ID_PATTERN)],
+    request: Request,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
+) -> Response:
+    """Idempotent 204; deletes the conversation (with its files) only when it is this browser's."""
+    container.conversations.delete(user, browser_id(request), conversation_id)
+    return Response(status_code=204)
+
+
+@router.delete("/conversations", response_model=ConversationClear)
+async def clear_conversations(
+    request: Request,
+    container: Annotated[Container, Depends(get_container)],
+    user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
+) -> ConversationClear:
+    """«Очистить историю»: every conversation of this user in this browser (other browsers keep theirs)."""
+    return ConversationClear(deleted=container.conversations.clear(user, browser_id(request)))
 
 
 @router.get("/instructions")

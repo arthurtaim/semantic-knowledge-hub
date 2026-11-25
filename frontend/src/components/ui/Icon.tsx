@@ -92,6 +92,14 @@ const PATHS = {
   send: <path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" />,
   close: <path d="M18 6 6 18M6 6l12 12" />,
   plus: <path d="M12 5v14M5 12h14" />,
+  trash: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M9.5 7V4.5h5V7" />
+      <path d="M6.5 7l1 13h9l1-13" />
+      <path d="M10.5 11v5.5M13.5 11v5.5" />
+    </>
+  ),
   chevron: <path d="m6 9 6 6 6-6" />,
   more: (
     <g fill="currentColor" stroke="none">

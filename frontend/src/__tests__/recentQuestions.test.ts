@@ -6,7 +6,7 @@ import {
   noteDialogSources,
   readRecentDialogs,
   rememberDialog,
-  rerunsAtOnce,
+  forgetRecentDialog,
   restoreDialog,
   type RecentDialog,
 } from "../lib/recentQuestions";
@@ -256,11 +256,20 @@ describe("reopening a recent dialog", () => {
     expect(findSkill(null, { id: "explain", name: "Объяснить" })).toBeNull();
   });
 
-  it("asks a plain question again at once; a skill or a file waits for Enter", () => {
-    expect(rerunsAtOnce(dialog({ skill: null }))).toBe(true);
-    expect(rerunsAtOnce(dialog({ skill: null, documents: [{ id: "DEMO-INT-001", title: "ARIS" }] }))).toBe(true);
-    expect(rerunsAtOnce(dialog({}))).toBe(false);
-    expect(rerunsAtOnce(dialog({ skill: null, attachments: [file("ATT-000000000000000a")] }))).toBe(false);
-    expect(rerunsAtOnce(dialog({ question: "", skill: { id: "find_related", name: "Найти связи" } }))).toBe(false);
+  it("puts the files back only in their own dialog: in another one they are unavailable (never sent there)", () => {
+    const item = dialog({ attachments: [file("ATT-000000000000000a")] });
+    expect(restoreDialog(item, NOW, "conv-test-0002").draft.files[0]?.status).toBe("ready");
+    const elsewhere = restoreDialog(item, NOW, "conv-other-0001");
+    expect(elsewhere.conversationId).toBe("conv-other-0001");
+    expect(elsewhere.draft.files[0]?.status).toBe("unavailable");
+    expect(elsewhere.draft.files[0]?.attachment).toBeNull();
+  });
+
+  it("forgets the entry of a dialog deleted from the history", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    rememberDialog("u1", { question: "Первый вопрос", conversationId: "conv-test-0001" });
+    rememberDialog("u1", { question: "Второй вопрос", conversationId: "conv-test-0002" });
+    forgetRecentDialog("u1", "conv-test-0001");
+    expect(questions("u1")).toEqual(["Второй вопрос"]);
   });
 });
