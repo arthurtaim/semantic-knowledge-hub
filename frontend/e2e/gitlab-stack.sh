@@ -15,6 +15,8 @@ export GITLAB_TOKEN=mock-gitlab-token-not-a-secret GITLAB_KNOWLEDGE_PATH=docs GI
 export GITLAB_PROPOSALS_ENABLED=true GITLAB_REFRESH_SECONDS=0 GITLAB_TIMEOUT_SECONDS=2
 export SEARCH_INDEX_PATH="$STATE/search.sqlite3" APP_STATE_PATH="$STATE/app_state.sqlite3"
 export PUBLICATION_STATE_PATH="$STATE/publications.sqlite3"
+# Every state file stays in $STATE — never the developer's ./workspace (test_e2e_stack_isolation.py).
+export WORK_STATE_PATH="$STATE/work.sqlite3" CONFLUENCE_MOCK_STATE_PATH="$STATE/mock_confluence_state.json"
 export CONFLUENCE_CONNECTOR=mcp CONFLUENCE_MCP_URL=http://127.0.0.1:8930/mcp CONFLUENCE_MCP_ALLOW_INSECURE_HTTP=true
 export CONFLUENCE_MCP_AUTH_TOKEN=mock-mcp-token-not-a-secret CONFLUENCE_MCP_TIMEOUT_SECONDS=2 CONFLUENCE_MCP_STATUS_TTL_SECONDS=0
 export CONFLUENCE_ALLOWLISTED_SPACES=TEST,ARCH CONFLUENCE_LINK_HOSTS=confluence.mock.example
