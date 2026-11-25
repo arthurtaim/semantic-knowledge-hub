@@ -323,6 +323,48 @@ test.describe("Planner v2 Gantt (docs/ui-v2/planner/specs/PLANNER_V2.md §8)", (
     await expect(page).toHaveURL(/task=ARIS-6/);
   });
 
+  test("the filter row is one line (48 px) at 1100 and 1280 px in every view; the Gantt's zoom becomes a menu there", async ({ page }) => {
+    // Owner's decision: no second line under the filters — while the full Gantt controls do not fit in the row, the
+    // zoom is a menu and «Вписать», «Сегодня» are icons (the list's grouping shows only its value). The row itself
+    // decides (the sidebar is open here).
+    test.setTimeout(120_000);
+    const views = [
+      ["gantt", "g.gantt-bar"],
+      ["list", ".task-row"],
+      ["list&group=assignee", ".task-row"], // the longest «Группировка: по исполнителю»
+      ["board", ".board-card"],
+    ] as const;
+    for (const width of [1100, 1280]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const [view, ready] of views) {
+        await page.goto(`/projects/ARIS?view=${view}&zoom=week`);
+        await expect(page.locator(ready).first()).toBeVisible();
+        await page.evaluate(() => document.fonts.ready);
+        const row = await page.locator(".work-toolbar").evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const border = parseFloat(getComputedStyle(el).borderBottomWidth) || 0;
+          const centres = Array.from(el.querySelectorAll<HTMLElement>(".work-filters > *, .work-toolbar__view > *"))
+            .map((child) => child.getBoundingClientRect())
+            .filter((r) => r.width > 1 && r.height > 1)
+            .map((r) => Math.round(r.top + r.height / 2));
+          return { height: box.height - border, lines: new Set(centres).size, spread: Math.max(...centres) - Math.min(...centres) };
+        });
+        expect(row.height, `${view} at ${width} px`).toBeLessThanOrEqual(48.5);
+        expect(row.spread, `${view} at ${width} px: every control on one line`).toBeLessThanOrEqual(1);
+      }
+      await page.goto("/projects/ARIS?view=gantt&zoom=week");
+      await expect(page.getByRole("button", { name: "Масштаб: Неделя" })).toBeVisible();
+      await expect(page.getByRole("radio", { name: "Неделя" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Вписать" })).toHaveAttribute("title", "Весь проект по ширине (Shift + 1)");
+      await expect(page.getByRole("button", { name: "Сегодня" })).toHaveAttribute("title", "К сегодня (T)");
+    }
+    // at 1440 px the full form fits: segments and words
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openGantt(page, "week");
+    await expect(page.getByRole("radio", { name: "Неделя" })).toBeChecked();
+    await expect(page.getByRole("button", { name: "Сегодня" })).toHaveText("Сегодня");
+  });
+
   test("no horizontal arrow segment crosses a label on «День», «Неделя», «Месяц» and «Вписать»", async ({ page }) => {
     for (const zoom of ["day", "week", "month", "fit"]) {
       await openGantt(page, zoom);

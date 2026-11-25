@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkTask } from "../api/types";
+import { toDay } from "../lib/work";
 import { ProjectPage } from "../pages/ProjectPage";
 import { memoryStorage, mockApi, mockViewport, renderRoutes } from "./helpers";
 import { capabilities, gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPointerAndFrames, task } from "./workFixtures";
@@ -549,6 +550,46 @@ describe("Gantt: selection, links, «Вид», «Вписать», zoom gestures
     expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
   });
 
+  it("a smooth zoom stays in the page: the URL and the remembered zoom get the nearest named one, no segment is lit", async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    mockApi(projectRoutes());
+    await openGantt("/projects/ARIS?view=gantt&zoom=week");
+    // 16 px per day × e^0.45 ≈ 25.1: nearer to «День» (36) than to «Неделя» (16) by ratio
+    fireEvent.wheel(scroller(), { deltaY: -150, ctrlKey: true, clientX: 500, clientY: 200 });
+    const smooth = Number(body("ARIS-5").getAttribute("width")) / 2;
+    expect(smooth).toBeCloseTo(16 * Math.exp(0.45), 6);
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=day");
+    expect(screen.getByTestId("location").textContent).not.toMatch(/zoom=\d/);
+    expect(storage.getItem("skh.work.zoom")).toBe("day");
+    // the smooth scale survives its own URL change; no segment claims it
+    expect(Number(body("ARIS-5").getAttribute("width"))).toBeCloseTo(2 * smooth, 6);
+    for (const name of ["День", "Неделя", "Месяц", "Квартал", "Год"]) expect(screen.getByRole("radio", { name })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Вписать" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("a fixed zoom opens on today at 30 %; a project yet to start on its start; a finished one with its end at 70 %", async () => {
+    const dayX = (iso: string) => x("ARIS-3") + (toDay(iso) - toDay("2026-11-02")) * DAY; // ARIS-3 starts on 2 Nov
+    mockApi(projectRoutes());
+    const first = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(scroller().scrollLeft).toBeCloseTo(dayX("2026-11-25") - 0.3 * VISIBLE, 6);
+    first.unmount();
+    vi.restoreAllMocks();
+
+    mockApi(projectRoutes({ snapshot: gantt(planTasks(), { today: "2026-10-20" }) }));
+    const early = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(scroller().scrollLeft).toBeCloseTo(dayX("2026-10-30"), 6); // 2 Nov less the «Вписать» margin of 3 days
+    early.unmount();
+    vi.restoreAllMocks();
+
+    mockApi(projectRoutes({ snapshot: gantt(planTasks(), { today: "2027-01-15" }) }));
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(scroller().scrollLeft).toBeCloseTo(dayX("2026-12-09") - 0.7 * VISIBLE, 6); // the day after its last one
+  });
+
   it("the critical path item appears only when the server enables it and returns a path (no fake path)", async () => {
     const user = userEvent.setup();
     mockApi(projectRoutes());
@@ -622,7 +663,7 @@ describe("Gantt: the task column (Planner v2 §3.1, §3.9)", () => {
     expect(document.querySelector('.gantt-name[data-task-key="ARIS-4"]')).not.toBeNull();
   });
 
-  it("up to 1100 px: a 240 px column without «Исп.», «Вписать» as an icon; a phone: 132 px, the zoom as a menu", async () => {
+  it("up to 1100 px: a 240 px column without «Исп.»; a phone: 132 px, the zoom as a menu", async () => {
     const user = userEvent.setup();
     mockViewport(1000);
     mockApi(projectRoutes());
@@ -631,7 +672,6 @@ describe("Gantt: the task column (Planner v2 §3.1, §3.9)", () => {
     expect(names().style.width).toBe("240px");
     expect(screen.queryByText("Исп.")).not.toBeInTheDocument();
     expect(document.querySelector('.gantt-name [role="img"][aria-label^="Исполнитель"]')).toBeNull();
-    expect(screen.getByRole("button", { name: "Вписать" })).toHaveClass("button--icon");
     unmount();
     mockViewport(390);
     renderRoutes("/projects/ARIS?view=gantt", ROUTES);
@@ -643,6 +683,107 @@ describe("Gantt: the task column (Planner v2 §3.1, §3.9)", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("zoom=week");
     expect(screen.queryByRole("separator", { name: "Ширина колонки задач" })).not.toBeInTheDocument(); // no dragging on a phone
     expect(screen.getByText(/Сроки меняются в карточке задачи/)).toBeVisible();
+  });
+
+  describe("the filter row stays one line: the controls follow the row's own width (§3.9)", () => {
+    /** A ResizeObserver the test drives: jsdom has none (and no layout). */
+    class FakeResizeObserver {
+      static all: FakeResizeObserver[] = [];
+      elements: Element[] = [];
+      constructor(readonly callback: ResizeObserverCallback) {
+        FakeResizeObserver.all.push(this);
+      }
+      observe(element: Element) {
+        this.elements.push(element);
+      }
+      unobserve() {}
+      disconnect() {
+        this.elements = [];
+      }
+    }
+
+    let rowWidth = 1200;
+    function resizeRow(width: number) {
+      rowWidth = width;
+      const row = document.querySelector(".work-toolbar") as Element;
+      for (const observer of FakeResizeObserver.all) {
+        if (observer.elements.includes(row)) act(() => observer.callback([], observer as unknown as ResizeObserver));
+      }
+    }
+
+    beforeEach(() => {
+      FakeResizeObserver.all = [];
+      vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+      // the row's room comes from the row; the filters are 4 × 120 px, the full controls 575 px (as in Chrome)
+      vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(function (this: Element) {
+        return this.classList.contains("work-toolbar") ? rowWidth : 0;
+      });
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        const controls = this.classList.contains("work-toolbar__view") ? (this.querySelector(".work-toolbar__fit") ? 575 : 300) : 0;
+        const width = controls || (this.parentElement?.classList.contains("work-filters") ? 120 : 0);
+        return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 0, width, height: 0, toJSON: () => ({}) } as DOMRect;
+      });
+    });
+
+    it("the zoom becomes a menu and «Вписать», «Сегодня» icons with a tooltip and a name — and back when room returns", async () => {
+      const user = userEvent.setup();
+      mockViewport(1440); // the window is wide: only the row decides
+      rowWidth = 1200;
+      mockApi(projectRoutes());
+      await openGantt("/projects/ARIS?view=gantt&zoom=week");
+      expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Вписать" })).not.toHaveClass("button--icon");
+      expect(screen.getByRole("button", { name: "Сегодня" })).not.toHaveClass("button--icon");
+
+      resizeRow(900); // e.g. the window shrank, or a docked panel took room: 4 × 120 + 575 > 900
+      expect(screen.queryByRole("radio", { name: "Неделя" })).not.toBeInTheDocument();
+      const fit = screen.getByRole("button", { name: "Вписать" });
+      expect(fit).toHaveClass("button--icon");
+      expect(fit).toHaveAttribute("title", "Весь проект по ширине (Shift + 1)");
+      const today = screen.getByRole("button", { name: "Сегодня" });
+      expect(today).toHaveClass("button--icon");
+      expect(today).toHaveAttribute("title", "К сегодня (T)");
+      await user.click(screen.getByRole("button", { name: "Масштаб: Неделя" }));
+      await user.click(screen.getByRole("menuitemradio", { name: "Месяц" }));
+      expect(screen.getByTestId("location")).toHaveTextContent("zoom=month");
+      expect(screen.getByRole("button", { name: "Масштаб: Месяц" })).toBeInTheDocument();
+
+      resizeRow(1100); // the sidebar collapsed: the full form fits again (4 × 120 + 575 = 1055)
+      expect(screen.getByRole("radio", { name: "Месяц" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Сегодня" })).not.toHaveClass("button--icon");
+    });
+
+    it("each view's controls decide with their own full width: back on the Gantt after the row grew, the segments return", async () => {
+      const user = userEvent.setup();
+      mockViewport(1440);
+      rowWidth = 900; // the Gantt does not fit (480 + 575), the list does (480 + 300)
+      mockApi(projectRoutes());
+      await openGantt("/projects/ARIS?view=gantt&zoom=week");
+      expect(screen.getByRole("button", { name: "Масштаб: Неделя" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Список" }));
+      expect(await screen.findByRole("button", { name: "Группировка: нет" })).toHaveTextContent(/^Группировка: нет$/);
+      resizeRow(1200); // the sidebar folded while on the list
+      await user.click(screen.getByRole("button", { name: "Гант" }));
+      await screen.findByRole("group", { name: "Полосы задач" });
+      expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Сегодня" })).not.toHaveClass("button--icon");
+    });
+
+    it("the list's grouping shows only its value while the row is short; its name and tooltip keep the whole", async () => {
+      mockViewport(1440);
+      rowWidth = 1200;
+      mockApi(projectRoutes());
+      renderRoutes("/projects/ARIS?view=list&group=assignee", ROUTES);
+      const full = await screen.findByRole("button", { name: "Группировка: по исполнителю" });
+      expect(full).not.toHaveAttribute("title");
+      resizeRow(700); // 480 + 300 > 700
+      const short = screen.getByRole("button", { name: "Группировка: по исполнителю" });
+      expect(short).toHaveTextContent(/^По исполнителю$/);
+      expect(short).toHaveAttribute("title", "Группировка");
+      expect(screen.queryByRole("button", { name: /^Масштаб/ })).not.toBeInTheDocument();
+      resizeRow(1200);
+      expect(screen.getByRole("button", { name: "Группировка: по исполнителю" })).toHaveTextContent(/^Группировка: по исполнителю$/);
+    });
   });
 });
 

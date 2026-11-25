@@ -67,6 +67,39 @@ export function zoomForDayWidth(dayWidth: number): FixedZoom | null {
   return FIXED_ZOOMS.find((zoom) => Math.abs(DAY_WIDTH[zoom] - dayWidth) < 1e-6) ?? null;
 }
 
+/**
+ * The named zoom nearest to a smooth one, by ratio (zoom levels are geometric: 10 px per day is nearer to «Неделя»'s 16
+ * than to «Месяц»'s 5). A smooth zoom lives in the page's state only; the URL and the remembered setting get this
+ * name, so a reload or a sent link opens a scale that means something — never `?zoom=7.5`, never «Вписать».
+ */
+export function nearestZoom(dayWidth: number): FixedZoom {
+  const width = clampDayWidth(dayWidth);
+  let best: FixedZoom = "week";
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const zoom of FIXED_ZOOMS) {
+    const distance = Math.abs(Math.log(DAY_WIDTH[zoom] / width));
+    if (distance < bestDistance) {
+      best = zoom;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/** A finished project opens with its end at about 70 % of the visible width. */
+export const PROJECT_END_AT = 0.7;
+
+/**
+ * Where a fixed zoom opens (the first render; «Вписать» opens on the project's start): today at 30 % of the window,
+ * as work goes on around today; a project yet to start — its first day with the «Вписать» margin at the left edge; a
+ * finished one — its end at 70 %, so the last tasks and their labels are in view. Owner's decision, Planner v2 §3.2.
+ */
+export function openingView(span: DaySpan | null, today: number, visibleWidth: number): { day: number; offset: number } {
+  if (span && today < span.start) return { day: span.start - FIT_DAYS_BEFORE, offset: 0 };
+  if (span && today >= Math.max(span.end, span.start + 1)) return { day: span.end, offset: visibleWidth * PROJECT_END_AT };
+  return { day: today, offset: visibleWidth * TODAY_AT };
+}
+
 /** Ctrl/⌘ + wheel or a pinch: a smooth step, exponential in the wheel delta, kept within the range. */
 export function wheelDayWidth(dayWidth: number, deltaY: number, deltaMode = 0): number {
   const pixels = deltaMode === 1 ? deltaY * 16 : deltaMode === 2 ? deltaY * 400 : deltaY;

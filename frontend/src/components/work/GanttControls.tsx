@@ -15,9 +15,13 @@ import { SegmentedControl } from "../ui/SegmentedControl";
 
 /*
  * The Gantt's controls at the right end of the filter row (Planner v2, docs/ui-v2/planner/specs/PLANNER_V2.md §2.4,
- * §3.2, §3.7, §3.9): the zoom as segments «День | Неделя | Месяц | Квартал | Год» (a menu on a phone), «Вписать»
- * (pressed while the zoom is «Вписать»; an icon at the medium width), «Сегодня» and «Вид» — how links and labels are
- * drawn and the keys. A smooth zoom (Ctrl/⌘ + wheel) lights a segment only when it lands exactly on its scale.
+ * §3.2, §3.7, §3.9): the zoom as segments «День | Неделя | Месяц | Квартал | Год», «Вписать» (pressed while the zoom is
+ * «Вписать»), «Сегодня» and «Вид» — how links and labels are drawn and the keys.
+ *
+ * The filter row stays one line (owner's decision): while the full form does not fit in the row — the page measures
+ * the row itself, not the window — the zoom is a menu «Неделя ▾» (the phone's one) and «Вписать», «Сегодня» are icons
+ * with a tooltip and a name. A smooth zoom (Ctrl/⌘ + wheel) lights no segment and checks no menu item, unless it lands
+ * exactly on a named scale.
  */
 
 const KEYS: [string, string][] = [
@@ -43,13 +47,13 @@ interface GanttControlsProps {
   onSettings: (next: GanttViewSettings) => void;
   /** The server computes a critical path and returned one: «Критический путь» is offered (never a fake one). */
   criticalPathAvailable: boolean;
-  /** Up to 1100 px: «Вписать» is an icon. */
-  medium: boolean;
-  /** Phones: the zoom is a menu (it includes «Вписать»). */
+  /** The full form does not fit in the filter row: the zoom is a menu, «Вписать» and «Сегодня» are icons. */
+  compact: boolean;
+  /** Phones: the zoom is a menu (it includes «Вписать»); the row may wrap there. */
   phone: boolean;
 }
 
-export function GanttControls({ zoom, dayWidthOverride, onZoom, onFit, onToday, settings, onSettings, criticalPathAvailable, medium, phone }: GanttControlsProps) {
+export function GanttControls({ zoom, dayWidthOverride, onZoom, onFit, onToday, settings, onSettings, criticalPathAvailable, compact, phone }: GanttControlsProps) {
   const shown: GanttZoom | null = dayWidthOverride !== null ? zoomForDayWidth(dayWidthOverride) : zoom;
   const fitted = shown === "fit";
 
@@ -105,52 +109,60 @@ export function GanttControls({ zoom, dayWidthOverride, onZoom, onFit, onToday, 
     </div>
   );
 
+  const zoomMenu = (
+    <Menu
+      label="Масштаб"
+      align="end"
+      className="docs-filter-menu"
+      groups={[
+        {
+          radio: true,
+          items: GANTT_ZOOMS.map((value) => ({
+            id: value,
+            label: GANTT_ZOOM_LABEL[value],
+            checked: shown === value,
+            onSelect: () => (value === "fit" ? onFit() : onZoom(value)),
+          })),
+        },
+      ]}
+      trigger={(props) => (
+        <button {...props} type="button" className="docs-filter" aria-label={`Масштаб: ${shown ? GANTT_ZOOM_LABEL[shown] : "свой"}`}>
+          <span className="docs-filter__text">{shown ? GANTT_ZOOM_LABEL[shown] : "Масштаб"}</span>
+          <Icon name="chevron" size={12} />
+        </button>
+      )}
+    />
+  );
+  const fitTitle = "Весь проект по ширине (Shift + 1)";
+  const todayTitle = "К сегодня (T)";
+
   return (
     <>
-      {phone ? (
-        <Menu
-          label="Масштаб"
-          align="end"
-          className="docs-filter-menu"
-          groups={[
-            {
-              radio: true,
-              items: GANTT_ZOOMS.map((value) => ({
-                id: value,
-                label: GANTT_ZOOM_LABEL[value],
-                checked: shown === value,
-                onSelect: () => (value === "fit" ? onFit() : onZoom(value)),
-              })),
-            },
-          ]}
-          trigger={(props) => (
-            <button {...props} type="button" className="docs-filter" aria-label={`Масштаб: ${shown ? GANTT_ZOOM_LABEL[shown] : "свой"}`}>
-              <span className="docs-filter__text">{shown ? GANTT_ZOOM_LABEL[shown] : "Масштаб"}</span>
-              <Icon name="chevron" size={12} />
-            </button>
-          )}
-        />
+      {phone || compact ? (
+        zoomMenu
       ) : (
-        <>
-          <SegmentedControl
-            label="Масштаб"
-            className="work-toolbar__zoom"
-            options={FIXED_ZOOMS.map((value): { value: GanttZoom; label: string } => ({ value, label: GANTT_ZOOM_LABEL[value] }))}
-            value={shown ?? "fit"}
-            onChange={onZoom}
-          />
-          {medium ? (
-            <IconButton icon="fit" size="sm" variant="secondary" label="Вписать" title="Весь проект по ширине (Shift + 1)" aria-pressed={fitted} className="work-toolbar__fit" onClick={onFit} />
-          ) : (
-            <Button size="sm" icon="fit" aria-pressed={fitted} title="Весь проект по ширине (Shift + 1)" className="work-toolbar__fit" onClick={onFit}>
-              Вписать
-            </Button>
-          )}
-        </>
+        <SegmentedControl
+          label="Масштаб"
+          className="work-toolbar__zoom"
+          options={FIXED_ZOOMS.map((value): { value: GanttZoom; label: string } => ({ value, label: GANTT_ZOOM_LABEL[value] }))}
+          value={shown ?? "fit"}
+          onChange={onZoom}
+        />
       )}
-      <Button size="sm" title="К сегодня (T)" onClick={onToday}>
-        Сегодня
-      </Button>
+      {phone ? null : compact ? (
+        <IconButton icon="fit" size="sm" variant="secondary" label="Вписать" title={fitTitle} aria-pressed={fitted} className="work-toolbar__fit" onClick={onFit} />
+      ) : (
+        <Button size="sm" icon="fit" aria-pressed={fitted} title={fitTitle} className="work-toolbar__fit" onClick={onFit}>
+          Вписать
+        </Button>
+      )}
+      {compact && !phone ? (
+        <IconButton icon="today" size="sm" variant="secondary" label="Сегодня" title={todayTitle} onClick={onToday} />
+      ) : (
+        <Button size="sm" title={todayTitle} onClick={onToday}>
+          Сегодня
+        </Button>
+      )}
       <Menu
         label="Вид диаграммы"
         align="end"

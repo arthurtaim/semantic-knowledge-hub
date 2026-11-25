@@ -24,6 +24,7 @@ import {
   effectiveLinks,
   fitDayWidth,
   fitStartDay,
+  openingView,
   lateEnd as lateEndOf,
   linksNote,
   markerText,
@@ -375,7 +376,8 @@ export function GanttChart(props: GanttChartProps) {
   );
 
   // Where the window goes when the scale changes: «Вписать» shows the project from its start; any other change keeps
-  // the date in the middle of the window in the middle; the first render shows today at 30 % of the width.
+  // the date in the middle of the window in the middle; the first render of a fixed zoom shows today at 30 % of the
+  // width — a project yet to start from its start, a finished one with its end at 70 % (openingView, §3.2).
   const layout = useRef<{ dayWidth: number; start: number; visible: number; zoom: GanttZoom; fitRequest: number } | null>(null);
   const anchor = useRef<{ day: number; offset: number } | null>(null);
   useLayoutEffect(() => {
@@ -387,10 +389,8 @@ export function GanttChart(props: GanttChartProps) {
       target = scrollForDay(anchor.current.day, anchor.current.offset, range, dayWidth);
       anchor.current = null;
     } else if (!prev || (prev.zoom !== zoom && zoom === "fit") || prev.fitRequest !== fitRequest) {
-      target =
-        zoom === "fit" || (prev && prev.fitRequest !== fitRequest)
-          ? scrollForDay(fitStartDay(extent, todayDay), 0, range, dayWidth)
-          : scrollForDay(todayDay, visibleWidth * TODAY_AT, range, dayWidth);
+      const opening = zoom === "fit" || (prev && prev.fitRequest !== fitRequest) ? { day: fitStartDay(extent, todayDay), offset: 0 } : openingView(extent, todayDay, visibleWidth);
+      target = scrollForDay(opening.day, opening.offset, range, dayWidth);
     } else if (prev.dayWidth !== dayWidth || prev.start !== range.start || prev.visible !== visibleWidth) {
       const centre = prev.start + (el.scrollLeft + prev.visible / 2) / prev.dayWidth;
       target = scrollForDay(centre, visibleWidth / 2, range, dayWidth);

@@ -214,6 +214,14 @@ const PATHS = {
     </>
   ),
   fit: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  // «Сегодня» in the Gantt's compact controls: a calendar page with today marked
+  today: (
+    <>
+      <rect x="4" y="5.5" width="16" height="14.5" rx="2" />
+      <path d="M8 3.5v4M16 3.5v4M4 10h16" />
+      <circle cx="12" cy="15" r="1.75" />
+    </>
+  ),
   subtask: (
     <>
       <path d="M6 4v9a3 3 0 0 0 3 3h9" />

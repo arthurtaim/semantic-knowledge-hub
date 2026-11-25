@@ -50,7 +50,8 @@ import {
   type WorkView,
 } from "../lib/work";
 import { writePreference } from "../lib/storage";
-import { GANTT_ZOOM_KEY, readGanttView, resolveZoom, writeGanttView, type GanttViewSettings, type GanttZoom } from "../lib/gantt";
+import { GANTT_ZOOM_KEY, nearestZoom, readGanttView, resolveZoom, writeGanttView, type GanttViewSettings, type GanttZoom } from "../lib/gantt";
+import { useCompactRow } from "../lib/rowFit";
 
 /*
  * A project (M6, Planner v2 frame — docs/ui-v2/planner/specs/PLANNER_V2.md §2): the 52 px toolbar (path, key,
@@ -74,6 +75,10 @@ const PHONE = "(max-width: 719.98px)";
 const MEDIUM = "(max-width: 1100px)";
 /** Phones: the project line keeps status and progress. */
 const SMALL_PHONE = "(max-width: 599.98px)";
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
 
 /** «14 задач», «1 задача», «3 задачи». */
 function tasksText(n: number): string {
@@ -106,6 +111,11 @@ export function ProjectPage() {
   const [ganttView, setGanttView] = useState<GanttViewSettings>(readGanttView);
   const [customWidth, setCustomWidth] = useState<number | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
+  // The filter row stays one line (owner's decision): a view's controls go compact while their full form does not fit
+  // in the row — measured on the row itself, so a collapsed sidebar gives the room back (Planner v2 §3.9). The Gantt:
+  // the zoom as a menu, «Вписать» and «Сегодня» as icons; the list: the grouping shows only its value. A phone wraps.
+  const compactForm = phone ? null : view === "gantt" ? "gantt" : view === "list" ? `list:${group}` : null;
+  const [toolbarRef, compactControls] = useCompactRow(".work-filters", ".work-toolbar__view", compactForm, filters);
   // The list's columns hidden in «Вид» (remembered in this browser).
   const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<ListColumn>>(readHiddenColumns);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
@@ -177,8 +187,27 @@ export function ProjectPage() {
     [setUrl],
   );
 
-  // Back / Forward to another zoom drops a smooth one.
-  useEffect(() => setCustomWidth(null), [zoom]);
+  // A smooth zoom (Ctrl/⌘ + wheel) lives in this page's state; the URL and the remembered zoom get the nearest named
+  // one, so a reload or a sent link opens a named scale (never `?zoom=7.5`). Back / Forward to another zoom drops it.
+  const ownZoom = useRef<GanttZoom | null>(null);
+  const onDayWidth = useCallback(
+    (width: number) => {
+      setCustomWidth(width);
+      const near = nearestZoom(width);
+      if (near === zoom) return;
+      ownZoom.current = near;
+      writePreference(GANTT_ZOOM_KEY, near);
+      setUrl({ zoom: near }, true);
+    },
+    [zoom, setUrl],
+  );
+  useEffect(() => {
+    if (ownZoom.current === zoom) {
+      ownZoom.current = null;
+      return;
+    }
+    setCustomWidth(null);
+  }, [zoom]);
 
   const onFit = useCallback(() => {
     if (zoom !== "fit") onZoom("fit");
@@ -361,8 +390,14 @@ export function ProjectPage() {
           },
         ]}
         trigger={(props) => (
-          <button {...props} type="button" className={group === "none" ? "docs-filter" : "docs-filter docs-filter--on"}>
-            <span className="docs-filter__text">Группировка: {LIST_GROUP_LABEL[group]}</span>
+          <button
+            {...props}
+            type="button"
+            className={group === "none" ? "docs-filter" : "docs-filter docs-filter--on"}
+            aria-label={compactControls ? `Группировка: ${LIST_GROUP_LABEL[group]}` : undefined}
+            title={compactControls ? "Группировка" : undefined}
+          >
+            <span className="docs-filter__text">{compactControls ? (group === "none" ? "Группировка" : capitalize(LIST_GROUP_LABEL[group])) : `Группировка: ${LIST_GROUP_LABEL[group]}`}</span>
             <Icon name="chevron" size={12} />
           </button>
         )}
@@ -401,7 +436,7 @@ export function ProjectPage() {
         settings={ganttView}
         onSettings={onGanttView}
         criticalPathAvailable={criticalPathAvailable}
-        medium={medium}
+        compact={compactControls}
         phone={phone}
       />
     ) : null;
@@ -449,7 +484,7 @@ export function ProjectPage() {
         </div>
       ) : null}
       {phone ? <div className="project-page__views">{viewSwitch}</div> : null}
-      <div className="work-toolbar">
+      <div className="work-toolbar" ref={toolbarRef}>
         <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} documents={documents} assigneeCounts={assigneeCounts} />
         <div className="work-toolbar__view" role="group" aria-label="Вид">
           <span className={view === "list" ? "work-toolbar__count" : "visually-hidden"} aria-live="polite">
@@ -497,7 +532,7 @@ export function ProjectPage() {
               violations={snapshot.violations}
               zoom={zoom}
               dayWidthOverride={customWidth}
-              onDayWidth={setCustomWidth}
+              onDayWidth={onDayWidth}
               onFit={onFit}
               fitRequest={fitRequest}
               settings={ganttView}

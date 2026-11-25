@@ -15,6 +15,8 @@ import {
   markerText,
   MAX_DAY_WIDTH,
   MIN_DAY_WIDTH,
+  nearestZoom,
+  openingView,
   pathSegments,
   projectSpan,
   readGanttView,
@@ -111,6 +113,35 @@ describe("zoom", () => {
     expect(zoomForDayWidth(16)).toBe("week");
     expect(zoomForDayWidth(1.8)).toBe("quarter");
     expect(zoomForDayWidth(17)).toBeNull();
+  });
+
+  it("a smooth zoom is remembered as the nearest named one (by ratio, never «Вписать» or a number)", () => {
+    for (const zoom of ["day", "week", "month", "quarter", "year"] as const) expect(nearestZoom(DAY_WIDTH[zoom])).toBe(zoom);
+    expect(nearestZoom(21.6)).toBe("week"); // 21.6 / 16 = 1.35 < 36 / 21.6 = 1.67
+    expect(nearestZoom(25)).toBe("day"); // 36 / 25 = 1.44 < 25 / 16 = 1.56
+    expect(nearestZoom(10)).toBe("week"); // by ratio (16 / 10 < 10 / 5), not by difference
+    expect(nearestZoom(3)).toBe("month");
+    expect(nearestZoom(1.2)).toBe("quarter"); // 1.8 / 1.2 = 1.5 < 1.2 / 0.62 = 1.94
+    expect(nearestZoom(1)).toBe("year"); // 1.8 / 1 = 1.8 > 1 / 0.62 = 1.61
+    expect(nearestZoom(MAX_DAY_WIDTH)).toBe("day");
+    expect(nearestZoom(MIN_DAY_WIDTH)).toBe("year");
+  });
+
+  it("opens a fixed zoom on today at 30 %; a project yet to start on its start, a finished one with its end at 70 %", () => {
+    const span = { start: toDay("2026-11-02"), end: toDay("2026-12-09") };
+    // under way (today 25 Nov): today at 30 % of the window
+    expect(openingView(span, today, 1000)).toEqual({ day: today, offset: 300 });
+    // nothing scheduled: today at 30 %
+    expect(openingView(null, today, 1000)).toEqual({ day: today, offset: 300 });
+    // not started yet: its first day with the «Вписать» margin of 3 days at the left edge
+    expect(openingView(span, toDay("2026-10-20"), 1000)).toEqual({ day: toDay("2026-10-30"), offset: 0 });
+    // started today: under way
+    expect(openingView(span, span.start, 1000)).toEqual({ day: span.start, offset: 300 });
+    // finished (the day after its last day and later): its end at 70 %
+    expect(openingView(span, span.end, 1000)).toEqual({ day: span.end, offset: 700 });
+    expect(openingView(span, toDay("2027-03-01"), 1000)).toEqual({ day: span.end, offset: 700 });
+    // its last day is still under way
+    expect(openingView(span, span.end - 1, 1000)).toEqual({ day: span.end - 1, offset: 300 });
   });
 
   it("the drawn range starts on a Monday, covers every task and today and leaves a visible width on each side", () => {
