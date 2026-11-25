@@ -89,9 +89,11 @@
   --graph-edge-active: #59625C;
   /* the ring around a node shape (white on the light canvas, the surface colour on the dark one) */
   --graph-node-stroke: var(--bg-surface);
-  /* Planner v2 Gantt and task statuses (docs/ui-v2/planner/specs/PLANNER_V2.md §3.4): tinted fills with a frame,
-     the text inside readable; «К работе» darker than the mockup's #9AA59E so its outline is ≥ 3:1 (WCAG 1.4.11);
-     «Готово» stays quiet on purpose (its tick and its words carry the state) */
+  /* Planner v2 Gantt and task statuses (docs/ui-v2/planner/specs/PLANNER_V2.md §3.4, §3.6): tinted fills with a
+     frame, the text inside readable. Bar frames and links are graphics needed to read the dates (WCAG 1.4.11), so
+     every one is ≥ 3:1 on the surface and on the weekend shading: «Готово» and «К работе» share the frame #868F89
+     and differ by the fill (grey with a tick vs white) and the words; plain links use it too, the selected task's
+     links stay --accent at 1.6 px */
   --gantt-todo-bg: #FFFFFF;
   --gantt-todo-border: #868F89;
   --gantt-todo-text: #1A1F1C;
@@ -102,7 +104,7 @@
   --gantt-review-border: #6A50C2;
   --gantt-review-text: #4E3A9E;
   --gantt-done-bg: #E9ECE9;
-  --gantt-done-border: #C9D0CB;
+  --gantt-done-border: #868F89;
   --gantt-done-text: #5E6862;
   --gantt-done-mark: #848D87;
   --gantt-todo-mark: #8A948D;
@@ -111,7 +113,7 @@
   --gantt-milestone: #3A423D;
   --gantt-summary: #3A423D;
   --gantt-summary-done: #868F89;
-  --gantt-arrow: #AEB7B1;
+  --gantt-arrow: #868F89;
   --gantt-grid: #F2F4F2;
   --gantt-weekend: #F6F7F5;
   --gantt-row-selected: rgb(231 242 235 / 0.55);
@@ -259,7 +261,7 @@
   --gantt-review-border: #9D8AE8;
   --gantt-review-text: #C9BDF7;
   --gantt-done-bg: #262C28;
-  --gantt-done-border: #3E4741;
+  --gantt-done-border: #7D8781;
   --gantt-done-text: #A2ABA5;
   --gantt-done-mark: #8C958F;
   --gantt-todo-mark: #8C958F;
@@ -268,7 +270,7 @@
   --gantt-milestone: #C9D0CB;
   --gantt-summary: #C9D0CB;
   --gantt-summary-done: #6B746E;
-  --gantt-arrow: #59625C;
+  --gantt-arrow: #7D8781;
   --gantt-grid: #222824;
   --gantt-weekend: #1F2421;
   --gantt-row-selected: rgb(23 48 31 / 0.55);
@@ -358,7 +360,7 @@
     --gantt-review-border: #9D8AE8;
     --gantt-review-text: #C9BDF7;
     --gantt-done-bg: #262C28;
-    --gantt-done-border: #3E4741;
+    --gantt-done-border: #7D8781;
     --gantt-done-text: #A2ABA5;
     --gantt-done-mark: #8C958F;
     --gantt-todo-mark: #8C958F;
@@ -367,7 +369,7 @@
     --gantt-milestone: #C9D0CB;
     --gantt-summary: #C9D0CB;
     --gantt-summary-done: #6B746E;
-    --gantt-arrow: #59625C;
+    --gantt-arrow: #7D8781;
     --gantt-grid: #222824;
     --gantt-weekend: #1F2421;
     --gantt-row-selected: rgb(23 48 31 / 0.55);
