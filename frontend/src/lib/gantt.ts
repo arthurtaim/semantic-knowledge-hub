@@ -428,6 +428,68 @@ export function markerText(place: "before" | "after", startDay: number, endExclu
   return lastDay === startDay ? `‹ ${short(startDay)}` : `‹ ${short(startDay)} – ${short(lastDay)}`;
 }
 
+/** The narrowest bar (a task is visible at any zoom), a summary's narrowest bracket, half a milestone's diamond. */
+export const MIN_BAR_WIDTH = 6;
+export const MIN_SUMMARY_WIDTH = 8;
+export const MILESTONE_HALF = 8;
+
+export interface BarBox {
+  kind: BarKind;
+  /** Left edge and width in content pixels (a milestone: the diamond's bounding box around its day boundary). */
+  x: number;
+  width: number;
+  /** Day numbers of `[start, end)`; a milestone's end equals its start. */
+  start: number;
+  end: number;
+}
+
+/**
+ * Where a task sits on the scale: `[start_date, end_exclusive)` — a bar that ends at the boundary after the last
+ * occupied day (no «+1 day»), at least 6 px wide; a milestone (or an empty interval) is a diamond on its day
+ * boundary; a summary is a bracket over `summary`. Null without dates (the task waits in «Без дат»).
+ */
+export function barBox(
+  task: Pick<WorkTask, "start_date" | "end_exclusive" | "is_milestone">,
+  range: GanttRange,
+  dayWidth: number,
+  summary?: DaySpan | null,
+): BarBox | null {
+  if (summary) {
+    return {
+      kind: "summary",
+      x: (summary.start - range.start) * dayWidth,
+      width: Math.max(MIN_SUMMARY_WIDTH, (summary.end - summary.start) * dayWidth),
+      start: summary.start,
+      end: summary.end,
+    };
+  }
+  if (!task.start_date || !task.end_exclusive) return null;
+  const start = toDay(task.start_date);
+  const end = toDay(task.end_exclusive);
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  if (task.is_milestone || end <= start) {
+    const cx = (start - range.start) * dayWidth;
+    return { kind: "milestone", x: cx - MILESTONE_HALF, width: 2 * MILESTONE_HALF, start, end: start };
+  }
+  return { kind: "task", x: (start - range.start) * dayWidth, width: Math.max(MIN_BAR_WIDTH, (end - start) * dayWidth), start, end };
+}
+
+/**
+ * The right end of the overdue hatching (§3.4): an unfinished task that is late or overdue is hatched from its end
+ * to the start of today; null when it is not late or its end is not before today (summaries are never hatched).
+ */
+export function lateEnd(
+  task: Pick<WorkTask, "late" | "overdue" | "status">,
+  box: BarBox,
+  today: number,
+  range: GanttRange,
+  dayWidth: number,
+): number | null {
+  if (box.kind === "summary" || task.status === "done" || !(task.late || task.overdue)) return null;
+  const todayX = (today - range.start) * dayWidth;
+  return todayX > box.x + box.width ? todayX : null;
+}
+
 /**
  * Summary tasks (§3.4): a task with scheduled subtasks is drawn as a bracket over the union of its own dates and the
  * dates of all its descendants (until the server rolls parents' dates up, its own dates count too, so nothing
@@ -485,6 +547,28 @@ export function routeDependency(x1: number, y1: number, x2: number, y2: number, 
   }
   const yb = y2 > y1 ? y2 - rowHeight / 2 : y2 + rowHeight / 2;
   return `M${r(x1)} ${r(y1)}H${r(x1 + ARROW_STUB)}V${r(yb)}H${r(x2 - ARROW_ENTRY)}V${r(y2)}H${r(x2)}`;
+}
+
+export interface ArrowEnd {
+  box: BarBox;
+  label: LabelDecision;
+  /** The width of the task's marker when it lies outside the window. */
+  marker: { width: number } | null;
+}
+
+/**
+ * The ends of an arrow (§3.6): the predecessor's right end and the successor's left end (a milestone's vertices).
+ * A task wholly outside the window is reached at its marker — after the «‹ …» marker on the left, before the
+ * «… ›» marker on the right — so the arrow starts or ends at the edge of the window and never runs over a marker.
+ * Null when both tasks lie on the same side outside the window.
+ */
+export function arrowEnds(pred: ArrowEnd, succ: ArrowEnd, win: ChartWindow): { x1: number; x2: number } | null {
+  const before = (end: ArrowEnd) => end.label.place === "before";
+  const after = (end: ArrowEnd) => end.label.place === "after";
+  if ((before(pred) && before(succ)) || (after(pred) && after(succ))) return null;
+  const x1 = before(pred) ? win.x0 + MARKER_INSET + (pred.marker?.width ?? 0) + 2 : pred.box.x + pred.box.width;
+  const x2 = after(succ) ? win.x1 - MARKER_INSET - (succ.marker?.width ?? 0) - 2 : succ.box.x;
+  return { x1, x2 };
 }
 
 /** A filled 6 × 7 px triangle pointing right at (x, y). */

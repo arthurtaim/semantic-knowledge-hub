@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  arrowEnds,
+  barBox,
   chartRange,
   createTextMeasure,
   DAY_WIDTH,
@@ -8,6 +10,7 @@ import {
   fitDayWidth,
   fitStartDay,
   GANTT_ZOOM_KEY,
+  lateEnd,
   linksNote,
   markerText,
   MAX_DAY_WIDTH,
@@ -208,6 +211,55 @@ describe("labels on bars (§3.5)", () => {
     expect(markerText("before", toDay("2026-11-02"), toDay("2026-11-10"), false)).toBe("‹ 2 нояб. – 9 нояб.");
     expect(markerText("before", toDay("2026-11-27"), toDay("2026-11-27"), true)).toBe("‹ 27 нояб.");
     expect(markerText("after", toDay("2026-11-27"), toDay("2026-12-05"), false)).toBe("27 нояб. ›");
+  });
+});
+
+describe("bars on the scale", () => {
+  const range = { start: toDay("2026-11-23"), end: toDay("2026-12-21") };
+
+  it("M6-26: a bar ends at the boundary after last_day — no «+1 day», no lost day; at least 6 px", () => {
+    expect(barBox({ start_date: "2026-11-27", end_exclusive: "2026-11-28", is_milestone: false }, range, 36)).toEqual({
+      kind: "task",
+      x: 4 * 36,
+      width: 36,
+      start: toDay("2026-11-27"),
+      end: toDay("2026-11-28"),
+    });
+    expect(barBox({ start_date: "2026-11-27", end_exclusive: "2026-11-28", is_milestone: false }, range, DAY_WIDTH.year)?.width).toBe(6);
+    // M6-10: a milestone is a point on its day boundary (the diamond's box is centred on it)
+    expect(barBox({ start_date: "2026-12-02", end_exclusive: "2026-12-02", is_milestone: true }, range, 36)).toMatchObject({ kind: "milestone", x: 9 * 36 - 8, width: 16 });
+    // M6-27: no dates, no bar
+    expect(barBox({ start_date: null, end_exclusive: null, is_milestone: false }, range, 36)).toBeNull();
+    // a summary is a bracket over its span, whatever its own dates
+    expect(barBox({ start_date: null, end_exclusive: null, is_milestone: false }, range, 36, { start: toDay("2026-11-24"), end: toDay("2026-11-26") })).toEqual({
+      kind: "summary",
+      x: 36,
+      width: 72,
+      start: toDay("2026-11-24"),
+      end: toDay("2026-11-26"),
+    });
+  });
+
+  it("hatches an unfinished late or overdue task from its end to today; never a finished one or a summary", () => {
+    const box = barBox({ start_date: "2026-11-16", end_exclusive: "2026-11-20", is_milestone: false }, { start: toDay("2026-11-16"), end: toDay("2026-12-21") }, 10)!;
+    const r = { start: toDay("2026-11-16"), end: toDay("2026-12-21") };
+    expect(lateEnd({ late: true, overdue: true, status: "in_progress" }, box, today, r, 10)).toBe(90); // 25 нояб.
+    expect(lateEnd({ late: false, overdue: false, status: "in_progress" }, box, today, r, 10)).toBeNull();
+    expect(lateEnd({ late: true, overdue: true, status: "done" }, box, today, r, 10)).toBeNull();
+    expect(lateEnd({ late: true, overdue: false, status: "todo" }, { ...box, kind: "summary" }, today, r, 10)).toBeNull();
+    expect(lateEnd({ late: false, overdue: true, status: "todo" }, { ...box, width: 200 }, today, r, 10)).toBeNull(); // still running
+  });
+
+  it("an arrow to or from a task outside the window starts or ends at its marker, never over it", () => {
+    const win = { x0: 100, x1: 900 };
+    const inside = (x: number) => ({ box: { kind: "task" as const, x, width: 50, start: 0, end: 1 }, label: { place: "none" as const }, marker: null });
+    const left = { box: { kind: "task" as const, x: 0, width: 50, start: 0, end: 1 }, label: { place: "before" as const, x: 104 }, marker: { width: 120 } };
+    const right = { box: { kind: "task" as const, x: 950, width: 50, start: 0, end: 1 }, label: { place: "after" as const, x: 896 }, marker: { width: 80 } };
+    expect(arrowEnds(inside(200), inside(400), win)).toEqual({ x1: 250, x2: 400 });
+    expect(arrowEnds(left, inside(400), win)).toEqual({ x1: 100 + 4 + 120 + 2, x2: 400 });
+    expect(arrowEnds(inside(200), right, win)).toEqual({ x1: 250, x2: 900 - 4 - 80 - 2 });
+    expect(arrowEnds(left, left, win)).toBeNull();
+    expect(arrowEnds(right, right, win)).toBeNull();
   });
 });
 

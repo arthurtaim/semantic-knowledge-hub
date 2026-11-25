@@ -10,6 +10,7 @@ import { Icon } from "../components/ui/Icon";
 import { TaskCreateSheet } from "../components/work/CreateForms";
 import { WorkPlanSheet } from "../components/work/WorkPlan";
 import { GanttChart, type GanttHandle } from "../components/work/GanttChart";
+import { GanttControls } from "../components/work/GanttControls";
 import { ProjectStrip, projectSummary, type StripLayout } from "../components/work/ProjectStrip";
 import { SchedulePreviewDialog, type ScheduleRequest } from "../components/work/SchedulePreviewDialog";
 import { TaskBoard } from "../components/work/TaskBoard";
@@ -17,7 +18,6 @@ import { TaskDetail } from "../components/work/TaskDetail";
 import { TaskFiltersBar } from "../components/work/TaskFiltersBar";
 import { TaskList } from "../components/work/TaskList";
 import { WorkModeNote, workModeText } from "../components/work/WorkBits";
-import { SegmentedControl } from "../components/ui/SegmentedControl";
 import { withParams } from "../lib/docsView";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useWorkspace } from "../lib/useWorkspace";
@@ -25,25 +25,20 @@ import {
   buildTree,
   filterParams,
   filtersFromParams,
-  ganttRange,
-  GANTT_ZOOM_KEY,
-  GANTT_ZOOM_LABEL,
-  GANTT_ZOOMS,
   hasFilters,
   matchesFilters,
   rememberWorkView,
   resolveWorkView,
-  resolveZoom,
   TASK_STATUS_LABEL,
   visibleRows,
   WORK_VIEW_LABEL,
   WORK_VIEWS,
-  type GanttZoom,
   type TaskFilters,
   type VisibleRow,
   type WorkView,
 } from "../lib/work";
 import { writePreference } from "../lib/storage";
+import { GANTT_ZOOM_KEY, resolveZoom, type GanttZoom } from "../lib/gantt";
 
 /*
  * A project (M6, Planner v2 frame — docs/ui-v2/planner/specs/PLANNER_V2.md §2): the 52 px toolbar (path, key,
@@ -209,7 +204,6 @@ export function ProjectPage() {
     const inChart = new Set(ganttRows.map((r) => r.task.id));
     return tree.ordered.filter((t) => !t.scheduled && !inChart.has(t.id) && matchesFilters(t, filters));
   }, [tree, ganttRows, filters]);
-  const range = useMemo(() => ganttRange(tasks, today, snapshot?.range_start, snapshot?.range_end_exclusive), [tasks, today, snapshot]);
   const boardTasks = useMemo(() => tree.ordered.filter((t) => matchesFilters(t, filters)), [tree, filters]);
   const shownCount = filtered ? tree.ordered.filter((t) => matchesFilters(t, filters)).length : tasks.length;
 
@@ -299,20 +293,7 @@ export function ProjectPage() {
 
   // The view's own controls at the right end of the filter row.
   const viewControls =
-    view === "gantt" ? (
-      <>
-        <SegmentedControl
-          label="Масштаб"
-          className="work-toolbar__zoom"
-          options={GANTT_ZOOMS.map((value) => ({ value, label: GANTT_ZOOM_LABEL[value] }))}
-          value={zoom}
-          onChange={onZoom}
-        />
-        <Button size="sm" onClick={() => ganttRef.current?.scrollToToday()}>
-          Сегодня
-        </Button>
-      </>
-    ) : null;
+    view === "gantt" ? <GanttControls zoom={zoom} onZoom={onZoom} onToday={() => ganttRef.current?.scrollToToday()} phone={phone} /> : null;
 
   return (
     <div className={`work-page project-page project-page--${view}${panel && panelMode === "inline" ? " project-page--with-panel" : ""}`}>
@@ -398,9 +379,9 @@ export function ProjectPage() {
               ref={ganttRef}
               rows={ganttRows}
               pool={pool}
+              tasks={tasks}
               dependencies={snapshot.dependencies}
               violations={snapshot.violations}
-              range={range}
               zoom={zoom}
               today={today}
               canWrite={canWrite}

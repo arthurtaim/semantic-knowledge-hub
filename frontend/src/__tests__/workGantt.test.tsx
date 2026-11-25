@@ -12,7 +12,7 @@ import { gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPoint
  */
 
 const ROUTES = { "/projects/:key": <ProjectPage /> };
-const DAY = 32; // px per day at the «Дни» zoom
+const DAY = 36; // px per day at the «День» zoom (Planner v2)
 
 beforeEach(() => stubPointerAndFrames(vi.stubGlobal));
 
@@ -42,6 +42,11 @@ function body(key: string): SVGElement {
   return bar(key).querySelector<SVGElement>("[data-part='body']") as SVGElement;
 }
 
+/** A bar's left edge on the drawn range (the range itself depends on the window, so tests compare positions). */
+function x(key: string): number {
+  return Number(body(key).getAttribute("x"));
+}
+
 function dragBy(target: Element, dx: number, finish: "up" | "cancel" = "up") {
   fireEvent.pointerDown(target, { clientX: 500, clientY: 100, button: 0, pointerId: 9 });
   for (let i = 1; i <= 4; i += 1) fireEvent.pointerMove(target, { clientX: 500 + (dx * i) / 4, clientY: 101, pointerId: 9 });
@@ -58,10 +63,9 @@ describe("Gantt", () => {
   it("draws [start, end_exclusive) bars, a milestone diamond, FS arrows, today, locked / late states and the unscheduled pool", async () => {
     mockApi(projectRoutes());
     await openGantt();
-    // Range starts on Mon 2026-10-26 (a week before the first task, back to Monday): Fri 27 Nov is day 32.
-    expect(body("ARIS-4").getAttribute("x")).toBe(String(32 * DAY));
     expect(body("ARIS-4").getAttribute("width")).toBe(String(DAY)); // one day: Friday only (M6-26)
     expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * DAY)); // Mon–Tue
+    expect(x("ARIS-5") - x("ARIS-4")).toBe(3 * DAY); // Fri 27 Nov → Mon 30 Nov
     expect(bar("ARIS-6").querySelector(".gantt-bar__diamond")).not.toBeNull(); // M6-10
     expect(bar("ARIS-6")).toHaveAccessibleName(/Готовность к пилоту, веха 2 дек\./);
     expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(2);
@@ -76,15 +80,23 @@ describe("Gantt", () => {
     expect(within(pool).getByRole("button", { name: /ARIS-7 Документация без дат/ })).toBeInTheDocument();
   });
 
-  it("zooms to weeks and months; the zoom is kept in the URL", async () => {
+  it("zooms to week, month, quarter and year; the zoom is kept in the URL", async () => {
     const user = userEvent.setup();
     mockApi(projectRoutes());
     await openGantt();
-    await user.click(screen.getByRole("radio", { name: "Недели" }));
+    await user.click(screen.getByRole("radio", { name: "Неделя" }));
     expect(screen.getByTestId("location")).toHaveTextContent("zoom=week");
-    expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 14));
-    await user.click(screen.getByRole("radio", { name: "Месяцы" }));
+    expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 16));
+    expect(document.querySelectorAll(".gantt__weekend").length).toBeGreaterThan(0); // shaded from 10 px per day
+    await user.click(screen.getByRole("radio", { name: "Месяц" }));
     expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 5));
+    expect(document.querySelectorAll(".gantt__weekend")).toHaveLength(0);
+    // quarter and year: a bar never gets narrower than 6 px, so every task stays visible
+    await user.click(screen.getByRole("radio", { name: "Квартал" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=quarter");
+    expect(body("ARIS-5").getAttribute("width")).toBe("6");
+    await user.click(screen.getByRole("radio", { name: "Год" }));
+    expect(body("ARIS-5").getAttribute("width")).toBe("6");
   });
 
   it("M6-03: drag → preview of the consequences → «Применить» with one idempotency key; the plan is re-read", async () => {
@@ -129,7 +141,7 @@ describe("Gantt", () => {
     expect((apply?.body as { client_request_id: string }).client_request_id.length).toBeGreaterThanOrEqual(8);
     expect(await screen.findByText(/Сроки применены: изменено задач — 2\. Ревизия плана 8\./)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("plan-revision")).toHaveTextContent("Ревизия плана 8"));
-    expect(body("ARIS-5").getAttribute("x")).toBe(String(36 * DAY)); // Tue 1 Dec
+    expect(x("ARIS-5") - x("ARIS-4")).toBe(DAY); // ARIS-4 Mon 30 Nov, ARIS-5 Tue 1 Dec
     expect(document.querySelector("[data-ghost-for]")).toBeNull();
   });
 
@@ -137,13 +149,14 @@ describe("Gantt", () => {
     const user = userEvent.setup();
     const calls = mockApi([{ method: "POST", path: "/api/projects/p1/schedule/preview", body: preview() }, ...projectRoutes()]);
     await openGantt();
+    const before = x("ARIS-4");
     dragBy(body("ARIS-4"), 3 * DAY);
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("Сдвинутся зависимые: 1");
     await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(calls.some((c) => c.url.endsWith("/schedule/apply"))).toBe(false);
-    expect(body("ARIS-4").getAttribute("x")).toBe(String(32 * DAY));
+    expect(x("ARIS-4")).toBe(before);
     expect(document.querySelector("[data-ghost-for]")).toBeNull();
   });
 
@@ -294,12 +307,13 @@ describe("Gantt", () => {
     const user = userEvent.setup();
     const calls = mockApi([{ method: "POST", path: "/api/projects/p1/schedule/preview", body: preview() }, ...projectRoutes()]);
     await openGantt();
+    const before = x("ARIS-4");
     bar("ARIS-4").focus();
     await user.keyboard("{ArrowRight}{ArrowRight}");
     expect(screen.getByText(/ARIS-4: 30 нояб\.\. Enter — показать последствия, Esc — отменить\./)).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.getByText("Изменение отменено.")).toBeInTheDocument();
-    expect(body("ARIS-4").getAttribute("x")).toBe(String(32 * DAY));
+    expect(x("ARIS-4")).toBe(before);
     await user.keyboard("{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}{Enter}");
     await screen.findByRole("dialog");
     expect(calls.find((c) => c.url.endsWith("/schedule/preview"))?.body).toMatchObject({
@@ -332,6 +346,55 @@ describe("Gantt", () => {
     bar("ARIS-4").focus();
     await user.keyboard("{ArrowRight}{Enter}");
     expect(calls.some((c) => c.url.endsWith("/schedule/preview"))).toBe(false);
+  });
+
+  it("Planner v2: summary brackets, overdue hatching, markers outside the window, today, labels beside bars, routed arrows", async () => {
+    mockApi(projectRoutes());
+    await openGantt();
+    // ARIS-1 and ARIS-2 have scheduled subtasks: brackets over them (their subtasks' dates change, not theirs)
+    expect(bar("ARIS-1")).toHaveClass("gantt-bar--summary");
+    expect(bar("ARIS-1").querySelector(".gantt-bar__summary")).not.toBeNull();
+    expect(bar("ARIS-1")).not.toHaveClass("is-draggable");
+    expect(bar("ARIS-1")).toHaveAccessibleName(/сроки по подзадачам: 2 нояб\. – 9 нояб\./);
+    expect(bar("ARIS-3")).not.toHaveClass("gantt-bar--summary");
+    // they lie before the window (today is at 30 % of it): a marker with their dates at its left edge
+    expect(screen.getByRole("button", { name: "ARIS-1: 2 нояб. – 9 нояб. — показать на шкале" })).toHaveTextContent("‹ 2 нояб. – 9 нояб.");
+    // ARIS-9 is overdue: hatched from its end (Fri 20 Nov) to the start of today (Wed 25 Nov)
+    const hatch = bar("ARIS-9").querySelector(".gantt-bar__hatch") as SVGRectElement;
+    expect(Number(hatch.getAttribute("x"))).toBe(x("ARIS-9") + 4 * DAY);
+    expect(Number(hatch.getAttribute("width"))).toBe(5 * DAY);
+    // today: a line through the middle of the day and the «25 нояб.» mark in the scale
+    expect(document.querySelector(".gantt__today-mark")).toHaveTextContent("25 нояб.");
+    expect(Number(document.querySelector(".gantt__today")?.getAttribute("x1"))).toBe(x("ARIS-4") - 1.5 * DAY);
+    expect(Array.from(document.querySelectorAll(".gantt__scale-top")).map((cell) => cell.textContent)).toContain("Ноябрь 2026");
+    // a one-day bar is too short for its title: it goes 8 px to the right, on a backing
+    const label = Array.from(document.querySelectorAll<HTMLElement>(".gantt__label")).find((el) => el.textContent === "Маппинг метаданных");
+    expect(parseFloat(label?.style.left ?? "")).toBe(x("ARIS-4") + DAY + 8);
+    // ARIS-4 → ARIS-5: the vertical right after ARIS-4's end (before its label), the horizontal on ARIS-5's row
+    const row = (index: number) => index * 36 + 18;
+    expect(document.querySelector('[data-dependency-id="d1"] .gantt-arrow__line')?.getAttribute("d")).toBe(
+      `M${x("ARIS-4") + DAY} ${row(3)}H${x("ARIS-4") + DAY + 6}V${row(4)}H${x("ARIS-5")}`,
+    );
+  });
+
+  it("a bar wide enough for its title carries it inside; «Готово» adds its tick; a summary does not move", async () => {
+    const user = userEvent.setup();
+    const tasks = [
+      task({ key: "ARIS-1", title: "Длинная", status: "done", start_date: "2026-11-23", end_exclusive: "2026-11-28", last_day: "2026-11-27", duration_workdays: 5 }),
+      task({ key: "ARIS-2", title: "Родитель", start_date: "2026-11-30", end_exclusive: "2026-12-01", last_day: "2026-11-30", duration_workdays: 1, child_count: 1 }),
+      task({ key: "ARIS-3", title: "Подзадача", parent_task_id: "t2", depth: 2, start_date: "2026-12-01", end_exclusive: "2026-12-03", last_day: "2026-12-02", duration_workdays: 2 }),
+    ];
+    mockApi(projectRoutes({ snapshot: gantt(tasks, { dependencies: [] }) }));
+    await openGantt();
+    expect(bar("ARIS-1").querySelector(".gantt-bar__text")).toHaveTextContent("Длинная");
+    expect(bar("ARIS-1").querySelector(".gantt-bar__tick")).not.toBeNull();
+    expect(Array.from(document.querySelectorAll(".gantt__label")).map((el) => el.textContent)).not.toContain("Длинная");
+    // the bracket covers the parent's own day and its subtask: 30 Nov – 2 Dec
+    const bracket = body("ARIS-2");
+    expect(bracket.getAttribute("d")).toMatch(new RegExp(`^M${x("ARIS-3") - DAY},`));
+    bar("ARIS-2").focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByText("ARIS-2: сроки по подзадачам — меняйте сроки подзадач.")).toBeInTheDocument();
   });
 
   it("M6-23: 200 tasks — only the visible window of rows is in the DOM, scrolling brings the others", async () => {

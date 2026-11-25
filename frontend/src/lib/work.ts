@@ -15,7 +15,7 @@ import { readPreference, writePreference } from "./storage";
 /*
  * M6 Work Management in the UI (docs/WORK_MANAGEMENT.md «UI»): labels, the project-local calendar (a mirror of
  * backend/app/work/calendar.py — only for drawing and for the ghost of a drag; the server computes every real
- * date), the filter state kept in the URL, the task tree and the Gantt time scale.
+ * date), the filter state kept in the URL and the task tree. The Gantt's geometry is lib/gantt.ts.
  *
  * Dates are `YYYY-MM-DD` without a time zone. Arithmetic is done on whole day numbers (days since 1970-01-01, UTC),
  * so no local time zone or daylight saving can shift a date by one.
@@ -244,7 +244,6 @@ export function lastWorkday(start: number, endExclusive: number): number | null 
 // --- formatting ----------------------------------------------------------------------------------------------------
 
 const MONTHS_SHORT = ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."];
-const MONTHS_NOMINATIVE = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const WEEKDAYS_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
 /** «27 нояб.» (and the year when it is not `yearOf`). A date-only value: no time zone applies. */
@@ -262,11 +261,6 @@ export function formatDayWithWeekday(iso: string | null | undefined, yearOf?: st
   const day = toDay(iso);
   if (Number.isNaN(day)) return iso;
   return `${WEEKDAYS_SHORT[isoWeekday(day) - 1]}, ${formatDay(iso, yearOf)}`;
-}
-
-export function monthTitle(iso: string): string {
-  const [y, m] = iso.split("-");
-  return `${MONTHS_NOMINATIVE[Number(m) - 1] ?? m} ${y}`;
 }
 
 /** The planned interval as the user reads it: «27 нояб. – 4 дек.», a milestone as one date, nothing as «Без дат». */
@@ -457,136 +451,4 @@ export function resolveWorkView(params: URLSearchParams): WorkView {
 
 export function rememberWorkView(view: WorkView): void {
   writePreference(WORK_VIEW_KEY, view);
-}
-
-// --- the Gantt time scale --------------------------------------------------------------------------------------------
-
-export type GanttZoom = "day" | "week" | "month";
-export const GANTT_ZOOMS: readonly GanttZoom[] = ["day", "week", "month"];
-export const GANTT_ZOOM_LABEL: Record<GanttZoom, string> = { day: "Дни", week: "Недели", month: "Месяцы" };
-/** Pixels per calendar day. */
-export const DAY_WIDTH: Record<GanttZoom, number> = { day: 32, week: 14, month: 5 };
-export const GANTT_ZOOM_KEY = "skh.work.zoom";
-
-export function resolveZoom(params: URLSearchParams): GanttZoom {
-  const named = params.get("zoom");
-  if (named && (GANTT_ZOOMS as readonly string[]).includes(named)) return named as GanttZoom;
-  const stored = readPreference(GANTT_ZOOM_KEY);
-  if (stored && (GANTT_ZOOMS as readonly string[]).includes(stored)) return stored as GanttZoom;
-  return "day";
-}
-
-export interface GanttRange {
-  /** First day drawn (a Monday). */
-  start: number;
-  /** Day after the last one drawn. */
-  end: number;
-}
-
-/**
- * The days the chart draws: every scheduled task, due date and today, padded by a week on each side and aligned to
- * Mondays, at least eight weeks wide so the scale never collapses.
- */
-export function ganttRange(tasks: WorkTask[], today: string, rangeStart?: string | null, rangeEnd?: string | null): GanttRange {
-  let min = toDay(today);
-  let max = min + 1;
-  const take = (iso: string | null | undefined, exclusive = false) => {
-    if (!iso) return;
-    const day = toDay(iso);
-    if (Number.isNaN(day)) return;
-    min = Math.min(min, day);
-    max = Math.max(max, exclusive ? day : day + 1);
-  };
-  take(rangeStart);
-  take(rangeEnd, true);
-  for (const task of tasks) {
-    take(task.start_date);
-    take(task.end_exclusive, true);
-    take(task.due_date);
-  }
-  let start = min - 7;
-  start -= isoWeekday(start) - 1; // back to Monday
-  let end = max + 7;
-  end += (8 - isoWeekday(end)) % 7; // forward to Monday
-  if (end - start < 56) end = start + 56;
-  return { start, end };
-}
-
-export interface BarGeometry {
-  x: number;
-  width: number;
-  milestone: boolean;
-}
-
-/** `[start, end_exclusive)` on the scale: the bar ends at the boundary after the last occupied day (no off-by-one). */
-export function barGeometry(task: Pick<WorkTask, "start_date" | "end_exclusive" | "is_milestone">, range: GanttRange, dayWidth: number): BarGeometry | null {
-  if (!task.start_date || !task.end_exclusive) return null;
-  const start = toDay(task.start_date);
-  const end = toDay(task.end_exclusive);
-  if (Number.isNaN(start) || Number.isNaN(end)) return null;
-  const x = (start - range.start) * dayWidth;
-  if (task.is_milestone || end <= start) return { x, width: 0, milestone: true };
-  return { x, width: (end - start) * dayWidth, milestone: false };
-}
-
-export interface ScaleCell {
-  x: number;
-  width: number;
-  label: string;
-  /** For a screen reader / tooltip. */
-  title: string;
-}
-
-/** Two header rows: months (or years) on top, days / weeks / months below. */
-export function scaleCells(range: GanttRange, zoom: GanttZoom, dayWidth: number): { top: ScaleCell[]; bottom: ScaleCell[] } {
-  const top: ScaleCell[] = [];
-  const bottom: ScaleCell[] = [];
-  const x = (day: number) => (day - range.start) * dayWidth;
-  // Top row: months (day / week zoom) or years (month zoom).
-  let cursor = range.start;
-  while (cursor < range.end) {
-    const iso = fromDay(cursor);
-    const [y, m] = iso.split("-").map(Number) as [number, number];
-    const next =
-      zoom === "month" ? Math.round(Date.UTC(y + 1, 0, 1) / DAY_MS) : Math.round(Date.UTC(y, m, 1) / DAY_MS);
-    const stop = Math.min(next, range.end);
-    const width = (stop - cursor) * dayWidth;
-    const full = zoom === "month" ? String(y) : monthTitle(iso);
-    // A partial month at an edge is narrow: a short name, or nothing, so labels never run into each other.
-    const label = width >= 104 || zoom === "month" ? full : width >= 40 ? (MONTHS_SHORT[m - 1] ?? "") : "";
-    top.push({ x: x(cursor), width, label, title: full });
-    cursor = stop;
-  }
-  if (zoom === "day") {
-    for (let day = range.start; day < range.end; day += 1) {
-      const iso = fromDay(day);
-      bottom.push({ x: x(day), width: dayWidth, label: String(Number(iso.slice(8))), title: formatDayWithWeekday(iso) });
-    }
-  } else if (zoom === "week") {
-    for (let day = range.start; day < range.end; day += 7) {
-      const iso = fromDay(day);
-      bottom.push({ x: x(day), width: 7 * dayWidth, label: formatDay(iso, iso), title: `Неделя с ${formatDayWithWeekday(iso)}` });
-    }
-  } else {
-    cursor = range.start;
-    while (cursor < range.end) {
-      const iso = fromDay(cursor);
-      const [y, m] = iso.split("-").map(Number) as [number, number];
-      const next = Math.min(Math.round(Date.UTC(y, m, 1) / DAY_MS), range.end);
-      bottom.push({ x: x(cursor), width: (next - cursor) * dayWidth, label: MONTHS_SHORT[m - 1] ?? String(m), title: monthTitle(iso) });
-      cursor = next;
-    }
-  }
-  return { top, bottom };
-}
-
-/** Elbow path of a Finish-to-Start arrow from the predecessor's end to the successor's start. */
-export function dependencyPath(fromX: number, fromY: number, toX: number, toY: number, rowHeight: number): string {
-  const gap = 8;
-  if (toX - gap >= fromX + gap) {
-    const mid = Math.max(fromX + gap, toX - gap);
-    return `M${fromX},${fromY} H${mid} V${toY} H${toX}`;
-  }
-  const turnY = fromY + (toY >= fromY ? rowHeight / 2 : -rowHeight / 2);
-  return `M${fromX},${fromY} H${fromX + gap} V${turnY} H${toX - gap} V${toY} H${toX}`;
 }
