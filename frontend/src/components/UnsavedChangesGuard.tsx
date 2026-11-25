@@ -13,6 +13,7 @@ import { buttonClass } from "./ui/Button";
  *   router on this page, moves the address back (BrowserRouter numbers its entries in `history.state.idx`) and asks;
  *   «Выйти без сохранения» repeats the move;
  * - reload, tab close and links to other sites: the browser's own `beforeunload` dialog.
+ * - navigation started from code elsewhere in the app (the ⌘K quick find): `requestLeave(go)` asks the same way.
  * The page's own `navigate()` calls (after a save, a submit or a delete) are deliberate exits and are not guarded.
  */
 
@@ -39,7 +40,22 @@ export function useBeforeUnloadGuard(active: boolean, skip?: RefObject<boolean>)
 let popGuard: ((event: PopStateEvent) => void) | null = null;
 if (typeof window !== "undefined") window.addEventListener("popstate", (event) => popGuard?.(event));
 
-type HeldNavigation = { kind: "link"; anchor: HTMLAnchorElement; to: string } | { kind: "history"; delta: number };
+/** The mounted, armed guard's handler for navigation started from code (null: nothing to protect). */
+let callGuard: ((go: () => void) => void) | null = null;
+
+/**
+ * Run `go` (a navigation started from code — the ⌘K quick find, a search result) now, or, while a page has unsaved
+ * edits, only after the person chose «Выйти без сохранения».
+ */
+export function requestLeave(go: () => void): void {
+  if (callGuard) callGuard(go);
+  else go();
+}
+
+type HeldNavigation =
+  | { kind: "link"; anchor: HTMLAnchorElement; to: string }
+  | { kind: "history"; delta: number }
+  | { kind: "call"; go: () => void };
 
 /** BrowserRouter's index of a history entry; null for an entry it did not create. */
 function historyIndex(state: unknown): number | null {
@@ -122,13 +138,26 @@ export function UnsavedChangesGuard({ when, description = DEFAULT_DESCRIPTION }:
     };
   }, [when]);
 
+  useEffect(() => {
+    if (!when) return undefined;
+    const onCall = (go: () => void) => {
+      if (leaving.current) go();
+      else setHeld({ kind: "call", go });
+    };
+    callGuard = onCall;
+    return () => {
+      if (callGuard === onCall) callGuard = null;
+    };
+  }, [when]);
+
   if (!held) return null;
 
   function leave() {
     if (!held) return;
     leaving.current = true;
     setHeld(null);
-    if (held.kind === "history") window.history.go(held.delta);
+    if (held.kind === "call") held.go();
+    else if (held.kind === "history") window.history.go(held.delta);
     else if (held.anchor.isConnected) held.anchor.click(); // the link's own handler: its state, replace, side effects
     else navigate(held.to);
   }
