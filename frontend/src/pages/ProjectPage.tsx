@@ -425,6 +425,10 @@ export function ProjectPage() {
               settings={ganttView}
               criticalPath={criticalPathAvailable ? snapshot.critical_path : null}
               selectedKey={selectedKey}
+              medium={medium}
+              namesWidth={ganttView.namesWidth}
+              namesFolded={ganttView.namesCollapsed}
+              onNames={(width, folded) => onGanttView({ ...ganttView, namesWidth: width, namesCollapsed: folded })}
               today={today}
               canWrite={canWrite}
               compact={phone}

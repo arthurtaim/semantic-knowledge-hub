@@ -36,6 +36,8 @@ import {
   TODAY_AT,
   wheelDayWidth,
   clampDayWidth,
+  NAMES_MAX,
+  NAMES_MIN,
   type BarBox,
   type ChartWindow,
   type DaySpan,
@@ -48,6 +50,7 @@ import {
   formatDay,
   formatPlan,
   fromDay,
+  initials,
   isoWeekday,
   lastWorkday,
   nextWorkday,
@@ -56,6 +59,7 @@ import {
   toDay,
   type VisibleRow,
 } from "../../lib/work";
+import { IconButton } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 
 /*
@@ -80,6 +84,9 @@ import { Icon } from "../ui/Icon";
  *   from 1.5 px, none below; «Все»; «Только у выбранной»; «Скрыть».
  * - Ctrl/⌘ + wheel or a pinch zooms smoothly (0.5–48 px per day) around the pointer; Shift + 1 fits the project,
  *   T goes to today (anywhere on the page outside fields, dialogs and menus).
+ * - The task column (§3.1, §3.9): indent, chevron, key, title, the overdue mark and the assignee's initials (the full
+ *   name in a tooltip); 300 px (240 up to 1100 px, without «Исп.»; 132 px on a phone, key and short title); its border
+ *   drags (or ← / → when focused) within 240–480 px and the width is remembered; a button folds it away.
  * - Rows are virtualised (only the visible window plus a margin is in the DOM); only what touches the visible window
  *   horizontally is computed; a drag paints the bar directly in one animation frame per move — no React render per
  *   pointer frame.
@@ -97,7 +104,11 @@ const RESIZE_HANDLE = 8;
 /** jsdom and the first render have no size: assume a usual window. */
 const FALLBACK = { width: 1100, height: 640 };
 export const NAMES_WIDTH = 300;
+export const NAMES_WIDTH_MEDIUM = 240;
 export const NAMES_WIDTH_PHONE = 132;
+/** The folded task column keeps a strip with the button that unfolds it. */
+const NAMES_FOLDED = 32;
+const NAMES_STEP = 16;
 
 export interface GanttChartProps {
   rows: VisibleRow[];
@@ -124,6 +135,12 @@ export interface GanttChartProps {
   canWrite: boolean;
   /** Phones: no dragging (the task panel's form changes dates). */
   compact: boolean;
+  /** Up to 1100 px: a 240 px task column without the assignee column. */
+  medium?: boolean;
+  /** A dragged width of the task column (null — the layout's default) and whether it is folded away. */
+  namesWidth?: number | null;
+  namesFolded?: boolean;
+  onNames?: (width: number | null, folded: boolean) => void;
   collapsed: ReadonlySet<string>;
   onToggle: (taskId: string) => void;
   keyOf: (id: string) => string;
@@ -263,9 +280,18 @@ function useElementSize(ref: RefObject<HTMLElement | null>): { width: number; he
 export function GanttChart(props: GanttChartProps) {
   const { rows, pool, tasks, dependencies, violations, zoom, today, canWrite, compact, collapsed, onToggle, keyOf, onOpen, onRequestSchedule, previewOps, ref } = props;
   const { dayWidthOverride = null, onDayWidth, onFit, fitRequest = 0, settings = DEFAULT_SETTINGS, criticalPath = null, selectedKey = null } = props;
+  const { medium = false, namesWidth: storedNames = null, namesFolded = false, onNames } = props;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(scrollerRef);
-  const namesWidth = compact ? NAMES_WIDTH_PHONE : NAMES_WIDTH;
+  // The task column: a live width while its border is dragged; folded — only the button that unfolds it.
+  const [draggedNames, setDraggedNames] = useState<number | null>(null);
+  const folded = namesFolded && !compact;
+  const namesWidth = compact
+    ? NAMES_WIDTH_PHONE
+    : folded
+      ? NAMES_FOLDED
+      : Math.min(NAMES_MAX, Math.max(NAMES_MIN, draggedNames ?? storedNames ?? (medium ? NAMES_WIDTH_MEDIUM : NAMES_WIDTH)));
+  const showAssignees = !compact && !medium;
   const visibleWidth = Math.max(size.width - namesWidth, 160);
   const todayDay = toDay(today);
 
@@ -746,6 +772,46 @@ export function GanttChart(props: GanttChartProps) {
     }
   }
 
+  // --- the task column's border: drag or ← / → (Home / End) ------------------------------------------------------
+  const namesDrag = useRef<{ pointer: number; startX: number; startWidth: number; width: number } | null>(null);
+  function onBorderDown(event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0 || !onNames) return;
+    event.preventDefault();
+    capture(event.currentTarget, event.pointerId, true);
+    namesDrag.current = { pointer: event.pointerId, startX: event.clientX, startWidth: namesWidth, width: namesWidth };
+  }
+  function onBorderMove(event: PointerEvent<HTMLElement>) {
+    const d = namesDrag.current;
+    if (!d || d.pointer !== event.pointerId) return;
+    d.width = Math.min(NAMES_MAX, Math.max(NAMES_MIN, Math.round(d.startWidth + event.clientX - d.startX)));
+    setDraggedNames(d.width);
+  }
+  function onBorderUp(event: PointerEvent<HTMLElement>) {
+    const d = namesDrag.current;
+    if (!d || d.pointer !== event.pointerId) return;
+    namesDrag.current = null;
+    capture(event.currentTarget, event.pointerId, false);
+    setDraggedNames(null);
+    onNames?.(d.width, false);
+  }
+  function onBorderKey(event: KeyboardEvent<HTMLElement>) {
+    const next =
+      event.key === "ArrowLeft"
+        ? namesWidth - NAMES_STEP
+        : event.key === "ArrowRight"
+          ? namesWidth + NAMES_STEP
+          : event.key === "Home"
+            ? NAMES_MIN
+            : event.key === "End"
+              ? NAMES_MAX
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    onNames?.(Math.min(NAMES_MAX, Math.max(NAMES_MIN, next)), false);
+  }
+  const borderProps = { onPointerDown: onBorderDown, onPointerMove: onBorderMove, onPointerUp: onBorderUp, onPointerCancel: onBorderUp };
+  const resizable = !compact && !folded && Boolean(onNames);
+
   // --- what is drawn -----------------------------------------------------------------------------------------------
   const todayX = (todayDay - range.start + 0.5) * dayWidth;
   const hintId = "gantt-keys";
@@ -783,8 +849,32 @@ export function GanttChart(props: GanttChartProps) {
       <div className="gantt__scroller" ref={scrollerRef} onScroll={onScroll} tabIndex={0} aria-label="Диаграмма Ганта: прокрутка">
         <div className="gantt__content" style={{ width: namesWidth + chartWidth, height: HEADER_HEIGHT + height }}>
           <div className="gantt__header" style={{ width: namesWidth + chartWidth }}>
-            <div className="gantt__corner" style={{ width: namesWidth }}>
-              <span>Задача</span>
+            <div className={`gantt__corner${folded ? " is-folded" : ""}`} style={{ width: namesWidth }}>
+              {folded ? (
+                <IconButton icon="sidebar" size="sm" label="Развернуть колонку задач" className="gantt__fold" onClick={() => onNames?.(storedNames, false)} />
+              ) : (
+                <>
+                  <span className="gantt__corner-title">Задача</span>
+                  {showAssignees ? <span className="gantt__corner-who">Исп.</span> : null}
+                  {!compact && onNames ? (
+                    <IconButton icon="sidebar" size="sm" label="Свернуть колонку задач" className="gantt__fold" onClick={() => onNames(storedNames, true)} />
+                  ) : null}
+                </>
+              )}
+              {resizable ? (
+                <div
+                  className="gantt__border"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Ширина колонки задач"
+                  aria-valuemin={NAMES_MIN}
+                  aria-valuemax={NAMES_MAX}
+                  aria-valuenow={namesWidth}
+                  tabIndex={0}
+                  onKeyDown={onBorderKey}
+                  {...borderProps}
+                />
+              ) : null}
             </div>
             <div className="gantt__scale" style={{ width: chartWidth }} aria-hidden="true">
               {scale.top.map((cell) => (
@@ -811,7 +901,8 @@ export function GanttChart(props: GanttChartProps) {
           </div>
           <div className="gantt__body" style={{ height }} onPointerMove={onRowHover} onPointerLeave={() => setHoverRow(null)}>
             <div className="gantt__names" style={{ width: namesWidth, height }}>
-              {windowRows.map((row, i) => (
+              {resizable ? <div className="gantt__border gantt__border--body" aria-hidden="true" {...borderProps} /> : null}
+              {folded ? null : windowRows.map((row, i) => (
                 <GanttName
                   key={row.task.id}
                   row={row}
@@ -822,6 +913,7 @@ export function GanttChart(props: GanttChartProps) {
                   onToggle={onToggle}
                   onOpen={onOpen}
                   compact={compact}
+                  assignees={showAssignees}
                 />
               ))}
             </div>
@@ -969,9 +1061,11 @@ interface GanttNameProps {
   onToggle: (taskId: string) => void;
   onOpen: (task: WorkTask) => void;
   compact: boolean;
+  /** The assignee column (wide screens): initials, the full name in a tooltip. */
+  assignees: boolean;
 }
 
-const GanttName = memo(function GanttName({ row, top, expanded, selected, hovered, onToggle, onOpen, compact }: GanttNameProps) {
+const GanttName = memo(function GanttName({ row, top, expanded, selected, hovered, onToggle, onOpen, compact, assignees }: GanttNameProps) {
   const { task } = row;
   return (
     <div
@@ -998,6 +1092,20 @@ const GanttName = memo(function GanttName({ row, top, expanded, selected, hovere
       </button>
       {task.overdue || task.late ? <Icon name="alert" size={14} className="gantt-name__late" label={task.overdue ? "Просрочена" : "Отстаёт от плана"} /> : null}
       {task.date_locked ? <Icon name="lock" size={13} className="gantt-name__lock" label="Сроки закреплены" /> : null}
+      {assignees ? (
+        task.assignee_id ? (
+          <span
+            className="gantt-name__avatar"
+            role="img"
+            aria-label={`Исполнитель: ${task.assignee?.display_name ?? task.assignee_id}`}
+            title={task.assignee?.display_name ?? task.assignee_id}
+          >
+            {initials(task.assignee?.display_name ?? task.assignee_id)}
+          </span>
+        ) : (
+          <span className="gantt-name__avatar gantt-name__avatar--none" aria-hidden="true" />
+        )
+      ) : null}
     </div>
   );
 });

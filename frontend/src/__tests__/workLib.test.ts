@@ -9,6 +9,7 @@ import {
   filterParams,
   filtersFromParams,
   formatPlan,
+  initials,
   fromDay,
   isoWeekday,
   lastWorkday,
@@ -98,6 +99,13 @@ describe("filters and the tree", () => {
       ["ARIS-2", true],
       ["ARIS-3", false],
     ]);
+  });
+
+  it("makes the initials of an avatar from a name (the «(демо)» note and hyphens handled)", () => {
+    expect(initials("Анна Лебедева (демо)")).toBe("АЛ");
+    expect(initials("Демо-пользователь (localhost)")).toBe("ДП");
+    expect(initials("Олег")).toBe("О");
+    expect(initials("  ")).toBe("?");
   });
 
   it("allows writes only when the mode and the project role do", () => {

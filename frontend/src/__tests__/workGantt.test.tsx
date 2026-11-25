@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkTask } from "../api/types";
 import { ProjectPage } from "../pages/ProjectPage";
-import { memoryStorage, mockApi, renderRoutes } from "./helpers";
+import { memoryStorage, mockApi, mockViewport, renderRoutes } from "./helpers";
 import { capabilities, gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPointerAndFrames, task } from "./workFixtures";
 
 /*
@@ -571,6 +571,78 @@ describe("Gantt: selection, links, «Вид», «Вписать», zoom gestures
     expect(bar("ARIS-4")).toHaveClass("is-critical");
     expect(bar("ARIS-8")).not.toHaveClass("is-critical");
     expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-critical");
+  });
+});
+
+describe("Gantt: the task column (Planner v2 §3.1, §3.9)", () => {
+  function names(): HTMLElement {
+    return document.querySelector(".gantt__names") as HTMLElement;
+  }
+
+  it("shows the key, the title, the overdue mark and the assignee's initials with the full name in a tooltip", async () => {
+    mockApi(projectRoutes());
+    await openGantt();
+    expect(screen.getByText("Исп.")).toBeInTheDocument();
+    const row = document.querySelector('.gantt-name[data-task-key="ARIS-4"]') as HTMLElement;
+    const avatar = within(row).getByRole("img", { name: "Исполнитель: Анна Лебедева (демо)" });
+    expect(avatar).toHaveTextContent("АЛ");
+    expect(avatar).toHaveAttribute("title", "Анна Лебедева (демо)");
+    const late = document.querySelector('.gantt-name[data-task-key="ARIS-9"]') as HTMLElement;
+    expect(within(late).getByRole("img", { name: "Просрочена" })).toBeInTheDocument();
+    expect(names().style.width).toBe("300px");
+  });
+
+  it("the column's width follows a drag or ← / → on its border (240–480 px) and is remembered; it can be folded", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    const border = screen.getByRole("separator", { name: "Ширина колонки задач" });
+    expect(border).toHaveAttribute("aria-valuenow", "300");
+    act(() => border.focus());
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(border).toHaveAttribute("aria-valuenow", "332");
+    expect(names().style.width).toBe("332px");
+    await user.keyboard("{End}");
+    expect(border).toHaveAttribute("aria-valuenow", "480");
+    fireEvent.pointerDown(border, { clientX: 780, button: 0, pointerId: 3 });
+    fireEvent.pointerMove(border, { clientX: 500, pointerId: 3 });
+    fireEvent.pointerUp(border, { clientX: 500, pointerId: 3 });
+    expect(border).toHaveAttribute("aria-valuenow", "240"); // never narrower than 240
+    expect(JSON.parse(window.localStorage.getItem("skh.work.gantt.view") ?? "{}")).toMatchObject({ namesWidth: 240 });
+    await user.click(screen.getByRole("button", { name: "Свернуть колонку задач" }));
+    expect(document.querySelector('.gantt-name[data-task-key="ARIS-4"]')).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Ширина колонки задач" })).not.toBeInTheDocument();
+    unmount();
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Развернуть колонку задач" }));
+    expect(names().style.width).toBe("240px");
+    expect(document.querySelector('.gantt-name[data-task-key="ARIS-4"]')).not.toBeNull();
+  });
+
+  it("up to 1100 px: a 240 px column without «Исп.», «Вписать» as an icon; a phone: 132 px, the zoom as a menu", async () => {
+    const user = userEvent.setup();
+    mockViewport(1000);
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(names().style.width).toBe("240px");
+    expect(screen.queryByText("Исп.")).not.toBeInTheDocument();
+    expect(document.querySelector('.gantt-name [role="img"][aria-label^="Исполнитель"]')).toBeNull();
+    expect(screen.getByRole("button", { name: "Вписать" })).toHaveClass("button--icon");
+    unmount();
+    mockViewport(390);
+    renderRoutes("/projects/ARIS?view=gantt", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(names().style.width).toBe("132px");
+    expect(screen.queryByRole("radio", { name: "Неделя" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Масштаб: Вписать" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Неделя" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=week");
+    expect(screen.queryByRole("separator", { name: "Ширина колонки задач" })).not.toBeInTheDocument(); // no dragging on a phone
+    expect(screen.getByText(/Сроки меняются в карточке задачи/)).toBeVisible();
   });
 });
 

@@ -158,6 +158,13 @@ export function pluralWorkdays(n: number): string {
   return `${n} раб. дней`;
 }
 
+/** An avatar's initials: «Анна Лебедева (демо)» → «АЛ», «Демо-пользователь (localhost)» → «ДП». */
+export function initials(name: string): string {
+  const words = name.replace(/\([^)]*\)/g, " ").split(/[\s-]+/).filter(Boolean);
+  const letters = words.slice(0, 2).map((word) => word[0]?.toLocaleUpperCase("ru") ?? "").join("");
+  return letters || "?";
+}
+
 // --- capabilities ------------------------------------------------------------------------------------------------
 
 /** Roles that may change tasks of a project (membership: admin and member; the single operator, local or behind the

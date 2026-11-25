@@ -13523,6 +13523,61 @@ a.fact-item__title:hover {
   font-weight: 500;
 }
 
+.gantt__corner-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.gantt__corner-who {
+  flex: none;
+  width: 22px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.gantt__fold {
+  flex: none;
+  margin-bottom: -4px;
+  color: var(--text-tertiary);
+}
+
+.gantt__corner.is-folded {
+  justify-content: center;
+  padding: 0 0 var(--space-1);
+}
+
+/* the task column's border: a 6 px handle over the line; the accent line shows on hover, drag and focus */
+.gantt__border {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  z-index: 5;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.gantt__border::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+}
+
+.gantt__border:hover::after,
+.gantt__border:active::after,
+.gantt__border:focus-visible::after {
+  background: var(--accent);
+}
+
+.gantt__border:focus-visible {
+  outline: none;
+}
+
 .gantt__scale {
   position: relative;
   flex: none;
@@ -13652,6 +13707,26 @@ a.fact-item__title:hover {
 .gantt-name__lock {
   flex: none;
   color: var(--text-secondary);
+}
+
+.gantt-name__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--gantt-avatar-bg);
+  color: var(--gantt-avatar-text);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.gantt-name__avatar--none {
+  background: transparent;
 }
 
 .gantt__area {
@@ -14062,8 +14137,9 @@ a.fact-item__title:hover {
 /* the legend: one 30 px line under the chart */
 .gantt-legend-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-1) var(--space-4);
   min-height: 30px;
   padding: 0 var(--space-4);
   border-top: 1px solid var(--line);
@@ -14231,6 +14307,11 @@ a.fact-item__title:hover {
 
   .gantt-legend-row {
     padding: var(--space-2) var(--space-4);
+  }
+
+  .gantt-legend-row__note {
+    margin-left: 0;
+    white-space: normal;
   }
 }
 
