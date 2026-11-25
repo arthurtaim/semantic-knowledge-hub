@@ -62,7 +62,7 @@ mock-kb-validate: ## Validate the synthetic base (frontmatter, links, chains, sy
 mock-kb-sync: ## Sync fixtures/knowledge into ./workspace/knowledge (only files it owns; local edits are kept)
 	cd backend && ../$(PY) -m app.tools.kb_sync --fixtures ../fixtures/knowledge --workspace ../workspace/knowledge --apply
 
-knowledge-eval: ## Deterministic evaluation (no LLM, no network): 216 gold cases → reports/knowledge-eval/after*
+knowledge-eval: ## Deterministic evaluation (no LLM, no network): 216 gold cases → reports/knowledge-eval/after*; exit 1 if any case does not pass (reports are written first)
 	cd backend && ../$(PY) -m app.evaluation.knowledge_eval --kb ../fixtures/knowledge --cases ../fixtures/eval --label after --out ../reports/knowledge-eval
 
 work-eval: ## Deterministic M6 work evaluation (no AI, no network): acceptance oracles → reports/m6/work-eval/

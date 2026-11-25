@@ -62,6 +62,12 @@ follow-up), `expect_provenance` (`AskResponse.provenance.overall`), `max_warning
 Changing the dictionary or the weights requires a before/after `make knowledge-eval` on the same cases;
 holdout cases are never used for tuning (skill `search-retrieval-evaluation`).
 
+Exit code: `python -m app.evaluation.knowledge_eval` returns 0 only when every selected case passes. It returns 1
+when any case is `fail`, `error` or `unsupported`, or when no case was selected; `make knowledge-eval` then stops
+with `Error 1`. `<label>.json`, `<label>_metrics.csv` and `<label>_failures.md` are written before the verdict,
+so a red run keeps its evidence. A known failure is never hidden by an exit-code exception or a weakened case: it
+stays red, with its cause in `reports/knowledge-eval/failures.md`, until the cause is fixed.
+
 ## Versioned templates
 
 Templates are files in `backend/app/document_templates/<id>.md`; older versions stay in
@@ -83,5 +89,6 @@ newer one exists. Nothing is migrated silently. Shipped: `integration` v2 (v1 in
 ```bash
 make mock-kb-validate     # fixtures: schema, links, ≥100 edges, required chains, synthetic, secrets
 make mock-kb-sync         # fixtures → ./workspace/knowledge (only files it owns)
-make knowledge-eval       # 216 deterministic gold cases incl. sync, template, provenance and follow-up cases
+make knowledge-eval       # 216 deterministic gold cases incl. sync, template, provenance and follow-up cases;
+                          # exit ≠ 0 if any case does not pass (reports are written first)
 ```

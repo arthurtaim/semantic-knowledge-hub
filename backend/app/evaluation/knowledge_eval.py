@@ -7,6 +7,10 @@ generation, so a baseline and an "after" run are comparable only when they used 
 
     python -m app.evaluation.knowledge_eval --kb ../fixtures/knowledge --cases ../fixtures/eval \
         --label after --out ../reports/knowledge-eval
+
+Exit code: 0 only when every selected case passed; 1 when any case did not pass (fail, error or unsupported) or
+no case was selected. The JSON / CSV / Markdown reports are written first in either case, so a red run still
+leaves its full evidence in --out.
 """
 
 from __future__ import annotations
@@ -44,6 +48,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MOCK_CORPUS = PROJECT_ROOT / "fixtures" / "confluence_mock" / "pages.yaml"
 SEARCH_PAGE = 10
 NON_AUTHORITATIVE = {"draft", "in_review", "deprecated"}
+EXIT_OK = 0
+EXIT_CASES_NOT_PASSED = 1  # any case fail / error / unsupported, or an empty selection
 
 
 @dataclass
@@ -545,7 +551,26 @@ def main(argv: list[str] | None = None) -> int:
         lines = [f"# Failures — {args.label}", ""]
         lines += [f"- `{r.case_id}` ({r.category}, {r.method}, {r.status}): {r.detail}" for r in failures]
         (args.out / f"{args.label}_failures.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return 0
+    return exit_code(args.label, results)
+
+
+def exit_code(label: str, results: list[CaseResult]) -> int:
+    """0 only when every selected case passed. A red run is never reported as green: fail, error and
+    unsupported all count, and an empty selection (e.g. a mistyped --only) proves nothing."""
+    sys.stdout.flush()  # the per-category summary above stays before the verdict in a combined log
+    if not results:
+        print(f"[{label}] RESULT: FAILED — no cases selected", file=sys.stderr)
+        return EXIT_CASES_NOT_PASSED
+    not_passed = [r for r in results if r.status != "pass"]
+    if not_passed:
+        listed = ", ".join(f"{r.case_id} ({r.status})" for r in not_passed)
+        print(
+            f"[{label}] RESULT: FAILED — {len(not_passed)} of {len(results)} case(s) did not pass: {listed}",
+            file=sys.stderr,
+        )
+        return EXIT_CASES_NOT_PASSED
+    print(f"[{label}] RESULT: OK — all {len(results)} case(s) passed")
+    return EXIT_OK
 
 
 if __name__ == "__main__":
