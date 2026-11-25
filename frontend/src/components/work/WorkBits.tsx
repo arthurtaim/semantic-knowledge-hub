@@ -45,27 +45,47 @@ export function WorkModeNote({ capabilities }: { capabilities: WorkCapabilities 
   );
 }
 
+/**
+ * The one shape of a task status in the List, on the Board and in the Gantt's legend (Planner v2): a hollow ring
+ * «К работе», a half-filled ring «В работе», a filled dot «На проверке», a grey dot in a ring «Готово» — in the
+ * Gantt's status tokens. Decorative: the word next to it is the status.
+ */
+export function StatusShape({ status }: { status: TaskStatus }) {
+  return <span className={`status-shape status-shape--${status}`} aria-hidden="true" />;
+}
+
 export function TaskStatusMark({ status, className }: { status: TaskStatus; className?: string }) {
   return (
     <span className={["task-status", `task-status--${status}`, className ?? ""].filter(Boolean).join(" ")} data-status={status}>
-      {status === "done" ? (
-        <Icon name="check" size={13} strokeWidth={2.25} className="task-status__icon" />
-      ) : (
-        <span className="task-status__shape" aria-hidden="true" />
-      )}
+      <StatusShape status={status} />
       {TASK_STATUS_LABEL[status]}
     </span>
   );
 }
 
-const PRIORITY_BARS: Record<TaskPriority, number> = { low: 1, medium: 2, high: 3, critical: 4 };
+/** Three bars of rising height and the word; «Критичный» has all three in the error tone. */
+const PRIORITY_BARS: Record<TaskPriority, number> = { low: 1, medium: 2, high: 3, critical: 3 };
+
+/** Only the bars (decorative: a menu item or a group heading names the priority itself). */
+export function PriorityBars({ priority }: { priority: TaskPriority }) {
+  const bars = PRIORITY_BARS[priority];
+  return (
+    <span className={`priority priority--${priority}`} aria-hidden="true">
+      <span className="priority__bars">
+        {[1, 2, 3].map((n) => (
+          <span key={n} className={n <= bars ? "is-on" : undefined} />
+        ))}
+      </span>
+    </span>
+  );
+}
 
 export function PriorityMark({ priority, compact = false }: { priority: TaskPriority; compact?: boolean }) {
   const bars = PRIORITY_BARS[priority];
   return (
     <span className={`priority priority--${priority}`} data-priority={priority} title={compact ? `Приоритет: ${PRIORITY_LABEL[priority]}` : undefined}>
       <span className="priority__bars" aria-hidden="true">
-        {[1, 2, 3, 4].map((n) => (
+        {[1, 2, 3].map((n) => (
           <span key={n} className={n <= bars ? "is-on" : undefined} />
         ))}
       </span>

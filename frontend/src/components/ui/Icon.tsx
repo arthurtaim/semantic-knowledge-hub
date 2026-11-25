@@ -214,6 +214,12 @@ const PATHS = {
     </>
   ),
   fit: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  subtask: (
+    <>
+      <path d="M6 4v9a3 3 0 0 0 3 3h9" />
+      <path d="m15 13 3 3-3 3" />
+    </>
+  ),
   dependency: (
     <>
       <path d="M4 7h6v10h7" />

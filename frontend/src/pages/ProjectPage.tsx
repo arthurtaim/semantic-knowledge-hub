@@ -11,6 +11,7 @@ import { TaskCreateSheet } from "../components/work/CreateForms";
 import { WorkPlanSheet } from "../components/work/WorkPlan";
 import { GanttChart, type GanttHandle } from "../components/work/GanttChart";
 import { GanttControls } from "../components/work/GanttControls";
+import { Menu } from "../components/ui/Popover";
 import { ProjectStrip, projectSummary, type StripLayout } from "../components/work/ProjectStrip";
 import { SchedulePreviewDialog, type ScheduleRequest } from "../components/work/SchedulePreviewDialog";
 import { TaskBoard } from "../components/work/TaskBoard";
@@ -25,7 +26,16 @@ import {
   buildTree,
   filterParams,
   filtersFromParams,
+  groupTasks,
   hasFilters,
+  LIST_COLUMN_LABEL,
+  LIST_COLUMNS,
+  LIST_GROUP_KEY,
+  LIST_GROUP_LABEL,
+  LIST_GROUPS,
+  readHiddenColumns,
+  resolveListGroup,
+  writeHiddenColumns,
   matchesFilters,
   rememberWorkView,
   resolveWorkView,
@@ -33,6 +43,8 @@ import {
   visibleRows,
   WORK_VIEW_LABEL,
   WORK_VIEWS,
+  type ListColumn,
+  type ListGroup,
   type TaskFilters,
   type VisibleRow,
   type WorkView,
@@ -80,6 +92,7 @@ export function ProjectPage() {
   const view = resolveWorkView(params);
   const filters = useMemo(() => filtersFromParams(params), [params]);
   const zoom = resolveZoom(params);
+  const group = resolveListGroup(params);
   const selectedKey = params.get("task");
   const proposalParam = params.get("proposal");
   const proposalId = proposalParam && /^WAP-[0-9a-f]{16}$/.test(proposalParam) ? proposalParam : null;
@@ -93,6 +106,8 @@ export function ProjectPage() {
   const [ganttView, setGanttView] = useState<GanttViewSettings>(readGanttView);
   const [customWidth, setCustomWidth] = useState<number | null>(null);
   const [fitRequest, setFitRequest] = useState(0);
+  // The list's columns hidden in «Вид» (remembered in this browser).
+  const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<ListColumn>>(readHiddenColumns);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [creating, setCreating] = useState<{ parent: WorkTask | null } | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRequest | null>(null);
@@ -173,6 +188,24 @@ export function ProjectPage() {
     }
   }, [zoom, onZoom]);
 
+  const onGroup = useCallback(
+    (next: ListGroup) => {
+      writePreference(LIST_GROUP_KEY, next);
+      setUrl({ group: next === "none" ? null : next }, true);
+    },
+    [setUrl],
+  );
+
+  const toggleColumn = useCallback((column: ListColumn) => {
+    setHiddenColumns((current) => {
+      const next = new Set(current);
+      if (next.has(column)) next.delete(column);
+      else next.add(column);
+      writeHiddenColumns(next);
+      return next;
+    });
+  }, []);
+
   const onGanttView = useCallback((next: GanttViewSettings) => {
     setGanttView(next);
     writeGanttView(next);
@@ -226,6 +259,7 @@ export function ProjectPage() {
     return tree.ordered.filter((t) => !t.scheduled && !inChart.has(t.id) && matchesFilters(t, filters));
   }, [tree, ganttRows, filters]);
   const boardTasks = useMemo(() => tree.ordered.filter((t) => matchesFilters(t, filters)), [tree, filters]);
+  const listGroups = useMemo(() => (group === "none" ? null : groupTasks(boardTasks, group, ws.assignees)), [group, boardTasks, ws.assignees]);
   const shownCount = filtered ? tree.ordered.filter((t) => matchesFilters(t, filters)).length : tasks.length;
 
   if (ws.loading && !snapshot) {
@@ -314,8 +348,48 @@ export function ProjectPage() {
 
   // The view's own controls at the right end of the filter row.
   const criticalPathAvailable = capabilities?.features.critical_path === true && Boolean(snapshot.critical_path?.length);
+  const listControls = (
+    <>
+      <Menu
+        label="Группировка"
+        align="end"
+        className="docs-filter-menu"
+        groups={[
+          {
+            radio: true,
+            items: LIST_GROUPS.map((value) => ({ id: value, label: value === "none" ? "Без группировки (дерево)" : LIST_GROUP_LABEL[value], checked: group === value, onSelect: () => onGroup(value) })),
+          },
+        ]}
+        trigger={(props) => (
+          <button {...props} type="button" className={group === "none" ? "docs-filter" : "docs-filter docs-filter--on"}>
+            <span className="docs-filter__text">Группировка: {LIST_GROUP_LABEL[group]}</span>
+            <Icon name="chevron" size={12} />
+          </button>
+        )}
+      />
+      <Menu
+        label="Вид списка"
+        align="end"
+        groups={[
+          {
+            label: "Колонки",
+            multi: true,
+            items: LIST_COLUMNS.map((column) => ({ id: column, label: LIST_COLUMN_LABEL[column], checked: !hiddenColumns.has(column), onSelect: () => toggleColumn(column) })),
+          },
+        ]}
+        trigger={(props) => (
+          <button {...props} type="button" className="button button--secondary button--sm" title="Колонки списка">
+            <Icon name="sliders" size={14} />
+            Вид
+          </button>
+        )}
+      />
+    </>
+  );
   const viewControls =
-    view === "gantt" ? (
+    view === "list" ? (
+      listControls
+    ) : view === "gantt" ? (
       <GanttControls
         zoom={zoom}
         dayWidthOverride={customWidth}
@@ -394,6 +468,8 @@ export function ProjectPage() {
           {view === "list" ? (
             <TaskList
               rows={rows}
+              groups={listGroups}
+              hidden={hiddenColumns}
               collapsed={collapsed}
               onToggle={onToggle}
               canWrite={canWrite}

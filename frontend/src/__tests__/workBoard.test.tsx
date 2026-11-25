@@ -80,7 +80,7 @@ describe("Board", () => {
     expect(screen.getByTestId("location")).not.toHaveTextContent("task=");
     // Same data in the list (M6-36).
     await user.click(screen.getByRole("button", { name: "Список" }));
-    expect(screen.getByRole("combobox", { name: "Статус ARIS-7 Документация без дат" })).toHaveValue("in_progress");
+    expect(screen.getByRole("button", { name: "Статус ARIS-7 Документация без дат: В работе" })).toBeInTheDocument();
   });
 
   it("a drag released over the same column or cancelled changes nothing", async () => {

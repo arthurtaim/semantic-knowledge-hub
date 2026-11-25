@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { plannedChange } from "../components/work/GanttChart";
 import {
   addWorkdays,
@@ -9,16 +9,24 @@ import {
   filterParams,
   filtersFromParams,
   formatPlan,
+  formatPlanShort,
+  groupTasks,
   initials,
   fromDay,
   isoWeekday,
   lastWorkday,
   nextWorkday,
   pluralWorkdays,
+  readHiddenColumns,
+  resolveListGroup,
   toDay,
   visibleRows,
+  writeHiddenColumns,
 } from "../lib/work";
-import { capabilities, planTasks, project, READ_ONLY, task, TODAY } from "./workFixtures";
+import { memoryStorage } from "./helpers";
+import { ASSIGNEES, capabilities, planTasks, project, READ_ONLY, task, TODAY } from "./workFixtures";
+
+afterEach(() => vi.unstubAllGlobals());
 
 /*
  * M6 UI helpers: the calendar mirror, the drag arithmetic, the filter model, the tree (docs/WORK_MANAGEMENT.md «UI»).
@@ -118,3 +126,46 @@ describe("filters and the tree", () => {
     expect(canWriteProject(capabilities(), project({ status: "archived" }))).toBe(false);
   });
 });
+
+describe("the list: plan cell, groups, columns (Planner v2 §4)", () => {
+  it("writes «10 – 19 нояб.» within a month, both months across them, one date for a milestone", () => {
+    const t = (start: string, last: string) => task({ key: "ARIS-1", start_date: start, end_exclusive: start, last_day: last, scheduled: true });
+    expect(formatPlanShort(t("2026-11-10", "2026-11-19"), TODAY)).toBe("10 – 19 нояб.");
+    expect(formatPlanShort(t("2026-11-27", "2026-12-04"), TODAY)).toBe("27 нояб. – 4 дек.");
+    expect(formatPlanShort(t("2026-11-27", "2026-11-27"), TODAY)).toBe("27 нояб.");
+    expect(formatPlanShort(task({ key: "ARIS-2", is_milestone: true, start_date: "2026-12-02", end_exclusive: "2026-12-02" }), TODAY)).toBe("2 дек.");
+    expect(formatPlanShort(task({ key: "ARIS-3" }), TODAY)).toBe("Без дат");
+  });
+
+  it("groups by status (work in progress first), priority and assignee; empty groups are left out", () => {
+    const tasks = planTasks();
+    expect(groupTasks(tasks, "status", ASSIGNEES).map((g) => [g.label, g.tasks.length])).toEqual([
+      ["В работе", 2],
+      ["К работе", 4],
+      ["Готово", 3],
+    ]);
+    expect(groupTasks(tasks, "priority", ASSIGNEES).map((g) => [g.label, g.tasks.length])).toEqual([
+      ["Критичный", 1],
+      ["Высокий", 1],
+      ["Средний", 7],
+    ]);
+    expect(groupTasks(tasks, "assignee", ASSIGNEES).map((g) => [g.label, g.tasks.map((t) => t.key).length])).toEqual([
+      ["Анна Лебедева (демо)", 1],
+      ["Не назначен", 8],
+    ]);
+  });
+
+  it("keeps the grouping in the URL or the stored setting, and the hidden columns in this browser", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    expect(resolveListGroup(new URLSearchParams())).toBe("none");
+    expect(resolveListGroup(new URLSearchParams("group=priority"))).toBe("priority");
+    window.localStorage.setItem("skh.work.list.group", "assignee");
+    expect(resolveListGroup(new URLSearchParams())).toBe("assignee");
+    expect(resolveListGroup(new URLSearchParams("group=bogus"))).toBe("assignee");
+    writeHiddenColumns(new Set(["due", "priority"]));
+    expect([...readHiddenColumns()].sort()).toEqual(["due", "priority"]);
+    window.localStorage.setItem("skh.work.list.columns", '["title", 3, "dates"]');
+    expect([...readHiddenColumns()]).toEqual(["dates"]);
+  });
+});
+

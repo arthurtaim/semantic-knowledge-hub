@@ -12466,51 +12466,49 @@ a.fact-item__title:hover {
   font-weight: 600;
 }
 
-/* task status: hollow ring (к работе), half (в работе), filled dot (на проверке), tick (готово) */
+/* task status (Planner v2): a hollow ring «К работе», a half-filled ring «В работе», a dot «На проверке», a grey dot
+   in a ring «Готово» — the same shape in the List, on the Board and in the Gantt's legend; the word is the status */
 .task-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   white-space: nowrap;
 }
 
-.task-status__shape {
+.status-shape {
   flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 1.5px solid var(--text-secondary);
-}
-
-.task-status--in_progress .task-status__shape {
-  border-color: var(--accent);
-  background: linear-gradient(90deg, var(--accent) 50%, transparent 50%);
-}
-
-.task-status--review .task-status__shape {
-  border-color: var(--status-review);
-  background: var(--status-review);
-}
-
-.task-status__icon {
-  color: var(--accent-text);
-}
-
-.task-status--compact {
-  font-size: 0;
-  gap: 0;
-}
-
-.task-status--compact .icon {
+  box-sizing: border-box;
   width: 12px;
   height: 12px;
+  border-radius: 50%;
+  border: 1.6px solid var(--gantt-todo-mark);
 }
 
-/* priority: 1–4 bars of rising height */
+.status-shape--in_progress {
+  border-color: var(--gantt-progress-border);
+  background: linear-gradient(90deg, var(--gantt-progress-border) 50%, transparent 50%);
+}
+
+.status-shape--review {
+  border-color: var(--gantt-review-border);
+  background: var(--gantt-review-border);
+}
+
+.status-shape--done {
+  border-color: var(--gantt-done-mark);
+  background: var(--gantt-done-mark);
+  box-shadow: inset 0 0 0 2px var(--bg-surface);
+}
+
+.task-status--done {
+  color: var(--text-secondary);
+}
+
+/* priority: three bars of rising height and the word; «Критичный» — all three in the error tone */
 .priority {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   white-space: nowrap;
 }
 
@@ -12527,13 +12525,12 @@ a.fact-item__title:hover {
   background: var(--line-strong);
 }
 
-.priority__bars > span:nth-child(1) { height: 4px; }
-.priority__bars > span:nth-child(2) { height: 7px; }
-.priority__bars > span:nth-child(3) { height: 10px; }
-.priority__bars > span:nth-child(4) { height: 12px; }
+.priority__bars > span:nth-child(1) { height: 5px; }
+.priority__bars > span:nth-child(2) { height: 8px; }
+.priority__bars > span:nth-child(3) { height: 11px; }
 
 .priority__bars > span.is-on {
-  background: var(--text-secondary);
+  background: var(--gantt-milestone);
 }
 
 .priority--critical .priority__bars > span.is-on {
@@ -13036,23 +13033,44 @@ a.fact-item__title:hover {
   }
 }
 
-/* ── «Список»: the task tree as a table; card rows on a phone ── */
+/* ── «Список» (Planner v2 §4): plain cells that open a menu or a calendar; rows of 40 px; groups; card rows on a phone ── */
 
+.project-page--list .project-page__main {
+  padding: 0 0 var(--space-6);
+}
+
+/* no scroll container around the table: the menus and calendars of its cells open over the page, never clipped */
 .task-table-wrap {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-block);
   background: var(--bg-surface);
-  overflow-x: auto;
 }
 
 .task-table {
   width: 100%;
+  min-width: 44rem;
   border-collapse: collapse;
-  font-size: var(--fs-ui);
+  table-layout: fixed;
+  font-size: 13.5px;
+}
+
+.task-table__col-title { width: auto; }
+.task-table__col-status { width: 9rem; }
+.task-table__col-assignee { width: 12.5rem; }
+.task-table__col-priority { width: 8.5rem; }
+.task-table__col-dates { width: 9.5rem; }
+.task-table__col-due { width: 7rem; }
+.task-table__col-actions { width: 3rem; }
+
+@media (max-width: 1100px) {
+  .task-table__col-status { width: 8rem; }
+  .task-table__col-assignee { width: 10rem; }
+  .task-table__col-priority { width: 7.5rem; }
+  .task-table__col-dates { width: 8.5rem; }
+  .task-table__col-due { width: 6rem; }
 }
 
 .task-table th {
-  padding: var(--space-2) var(--space-3);
+  height: 34px;
+  padding: 0 var(--space-3);
   border-bottom: 1px solid var(--line);
   color: var(--text-secondary);
   font-size: var(--fs-caption);
@@ -13061,23 +13079,21 @@ a.fact-item__title:hover {
   white-space: nowrap;
 }
 
+.task-table thead th:first-child,
+.task-table td:first-child {
+  padding-left: 1.25rem;
+}
+
 .task-table td {
-  padding: 6px var(--space-3);
-  border-bottom: 1px solid var(--line);
-  vertical-align: top;
-}
-
-.task-table tr:last-child td {
-  border-bottom: 0;
-}
-
-.task-table__title-col {
-  width: 40%;
-  min-width: 18rem;
+  height: 40px;
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--gantt-grid);
+  vertical-align: middle;
+  white-space: nowrap;
 }
 
 .task-row:hover td {
-  background: var(--bg-subtle);
+  background: var(--gantt-row-hover);
 }
 
 .task-row.is-context td {
@@ -13089,20 +13105,20 @@ a.fact-item__title:hover {
 }
 
 .task-row__title {
-  padding-left: calc(var(--space-2) + var(--depth, 0) * 1.25rem) !important;
+  padding-left: calc(1.25rem + var(--depth, 0) * 1rem) !important;
 }
 
 .task-row__tree {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .task-row__toggle,
 .task-row__toggle-space {
   flex: none;
-  width: 24px;
+  width: 20px;
   height: 24px;
 }
 
@@ -13110,6 +13126,7 @@ a.fact-item__title:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  margin-right: -4px;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -13128,7 +13145,7 @@ a.fact-item__title:hover {
 
 .task-row__milestone {
   flex: none;
-  color: var(--text);
+  color: var(--gantt-milestone);
 }
 
 .task-row__key,
@@ -13144,59 +13161,89 @@ a.fact-item__title:hover {
   white-space: nowrap;
 }
 
+.task-row__key {
+  flex: none;
+  min-width: 3.5rem;
+}
+
+.task-row__sub {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-tertiary);
+}
+
+/* the title has priority: the tags give way first, then the title ends with an ellipsis */
 .task-row__name {
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
   gap: 2px;
+  min-width: 5rem;
+  overflow: hidden;
+}
+
+.task-row__name .inline-edit {
   min-width: 0;
 }
 
 .task-row__link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text);
 }
 
-.task-row__add,
+/* a tag that does not fit wraps onto a hidden second line: tags drop out whole, never cut */
+.task-tags {
+  flex: 0 1000 auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
+  height: 20px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--fs-caption);
+  line-height: 20px;
+}
+
+/* an empty first item keeps the first line occupied, so even a single tag that does not fit wraps away */
+.task-tags::before {
+  content: "";
+  width: 0;
+  height: 20px;
+}
+
+.task-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.task-tags__late {
+  flex: none;
+  color: var(--danger);
+}
+
 .inline-edit__button {
   opacity: 0;
 }
 
-.task-row:hover .task-row__add,
 .task-row:hover .inline-edit__button,
-.task-row__add:focus-visible,
 .inline-edit__button:focus-visible,
 .task-detail .inline-edit__button {
   opacity: 1;
 }
 
 @media (hover: none) {
-  .task-row__add,
   .inline-edit__button {
     opacity: 1;
   }
 }
 
-.task-row__select {
-  min-height: var(--control-height-sm);
-  width: 100%;
-  min-width: 7.5rem;
-  max-width: 13rem;
-  font-size: var(--fs-small);
-}
-
-/* A person's full name fits: «Екатерина Белова (демо)». */
-.task-row__select--assignee {
-  min-width: 12.5rem;
-}
-
-.task-row__date {
-  white-space: nowrap;
-}
-
-.task-row__date.is-overdue .inline-date {
-  color: var(--danger-text);
-  font-weight: 600;
-}
-
+/* inline editing (the title in a row, the fields of the task panel) */
 .inline-edit {
   display: inline-flex;
   align-items: center;
@@ -13235,6 +13282,174 @@ a.fact-item__title:hover {
   background: var(--bg-surface);
 }
 
+/* a cell is text until it is pressed: then a menu or a calendar */
+.list-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 28px;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.list-cell:hover {
+  background: var(--list-cell-hover);
+}
+
+.list-cell[aria-expanded="true"] {
+  background: var(--accent-wash);
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.list-cell--static {
+  cursor: default;
+}
+
+.list-cell--static:hover {
+  background: transparent;
+}
+
+.list-cell__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-cell-menu,
+.list-cell-anchor {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+.list-cell__error {
+  margin-left: 4px;
+  color: var(--danger);
+  vertical-align: middle;
+}
+
+.list-cell__lock {
+  margin-left: 4px;
+  color: var(--text-secondary);
+}
+
+.list-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gantt-avatar-bg);
+  color: var(--gantt-avatar-text);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.list-avatar--none {
+  background: transparent;
+  border: 1px dashed var(--line-strong);
+}
+
+.task-row__date {
+  font-variant-numeric: tabular-nums;
+}
+
+.task-row__date.is-overdue .list-cell {
+  color: var(--danger-text);
+  font-weight: 500;
+}
+
+.task-row__actions {
+  text-align: center;
+}
+
+.task-row__more {
+  color: var(--text-tertiary);
+}
+
+/* the calendar of a cell: start and last day (or one date) */
+.list-editor {
+  width: 16rem;
+  padding: var(--space-3);
+}
+
+.list-editor__form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.list-editor__field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.list-editor__field .input {
+  min-height: var(--control-height-sm);
+  font-size: var(--fs-small);
+}
+
+.list-editor__hint {
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.list-editor__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* groups: a 36 px heading row with the group's mark and count */
+.task-group__head th {
+  height: 36px;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.task-group__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.task-group__count {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.menu__lead {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.menu__shortcut {
+  flex: none;
+  min-width: 1.25rem;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  text-align: center;
+}
+
 .task-table__more {
   margin: 0;
   padding: var(--space-3);
@@ -13243,38 +13458,49 @@ a.fact-item__title:hover {
 }
 
 @media (max-width: 719.98px) {
-  .task-table-wrap {
-    overflow-x: visible;
-  }
-
   .task-table,
   .task-table tbody,
   .task-table tr,
-  .task-table td {
+  .task-table td,
+  .task-table th {
     display: block;
     width: 100%;
+    min-width: 0;
   }
 
+  .task-table colgroup,
   .task-table thead {
     display: none;
   }
 
-  .task-table tr {
+  .task-table tr.task-row {
+    position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 2px var(--space-2);
-    padding: var(--space-2) var(--space-3) var(--space-2) calc(var(--space-2) + var(--depth-phone, 0) * 0.75rem);
+    padding: var(--space-2) var(--space-4) var(--space-2) calc(var(--space-4) + var(--depth-phone, 0) * 0.75rem);
     border-bottom: 1px solid var(--line);
   }
 
   .task-table td {
+    height: auto;
     padding: 0;
     border: 0;
+    white-space: normal;
+  }
+
+  .task-table td:first-child {
+    padding-left: 0;
   }
 
   .task-row__title {
     grid-column: 1 / -1;
     padding-left: 0 !important;
+    padding-right: 2.5rem !important;
+  }
+
+  .task-row__tree {
+    flex-wrap: wrap;
   }
 
   .task-table td[data-label]::before {
@@ -13285,15 +13511,23 @@ a.fact-item__title:hover {
     color: var(--text-tertiary);
   }
 
-  .task-row__select,
-  .task-row__select--assignee {
-    min-width: 0;
-    max-width: none;
+  .task-row__actions {
+    position: absolute;
+    top: var(--space-1);
+    right: var(--space-2);
+    width: auto !important;
+  }
+
+  .task-group__head th {
+    height: auto;
+    padding: var(--space-2) var(--space-4);
   }
 
   .task-row[data-depth="2"] { --depth-phone: 1; }
   .task-row[data-depth="3"] { --depth-phone: 2; }
   .task-row[data-depth="4"] { --depth-phone: 3; }
+
+  .task-table--grouped .task-row { --depth-phone: 0; }
 }
 
 /* ── «Доска» ── */

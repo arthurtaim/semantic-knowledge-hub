@@ -2,10 +2,13 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectPage } from "../pages/ProjectPage";
-import { mockApi, renderRoutes } from "./helpers";
+import { memoryStorage, mockApi, renderRoutes } from "./helpers";
 import { ASSIGNEES, capabilities, gantt, planTasks, preview, project, projectRoutes, READ_ONLY, task } from "./workFixtures";
 
-/* M6 «Список»: the task tree, inline editing with optimistic locking, filters in the URL, create task / subtask. */
+/*
+ * M6 «Список» (Planner v2): the task tree or groups, plain cells that open a menu or a calendar (no select in a row),
+ * editing with optimistic locking, filters in the URL, create task / subtask, columns in «Вид».
+ */
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -29,12 +32,16 @@ describe("Task list", () => {
     expect(screen.getByTestId("plan-revision")).toHaveTextContent("Ревизия плана 7");
     expect(row("ARIS-3")).toHaveAttribute("data-depth", "3");
     // M6-10 / overdue: a milestone and an overdue task carry words, not only colour.
-    expect(within(row("ARIS-6")).getByText("Веха")).toBeInTheDocument();
+    expect(within(row("ARIS-6")).getByRole("img", { name: "Веха" })).toBeInTheDocument();
     expect(within(row("ARIS-9")).getByText(/Просрочена \(срок 19 нояб\.\)/)).toBeInTheDocument();
-    expect(within(row("ARIS-5")).getByText("Ждёт ARIS-4")).toBeInTheDocument();
-    expect(within(row("ARIS-7")).getByRole("button", { name: /Начало ARIS-7: Без дат/ })).toBeInTheDocument();
-    // M6-26: the end column shows the last day (inclusive), not end_exclusive.
-    expect(within(row("ARIS-5")).getByRole("button", { name: /Последний день ARIS-5: 1 дек\./ })).toBeInTheDocument();
+    expect(within(row("ARIS-9")).getByRole("button", { name: /^Срок ARIS-9: 19 нояб\., просрочена/ })).toBeInTheDocument();
+    expect(within(row("ARIS-5")).getByTitle("Ждёт предшественника: ARIS-4")).toHaveTextContent("ARIS-4");
+    expect(within(row("ARIS-7")).getByRole("button", { name: /Сроки ARIS-7: Без дат/ })).toBeInTheDocument();
+    // M6-26: «Сроки» ends with the last day (inclusive), not end_exclusive.
+    expect(within(row("ARIS-5")).getByRole("button", { name: /Сроки ARIS-5: 30 нояб\. – 1 дек\./ })).toBeInTheDocument();
+    expect(within(row("ARIS-4")).getByRole("button", { name: /Сроки ARIS-4: 27 нояб\./ })).toBeInTheDocument();
+    // Planner v2: no select in a row.
+    expect(screen.queryAllByRole("combobox")).toHaveLength(0);
     await user.click(screen.getByRole("button", { name: "Свернуть подзадачи ARIS-1" }));
     expect(document.querySelector('tr[data-task-key="ARIS-2"]')).toBeNull();
     await user.click(screen.getByRole("button", { name: "Развернуть подзадачи ARIS-1" }));
@@ -59,14 +66,15 @@ describe("Task list", () => {
     ]);
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByRole("table");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Статус ARIS-4 Маппинг метаданных" }), "review");
+    await user.click(screen.getByRole("button", { name: "Статус ARIS-4 Маппинг метаданных: В работе" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "На проверке" }));
     const patch = calls.find((c) => c.method === "PATCH");
     expect(patch?.url).toBe("/api/tasks/t4");
     expect(patch?.body).toEqual({ expected_version: 1, status: "review" });
-    expect(screen.getByRole("combobox", { name: "Статус ARIS-4 Маппинг метаданных" })).toHaveValue("review");
+    expect(screen.getByRole("button", { name: "Статус ARIS-4 Маппинг метаданных: На проверке" })).toBeInTheDocument();
     // The snapshot is re-read quietly (no loading state): every view now shows the new plan revision.
     await waitFor(() => expect(screen.getByTestId("plan-revision")).toHaveTextContent("Ревизия плана 8"));
-    expect(screen.getByRole("combobox", { name: "Статус ARIS-4 Маппинг метаданных" })).toHaveValue("review");
+    expect(screen.getByRole("button", { name: "Статус ARIS-4 Маппинг метаданных: На проверке" })).toBeInTheDocument();
     expect(screen.queryByText("Загружаем проект…")).not.toBeInTheDocument();
     expect(calls.filter((c) => c.url === "/api/projects/ARIS/gantt")).toHaveLength(2);
   });
@@ -91,9 +99,10 @@ describe("Task list", () => {
     ]);
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByRole("table");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Приоритет ARIS-4 Маппинг метаданных" }), "low");
+    await user.click(screen.getByRole("button", { name: "Приоритет ARIS-4 Маппинг метаданных: Средний" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Низкий" }));
     expect(await screen.findByText(/ARIS-4 уже изменили в другом месте/)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Приоритет ARIS-4 Маппинг метаданных" })).toHaveValue("critical"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Приоритет ARIS-4 Маппинг метаданных: Критичный" })).toBeInTheDocument());
     expect(screen.getByTestId("plan-revision")).toHaveTextContent("Ревизия плана 9");
   });
 
@@ -110,13 +119,16 @@ describe("Task list", () => {
     ]);
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByRole("table");
-    const select = screen.getByRole("combobox", { name: "Исполнитель ARIS-4 Маппинг метаданных" });
-    // Options are grouped by the demo team's roles; the operator (no role) comes first.
-    expect(within(select).getByRole("group", { name: "Аналитик" })).toHaveTextContent("Анна Лебедева (демо)");
-    expect(within(select).getByRole("group", { name: "Разработчик" })).toHaveTextContent("Дмитрий Орлов (демо)");
-    await user.selectOptions(select, "demo-dev-1");
+    await user.click(screen.getByRole("button", { name: "Исполнитель ARIS-4 Маппинг метаданных: Анна Лебедева (демо)" }));
+    const menu = screen.getByRole("menu", { name: "Исполнитель ARIS-4" });
+    // People are grouped by the demo team's roles; the operator (no role) comes first.
+    expect(within(menu).getByRole("group", { name: "Аналитик" })).toHaveTextContent("Анна Лебедева (демо)");
+    expect(within(menu).getByRole("group", { name: "Разработчик" })).toHaveTextContent("Дмитрий Орлов (демо)");
+    await user.click(within(menu).getByRole("menuitemradio", { name: "Дмитрий Орлов (демо)" }));
     expect(await screen.findByText("ARIS-4: Такого исполнителя нет в проекте.")).toBeInTheDocument();
-    expect(select).toHaveValue("demo-analyst-1");
+    // rolled back, and the error stays at the cell
+    expect(screen.getByRole("button", { name: "Исполнитель ARIS-4 Маппинг метаданных: Анна Лебедева (демо)" })).toBeInTheDocument();
+    expect(within(row("ARIS-4")).getByRole("img", { name: "Не сохранено: Такого исполнителя нет в проекте." })).toBeInTheDocument();
   });
 
   it("renames inline (Enter saves, Esc cancels)", async () => {
@@ -148,7 +160,7 @@ describe("Task list", () => {
     ]);
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByRole("table");
-    await user.click(screen.getByRole("button", { name: /Начало ARIS-4/ }));
+    await user.click(screen.getByRole("button", { name: /Сроки ARIS-4/ }));
     const input = screen.getByLabelText("Начало ARIS-4");
     await user.clear(input);
     await user.type(input, "2026-11-30{Enter}");
@@ -205,7 +217,8 @@ describe("Task list", () => {
     ]);
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByRole("table");
-    await user.click(screen.getByRole("button", { name: "Добавить подзадачу к ARIS-4" }));
+    await user.click(screen.getByRole("button", { name: "Действия ARIS-4" }));
+    await user.click(screen.getByRole("menuitem", { name: "Добавить подзадачу" }));
     const dialog = screen.getByRole("dialog", { name: "Подзадача к ARIS-4" });
     expect(within(dialog).getByLabelText("Родительская задача")).toHaveValue("t4");
     await user.type(within(dialog).getByLabelText(/Название/), "Новая подзадача");
@@ -224,6 +237,62 @@ describe("Task list", () => {
     });
     expect(await screen.findByText("Задача ARIS-10 создана.")).toBeInTheDocument();
     expect(within(screen.getByRole("complementary")).getByRole("heading", { level: 2, name: "ARIS-10: Новая подзадача" })).toBeInTheDocument();
+  });
+
+  it("the status menu opens with Enter on the cell and takes the keys 1–4", async () => {
+    const user = userEvent.setup();
+    const calls = mockApi([{ method: "PATCH", path: "/api/tasks/t4", body: { ...planTasks()[3]!, status: "done", version: 2 } }, ...projectRoutes()]);
+    renderRoutes("/projects/ARIS?view=list", ROUTES);
+    await screen.findByRole("table");
+    screen.getByRole("button", { name: "Статус ARIS-4 Маппинг метаданных: В работе" }).focus();
+    await user.keyboard("{Enter}");
+    const menu = screen.getByRole("menu", { name: "Статус ARIS-4" });
+    expect(within(menu).getByRole("menuitemradio", { name: "В работе" })).toHaveAttribute("aria-checked", "true");
+    await user.keyboard("4");
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ expected_version: 1, status: "done" }));
+    expect(screen.queryByRole("menu", { name: "Статус ARIS-4" })).not.toBeInTheDocument();
+    expect(document.activeElement).toHaveAccessibleName(/^Статус ARIS-4 Маппинг метаданных/); // focus back on the cell
+  });
+
+  it("the deadline opens a calendar; Enter saves it with the version", async () => {
+    const user = userEvent.setup();
+    const calls = mockApi([{ method: "PATCH", path: "/api/tasks/t5", body: { ...planTasks()[4]!, due_date: "2026-12-04", version: 2 } }, ...projectRoutes()]);
+    renderRoutes("/projects/ARIS?view=list", ROUTES);
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Срок ARIS-5: не задан — изменить" }));
+    await user.type(screen.getByLabelText("Срок ARIS-5"), "2026-12-04{Enter}");
+    await waitFor(() => expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ expected_version: 1, due_date: "2026-12-04" }));
+  });
+
+  it("groups by status (in the URL and remembered): flat rows under headings, subtasks marked ↳", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    renderRoutes("/projects/ARIS?view=list", ROUTES);
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Группировка: нет" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "по статусу" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("group=status");
+    expect(Array.from(document.querySelectorAll(".task-group__head")).map((head) => head.textContent)).toEqual(["В работе2", "К работе4", "Готово3"]);
+    expect(within(row("ARIS-2")).getByRole("img", { name: "Подзадача ARIS-1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Свернуть подзадачи/ })).not.toBeInTheDocument();
+    expect(window.localStorage.getItem("skh.work.list.group")).toBe("status");
+    await user.click(screen.getByRole("button", { name: "Группировка: по статусу" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "по исполнителю" }));
+    expect(Array.from(document.querySelectorAll(".task-group__head")).map((head) => head.textContent)).toEqual(["АЛАнна Лебедева (демо)1", "Не назначен8"]); // initials + name + count
+  });
+
+  it("«Вид» hides columns and remembers them", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    renderRoutes("/projects/ARIS?view=list", ROUTES);
+    await screen.findByRole("table");
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Приоритет" }));
+    expect(screen.queryByRole("columnheader", { name: "Приоритет" })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Статус" })).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem("skh.work.list.columns") ?? "[]")).toEqual(["priority"]);
   });
 
   it("M6-19/M6-20: read-only mode shows values as text — no selects, no edit buttons, no «Задача»", async () => {

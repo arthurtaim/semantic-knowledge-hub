@@ -61,6 +61,10 @@ export interface MenuItem {
   id: string;
   label: string;
   icon?: IconName;
+  /** A small mark before the label (a status shape, priority bars); decorative. */
+  lead?: ReactNode;
+  /** A key that chooses this item while the menu is open («1»–«4» for a status); shown at the end. */
+  shortcut?: string;
   /** A second line under the label. */
   description?: string;
   /** A short note at the end of the item (a count). */
@@ -112,7 +116,8 @@ interface MenuProps {
 
 /**
  * A menu button (WAI-ARIA APG «Menu Button»): Enter, Space or ↓ opens the menu on its first item, ↑ on the last;
- * ↑/↓ move (wrapping), Home/End jump, a letter moves to the next item starting with it; Enter or Space
+ * ↑/↓ move (wrapping), Home/End jump, an item's shortcut («1») chooses it, a letter moves to the next item starting
+ * with it; Enter or Space
  * chooses and closes (an item of a `multi` group toggles and keeps the menu open); Esc closes and returns focus to
  * the button; Tab or a press outside closes it.
  */
@@ -189,6 +194,14 @@ export function Menu({ label, trigger, groups, header, footer, panelClassName, s
         setOpen(false);
         return;
       default:
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          const item = groups.flatMap((group) => group.items.map((entry) => ({ entry, multi: Boolean(group.multi) }))).find(({ entry }) => entry.shortcut === event.key);
+          if (item) {
+            event.preventDefault();
+            choose(item.entry, item.multi);
+            return;
+          }
+        }
         if (event.key.length === 1 && /\S/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
           const key = event.key.toLocaleLowerCase("ru");
           for (let step = 1; step <= list.length; step += 1) {
@@ -236,11 +249,17 @@ export function Menu({ label, trigger, groups, header, footer, panelClassName, s
                 onClick={() => choose(item, Boolean(group.multi))}
               >
                 {item.icon ? <Icon name={item.icon} /> : null}
+                {item.lead ? <span className="menu__lead">{item.lead}</span> : null}
                 <span className="menu__text">
                   <span className="menu__label">{item.label}</span>
                   {item.description ? <span className="menu__description">{item.description}</span> : null}
                 </span>
                 {item.meta ? <span className="menu__meta">{item.meta}</span> : null}
+                {item.shortcut ? (
+                  <kbd className="menu__shortcut" aria-hidden="true">
+                    {item.shortcut}
+                  </kbd>
+                ) : null}
                 {checkable ? <Icon name="check" className="menu__check" /> : null}
               </button>
             ));

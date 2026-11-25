@@ -1,4 +1,5 @@
 import type {
+  AssigneeRef,
   LinkRelation,
   LinkState,
   ProjectStatus,
@@ -278,6 +279,16 @@ export function formatPlan(task: Pick<WorkTask, "start_date" | "last_day" | "is_
   return `${formatDay(task.start_date, yearOf)} – ${formatDay(task.last_day, yearOf)}`;
 }
 
+/** The plan in a list cell: «10 – 19 нояб.» within a month, «27 нояб. – 4 дек.» across months, one date, «Без дат». */
+export function formatPlanShort(task: Pick<WorkTask, "start_date" | "last_day" | "is_milestone" | "scheduled">, yearOf?: string | null): string {
+  if (!task.scheduled || !task.start_date) return "Без дат";
+  if (task.is_milestone || !task.last_day || task.last_day === task.start_date) return formatDay(task.start_date, yearOf);
+  const [sy, sm, sd] = task.start_date.split("-");
+  const [ly, lm] = task.last_day.split("-");
+  if (sy === ly && sm === lm) return `${Number(sd)} – ${formatDay(task.last_day, yearOf)}`;
+  return `${formatDay(task.start_date, yearOf ?? task.last_day)} – ${formatDay(task.last_day, yearOf)}`;
+}
+
 // --- the task tree -------------------------------------------------------------------------------------------------
 
 export interface TaskTree {
@@ -439,6 +450,82 @@ export function visibleRows(tree: TaskTree, filters: TaskFilters, collapsed: Rea
   };
   walk(null);
   return rows;
+}
+
+// --- the list: grouping and columns (Planner v2 §4) --------------------------------------------------------------
+
+export type ListGroup = "none" | "status" | "assignee" | "priority";
+export const LIST_GROUPS: readonly ListGroup[] = ["none", "status", "assignee", "priority"];
+export const LIST_GROUP_LABEL: Record<ListGroup, string> = { none: "нет", status: "по статусу", assignee: "по исполнителю", priority: "по приоритету" };
+export const LIST_GROUP_KEY = "skh.work.list.group";
+
+/** The grouping of the URL (`?group=`), else the remembered one, else none (the task tree). */
+export function resolveListGroup(params: URLSearchParams): ListGroup {
+  const named = params.get("group");
+  if (named && (LIST_GROUPS as readonly string[]).includes(named)) return named as ListGroup;
+  const stored = readPreference(LIST_GROUP_KEY);
+  if (stored && (LIST_GROUPS as readonly string[]).includes(stored)) return stored as ListGroup;
+  return "none";
+}
+
+export type ListColumn = "status" | "assignee" | "priority" | "dates" | "due";
+export const LIST_COLUMNS: readonly ListColumn[] = ["status", "assignee", "priority", "dates", "due"];
+export const LIST_COLUMN_LABEL: Record<ListColumn, string> = {
+  status: "Статус",
+  assignee: "Исполнитель",
+  priority: "Приоритет",
+  dates: "Сроки",
+  due: "Срок сдачи",
+};
+export const LIST_COLUMNS_KEY = "skh.work.list.columns";
+
+/** The columns hidden in «Вид» of the list, remembered in this browser. */
+export function readHiddenColumns(): Set<ListColumn> {
+  try {
+    const raw: unknown = JSON.parse(readPreference(LIST_COLUMNS_KEY) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((c): c is ListColumn => (LIST_COLUMNS as readonly unknown[]).includes(c)) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeHiddenColumns(hidden: ReadonlySet<ListColumn>): void {
+  writePreference(LIST_COLUMNS_KEY, JSON.stringify(LIST_COLUMNS.filter((c) => hidden.has(c))));
+}
+
+/** Work in progress first (the mockup's order), then what waits, then what is done. */
+export const GROUP_STATUS_ORDER: TaskStatus[] = ["in_progress", "review", "todo", "done"];
+
+export interface TaskGroup {
+  key: string;
+  label: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  /** A group by assignee: the person (null — «Не назначен»). */
+  assignee?: AssigneeRef | null;
+  tasks: WorkTask[];
+}
+
+/** A flat list of tasks in groups (tree order kept inside a group); empty groups are left out. */
+export function groupTasks(tasks: WorkTask[], by: Exclude<ListGroup, "none">, assignees: AssigneeRef[]): TaskGroup[] {
+  if (by === "status") {
+    return GROUP_STATUS_ORDER.map((status) => ({ key: status, label: TASK_STATUS_LABEL[status], status, tasks: tasks.filter((t) => t.status === status) })).filter(
+      (g) => g.tasks.length,
+    );
+  }
+  if (by === "priority") {
+    return PRIORITY_ORDER.map((priority) => ({ key: priority, label: PRIORITY_LABEL[priority], priority, tasks: tasks.filter((t) => t.priority === priority) })).filter(
+      (g) => g.tasks.length,
+    );
+  }
+  const people = new Map<string, AssigneeRef>();
+  for (const a of assignees) people.set(a.id, a);
+  for (const t of tasks) if (t.assignee_id && !people.has(t.assignee_id)) people.set(t.assignee_id, t.assignee ?? { id: t.assignee_id, display_name: t.assignee_id, kind: "unknown" });
+  const groups: TaskGroup[] = [...people.values()]
+    .sort((a, b) => a.display_name.localeCompare(b.display_name, "ru"))
+    .map((a) => ({ key: `assignee:${a.id}`, label: a.display_name, assignee: a, tasks: tasks.filter((t) => t.assignee_id === a.id) }));
+  groups.push({ key: "assignee:none", label: "Не назначен", assignee: null, tasks: tasks.filter((t) => !t.assignee_id) });
+  return groups.filter((g) => g.tasks.length);
 }
 
 // --- views ---------------------------------------------------------------------------------------------------------

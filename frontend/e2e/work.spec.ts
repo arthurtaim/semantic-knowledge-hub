@@ -146,9 +146,10 @@ test.describe("M6 work management", () => {
     const key = await createProject(page.request, "ED");
     await call(page.request, "POST", `/api/projects/${key}/tasks`, { title: "Черновик плана" });
     await page.goto(`/projects/${key}?view=list`);
-    const priority = page.getByRole("combobox", { name: `Приоритет ${key}-1 Черновик плана` });
+    // Planner v2: a cell opens a menu (no select in a row).
+    await page.getByRole("button", { name: `Приоритет ${key}-1 Черновик плана: Средний` }).click();
     const saved = page.waitForResponse((r) => r.request().method() === "PATCH" && r.url().includes("/api/tasks/"));
-    await priority.selectOption("high");
+    await page.getByRole("menuitemradio", { name: "Высокий" }).click();
     expect((await saved).status()).toBe(200);
     await page.getByRole("button", { name: `Изменить: Название ${key}-1` }).click();
     await page.getByRole("textbox", { name: `Название ${key}-1` }).fill("План работ");
@@ -156,7 +157,7 @@ test.describe("M6 work management", () => {
     await expect(page.getByRole("link", { name: "План работ" })).toBeVisible();
     await expect.poll(async () => (await call<{ title: string; priority: string }>(page.request, "GET", `/api/tasks/${key}-1`)).title).toBe("План работ");
     await page.reload();
-    await expect(page.getByRole("combobox", { name: `Приоритет ${key}-1 План работ` })).toHaveValue("high");
+    await expect(page.getByRole("button", { name: `Приоритет ${key}-1 План работ: Высокий` })).toBeVisible();
   });
 
   test("M6-02 dragging a card to «В работе» saves the status; the list shows it", async ({ page }) => {
@@ -177,7 +178,7 @@ test.describe("M6 work management", () => {
     await expect(target.locator(`.board-card[data-task-key="${key}-1"]`)).toBeVisible();
     await expect.poll(async () => (await call<Task>(page.request, "GET", `/api/tasks/${key}-1`)).status).toBe("in_progress");
     await page.getByRole("button", { name: "Список", exact: true }).click();
-    await expect(page.getByRole("combobox", { name: `Статус ${key}-1 Проверить маппинг` })).toHaveValue("in_progress");
+    await expect(page.getByRole("button", { name: `Статус ${key}-1 Проверить маппинг: В работе` })).toBeVisible();
   });
 
   test("M6-03/M6-04 Gantt drag → preview of the dependants → «Применить» shifts them", async ({ page }) => {
@@ -200,7 +201,7 @@ test.describe("M6 work management", () => {
     expect((await call<Task>(page.request, "GET", `/api/tasks/${a.id}`)).start_date).toBe(addDays(monday, 2));
     expect(after.start_date).toBe(addDays(monday, 3)); // B right after A (FS), Thursday
     await page.getByRole("button", { name: "Список", exact: true }).click();
-    await expect(page.getByRole("button", { name: new RegExp(`Начало ${b.key}:`) })).toContainText(String(Number(addDays(monday, 3).slice(8))));
+    await expect(page.getByRole("button", { name: new RegExp(`Сроки ${b.key}:`) })).toContainText(String(Number(addDays(monday, 3).slice(8))));
   });
 
   test("M6-30 «Отмена» in the preview leaves every date as it was", async ({ page }) => {
