@@ -494,7 +494,7 @@ function ProposalReview({ project, proposalId, assignees, canWrite, onProposal, 
           <h3 className="task-section__title" id={`${id}-deps`}>
             Зависимости <span className="muted task-section__hint">окончание → начало</span>
           </h3>
-          <ul className="work-plan__list">
+          <ul className="work-plan__list work-plan__list--checks">
             {shown.dependencies.map((d) => {
               const pair = `${d.predecessor}→${d.successor}`;
               const label = `${titleOf(d.predecessor)} → ${titleOf(d.successor)}`;
