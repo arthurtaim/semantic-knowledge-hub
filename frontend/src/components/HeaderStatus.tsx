@@ -7,6 +7,7 @@ import { useSession } from "../lib/session";
 import { useDisclosure } from "../lib/useDisclosure";
 import { StateBadge } from "./StateBadge";
 import { Popover } from "./ui/Popover";
+import { Tooltip } from "./ui/Tooltip";
 
 function demoFacts(session: SessionResponse | null): string[] {
   if (!session) return ["Документы синтетические и не описывают банк."];
@@ -21,9 +22,10 @@ function demoFacts(session: SessionResponse | null): string[] {
 
 /**
  * The demo status: a quiet amber badge in the page toolbar (--demo-*). The facts open on demand; the wrapper
- * is the page's one `note` and always contains «Демо-данные.».
+ * is the page's one `note` and always contains «Демо-данные.». A page may add its own note (the M6 work mode): it
+ * becomes the badge's tooltip and description and the last paragraph of the facts.
  */
-export function DemoPill() {
+export function DemoPill({ note = null }: { note?: string | null }) {
   const session = useSession();
   const facts = demoFacts(session);
   if (facts.length === 0) return null;
@@ -32,17 +34,27 @@ export function DemoPill() {
       id="demo-facts"
       role="note"
       className="header-status__item"
-      trigger={(props) => (
-        <button type="button" className="demo-pill" aria-label="Демо-данные" {...props}>
-          <span>
-            Демо<span className="demo-pill__rest">-данные</span>
-          </span>
-        </button>
-      )}
+      trigger={(props) => {
+        const button = (
+          <button type="button" className="demo-pill" aria-label="Демо-данные" {...props}>
+            <span>
+              Демо<span className="demo-pill__rest">-данные</span>
+            </span>
+          </button>
+        );
+        return note ? (
+          <Tooltip content={note} side="bottom">
+            {button}
+          </Tooltip>
+        ) : (
+          button
+        );
+      }}
     >
       <p>
         <strong>Демо-данные.</strong> {facts.join(" ")}
       </p>
+      {note ? <p className="demo-pill__note">{note}</p> : null}
     </Popover>
   );
 }

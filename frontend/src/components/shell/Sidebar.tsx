@@ -99,14 +99,28 @@ export function Sidebar({
   }
 
   const countOf = (item: NavItem): number | null =>
-    item.id === "documents" ? counts.documents : item.id === "proposals" ? counts.proposals : item.id === "review" ? counts.review : null;
+    item.id === "documents"
+      ? counts.documents
+      : item.id === "proposals"
+        ? counts.proposals
+        : item.id === "review"
+          ? counts.review
+          : item.id === "projects"
+            ? counts.projects
+            : null;
 
   /**
    * What a screen reader hears after the item's name (its description); the visible number is hidden from it.
    * Worded unlike any page text, so a search for a page's own words never lands in the sidebar.
    */
   const countText = (item: NavItem, value: number): string =>
-    item.id === "documents" ? `Документов: ${value}` : item.id === "review" ? `Ждут ревью: ${value}` : `Открытых предложений: ${value}`;
+    item.id === "documents"
+      ? `Документов: ${value}`
+      : item.id === "review"
+        ? `Ждут ревью: ${value}`
+        : item.id === "projects"
+          ? `Активных проектов: ${value}`
+          : `Открытых предложений: ${value}`;
 
   const link = (item: NavItem) => {
     const current = active === item.id;

@@ -1,4 +1,5 @@
 import type {
+  AssigneeRef,
   LinkRelation,
   LinkState,
   ProjectStatus,
@@ -15,7 +16,7 @@ import { readPreference, writePreference } from "./storage";
 /*
  * M6 Work Management in the UI (docs/WORK_MANAGEMENT.md «UI»): labels, the project-local calendar (a mirror of
  * backend/app/work/calendar.py — only for drawing and for the ghost of a drag; the server computes every real
- * date), the filter state kept in the URL, the task tree and the Gantt time scale.
+ * date), the filter state kept in the URL and the task tree. The Gantt's geometry is lib/gantt.ts.
  *
  * Dates are `YYYY-MM-DD` without a time zone. Arithmetic is done on whole day numbers (days since 1970-01-01, UTC),
  * so no local time zone or daylight saving can shift a date by one.
@@ -158,6 +159,13 @@ export function pluralWorkdays(n: number): string {
   return `${n} раб. дней`;
 }
 
+/** An avatar's initials: «Анна Лебедева (демо)» → «АЛ», «Демо-пользователь (localhost)» → «ДП». */
+export function initials(name: string): string {
+  const words = name.replace(/\([^)]*\)/g, " ").split(/[\s-]+/).filter(Boolean);
+  const letters = words.slice(0, 2).map((word) => word[0]?.toLocaleUpperCase("ru") ?? "").join("");
+  return letters || "?";
+}
+
 // --- capabilities ------------------------------------------------------------------------------------------------
 
 /** Roles that may change tasks of a project (membership: admin and member; the single operator, local or behind the
@@ -244,7 +252,6 @@ export function lastWorkday(start: number, endExclusive: number): number | null 
 // --- formatting ----------------------------------------------------------------------------------------------------
 
 const MONTHS_SHORT = ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."];
-const MONTHS_NOMINATIVE = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 const WEEKDAYS_SHORT = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
 
 /** «27 нояб.» (and the year when it is not `yearOf`). A date-only value: no time zone applies. */
@@ -264,17 +271,22 @@ export function formatDayWithWeekday(iso: string | null | undefined, yearOf?: st
   return `${WEEKDAYS_SHORT[isoWeekday(day) - 1]}, ${formatDay(iso, yearOf)}`;
 }
 
-export function monthTitle(iso: string): string {
-  const [y, m] = iso.split("-");
-  return `${MONTHS_NOMINATIVE[Number(m) - 1] ?? m} ${y}`;
-}
-
 /** The planned interval as the user reads it: «27 нояб. – 4 дек.», a milestone as one date, nothing as «Без дат». */
 export function formatPlan(task: Pick<WorkTask, "start_date" | "last_day" | "is_milestone" | "scheduled">, yearOf?: string | null): string {
   if (!task.scheduled || !task.start_date) return "Без дат";
   if (task.is_milestone) return formatDay(task.start_date, yearOf);
   if (task.last_day === task.start_date) return formatDay(task.start_date, yearOf);
   return `${formatDay(task.start_date, yearOf)} – ${formatDay(task.last_day, yearOf)}`;
+}
+
+/** The plan in a list cell: «10 – 19 нояб.» within a month, «27 нояб. – 4 дек.» across months, one date, «Без дат». */
+export function formatPlanShort(task: Pick<WorkTask, "start_date" | "last_day" | "is_milestone" | "scheduled">, yearOf?: string | null): string {
+  if (!task.scheduled || !task.start_date) return "Без дат";
+  if (task.is_milestone || !task.last_day || task.last_day === task.start_date) return formatDay(task.start_date, yearOf);
+  const [sy, sm, sd] = task.start_date.split("-");
+  const [ly, lm] = task.last_day.split("-");
+  if (sy === ly && sm === lm) return `${Number(sd)} – ${formatDay(task.last_day, yearOf)}`;
+  return `${formatDay(task.start_date, yearOf ?? task.last_day)} – ${formatDay(task.last_day, yearOf)}`;
 }
 
 // --- the task tree -------------------------------------------------------------------------------------------------
@@ -440,6 +452,82 @@ export function visibleRows(tree: TaskTree, filters: TaskFilters, collapsed: Rea
   return rows;
 }
 
+// --- the list: grouping and columns (Planner v2 §4) --------------------------------------------------------------
+
+export type ListGroup = "none" | "status" | "assignee" | "priority";
+export const LIST_GROUPS: readonly ListGroup[] = ["none", "status", "assignee", "priority"];
+export const LIST_GROUP_LABEL: Record<ListGroup, string> = { none: "нет", status: "по статусу", assignee: "по исполнителю", priority: "по приоритету" };
+export const LIST_GROUP_KEY = "skh.work.list.group";
+
+/** The grouping of the URL (`?group=`), else the remembered one, else none (the task tree). */
+export function resolveListGroup(params: URLSearchParams): ListGroup {
+  const named = params.get("group");
+  if (named && (LIST_GROUPS as readonly string[]).includes(named)) return named as ListGroup;
+  const stored = readPreference(LIST_GROUP_KEY);
+  if (stored && (LIST_GROUPS as readonly string[]).includes(stored)) return stored as ListGroup;
+  return "none";
+}
+
+export type ListColumn = "status" | "assignee" | "priority" | "dates" | "due";
+export const LIST_COLUMNS: readonly ListColumn[] = ["status", "assignee", "priority", "dates", "due"];
+export const LIST_COLUMN_LABEL: Record<ListColumn, string> = {
+  status: "Статус",
+  assignee: "Исполнитель",
+  priority: "Приоритет",
+  dates: "Сроки",
+  due: "Срок сдачи",
+};
+export const LIST_COLUMNS_KEY = "skh.work.list.columns";
+
+/** The columns hidden in «Вид» of the list, remembered in this browser. */
+export function readHiddenColumns(): Set<ListColumn> {
+  try {
+    const raw: unknown = JSON.parse(readPreference(LIST_COLUMNS_KEY) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((c): c is ListColumn => (LIST_COLUMNS as readonly unknown[]).includes(c)) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function writeHiddenColumns(hidden: ReadonlySet<ListColumn>): void {
+  writePreference(LIST_COLUMNS_KEY, JSON.stringify(LIST_COLUMNS.filter((c) => hidden.has(c))));
+}
+
+/** Work in progress first (the mockup's order), then what waits, then what is done. */
+export const GROUP_STATUS_ORDER: TaskStatus[] = ["in_progress", "review", "todo", "done"];
+
+export interface TaskGroup {
+  key: string;
+  label: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  /** A group by assignee: the person (null — «Не назначен»). */
+  assignee?: AssigneeRef | null;
+  tasks: WorkTask[];
+}
+
+/** A flat list of tasks in groups (tree order kept inside a group); empty groups are left out. */
+export function groupTasks(tasks: WorkTask[], by: Exclude<ListGroup, "none">, assignees: AssigneeRef[]): TaskGroup[] {
+  if (by === "status") {
+    return GROUP_STATUS_ORDER.map((status) => ({ key: status, label: TASK_STATUS_LABEL[status], status, tasks: tasks.filter((t) => t.status === status) })).filter(
+      (g) => g.tasks.length,
+    );
+  }
+  if (by === "priority") {
+    return PRIORITY_ORDER.map((priority) => ({ key: priority, label: PRIORITY_LABEL[priority], priority, tasks: tasks.filter((t) => t.priority === priority) })).filter(
+      (g) => g.tasks.length,
+    );
+  }
+  const people = new Map<string, AssigneeRef>();
+  for (const a of assignees) people.set(a.id, a);
+  for (const t of tasks) if (t.assignee_id && !people.has(t.assignee_id)) people.set(t.assignee_id, t.assignee ?? { id: t.assignee_id, display_name: t.assignee_id, kind: "unknown" });
+  const groups: TaskGroup[] = [...people.values()]
+    .sort((a, b) => a.display_name.localeCompare(b.display_name, "ru"))
+    .map((a) => ({ key: `assignee:${a.id}`, label: a.display_name, assignee: a, tasks: tasks.filter((t) => t.assignee_id === a.id) }));
+  groups.push({ key: "assignee:none", label: "Не назначен", assignee: null, tasks: tasks.filter((t) => !t.assignee_id) });
+  return groups.filter((g) => g.tasks.length);
+}
+
 // --- views ---------------------------------------------------------------------------------------------------------
 
 export type WorkView = "list" | "board" | "gantt";
@@ -457,136 +545,4 @@ export function resolveWorkView(params: URLSearchParams): WorkView {
 
 export function rememberWorkView(view: WorkView): void {
   writePreference(WORK_VIEW_KEY, view);
-}
-
-// --- the Gantt time scale --------------------------------------------------------------------------------------------
-
-export type GanttZoom = "day" | "week" | "month";
-export const GANTT_ZOOMS: readonly GanttZoom[] = ["day", "week", "month"];
-export const GANTT_ZOOM_LABEL: Record<GanttZoom, string> = { day: "Дни", week: "Недели", month: "Месяцы" };
-/** Pixels per calendar day. */
-export const DAY_WIDTH: Record<GanttZoom, number> = { day: 32, week: 14, month: 5 };
-export const GANTT_ZOOM_KEY = "skh.work.zoom";
-
-export function resolveZoom(params: URLSearchParams): GanttZoom {
-  const named = params.get("zoom");
-  if (named && (GANTT_ZOOMS as readonly string[]).includes(named)) return named as GanttZoom;
-  const stored = readPreference(GANTT_ZOOM_KEY);
-  if (stored && (GANTT_ZOOMS as readonly string[]).includes(stored)) return stored as GanttZoom;
-  return "day";
-}
-
-export interface GanttRange {
-  /** First day drawn (a Monday). */
-  start: number;
-  /** Day after the last one drawn. */
-  end: number;
-}
-
-/**
- * The days the chart draws: every scheduled task, due date and today, padded by a week on each side and aligned to
- * Mondays, at least eight weeks wide so the scale never collapses.
- */
-export function ganttRange(tasks: WorkTask[], today: string, rangeStart?: string | null, rangeEnd?: string | null): GanttRange {
-  let min = toDay(today);
-  let max = min + 1;
-  const take = (iso: string | null | undefined, exclusive = false) => {
-    if (!iso) return;
-    const day = toDay(iso);
-    if (Number.isNaN(day)) return;
-    min = Math.min(min, day);
-    max = Math.max(max, exclusive ? day : day + 1);
-  };
-  take(rangeStart);
-  take(rangeEnd, true);
-  for (const task of tasks) {
-    take(task.start_date);
-    take(task.end_exclusive, true);
-    take(task.due_date);
-  }
-  let start = min - 7;
-  start -= isoWeekday(start) - 1; // back to Monday
-  let end = max + 7;
-  end += (8 - isoWeekday(end)) % 7; // forward to Monday
-  if (end - start < 56) end = start + 56;
-  return { start, end };
-}
-
-export interface BarGeometry {
-  x: number;
-  width: number;
-  milestone: boolean;
-}
-
-/** `[start, end_exclusive)` on the scale: the bar ends at the boundary after the last occupied day (no off-by-one). */
-export function barGeometry(task: Pick<WorkTask, "start_date" | "end_exclusive" | "is_milestone">, range: GanttRange, dayWidth: number): BarGeometry | null {
-  if (!task.start_date || !task.end_exclusive) return null;
-  const start = toDay(task.start_date);
-  const end = toDay(task.end_exclusive);
-  if (Number.isNaN(start) || Number.isNaN(end)) return null;
-  const x = (start - range.start) * dayWidth;
-  if (task.is_milestone || end <= start) return { x, width: 0, milestone: true };
-  return { x, width: (end - start) * dayWidth, milestone: false };
-}
-
-export interface ScaleCell {
-  x: number;
-  width: number;
-  label: string;
-  /** For a screen reader / tooltip. */
-  title: string;
-}
-
-/** Two header rows: months (or years) on top, days / weeks / months below. */
-export function scaleCells(range: GanttRange, zoom: GanttZoom, dayWidth: number): { top: ScaleCell[]; bottom: ScaleCell[] } {
-  const top: ScaleCell[] = [];
-  const bottom: ScaleCell[] = [];
-  const x = (day: number) => (day - range.start) * dayWidth;
-  // Top row: months (day / week zoom) or years (month zoom).
-  let cursor = range.start;
-  while (cursor < range.end) {
-    const iso = fromDay(cursor);
-    const [y, m] = iso.split("-").map(Number) as [number, number];
-    const next =
-      zoom === "month" ? Math.round(Date.UTC(y + 1, 0, 1) / DAY_MS) : Math.round(Date.UTC(y, m, 1) / DAY_MS);
-    const stop = Math.min(next, range.end);
-    const width = (stop - cursor) * dayWidth;
-    const full = zoom === "month" ? String(y) : monthTitle(iso);
-    // A partial month at an edge is narrow: a short name, or nothing, so labels never run into each other.
-    const label = width >= 104 || zoom === "month" ? full : width >= 40 ? (MONTHS_SHORT[m - 1] ?? "") : "";
-    top.push({ x: x(cursor), width, label, title: full });
-    cursor = stop;
-  }
-  if (zoom === "day") {
-    for (let day = range.start; day < range.end; day += 1) {
-      const iso = fromDay(day);
-      bottom.push({ x: x(day), width: dayWidth, label: String(Number(iso.slice(8))), title: formatDayWithWeekday(iso) });
-    }
-  } else if (zoom === "week") {
-    for (let day = range.start; day < range.end; day += 7) {
-      const iso = fromDay(day);
-      bottom.push({ x: x(day), width: 7 * dayWidth, label: formatDay(iso, iso), title: `Неделя с ${formatDayWithWeekday(iso)}` });
-    }
-  } else {
-    cursor = range.start;
-    while (cursor < range.end) {
-      const iso = fromDay(cursor);
-      const [y, m] = iso.split("-").map(Number) as [number, number];
-      const next = Math.min(Math.round(Date.UTC(y, m, 1) / DAY_MS), range.end);
-      bottom.push({ x: x(cursor), width: (next - cursor) * dayWidth, label: MONTHS_SHORT[m - 1] ?? String(m), title: monthTitle(iso) });
-      cursor = next;
-    }
-  }
-  return { top, bottom };
-}
-
-/** Elbow path of a Finish-to-Start arrow from the predecessor's end to the successor's start. */
-export function dependencyPath(fromX: number, fromY: number, toX: number, toY: number, rowHeight: number): string {
-  const gap = 8;
-  if (toX - gap >= fromX + gap) {
-    const mid = Math.max(fromX + gap, toX - gap);
-    return `M${fromX},${fromY} H${mid} V${toY} H${toX}`;
-  }
-  const turnY = fromY + (toY >= fromY ? rowHeight / 2 : -rowHeight / 2);
-  return `M${fromX},${fromY} H${fromX + gap} V${turnY} H${toX - gap} V${toY} H${toX}`;
 }

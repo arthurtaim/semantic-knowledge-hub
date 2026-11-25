@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { TaskStatus, WorkTask } from "../../api/types";
 import { formatDay, TASK_STATUS_LABEL, TASK_STATUS_ORDER } from "../../lib/work";
 import { Icon } from "../ui/Icon";
-import { Menu } from "../ui/Popover";
+import { Menu, Popover } from "../ui/Popover";
 import { AssigneeName, PriorityMark, TaskStatusMark } from "./WorkBits";
 
 /*
@@ -11,7 +11,49 @@ import { AssigneeName, PriorityMark, TaskStatusMark } from "./WorkBits";
  * the card follows the pointer through a CSS transform in one animation frame per move, no React render per frame)
  * or without dragging (WCAG 2.5.7): the card's «Статус» menu, or Alt + ← / → on a focused card. The new status is
  * saved through PATCH /api/tasks/{id} with the task's version; on an error the card goes back and the reason is said.
+ *
+ * Planner v2 (docs/ui-v2/planner/specs/PLANNER_V2.md §5): the shared page frame, the shared status shapes in the column
+ * headings; how to move a card is told in «Вид» (BoardViewMenu) and, for a screen reader, as each card's description.
  */
+
+/** «Вид» of the Board: how cards move (with the mouse, the card menu, the keyboard). */
+export function BoardViewMenu({ canWrite }: { canWrite: boolean }) {
+  return (
+    <Popover
+      id="board-view"
+      className="board-view"
+      panelClassName="board-view__panel"
+      trigger={(props) => (
+        <button {...props} type="button" className="button button--secondary button--sm" title="Как переносить карточки">
+          <Icon name="sliders" size={14} />
+          Вид
+        </button>
+      )}
+    >
+      {canWrite ? (
+        <div className="gantt-keys">
+          <div className="gantt-keys__title">Как перенести карточку</div>
+          <dl className="gantt-keys__list">
+            <div>
+              <dt>мышь, перо, палец</dt>
+              <dd>перетащить в колонку</dd>
+            </div>
+            <div>
+              <dt>⋯ на карточке</dt>
+              <dd>выбрать статус</dd>
+            </div>
+            <div>
+              <dt>Alt + ← →</dt>
+              <dd>в соседнюю колонку</dd>
+            </div>
+          </dl>
+        </div>
+      ) : (
+        <p className="muted">Только просмотр: статусы задач здесь не меняются.</p>
+      )}
+    </Popover>
+  );
+}
 
 const DRAG_THRESHOLD = 4;
 
@@ -160,7 +202,7 @@ export function TaskBoard({ tasks, canWrite, today, keyOf, taskHref, onMove, fil
   return (
     <div className="board" onClickCapture={onClickCapture}>
       {canWrite ? (
-        <p className="board__hint muted" id="board-hint">
+        <p className="visually-hidden" id="board-hint">
           Перетащите карточку в другую колонку или выберите статус в меню карточки; с клавиатуры — Alt + ← / →.
         </p>
       ) : null}

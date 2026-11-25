@@ -80,7 +80,7 @@ describe("Board", () => {
     expect(screen.getByTestId("location")).not.toHaveTextContent("task=");
     // Same data in the list (M6-36).
     await user.click(screen.getByRole("button", { name: "Список" }));
-    expect(screen.getByRole("combobox", { name: "Статус ARIS-7 Документация без дат" })).toHaveValue("in_progress");
+    expect(screen.getByRole("button", { name: "Статус ARIS-7 Документация без дат: В работе" })).toBeInTheDocument();
   });
 
   it("a drag released over the same column or cancelled changes nothing", async () => {
@@ -133,6 +133,22 @@ describe("Board", () => {
     await waitFor(() => expect(calls.find((c) => c.url === "/api/tasks/t5")?.body).toEqual({ expected_version: 1, status: "done" }));
   });
 
+  it("Planner v2: the shared status shapes head the columns; how to move a card is in «Вид» and in each card's description", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    renderRoutes("/projects/ARIS?view=board", ROUTES);
+    await screen.findByRole("heading", { name: /К работе/ });
+    for (const status of COLUMNS) expect(column(status).querySelector(`.board__column-title .status-shape--${status}`)).not.toBeNull();
+    // the long hint is no longer a line above the columns
+    expect(screen.getByText(/Перетащите карточку/)).toHaveClass("visually-hidden");
+    expect(card("ARIS-7")).toHaveAccessibleDescription(/Перетащите карточку в другую колонку/);
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    expect(screen.getByText("Alt + ← →")).toBeVisible();
+    expect(screen.getByText("в соседнюю колонку")).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Вид" })).toHaveFocus();
+  });
+
   it("read-only: no drag, no menus, no keyboard moves", async () => {
     const user = userEvent.setup();
     const calls = mockApi(projectRoutes({ caps: READ_ONLY, proj: project({ my_role: "read_only" }) }));
@@ -140,6 +156,8 @@ describe("Board", () => {
     await screen.findByRole("heading", { name: /К работе/ });
     expect(screen.queryByRole("button", { name: /Сменить статус/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/Перетащите карточку/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    expect(screen.getByText("Только просмотр: статусы задач здесь не меняются.")).toBeVisible();
     layColumns();
     dragCard("ARIS-7", 950);
     within(card("ARIS-7")).getByRole("link").focus();

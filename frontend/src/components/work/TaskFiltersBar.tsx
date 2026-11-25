@@ -15,9 +15,11 @@ import { Icon } from "../ui/Icon";
 import { Menu, type MenuGroup, type MenuTriggerProps } from "../ui/Popover";
 
 /*
- * The one filter model of List, Board and Gantt (state in the URL, lib/work.ts): search by title or key, status,
- * priority, assignee, «Просроченные», «Вехи» and «Документ» — a document linked to tasks of the project (only
- * documents the reader can see are offered or matched; `?doc=ID` also arrives from a document page).
+ * The one filter model of List, Board and Gantt (state in the URL, lib/work.ts), in one row (Planner v2,
+ * docs/ui-v2/planner/specs/PLANNER_V2.md §2.4): search by title or key, «Статус», «Исполнитель» and «Ещё» —
+ * «Приоритет», «Документ» (a document linked to tasks of the project; only documents the reader can see are offered
+ * or matched; `?doc=ID` also arrives from a document page), «Просроченные», «Вехи». A filter chosen in «Ещё» is shown
+ * as a chip with a remove button in the same row, so an active filter is never hidden.
  */
 
 interface TaskFiltersBarProps {
@@ -26,9 +28,6 @@ interface TaskFiltersBarProps {
   assignees: AssigneeRef[];
   /** Documents linked to the project's tasks (visible to this reader), for the «Документ» filter. */
   documents?: ProjectDocumentRef[];
-  /** How many tasks match / all, for the screen reader and the line under the bar. */
-  shown: number;
-  total: number;
   /** Tasks of the project per assignee id: shows how the work is distributed in the «Исполнитель» menu. */
   assigneeCounts?: Record<string, number>;
 }
@@ -37,7 +36,7 @@ function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-export function TaskFiltersBar({ filters, onChange, assignees, documents = [], shown, total, assigneeCounts }: TaskFiltersBarProps) {
+export function TaskFiltersBar({ filters, onChange, assignees, documents = [], assigneeCounts }: TaskFiltersBarProps) {
   const [text, setText] = useState(filters.q);
   const searchId = useId();
 
@@ -62,17 +61,6 @@ export function TaskFiltersBar({ filters, onChange, assignees, documents = [], s
       })),
     },
   ];
-  const priorityGroups: MenuGroup[] = [
-    {
-      multi: true,
-      items: PRIORITY_ORDER.map((priority: TaskPriority) => ({
-        id: priority,
-        label: PRIORITY_LABEL[priority],
-        checked: filters.priority.includes(priority),
-        onSelect: () => onChange({ ...filters, priority: toggle(filters.priority, priority) }),
-      })),
-    },
-  ];
   const assigneeGroups: MenuGroup[] = [
     {
       radio: true,
@@ -90,17 +78,39 @@ export function TaskFiltersBar({ filters, onChange, assignees, documents = [], s
       ],
     },
   ];
-  const documentGroups: MenuGroup[] = [
+  const moreGroups: MenuGroup[] = [
     {
-      radio: true,
+      label: "Приоритет",
+      multi: true,
+      items: PRIORITY_ORDER.map((priority: TaskPriority) => ({
+        id: `priority:${priority}`,
+        label: PRIORITY_LABEL[priority],
+        checked: filters.priority.includes(priority),
+        onSelect: () => onChange({ ...filters, priority: toggle(filters.priority, priority) }),
+      })),
+    },
+    ...(documents.length || filters.doc
+      ? [
+          {
+            label: "Документ",
+            radio: true,
+            items: [
+              { id: "doc:any", label: "Все документы", checked: !filters.doc, onSelect: () => onChange({ ...filters, doc: "" }) },
+              ...documents.map((d) => ({
+                id: `doc:${d.document.document_id}`,
+                label: `${d.document.document_id} — ${d.document.title}${d.changed_count ? " (изменён)" : ""}`,
+                checked: filters.doc.toUpperCase() === d.document.document_id.toUpperCase(),
+                onSelect: () => onChange({ ...filters, doc: d.document.document_id }),
+              })),
+            ],
+          } satisfies MenuGroup,
+        ]
+      : []),
+    {
+      multi: true,
       items: [
-        { id: "any", label: "Все документы", checked: !filters.doc, onSelect: () => onChange({ ...filters, doc: "" }) },
-        ...documents.map((d) => ({
-          id: d.document.document_id,
-          label: `${d.document.document_id} — ${d.document.title}${d.changed_count ? " (изменён)" : ""}`,
-          checked: filters.doc.toUpperCase() === d.document.document_id.toUpperCase(),
-          onSelect: () => onChange({ ...filters, doc: d.document.document_id }),
-        })),
+        { id: "overdue", label: "Просроченные", checked: filters.overdue, onSelect: () => onChange({ ...filters, overdue: !filters.overdue }) },
+        { id: "milestone", label: "Вехи", checked: filters.milestone, onSelect: () => onChange({ ...filters, milestone: !filters.milestone }) },
       ],
     },
   ];
@@ -115,6 +125,15 @@ export function TaskFiltersBar({ filters, onChange, assignees, documents = [], s
     </button>
   );
 
+  // The chips of «Ещё»: what is chosen there stays visible in the row.
+  const chips: { key: string; label: string; clear: () => void }[] = [];
+  if (filters.priority.length) {
+    chips.push({ key: "priority", label: `Приоритет: ${filters.priority.map((p) => PRIORITY_LABEL[p]).join(", ")}`, clear: () => onChange({ ...filters, priority: [] }) });
+  }
+  if (filters.doc) chips.push({ key: "doc", label: `Документ: ${filters.doc}`, clear: () => onChange({ ...filters, doc: "" }) });
+  if (filters.overdue) chips.push({ key: "overdue", label: "Просроченные", clear: () => onChange({ ...filters, overdue: false }) });
+  if (filters.milestone) chips.push({ key: "milestone", label: "Вехи", clear: () => onChange({ ...filters, milestone: false }) });
+
   return (
     <div className="work-filters" role="search" aria-label="Фильтры задач">
       <div className="work-filters__search">
@@ -125,7 +144,7 @@ export function TaskFiltersBar({ filters, onChange, assignees, documents = [], s
         <input
           id={searchId}
           type="search"
-          placeholder="Найти задачу: название или ключ"
+          placeholder="Задача или ключ"
           value={text}
           maxLength={100}
           onChange={(event) => setText(event.target.value)}
@@ -138,29 +157,17 @@ export function TaskFiltersBar({ filters, onChange, assignees, documents = [], s
         groups={assigneeGroups}
         trigger={menuButton("Исполнитель", filters.assignee ? [assigneeName] : [])}
       />
-      <Menu
-        label="Приоритет"
-        className="docs-filter-menu"
-        groups={priorityGroups}
-        trigger={menuButton("Приоритет", filters.priority.map((p) => PRIORITY_LABEL[p]))}
-      />
-      {documents.length || filters.doc ? (
-        <Menu label="Документ" className="docs-filter-menu" groups={documentGroups} trigger={menuButton("Документ", filters.doc ? [filters.doc] : [])} />
-      ) : null}
-      <Chip tone="filter" selected={filters.overdue} onClick={() => onChange({ ...filters, overdue: !filters.overdue })}>
-        Просроченные
-      </Chip>
-      <Chip tone="filter" selected={filters.milestone} onClick={() => onChange({ ...filters, milestone: !filters.milestone })}>
-        Вехи
-      </Chip>
+      <Menu label="Ещё фильтры" className="docs-filter-menu" groups={moreGroups} trigger={menuButton("Ещё", [])} />
+      {chips.map((chip) => (
+        <Chip key={chip.key} tone="filter" className="work-filters__chip" onRemove={chip.clear} removeLabel={`Убрать фильтр «${chip.label}»`}>
+          {chip.label}
+        </Chip>
+      ))}
       {active > 0 ? (
         <Button variant="quiet" size="sm" onClick={() => onChange(EMPTY_FILTERS)}>
           Сбросить фильтры
         </Button>
       ) : null}
-      <span className="work-filters__count" aria-live="polite">
-        {active > 0 ? `Найдено: ${shown} из ${total}` : `Задач: ${total}`}
-      </span>
     </div>
   );
 }

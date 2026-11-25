@@ -1,30 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { plannedChange } from "../components/work/GanttChart";
 import {
   addWorkdays,
-  barGeometry,
   buildTree,
   canWriteProject,
   countWorkdays,
-  DAY_WIDTH,
-  dependencyPath,
   EMPTY_FILTERS,
   filterParams,
   filtersFromParams,
   formatPlan,
+  formatPlanShort,
+  groupTasks,
+  initials,
   fromDay,
-  ganttRange,
   isoWeekday,
   lastWorkday,
   nextWorkday,
   pluralWorkdays,
-  scaleCells,
+  readHiddenColumns,
+  resolveListGroup,
   toDay,
   visibleRows,
+  writeHiddenColumns,
 } from "../lib/work";
-import { capabilities, planTasks, project, READ_ONLY, task, TODAY } from "./workFixtures";
+import { memoryStorage } from "./helpers";
+import { ASSIGNEES, capabilities, planTasks, project, READ_ONLY, task, TODAY } from "./workFixtures";
 
-/* M6 UI helpers: the calendar mirror, the time scale, the filter model, the tree (docs/WORK_MANAGEMENT.md «UI»). */
+afterEach(() => vi.unstubAllGlobals());
+
+/*
+ * M6 UI helpers: the calendar mirror, the drag arithmetic, the filter model, the tree (docs/WORK_MANAGEMENT.md «UI»).
+ * The Gantt's scale, bar geometry and arrows moved to lib/gantt.ts with Planner v2: ganttLib.test.ts covers them.
+ */
 
 describe("calendar mirror (Mon–Fri, [start, end_exclusive))", () => {
   it("M6-09: Fri 2026-11-27 for one working day ends before Sat; the FS successor starts Mon 2026-11-30", () => {
@@ -42,16 +49,6 @@ describe("calendar mirror (Mon–Fri, [start, end_exclusive))", () => {
     expect(lastWorkday(toDay("2026-11-27"), toDay("2026-11-30"))).toBe(toDay("2026-11-27")); // [Fri, Mon) → Fri
     expect(lastWorkday(toDay("2026-11-28"), toDay("2026-11-30"))).toBeNull(); // a weekend only
     expect(fromDay(addWorkdays(toDay("2026-11-28"), 1))).toBe("2026-12-01"); // a Saturday start → Monday
-  });
-
-  it("M6-26: a bar ends at the boundary after last_day — no «+1 day», no lost day", () => {
-    const range = { start: toDay("2026-11-23"), end: toDay("2026-12-21") };
-    const dw = DAY_WIDTH.day;
-    const friday = barGeometry({ start_date: "2026-11-27", end_exclusive: "2026-11-28", is_milestone: false }, range, dw);
-    expect(friday).toEqual({ x: 4 * dw, width: dw, milestone: false }); // exactly Friday's column
-    const milestone = barGeometry({ start_date: "2026-12-02", end_exclusive: "2026-12-02", is_milestone: true }, range, dw);
-    expect(milestone).toEqual({ x: 9 * dw, width: 0, milestone: true }); // M6-10: a point on the day boundary
-    expect(barGeometry({ start_date: null, end_exclusive: null, is_milestone: false }, range, dw)).toBeNull(); // M6-27
   });
 
   it("formats the plan with the last day (inclusive), never the exclusive end", () => {
@@ -86,24 +83,6 @@ describe("Gantt drag arithmetic", () => {
     expect(plannedChange(milestone, "move", 2)?.change).toEqual({ task_id: "t6", start_date: "2026-12-04", duration_workdays: 0 });
     expect(plannedChange(milestone, "resize", 2)?.change.duration_workdays).toBe(0);
   });
-
-  it("the time scale starts on a Monday, covers every task and today, and labels months and days", () => {
-    const range = ganttRange(planTasks(), TODAY, "2026-11-02", "2026-12-09");
-    expect(isoWeekday(range.start)).toBe(1);
-    expect(range.start).toBeLessThanOrEqual(toDay("2026-11-02"));
-    expect(range.end).toBeGreaterThanOrEqual(toDay("2026-12-09"));
-    const cells = scaleCells(range, "day", DAY_WIDTH.day);
-    expect(cells.top.map((c) => c.label)).toContain("Ноябрь 2026");
-    expect(cells.bottom).toHaveLength(range.end - range.start);
-    const weeks = scaleCells(range, "week", DAY_WIDTH.week);
-    expect(weeks.bottom).toHaveLength((range.end - range.start) / 7);
-    expect(scaleCells(range, "month", DAY_WIDTH.month).top[0]?.label).toBe("2026");
-  });
-
-  it("draws an FS arrow from the predecessor's end to the successor's start", () => {
-    expect(dependencyPath(100, 18, 200, 54, 36)).toBe("M100,18 H192 V54 H200");
-    expect(dependencyPath(200, 18, 100, 54, 36)).toContain("V36"); // back around a later end
-  });
 });
 
 describe("filters and the tree", () => {
@@ -130,6 +109,13 @@ describe("filters and the tree", () => {
     ]);
   });
 
+  it("makes the initials of an avatar from a name (the «(демо)» note and hyphens handled)", () => {
+    expect(initials("Анна Лебедева (демо)")).toBe("АЛ");
+    expect(initials("Демо-пользователь (localhost)")).toBe("ДП");
+    expect(initials("Олег")).toBe("О");
+    expect(initials("  ")).toBe("?");
+  });
+
   it("allows writes only when the mode and the project role do", () => {
     expect(canWriteProject(capabilities(), project())).toBe(true);
     expect(canWriteProject(READ_ONLY, project({ my_role: "read_only" }))).toBe(false);
@@ -140,3 +126,46 @@ describe("filters and the tree", () => {
     expect(canWriteProject(capabilities(), project({ status: "archived" }))).toBe(false);
   });
 });
+
+describe("the list: plan cell, groups, columns (Planner v2 §4)", () => {
+  it("writes «10 – 19 нояб.» within a month, both months across them, one date for a milestone", () => {
+    const t = (start: string, last: string) => task({ key: "ARIS-1", start_date: start, end_exclusive: start, last_day: last, scheduled: true });
+    expect(formatPlanShort(t("2026-11-10", "2026-11-19"), TODAY)).toBe("10 – 19 нояб.");
+    expect(formatPlanShort(t("2026-11-27", "2026-12-04"), TODAY)).toBe("27 нояб. – 4 дек.");
+    expect(formatPlanShort(t("2026-11-27", "2026-11-27"), TODAY)).toBe("27 нояб.");
+    expect(formatPlanShort(task({ key: "ARIS-2", is_milestone: true, start_date: "2026-12-02", end_exclusive: "2026-12-02" }), TODAY)).toBe("2 дек.");
+    expect(formatPlanShort(task({ key: "ARIS-3" }), TODAY)).toBe("Без дат");
+  });
+
+  it("groups by status (work in progress first), priority and assignee; empty groups are left out", () => {
+    const tasks = planTasks();
+    expect(groupTasks(tasks, "status", ASSIGNEES).map((g) => [g.label, g.tasks.length])).toEqual([
+      ["В работе", 2],
+      ["К работе", 4],
+      ["Готово", 3],
+    ]);
+    expect(groupTasks(tasks, "priority", ASSIGNEES).map((g) => [g.label, g.tasks.length])).toEqual([
+      ["Критичный", 1],
+      ["Высокий", 1],
+      ["Средний", 7],
+    ]);
+    expect(groupTasks(tasks, "assignee", ASSIGNEES).map((g) => [g.label, g.tasks.map((t) => t.key).length])).toEqual([
+      ["Анна Лебедева (демо)", 1],
+      ["Не назначен", 8],
+    ]);
+  });
+
+  it("keeps the grouping in the URL or the stored setting, and the hidden columns in this browser", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    expect(resolveListGroup(new URLSearchParams())).toBe("none");
+    expect(resolveListGroup(new URLSearchParams("group=priority"))).toBe("priority");
+    window.localStorage.setItem("skh.work.list.group", "assignee");
+    expect(resolveListGroup(new URLSearchParams())).toBe("assignee");
+    expect(resolveListGroup(new URLSearchParams("group=bogus"))).toBe("assignee");
+    writeHiddenColumns(new Set(["due", "priority"]));
+    expect([...readHiddenColumns()].sort()).toEqual(["due", "priority"]);
+    window.localStorage.setItem("skh.work.list.columns", '["title", 3, "dates"]');
+    expect([...readHiddenColumns()]).toEqual(["dates"]);
+  });
+});
+

@@ -1104,3 +1104,161 @@ Gantt scrolls inside its own frame, which is a tab stop).
 Deviations: the Gantt on a phone is a timeline without dragging (dates through the task form — allowed by the M6 UX
 spec); the list stays a table with selects on desktop and turns into card rows below 720 px; the task panel's title is
 the panel heading (the page `/tasks/:key` has it as H1).
+
+## Планировщик v2: проект, Гант, список (2026-11-25)
+
+The owner's task `docs/ui-v2/planner/TASK.md` with the spec `docs/ui-v2/planner/specs/PLANNER_V2.md`, the mockups
+`docs/ui-v2/planner/screens/design/plan-0*.png` and the reference logic of `design-source/PlanGantt.dc.html`
+(`renderVals()`: its rules were ported, not its markup). Frontend only: the API, the data model, the server's planner and
+the «предпросмотр → применить» flow are unchanged. Branch `feature/planner-v2`, one commit per slice.
+
+### What was done, by slice
+
+1. **Geometry without UI** — `frontend/src/lib/gantt.ts`: zooms `day | week | month | quarter | year | fit` (36 / 16 /
+   5 / 1.8 / 0.62 px per day; «Вписать» = visible width / (project days + 3 + 12), clamped to 0.5–48), `resolveZoom`
+   (the first planner's `?zoom=day|week|month` and the stored `skh.work.zoom` stay valid; without either — «Вписать»),
+   the adaptive two-row scale (the bottom unit is the smallest whose cell is not narrower than 22 / 60 / 44 / 48 / 48
+   px; edge cells clipped to the window and named in full, short or not at all; the «сегодня» mark hides what it
+   covers), label placement (inside / right after the bar or the hatching / none / markers «‹ 2 нояб. – 9 нояб.» and
+   «27 нояб. ›»), summary spans, FS arrow routing in the gutter (`routeDependency` replaces `dependencyPath`), the «Авто»
+   links mode, the stored «Вид». Text widths come from an offscreen canvas with a cache per font and string.
+2. **The page frame** (List, Board, Gantt): the 52 px toolbar («Проекты / Title» + the key in mono, «Список | Доска |
+   Гант», «План с ассистентом» — was «AI план» — and «Задача»), one 44 px project line (`ProjectStrip`: status, dates,
+   «Готово N из M» with a bar, «N просрочена» that switches the «Просроченные» filter, the next milestone as a link,
+   «Ревизия плана N»; up to 1100 px the rest goes to «⋯», on a phone status and progress only), the work mode as the
+   tooltip and description of «Демо-данные» while writes are allowed (a page note through the shell's toolbar slot) and
+   a visible line with a lock when they are not, one filter row (search «Задача или ключ», «Статус», «Исполнитель»,
+   «Ещё» with Приоритет / Документ / Просроченные / Вехи; a filter chosen in «Ещё» is a chip with ×) with the view's
+   controls at its right end. The project title stays the page's h1 for readers.
+3. **Gantt drawing**: status tokens (`--gantt-*`, light and dark, pairs in `tokens.test.ts`), bars 20 px with a 1.5 px
+   frame and readable text, «Готово» with a tick, milestones as 2 px diamonds, a task with scheduled subtasks as a
+   bracket over its own and all descendants' dates (not draggable — its subtasks' dates change), overdue / late tasks
+   hatched from their end to today with a red end, the window-clipped scale with the today mark, weekends from 10 px
+   per day, layers grid → arrows → today → bars → labels; the chart fills the page under the filter row.
+4. **Gantt zoom and links**: segments, «Вписать» (pressed while fitted, again — back to the project's start),
+   Ctrl/⌘ + wheel and a trackpad pinch (Safari gesture events too) around the pointer, Shift + 1, T; a click (or focus)
+   selects a task — its row tinted in both panels, a green rule in the left column, a ring around the bar, its incoming
+   and outgoing links in the accent colour above the others; hovering a bar lights its links; a double click, Enter or
+   the name open the task (`?task=` selects it too); «Вид» (APG menu, 292 px) with links «Авто» / «Все» / «Только у
+   выбранной» / «Скрыть», labels «Авто» / «Без подписей» and the keys, remembered; the legend line names which links
+   are drawn.
+5. **Gantt layout**: the task column with indent, chevron, key, title, the overdue mark and «Исп.» (initials, the full
+   name in the tooltip); its border drags within 240–480 px (or ← / → / Home / End on the focusable separator), the
+   width is remembered; a button folds the column; up to 1100 px 240 px without «Исп.»; on a phone 132 px, the zoom as
+   a menu, view only (dates change in the task card, as before). The filter row's compact controls — see «Owner
+   decisions after the first review».
+6. **List**: no `<select>` in a row. Cells read as text and open a menu (status with keys 1–4, assignee grouped by the
+   demo team's roles, priority) or a small calendar (start / last day, or one date; the deadline) on a click or Enter;
+   saving, rollback, `409 stale_task` and the schedule preview on an FS conflict as before, and a failed save is also
+   marked at its cell. 40 px rows: key, milestone, ↳ for a subtask when grouped, title, grey tags (waits for ARIS-6,
+   documents, late) that drop out whole before the title is cut, «⋯» (open, add a subtask). «Группировка» — none (the
+   tree) / by status / by assignee / by priority, in `?group=` and remembered; «Вид» hides columns (remembered). One
+   status shape (ring / half / dot / grey dot) for List, Board and the Gantt legend; priority as three bars.
+7. **Board**: the shared frame and status shapes; the long drag hint moved into «Вид» and stays each card's
+   accessible description.
+8. **Sidebar** (spec §6): «Проекты» stays first in «Работа» and shows the number of active projects —
+   `GET /api/projects?status=active` → `total`, like the other counts (none while unknown or 0; «Активных
+   проектов: N» for screen readers).
+
+### Keyboard
+
+| Keys | Where | Action |
+|---|---|---|
+| ← / →, Shift + ← / →, Enter, Esc | a focused Gantt bar | shift a day, change the duration, show the consequences (or open the task), cancel (without a pending change — drop the selection) |
+| Shift + 1, T | the Gantt page outside fields, dialogs and menus | fit the project, go to today (key codes: a Russian layout works) |
+| Ctrl/⌘ + wheel, pinch | the Gantt area | zoom around the pointer (0.5–48 px per day) |
+| ← / →, Home / End | the task column's border | its width, 240–480 px |
+| Enter, then 1–4 | a status cell of the List | open the menu, choose «К работе» … «Готово» |
+| Enter, Esc | a cell's calendar | save, close without saving |
+| ↑ / ↓, Home / End, Esc | «Вид», «Группировка», «Ещё», the cell menus | APG menu: move, choose, close and return focus |
+
+### Owner decisions (spec §7)
+
+- **Parent dates** (§7.1): drawn as a bracket over the union of the parent's own dates and all its descendants'
+  dates — only for a task with at least one scheduled descendant (otherwise it stays an ordinary draggable bar); the
+  bracket is not draggable. Manual parent dates need the backend (§9) and are not in this branch.
+- **Critical path** (§7.2): not computed. «Критический путь» appears in «Вид» only when `capabilities.features
+  .critical_path === true` AND the snapshot returns a path; it then frames the path's bars and links in `--danger`
+  (the visual system is tokens-only, so the decision's `#B3261E` is the existing danger token). The server returns
+  `critical_path: null` today: no item, no fake path.
+- **«Исп.» column** (§7.3): kept with initials and the full name in the tooltip; hidden up to 1100 px and on a phone.
+
+### Owner decisions after the first review (2026-11-25, spec §7.4–§7.7)
+
+- **The filter row is one line** (§7.4). `frontend/src/lib/rowFit.ts` (`useCompactRow`, `fitsOneRow`) compares the
+  filters' natural width (chips included) plus the view controls' FULL width with the row's own inner width, on a
+  ResizeObserver of the row — not a media query, so folding the sidebar gives the room back. The full width is
+  measured while the full form is drawn and kept per form (`gantt`, `list:<group>`), so the two forms never flicker
+  at the threshold. Compact Gantt: the zoom is the phone's menu «Неделя ▾», «Вписать» and «Сегодня» are icon buttons
+  (`fit`, a new `today` icon) with a tooltip and the same accessible names. Compact List: «Группировка» shows only its
+  value («По исполнителю ▾», «Группировка ▾» without one), the whole name in `aria-label` and the tooltip — without it
+  the list wrapped at 1100 px when grouped by assignee. With the sidebar open the Gantt is compact at 1100 and 1280 px
+  (rows of 852 / 1032 px; the full form needs ~1085 px); with it folded at 1280 px (1220 px) the segments return.
+  Phones (below 720 px) keep the wrapping row of §2.
+- **A smooth zoom stays in the page** (§7.5). The URL and the remembered zoom get the nearest named zoom by ratio
+  (`nearestZoom`; never a number, never `fit`), so a reload opens that one; the page keeps the smooth value through its
+  own URL change, and no segment or menu item is lit while it lasts. (Before: the URL kept the last named zoom chosen,
+  not the nearest one — the first report said otherwise, wrongly.)
+- **Every bar frame and link ≥ 3:1** (§7.6, WCAG 1.4.11; the mockup's pale «Готово» was a mistake): «Готово» and «К
+  работе» frames and plain arrows `#868F89` (3.33:1 on white, 3.1:1 on the weekend shading `#F6F7F5`); the tick stays
+  `#5E6862` (5.8:1); «Готово» keeps its light fill `#E9ECE9` (the frame draws the edge). Dark theme: the same rule,
+  `#7D8781` (4.45:1 on the surface, 4.24:1 on weekends). The selected task's links stay `--accent` at 1.6 px.
+  `tokens.test.ts` now checks every bar outline, the arrows and the summaries on the surface AND on the weekend
+  shading, and the tick on the «Готово» fill.
+- **A fixed zoom opens on today** (§7.7; `openingView`): today at 30 % of the width; a project yet to start — on its
+  first day (with the 3-day «Вписать» margin); a finished one — its end at 70 %. Switching the zoom keeps the date in
+  the middle; a project opened for the first time without a stored zoom opens «Вписать».
+
+### Deviations from the mockups and the spec, with reasons
+
+- Bar frames and arrows are `#868F89`, not the mockup's `#9AA59E` («К работе», 2.55:1), `#C9D0CB` («Готово», 1.57:1)
+  and `#AEB7B1` (arrows, 2.06:1) — owner's decision §7.6; a finished summary is `#868F89` (was `#9AA39D`, 2.59:1); the
+  done mark `#848D87`.
+- The late line and the critical path use `--danger` (`#B23A2E` / `#E5867B` dark), not `#B3261E` (tokens only).
+- The today line runs through the middle of today (as in `renderVals()`), the hatching ends at the start of today.
+- «Вид» and the other menus use the house menu (check at the end, `menuitemradio`) instead of the mockup's radio
+  circles; the hint text («по масштабу») sits at the end of the item.
+- A smooth zoom (Ctrl/⌘ + wheel) is not written to the URL as a number: the URL and the stored zoom get the nearest
+  named zoom (owner's decision §7.5).
+- A fixed zoom opens on today at 30 % (a project yet to start — on its start, a finished one — its end at 70 %), not on
+  the project's start as in `plan-01` (owner's decision §7.7: work goes on around today, as in Linear and GitHub
+  Projects). On the seeded ARIS the first finished tasks are therefore markers at the left edge on «Неделя».
+- The drawn range is padded by one visible width on each side (so today at 30 %, a centred zoom and a wheel zoom always
+  have room); the mockup draws only the window.
+- The spec's «up to 1100 px: «Вписать» as an icon» became the row-width rule of §7.4 (the zoom a menu, «Вписать» and
+  «Сегодня» icons whenever the full form does not fit, whatever the window). On a phone the filter buttons wrap instead
+  of scrolling sideways: a menu inside a scrolled strip would be clipped by it.
+- A milestone's label starts 8 px after its right vertex (the mockup: 6 px), so the arrow's 6 px stub never touches it.
+- The due-date flag of the first Gantt is gone (the mockups do not draw it): an overdue task is hatched, and the
+  deadline is in the List's «Срок сдачи», the bar's accessible name and the task card.
+- «Без дат» is shown under the chart only when it has tasks (the empty «У всех задач есть даты» line is gone).
+- A task whose subtasks have no dates is drawn as an ordinary bar, not a bracket.
+- In the List the rename stays on the pencil next to the title; «⋯» holds «Открыть задачу» and «Добавить подзадачу».
+
+### Checks (real runs on this machine, synthetic data only)
+
+- Frontend `tsc` and `eslint` clean; `vitest` 651 → 701 (new `ganttLib.test.ts` 26, `workFrame.test.tsx` 7; Gantt,
+  List, Board and lib tests extended; tests that pinned the old markup — selects in the List, «Начало» / «Последний
+  день» buttons, «Недели» / «Месяцы», absolute bar offsets, «AI план» — were rewritten in the commit of their slice;
+  the old scale / geometry / arrow tests moved to `ganttLib.test.ts`). A pre-existing race in `workPlan.test.tsx`
+  (650 / 651 on the first baseline run) now waits for the URL.
+- Backend `make test-backend`: 1055 passed, 6 skipped — before and after (no backend change).
+- E2E on fresh local stacks (`E2E_BASE_URL`, `E2E_DISABLED_URL`, `E2E_WORK_READONLY_URL`): desktop + mobile 93 → 97
+  passed, 1 skipped (Confluence); new in `e2e/work.spec.ts` at 1440 × 900: «Вписать» shows the first and the last task
+  whole, «Год» keeps every label inside the chart and hides the arrows, selecting ARIS-6 lights its 4 links, and on
+  День / Неделя / Месяц / Вписать no horizontal arrow segment crosses a label; the phone test still finds no sideways
+  scrolling at 390 / 360 px. `gitlab-mock` + `gitlab-mock-mobile`: 11 passed. Scripted model (`E2E_SCRIPTED_URL`):
+  23 → 23 passed.
+- Zoom redraw on 500 tasks (a synthetic project: 50 parents × 9 subtasks, 400 FS links; Chrome, 1440 × 900; from the
+  click on a zoom to the first frame painted with it, 3 runs each): production build (`vite build` + `vite preview`)
+  16–41 ms for День / Неделя / Месяц / Квартал / Год / Вписать, a Ctrl + wheel step 18–49 ms; the first Gantt on the
+  same data and build 27.6–31.6 ms for its three zooms. The dev server (React StrictMode, the dev JSX runtime) takes
+  53–124 ms; its CPU profile is dominated by `jsxDEV`, the chart's own geometry costs a few ms.
+- After the owner decisions §7.4–§7.7 (same machine, a fresh local stack): `tsc` and `eslint` clean; `vitest` 702 →
+  713 (`ganttLib` +2: nearest zoom, opening view; `rowFit.test.ts` 4; `workGantt` +5 and one rewritten: smooth zoom →
+  URL, opening for under-way / future / finished projects, compact controls by the row's width, per-view widths, the
+  list's grouping; `tokens.test.ts` pairs widened to the weekend shading — it failed on «Готово» and the arrows in
+  both themes before the token change). E2E desktop + mobile 90 passed, 9 skipped (they need the «без ИИ» and «только
+  просмотр» stacks; `work.spec.ts` re-run on the final code: 14 passed, 1 skipped); new: at 1100 and 1280 px the
+  filter row is one 48 px line in the Gantt, the List (grouped by assignee) and the Board. `gitlab-mock` +
+  `gitlab-mock-mobile` 11 passed. Backend 1055 passed, 6 skipped (no backend change).

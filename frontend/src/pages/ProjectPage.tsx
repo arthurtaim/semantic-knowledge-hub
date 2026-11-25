@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { ProjectDocumentRef, ScheduleApplyResult, ScheduleOperation, SchedulePreview, TaskDateChange, TaskStatus, WorkTask } from "../api/types";
@@ -9,13 +9,16 @@ import { Button, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { TaskCreateSheet } from "../components/work/CreateForms";
 import { WorkPlanSheet } from "../components/work/WorkPlan";
-import { GanttChart } from "../components/work/GanttChart";
+import { GanttChart, type GanttHandle } from "../components/work/GanttChart";
+import { GanttControls } from "../components/work/GanttControls";
+import { Menu } from "../components/ui/Popover";
+import { ProjectStrip, projectSummary, type StripLayout } from "../components/work/ProjectStrip";
 import { SchedulePreviewDialog, type ScheduleRequest } from "../components/work/SchedulePreviewDialog";
-import { TaskBoard } from "../components/work/TaskBoard";
+import { BoardViewMenu, TaskBoard } from "../components/work/TaskBoard";
 import { TaskDetail } from "../components/work/TaskDetail";
 import { TaskFiltersBar } from "../components/work/TaskFiltersBar";
 import { TaskList } from "../components/work/TaskList";
-import { WorkModeNote } from "../components/work/WorkBits";
+import { WorkModeNote, workModeText } from "../components/work/WorkBits";
 import { withParams } from "../lib/docsView";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { useWorkspace } from "../lib/useWorkspace";
@@ -23,39 +26,69 @@ import {
   buildTree,
   filterParams,
   filtersFromParams,
-  formatDay,
-  ganttRange,
-  GANTT_ZOOM_KEY,
+  groupTasks,
   hasFilters,
+  LIST_COLUMN_LABEL,
+  LIST_COLUMNS,
+  LIST_GROUP_KEY,
+  LIST_GROUP_LABEL,
+  LIST_GROUPS,
+  readHiddenColumns,
+  resolveListGroup,
+  writeHiddenColumns,
   matchesFilters,
-  PROJECT_STATUS_LABEL,
   rememberWorkView,
   resolveWorkView,
-  resolveZoom,
   TASK_STATUS_LABEL,
   visibleRows,
   WORK_VIEW_LABEL,
   WORK_VIEWS,
-  type GanttZoom,
+  type ListColumn,
+  type ListGroup,
   type TaskFilters,
   type VisibleRow,
   type WorkView,
 } from "../lib/work";
 import { writePreference } from "../lib/storage";
+import { GANTT_ZOOM_KEY, nearestZoom, readGanttView, resolveZoom, writeGanttView, type GanttViewSettings, type GanttZoom } from "../lib/gantt";
+import { useCompactRow } from "../lib/rowFit";
 
 /*
- * A project (M6): «Список | Доска | Гант» over ONE snapshot of its tasks (lib/useWorkspace.ts) with one filter model;
+ * A project (M6, Planner v2 frame — docs/ui-v2/planner/specs/PLANNER_V2.md §2): the 52 px toolbar (path, key,
+ * «Список | Доска | Гант», «План с ассистентом», «Задача»), one project line (ProjectStrip), the work mode — a tooltip
+ * of «Демо-данные» while writes are allowed, a visible line with a lock when they are not — and one row of filters
+ * with the view's controls at its right end; then the view.
+ *
+ * «Список | Доска | Гант» over ONE snapshot of its tasks (lib/useWorkspace.ts) with one filter model;
  * the view, the filters, the Gantt zoom and the open task live in the URL (`?view=gantt&status=todo&task=ARIS-3`), so
  * Back / Forward and a sent link restore them; the view is also remembered in this browser. One task panel serves
  * all three views (docked ≥ 1200 px, a sheet below). Every screen starts from `GET /api/work/capabilities`: without
  * write rights there are no write controls at all.
  *
- * «AI план» (Step 5, typed AI task-plan proposals) sits next to «Задача» only when the server reports
+ * «План с ассистентом» (was «AI план»; Step 5, typed AI task-plan proposals) sits next to «Задача» only when the server reports
  * `capabilities.features.ai_proposals` (a planning-capable AI provider) AND the reader may write; the open proposal is
  * in the URL (`?proposal=WAP-…`). Without AI the button is simply absent — everything else works as before.
  */
 
 const PHONE = "(max-width: 719.98px)";
+/** Up to this width the project line keeps status, dates and progress (the rest goes to «⋯»). */
+const MEDIUM = "(max-width: 1100px)";
+/** Phones: the project line keeps status and progress. */
+const SMALL_PHONE = "(max-width: 599.98px)";
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** «14 задач», «1 задача», «3 задачи». */
+function tasksText(n: number): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return `${n} задач`;
+  if (last === 1) return `${n} задача`;
+  if (last >= 2 && last <= 4) return `${n} задачи`;
+  return `${n} задач`;
+}
 
 export function ProjectPage() {
   const { key = "" } = useParams();
@@ -64,12 +97,27 @@ export function ProjectPage() {
   const view = resolveWorkView(params);
   const filters = useMemo(() => filtersFromParams(params), [params]);
   const zoom = resolveZoom(params);
+  const group = resolveListGroup(params);
   const selectedKey = params.get("task");
   const proposalParam = params.get("proposal");
   const proposalId = proposalParam && /^WAP-[0-9a-f]{16}$/.test(proposalParam) ? proposalParam : null;
   const [planning, setPlanning] = useState(false);
   const phone = useMediaQuery(PHONE);
+  const medium = useMediaQuery(MEDIUM);
+  const smallPhone = useMediaQuery(SMALL_PHONE);
   const panelMode = useSidePanelMode();
+  const ganttRef = useRef<GanttHandle>(null);
+  // The Gantt's «Вид» (remembered in this browser), a smooth zoom (Ctrl/⌘ + wheel; not in the URL) and «Вписать» again.
+  const [ganttView, setGanttView] = useState<GanttViewSettings>(readGanttView);
+  const [customWidth, setCustomWidth] = useState<number | null>(null);
+  const [fitRequest, setFitRequest] = useState(0);
+  // The filter row stays one line (owner's decision): a view's controls go compact while their full form does not fit
+  // in the row — measured on the row itself, so a collapsed sidebar gives the room back (Planner v2 §3.9). The Gantt:
+  // the zoom as a menu, «Вписать» and «Сегодня» as icons; the list: the grouping shows only its value. A phone wraps.
+  const compactForm = phone ? null : view === "gantt" ? "gantt" : view === "list" ? `list:${group}` : null;
+  const [toolbarRef, compactControls] = useCompactRow(".work-filters", ".work-toolbar__view", compactForm, filters);
+  // The list's columns hidden in «Вид» (remembered in this browser).
+  const [hiddenColumns, setHiddenColumns] = useState<ReadonlySet<ListColumn>>(readHiddenColumns);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [creating, setCreating] = useState<{ parent: WorkTask | null } | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRequest | null>(null);
@@ -133,10 +181,64 @@ export function ProjectPage() {
   const onZoom = useCallback(
     (next: GanttZoom) => {
       writePreference(GANTT_ZOOM_KEY, next);
+      setCustomWidth(null);
       setUrl({ zoom: next }, true);
     },
     [setUrl],
   );
+
+  // A smooth zoom (Ctrl/⌘ + wheel) lives in this page's state; the URL and the remembered zoom get the nearest named
+  // one, so a reload or a sent link opens a named scale (never `?zoom=7.5`). Back / Forward to another zoom drops it.
+  const ownZoom = useRef<GanttZoom | null>(null);
+  const onDayWidth = useCallback(
+    (width: number) => {
+      setCustomWidth(width);
+      const near = nearestZoom(width);
+      if (near === zoom) return;
+      ownZoom.current = near;
+      writePreference(GANTT_ZOOM_KEY, near);
+      setUrl({ zoom: near }, true);
+    },
+    [zoom, setUrl],
+  );
+  useEffect(() => {
+    if (ownZoom.current === zoom) {
+      ownZoom.current = null;
+      return;
+    }
+    setCustomWidth(null);
+  }, [zoom]);
+
+  const onFit = useCallback(() => {
+    if (zoom !== "fit") onZoom("fit");
+    else {
+      setCustomWidth(null);
+      setFitRequest((n) => n + 1);
+    }
+  }, [zoom, onZoom]);
+
+  const onGroup = useCallback(
+    (next: ListGroup) => {
+      writePreference(LIST_GROUP_KEY, next);
+      setUrl({ group: next === "none" ? null : next }, true);
+    },
+    [setUrl],
+  );
+
+  const toggleColumn = useCallback((column: ListColumn) => {
+    setHiddenColumns((current) => {
+      const next = new Set(current);
+      if (next.has(column)) next.delete(column);
+      else next.add(column);
+      writeHiddenColumns(next);
+      return next;
+    });
+  }, []);
+
+  const onGanttView = useCallback((next: GanttViewSettings) => {
+    setGanttView(next);
+    writeGanttView(next);
+  }, []);
 
   const onToggle = useCallback((taskId: string) => {
     setCollapsed((current) => {
@@ -185,8 +287,8 @@ export function ProjectPage() {
     const inChart = new Set(ganttRows.map((r) => r.task.id));
     return tree.ordered.filter((t) => !t.scheduled && !inChart.has(t.id) && matchesFilters(t, filters));
   }, [tree, ganttRows, filters]);
-  const range = useMemo(() => ganttRange(tasks, today, snapshot?.range_start, snapshot?.range_end_exclusive), [tasks, today, snapshot]);
   const boardTasks = useMemo(() => tree.ordered.filter((t) => matchesFilters(t, filters)), [tree, filters]);
+  const listGroups = useMemo(() => (group === "none" ? null : groupTasks(boardTasks, group, ws.assignees)), [group, boardTasks, ws.assignees]);
   const shownCount = filtered ? tree.ordered.filter((t) => matchesFilters(t, filters)).length : tasks.length;
 
   if (ws.loading && !snapshot) {
@@ -228,7 +330,6 @@ export function ProjectPage() {
     <div className="view-switch" role="group" aria-label="Вид проекта">
       {WORK_VIEWS.map((option) => (
         <button key={option} type="button" className="view-switch__item" aria-pressed={view === option} onClick={() => chooseView(option)}>
-          <Icon name={option} size={14} />
           {WORK_VIEW_LABEL[option]}
         </button>
       ))}
@@ -269,17 +370,94 @@ export function ProjectPage() {
       </SidePanel>
     ) : null;
 
+  const summary = projectSummary(project, tasks, today);
+  const stripLayout: StripLayout = smallPhone ? "phone" : medium ? "medium" : "wide";
+  const readOnlyMode = capabilities !== null && !capabilities.can_write;
+  const countText = filtered ? `Найдено: ${shownCount} из ${tasks.length}` : tasksText(tasks.length);
+
+  // The view's own controls at the right end of the filter row.
+  const criticalPathAvailable = capabilities?.features.critical_path === true && Boolean(snapshot.critical_path?.length);
+  const listControls = (
+    <>
+      <Menu
+        label="Группировка"
+        align="end"
+        className="docs-filter-menu"
+        groups={[
+          {
+            radio: true,
+            items: LIST_GROUPS.map((value) => ({ id: value, label: value === "none" ? "Без группировки (дерево)" : LIST_GROUP_LABEL[value], checked: group === value, onSelect: () => onGroup(value) })),
+          },
+        ]}
+        trigger={(props) => (
+          <button
+            {...props}
+            type="button"
+            className={group === "none" ? "docs-filter" : "docs-filter docs-filter--on"}
+            aria-label={compactControls ? `Группировка: ${LIST_GROUP_LABEL[group]}` : undefined}
+            title={compactControls ? "Группировка" : undefined}
+          >
+            <span className="docs-filter__text">{compactControls ? (group === "none" ? "Группировка" : capitalize(LIST_GROUP_LABEL[group])) : `Группировка: ${LIST_GROUP_LABEL[group]}`}</span>
+            <Icon name="chevron" size={12} />
+          </button>
+        )}
+      />
+      <Menu
+        label="Вид списка"
+        align="end"
+        groups={[
+          {
+            label: "Колонки",
+            multi: true,
+            items: LIST_COLUMNS.map((column) => ({ id: column, label: LIST_COLUMN_LABEL[column], checked: !hiddenColumns.has(column), onSelect: () => toggleColumn(column) })),
+          },
+        ]}
+        trigger={(props) => (
+          <button {...props} type="button" className="button button--secondary button--sm" title="Колонки списка">
+            <Icon name="sliders" size={14} />
+            Вид
+          </button>
+        )}
+      />
+    </>
+  );
+  const viewControls =
+    view === "list" ? (
+      listControls
+    ) : view === "board" ? (
+      <BoardViewMenu canWrite={canWrite} />
+    ) : view === "gantt" ? (
+      <GanttControls
+        zoom={zoom}
+        dayWidthOverride={customWidth}
+        onZoom={onZoom}
+        onFit={onFit}
+        onToday={() => ganttRef.current?.scrollToToday()}
+        settings={ganttView}
+        onSettings={onGanttView}
+        criticalPathAvailable={criticalPathAvailable}
+        compact={compactControls}
+        phone={phone}
+      />
+    ) : null;
+
   return (
     <div className={`work-page project-page project-page--${view}${panel && panelMode === "inline" ? " project-page--with-panel" : ""}`}>
       <PageToolbar
         crumbs={[{ label: "Проекты", to: "/projects" }, { label: project.title }]}
-        meta={phone ? null : viewSwitch}
+        meta={
+          <>
+            <span className="project-page__key">{project.key}</span>
+            {phone ? null : viewSwitch}
+          </>
+        }
+        demoNote={capabilities?.can_write ? workModeText(capabilities) : null}
         actions={
           canWrite ? (
             <>
               {aiPlanOn ? (
-                <Button icon="assistant" className="button--collapsible button--with-icon" onClick={() => setPlanning(true)} aria-label="AI план">
-                  <span className="button__label">AI план</span>
+                <Button icon="assistant" className="button--collapsible button--with-icon" onClick={() => setPlanning(true)} aria-label="План с ассистентом">
+                  <span className="button__label">План с ассистентом</span>
                 </Button>
               ) : null}
               <Button variant="primary" icon="plus" className="button--collapsible button--with-icon" onClick={() => setCreating({ parent: null })}>
@@ -289,36 +467,46 @@ export function ProjectPage() {
           ) : null
         }
       />
+      <h1 className="visually-hidden">{project.title}</h1>
+      <ProjectStrip
+        project={project}
+        summary={summary}
+        planRevision={snapshot.plan_revision}
+        today={today}
+        layout={stripLayout}
+        overdueFilter={filters.overdue}
+        onOverdue={() => onFilters({ ...filters, overdue: !filters.overdue })}
+        taskHref={taskHref}
+      />
+      {readOnlyMode ? (
+        <div className="project-page__mode">
+          <WorkModeNote capabilities={capabilities} />
+        </div>
+      ) : null}
+      {phone ? <div className="project-page__views">{viewSwitch}</div> : null}
+      <div className="work-toolbar" ref={toolbarRef}>
+        <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} documents={documents} assigneeCounts={assigneeCounts} />
+        <div className="work-toolbar__view" role="group" aria-label="Вид">
+          <span className={view === "list" ? "work-toolbar__count" : "visually-hidden"} aria-live="polite">
+            {countText}
+          </span>
+          {viewControls}
+        </div>
+      </div>
+      {message ? (
+        <div className={`work-message work-message--${message.tone}`} role={message.tone === "danger" ? "alert" : "status"} key={message.nonce}>
+          <Icon name={message.tone === "success" ? "check" : message.tone === "info" ? "info" : "alert"} size={14} />
+          <span className="work-message__text">{message.text}</span>
+          <IconButton icon="close" size="sm" label="Скрыть сообщение" onClick={clearMessage} />
+        </div>
+      ) : null}
       <div className="project-page__body">
         <div className="project-page__main">
-          <header className="project-head">
-            <h1 className="project-head__title">
-              {project.title} <span className="project-head__key">{project.key}</span>
-            </h1>
-            <p className="project-head__meta">
-              <span className={`project-status project-status--${project.status}`}>{PROJECT_STATUS_LABEL[project.status]}</span>
-              <span>
-                {project.start_date || project.target_date ? `${formatDay(project.start_date)} – ${formatDay(project.target_date)}` : "Сроки не заданы"}
-              </span>
-              <span>Сегодня {formatDay(today)} ({project.timezone})</span>
-              <span data-testid="plan-revision">Ревизия плана {snapshot.plan_revision}</span>
-              {project.is_demo ? <span className="project-card__demo">демо-данные</span> : null}
-            </p>
-            <WorkModeNote capabilities={capabilities} />
-          </header>
-          {phone ? <div className="project-page__views">{viewSwitch}</div> : null}
-          <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} documents={documents} shown={shownCount} total={tasks.length} assigneeCounts={assigneeCounts} />
-          {message ? (
-            <div className={`work-message work-message--${message.tone}`} role={message.tone === "danger" ? "alert" : "status"} key={message.nonce}>
-              <Icon name={message.tone === "success" ? "check" : message.tone === "info" ? "info" : "alert"} size={14} />
-              <span className="work-message__text">{message.text}</span>
-              <IconButton icon="close" size="sm" label="Скрыть сообщение" onClick={clearMessage} />
-            </div>
-          ) : null}
-
           {view === "list" ? (
             <TaskList
               rows={rows}
+              groups={listGroups}
+              hidden={hiddenColumns}
               collapsed={collapsed}
               onToggle={onToggle}
               canWrite={canWrite}
@@ -336,13 +524,24 @@ export function ProjectPage() {
             <TaskBoard tasks={boardTasks} canWrite={canWrite} today={today} keyOf={keyOf} taskHref={taskHref} onMove={moveCard} filtered={filtered} />
           ) : (
             <GanttChart
+              ref={ganttRef}
               rows={ganttRows}
               pool={pool}
+              tasks={tasks}
               dependencies={snapshot.dependencies}
               violations={snapshot.violations}
-              range={range}
               zoom={zoom}
-              onZoom={onZoom}
+              dayWidthOverride={customWidth}
+              onDayWidth={onDayWidth}
+              onFit={onFit}
+              fitRequest={fitRequest}
+              settings={ganttView}
+              criticalPath={criticalPathAvailable ? snapshot.critical_path : null}
+              selectedKey={selectedKey}
+              medium={medium}
+              namesWidth={ganttView.namesWidth}
+              namesFolded={ganttView.namesCollapsed}
+              onNames={(width, folded) => onGanttView({ ...ganttView, namesWidth: width, namesCollapsed: folded })}
               today={today}
               canWrite={canWrite}
               compact={phone}

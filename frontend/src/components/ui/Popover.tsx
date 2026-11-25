@@ -61,6 +61,10 @@ export interface MenuItem {
   id: string;
   label: string;
   icon?: IconName;
+  /** A small mark before the label (a status shape, priority bars); decorative. */
+  lead?: ReactNode;
+  /** A key that chooses this item while the menu is open («1»–«4» for a status); shown at the end. */
+  shortcut?: string;
   /** A second line under the label. */
   description?: string;
   /** A short note at the end of the item (a count). */
@@ -101,6 +105,10 @@ interface MenuProps {
   groups: MenuGroup[];
   /** Non-interactive content above the items (who is signed in and the like). */
   header?: ReactNode;
+  /** Non-interactive content below the items (the keys of a view). */
+  footer?: ReactNode;
+  /** A class for the floating panel (its width). */
+  panelClassName?: string;
   side?: PopoverSide;
   align?: PopoverAlign;
   className?: string;
@@ -108,11 +116,12 @@ interface MenuProps {
 
 /**
  * A menu button (WAI-ARIA APG «Menu Button»): Enter, Space or ↓ opens the menu on its first item, ↑ on the last;
- * ↑/↓ move (wrapping), Home/End jump, a letter moves to the next item starting with it; Enter or Space
+ * ↑/↓ move (wrapping), Home/End jump, an item's shortcut («1») chooses it, a letter moves to the next item starting
+ * with it; Enter or Space
  * chooses and closes (an item of a `multi` group toggles and keeps the menu open); Esc closes and returns focus to
  * the button; Tab or a press outside closes it.
  */
-export function Menu({ label, trigger, groups, header, side = "bottom", align = "start", className }: MenuProps) {
+export function Menu({ label, trigger, groups, header, footer, panelClassName, side = "bottom", align = "start", className }: MenuProps) {
   const [open, setOpen] = useState(false);
   const [initial, setInitial] = useState<"first" | "last">("first");
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -185,6 +194,14 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
         setOpen(false);
         return;
       default:
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+          const item = groups.flatMap((group) => group.items.map((entry) => ({ entry, multi: Boolean(group.multi) }))).find(({ entry }) => entry.shortcut === event.key);
+          if (item) {
+            event.preventDefault();
+            choose(item.entry, item.multi);
+            return;
+          }
+        }
         if (event.key.length === 1 && /\S/.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
           const key = event.key.toLocaleLowerCase("ru");
           for (let step = 1; step <= list.length; step += 1) {
@@ -215,7 +232,7 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
         onClick: () => (open ? setOpen(false) : openAt("first")),
         onKeyDown: onTriggerKeyDown,
       })}
-      <div className={placementClass("popover", side, align, "menu-popup")} hidden={!open}>
+      <div className={placementClass("popover", side, align, ["menu-popup", panelClassName ?? ""].filter(Boolean).join(" "))} hidden={!open}>
         {header ? <div className="menu__header">{header}</div> : null}
         <div id={menuId} role="menu" aria-label={label} className="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
           {groups.map((group, groupIndex) => {
@@ -232,11 +249,17 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
                 onClick={() => choose(item, Boolean(group.multi))}
               >
                 {item.icon ? <Icon name={item.icon} /> : null}
+                {item.lead ? <span className="menu__lead">{item.lead}</span> : null}
                 <span className="menu__text">
                   <span className="menu__label">{item.label}</span>
                   {item.description ? <span className="menu__description">{item.description}</span> : null}
                 </span>
                 {item.meta ? <span className="menu__meta">{item.meta}</span> : null}
+                {item.shortcut ? (
+                  <kbd className="menu__shortcut" aria-hidden="true">
+                    {item.shortcut}
+                  </kbd>
+                ) : null}
                 {checkable ? <Icon name="check" className="menu__check" /> : null}
               </button>
             ));
@@ -255,6 +278,7 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
             );
           })}
         </div>
+        {footer ? <div className="menu__footer">{footer}</div> : null}
       </div>
     </div>
   );

@@ -105,6 +105,38 @@ const PAIRS: [string, string, number][] = [
   ["--accent", "--bg-hover", 3],
   ["--accent", "--bg-subtle", 3],
   ["--text-secondary", "--accent-wash", 4.5],
+  // Planner v2: text inside Gantt bars, bar outlines and marks on the surface, the avatar, a list cell under the pointer
+  ["--gantt-todo-text", "--gantt-todo-bg", 4.5],
+  ["--gantt-progress-text", "--gantt-progress-bg", 4.5],
+  ["--gantt-review-text", "--gantt-review-bg", 4.5],
+  ["--gantt-done-text", "--gantt-done-bg", 4.5],
+  // Every bar outline and every link is graphics needed to read the dates (WCAG 1.4.11), «Готово» included: ≥ 3:1 on
+  // the surface and on the shaded weekend columns the bars cross. «Готово» and «К работе» share the frame and differ
+  // by the fill (grey with a tick vs white) and the words.
+  ...[
+    "--gantt-todo-border",
+    "--gantt-progress-border",
+    "--gantt-review-border",
+    "--gantt-done-border",
+    "--gantt-arrow",
+    "--gantt-milestone",
+    "--gantt-summary",
+    "--gantt-summary-done",
+  ].flatMap((mark): [string, string, number][] => [
+    [mark, "--bg-surface", 3],
+    [mark, "--gantt-weekend", 3],
+  ]),
+  ["--gantt-done-text", "--gantt-done-bg", 3], // the tick inside «Готово»
+  ["--gantt-todo-mark", "--bg-surface", 3],
+  ["--gantt-done-mark", "--bg-surface", 3],
+  ["--danger", "--gantt-late-a", 3],
+  ["--gantt-avatar-text", "--gantt-avatar-bg", 4.5],
+  ["--text", "--list-cell-hover", 4.5],
+  ["--text-secondary", "--list-cell-hover", 4.5],
+  ["--danger-text", "--list-cell-hover", 4.5],
+  ["--text", "--gantt-row-hover", 4.5],
+  ["--text-tertiary", "--gantt-row-hover", 4.5],
+  ["--accent-contrast", "--accent", 4.5],
   ...[
     "--graph-document",
     "--graph-integration",

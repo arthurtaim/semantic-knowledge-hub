@@ -6,7 +6,7 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * «scripted» / «scripted-mobile»). The double stands in for a model; passing here is NOT evidence about a real model.
  * Synthetic data only; every test makes its own project.
  *
- * - «AI план» → typed proposal → review → nothing exists before «Создать задачи» (M6-13) → apply creates the reviewed
+ * - «План с ассистентом» (was «AI план») → typed proposal → review → nothing exists before «Создать задачи» (M6-13) → apply creates the reviewed
  *   tasks, dependencies and links in one go (M6-14); «Отклонить» creates nothing (M6-15);
  * - the chat answers about overdue tasks from `work_inspect` facts (M6-39) with links to the tasks;
  * - @mobile: the review fits a phone without sideways scrolling.
@@ -43,8 +43,8 @@ async function taskCount(request: APIRequestContext, key: string): Promise<numbe
 
 async function requestPlan(page: Page, key: string, start: string | null) {
   await page.goto(`/projects/${key}?view=list`);
-  await page.getByRole("button", { name: "AI план" }).click();
-  const sheet = page.getByRole("dialog", { name: "AI план" });
+  await page.getByRole("button", { name: "План с ассистентом" }).click();
+  const sheet = page.getByRole("dialog", { name: "План с ассистентом" });
   await sheet.getByLabel(/Что нужно сделать/).fill("Подготовь задачи по маппингу полей ARIS");
   await sheet.getByLabel("Документы-источники").fill("DEMO-INT-002");
   await sheet.getByRole("button", { name: /DEMO-INT-002/ }).click();

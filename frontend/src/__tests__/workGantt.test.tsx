@@ -2,9 +2,10 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkTask } from "../api/types";
+import { toDay } from "../lib/work";
 import { ProjectPage } from "../pages/ProjectPage";
-import { mockApi, renderRoutes } from "./helpers";
-import { gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPointerAndFrames, task } from "./workFixtures";
+import { memoryStorage, mockApi, mockViewport, renderRoutes } from "./helpers";
+import { capabilities, gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPointerAndFrames, task } from "./workFixtures";
 
 /*
  * M6 «Гант»: bars from the server's [start, end_exclusive), milestones, arrows, the unscheduled pool, zoom; drag / resize /
@@ -12,7 +13,7 @@ import { gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPoint
  */
 
 const ROUTES = { "/projects/:key": <ProjectPage /> };
-const DAY = 32; // px per day at the «Дни» zoom
+const DAY = 36; // px per day at the «День» zoom (Planner v2)
 
 beforeEach(() => stubPointerAndFrames(vi.stubGlobal));
 
@@ -42,6 +43,11 @@ function body(key: string): SVGElement {
   return bar(key).querySelector<SVGElement>("[data-part='body']") as SVGElement;
 }
 
+/** A bar's left edge on the drawn range (the range itself depends on the window, so tests compare positions). */
+function x(key: string): number {
+  return Number(body(key).getAttribute("x"));
+}
+
 function dragBy(target: Element, dx: number, finish: "up" | "cancel" = "up") {
   fireEvent.pointerDown(target, { clientX: 500, clientY: 100, button: 0, pointerId: 9 });
   for (let i = 1; i <= 4; i += 1) fireEvent.pointerMove(target, { clientX: 500 + (dx * i) / 4, clientY: 101, pointerId: 9 });
@@ -58,10 +64,9 @@ describe("Gantt", () => {
   it("draws [start, end_exclusive) bars, a milestone diamond, FS arrows, today, locked / late states and the unscheduled pool", async () => {
     mockApi(projectRoutes());
     await openGantt();
-    // Range starts on Mon 2026-10-26 (a week before the first task, back to Monday): Fri 27 Nov is day 32.
-    expect(body("ARIS-4").getAttribute("x")).toBe(String(32 * DAY));
     expect(body("ARIS-4").getAttribute("width")).toBe(String(DAY)); // one day: Friday only (M6-26)
     expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * DAY)); // Mon–Tue
+    expect(x("ARIS-5") - x("ARIS-4")).toBe(3 * DAY); // Fri 27 Nov → Mon 30 Nov
     expect(bar("ARIS-6").querySelector(".gantt-bar__diamond")).not.toBeNull(); // M6-10
     expect(bar("ARIS-6")).toHaveAccessibleName(/Готовность к пилоту, веха 2 дек\./);
     expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(2);
@@ -76,15 +81,23 @@ describe("Gantt", () => {
     expect(within(pool).getByRole("button", { name: /ARIS-7 Документация без дат/ })).toBeInTheDocument();
   });
 
-  it("zooms to weeks and months; the zoom is kept in the URL", async () => {
+  it("zooms to week, month, quarter and year; the zoom is kept in the URL", async () => {
     const user = userEvent.setup();
     mockApi(projectRoutes());
     await openGantt();
-    await user.click(screen.getByRole("radio", { name: "Недели" }));
+    await user.click(screen.getByRole("radio", { name: "Неделя" }));
     expect(screen.getByTestId("location")).toHaveTextContent("zoom=week");
-    expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 14));
-    await user.click(screen.getByRole("radio", { name: "Месяцы" }));
+    expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 16));
+    expect(document.querySelectorAll(".gantt__weekend").length).toBeGreaterThan(0); // shaded from 10 px per day
+    await user.click(screen.getByRole("radio", { name: "Месяц" }));
     expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 5));
+    expect(document.querySelectorAll(".gantt__weekend")).toHaveLength(0);
+    // quarter and year: a bar never gets narrower than 6 px, so every task stays visible
+    await user.click(screen.getByRole("radio", { name: "Квартал" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=quarter");
+    expect(body("ARIS-5").getAttribute("width")).toBe("6");
+    await user.click(screen.getByRole("radio", { name: "Год" }));
+    expect(body("ARIS-5").getAttribute("width")).toBe("6");
   });
 
   it("M6-03: drag → preview of the consequences → «Применить» with one idempotency key; the plan is re-read", async () => {
@@ -129,7 +142,7 @@ describe("Gantt", () => {
     expect((apply?.body as { client_request_id: string }).client_request_id.length).toBeGreaterThanOrEqual(8);
     expect(await screen.findByText(/Сроки применены: изменено задач — 2\. Ревизия плана 8\./)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("plan-revision")).toHaveTextContent("Ревизия плана 8"));
-    expect(body("ARIS-5").getAttribute("x")).toBe(String(36 * DAY)); // Tue 1 Dec
+    expect(x("ARIS-5") - x("ARIS-4")).toBe(DAY); // ARIS-4 Mon 30 Nov, ARIS-5 Tue 1 Dec
     expect(document.querySelector("[data-ghost-for]")).toBeNull();
   });
 
@@ -137,13 +150,14 @@ describe("Gantt", () => {
     const user = userEvent.setup();
     const calls = mockApi([{ method: "POST", path: "/api/projects/p1/schedule/preview", body: preview() }, ...projectRoutes()]);
     await openGantt();
+    const before = x("ARIS-4");
     dragBy(body("ARIS-4"), 3 * DAY);
     const dialog = await screen.findByRole("dialog");
     await within(dialog).findByText("Сдвинутся зависимые: 1");
     await user.click(within(dialog).getByRole("button", { name: "Отмена" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(calls.some((c) => c.url.endsWith("/schedule/apply"))).toBe(false);
-    expect(body("ARIS-4").getAttribute("x")).toBe(String(32 * DAY));
+    expect(x("ARIS-4")).toBe(before);
     expect(document.querySelector("[data-ghost-for]")).toBeNull();
   });
 
@@ -294,12 +308,13 @@ describe("Gantt", () => {
     const user = userEvent.setup();
     const calls = mockApi([{ method: "POST", path: "/api/projects/p1/schedule/preview", body: preview() }, ...projectRoutes()]);
     await openGantt();
-    bar("ARIS-4").focus();
+    const before = x("ARIS-4");
+    act(() => bar("ARIS-4").focus());
     await user.keyboard("{ArrowRight}{ArrowRight}");
     expect(screen.getByText(/ARIS-4: 30 нояб\.\. Enter — показать последствия, Esc — отменить\./)).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.getByText("Изменение отменено.")).toBeInTheDocument();
-    expect(body("ARIS-4").getAttribute("x")).toBe(String(32 * DAY));
+    expect(x("ARIS-4")).toBe(before);
     await user.keyboard("{Shift>}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{/Shift}{Enter}");
     await screen.findByRole("dialog");
     expect(calls.find((c) => c.url.endsWith("/schedule/preview"))?.body).toMatchObject({
@@ -311,12 +326,12 @@ describe("Gantt", () => {
     const user = userEvent.setup();
     const calls = mockApi(projectRoutes());
     await openGantt();
-    bar("ARIS-8").focus();
+    act(() => bar("ARIS-8").focus());
     await user.keyboard("{ArrowRight}");
     expect(screen.getByText(/ARIS-8: сроки закреплены/)).toBeInTheDocument();
     dragBy(body("ARIS-8"), 3 * DAY);
     expect(calls.some((c) => c.url.endsWith("/schedule/preview"))).toBe(false);
-    bar("ARIS-4").focus();
+    act(() => bar("ARIS-4").focus());
     await user.keyboard("{Enter}");
     expect(screen.getByTestId("location")).toHaveTextContent("task=ARIS-4");
   });
@@ -329,9 +344,58 @@ describe("Gantt", () => {
     expect(bar("ARIS-4")).not.toHaveClass("is-draggable");
     expect(document.querySelector("[data-part='resize']")).toBeNull();
     dragBy(body("ARIS-4"), 3 * DAY);
-    bar("ARIS-4").focus();
+    act(() => bar("ARIS-4").focus());
     await user.keyboard("{ArrowRight}{Enter}");
     expect(calls.some((c) => c.url.endsWith("/schedule/preview"))).toBe(false);
+  });
+
+  it("Planner v2: summary brackets, overdue hatching, markers outside the window, today, labels beside bars, routed arrows", async () => {
+    mockApi(projectRoutes());
+    await openGantt();
+    // ARIS-1 and ARIS-2 have scheduled subtasks: brackets over them (their subtasks' dates change, not theirs)
+    expect(bar("ARIS-1")).toHaveClass("gantt-bar--summary");
+    expect(bar("ARIS-1").querySelector(".gantt-bar__summary")).not.toBeNull();
+    expect(bar("ARIS-1")).not.toHaveClass("is-draggable");
+    expect(bar("ARIS-1")).toHaveAccessibleName(/сроки по подзадачам: 2 нояб\. – 9 нояб\./);
+    expect(bar("ARIS-3")).not.toHaveClass("gantt-bar--summary");
+    // they lie before the window (today is at 30 % of it): a marker with their dates at its left edge
+    expect(screen.getByRole("button", { name: "ARIS-1: 2 нояб. – 9 нояб. — показать на шкале" })).toHaveTextContent("‹ 2 нояб. – 9 нояб.");
+    // ARIS-9 is overdue: hatched from its end (Fri 20 Nov) to the start of today (Wed 25 Nov)
+    const hatch = bar("ARIS-9").querySelector(".gantt-bar__hatch") as SVGRectElement;
+    expect(Number(hatch.getAttribute("x"))).toBe(x("ARIS-9") + 4 * DAY);
+    expect(Number(hatch.getAttribute("width"))).toBe(5 * DAY);
+    // today: a line through the middle of the day and the «25 нояб.» mark in the scale
+    expect(document.querySelector(".gantt__today-mark")).toHaveTextContent("25 нояб.");
+    expect(Number(document.querySelector(".gantt__today")?.getAttribute("x1"))).toBe(x("ARIS-4") - 1.5 * DAY);
+    expect(Array.from(document.querySelectorAll(".gantt__scale-top")).map((cell) => cell.textContent)).toContain("Ноябрь 2026");
+    // a one-day bar is too short for its title: it goes 8 px to the right, on a backing
+    const label = Array.from(document.querySelectorAll<HTMLElement>(".gantt__label")).find((el) => el.textContent === "Маппинг метаданных");
+    expect(parseFloat(label?.style.left ?? "")).toBe(x("ARIS-4") + DAY + 8);
+    // ARIS-4 → ARIS-5: the vertical right after ARIS-4's end (before its label), the horizontal on ARIS-5's row
+    const row = (index: number) => index * 36 + 18;
+    expect(document.querySelector('[data-dependency-id="d1"] .gantt-arrow__line')?.getAttribute("d")).toBe(
+      `M${x("ARIS-4") + DAY} ${row(3)}H${x("ARIS-4") + DAY + 6}V${row(4)}H${x("ARIS-5")}`,
+    );
+  });
+
+  it("a bar wide enough for its title carries it inside; «Готово» adds its tick; a summary does not move", async () => {
+    const user = userEvent.setup();
+    const tasks = [
+      task({ key: "ARIS-1", title: "Длинная", status: "done", start_date: "2026-11-23", end_exclusive: "2026-11-28", last_day: "2026-11-27", duration_workdays: 5 }),
+      task({ key: "ARIS-2", title: "Родитель", start_date: "2026-11-30", end_exclusive: "2026-12-01", last_day: "2026-11-30", duration_workdays: 1, child_count: 1 }),
+      task({ key: "ARIS-3", title: "Подзадача", parent_task_id: "t2", depth: 2, start_date: "2026-12-01", end_exclusive: "2026-12-03", last_day: "2026-12-02", duration_workdays: 2 }),
+    ];
+    mockApi(projectRoutes({ snapshot: gantt(tasks, { dependencies: [] }) }));
+    await openGantt();
+    expect(bar("ARIS-1").querySelector(".gantt-bar__text")).toHaveTextContent("Длинная");
+    expect(bar("ARIS-1").querySelector(".gantt-bar__tick")).not.toBeNull();
+    expect(Array.from(document.querySelectorAll(".gantt__label")).map((el) => el.textContent)).not.toContain("Длинная");
+    // the bracket covers the parent's own day and its subtask: 30 Nov – 2 Dec
+    const bracket = body("ARIS-2");
+    expect(bracket.getAttribute("d")).toMatch(new RegExp(`^M${x("ARIS-3") - DAY},`));
+    act(() => bar("ARIS-2").focus());
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByText("ARIS-2: сроки по подзадачам — меняйте сроки подзадач.")).toBeInTheDocument();
   });
 
   it("M6-23: 200 tasks — only the visible window of rows is in the DOM, scrolling brings the others", async () => {
@@ -362,3 +426,364 @@ describe("Gantt", () => {
     expect(elapsed).toBeLessThan(5000);
   });
 });
+
+describe("Gantt: selection, links, «Вид», «Вписать», zoom gestures (Planner v2)", () => {
+  const VISIBLE = 1100 - 300; // jsdom has no layout: the chart assumes a 1100 px scroller and a 300 px left column
+
+  function scroller(): HTMLElement {
+    return document.querySelector(".gantt__scroller") as HTMLElement;
+  }
+
+  it("a click selects a bar and lights its links both ways; a double click or Enter opens it", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    await openGantt();
+    expect(screen.getByText("Выберите задачу — её связи выделятся")).toBeInTheDocument();
+    await user.click(body("ARIS-5"));
+    expect(bar("ARIS-5")).toHaveClass("is-selected");
+    expect(document.querySelector('.gantt-name[data-task-key="ARIS-5"]')).toHaveClass("is-selected");
+    expect(screen.getByTestId("location")).not.toHaveTextContent("task=");
+    // ARIS-4 → ARIS-5 and ARIS-5 → ARIS-6: incoming and outgoing, both raised above the other arrows
+    expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-hi");
+    expect(document.querySelector('[data-dependency-id="d2"]')).toHaveClass("is-hi");
+    expect(screen.getByText("Связи выбранной выделены")).toBeInTheDocument();
+    await user.click(body("ARIS-8"));
+    expect(bar("ARIS-5")).not.toHaveClass("is-selected");
+    expect(document.querySelector('[data-dependency-id="d1"]')).not.toHaveClass("is-hi");
+    // hovering a bar lights its links for a while
+    fireEvent.pointerEnter(bar("ARIS-4"));
+    expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-hi");
+    fireEvent.pointerLeave(bar("ARIS-4"));
+    expect(document.querySelector('[data-dependency-id="d1"]')).not.toHaveClass("is-hi");
+    await user.dblClick(body("ARIS-8"));
+    expect(screen.getByTestId("location")).toHaveTextContent("task=ARIS-8");
+  });
+
+  it("«Авто»: every link on «День»; on «Месяц» only the selected task's; none on «Год»", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    await openGantt("/projects/ARIS?view=gantt&zoom=month");
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByText("Связи — только у выбранной: выберите задачу")).toBeInTheDocument();
+    await user.click(body("ARIS-5"));
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(2);
+    expect(screen.getByText("Связи — только у выбранной задачи")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Год" }));
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByText("Связи скрыты")).toBeInTheDocument();
+  });
+
+  it("«Вид»: links and labels modes are remembered; the keys are listed; Esc returns focus (APG menu)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    const menu = screen.getByRole("menu", { name: "Вид диаграммы" });
+    const links = within(menu).getByRole("group", { name: "Связи между задачами" });
+    expect(within(links).getByRole("menuitemradio", { name: /^Авто/ })).toHaveAttribute("aria-checked", "true");
+    // the keys are listed under the choices of the same popover (text, not menu items)
+    expect(screen.getByText("Shift + 1")).toBeVisible();
+    expect(screen.getByText("вписать проект")).toBeVisible();
+    await user.click(within(links).getByRole("menuitemradio", { name: "Скрыть" }));
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Вид" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.click(within(screen.getByRole("group", { name: "Подписи на полосах" })).getByRole("menuitemradio", { name: /^Без подписей/ }));
+    // labels beside the bars are gone; the markers of tasks outside the window and the left column stay
+    expect(document.querySelectorAll(".gantt__label:not(.gantt__marker)")).toHaveLength(0);
+    expect(document.querySelectorAll(".gantt__marker").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Вид" })).toHaveFocus();
+    // remembered with the view
+    expect(JSON.parse(window.localStorage.getItem("skh.work.gantt.view") ?? "{}")).toMatchObject({ links: "none", labels: "none" });
+    unmount();
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByText("Связи скрыты")).toBeInTheDocument();
+  });
+
+  it("«Вписать» is the first zoom: the project's first day 3 days from the left edge; Shift + 1 fits, T goes to today", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    renderRoutes("/projects/ARIS?view=gantt", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    const fit = screen.getByRole("button", { name: "Вписать" });
+    expect(fit).toHaveAttribute("aria-pressed", "true");
+    // 2 Nov – 9 Dec (37 days) + 3 + 12 in the visible width
+    const dw = VISIBLE / 52;
+    expect(Number(body("ARIS-5").getAttribute("width"))).toBeCloseTo(2 * dw, 6);
+    expect(scroller().scrollLeft).toBeCloseTo(x("ARIS-3") - 3 * dw, 6); // ARIS-3 starts the project on 2 Nov
+    await user.click(screen.getByRole("radio", { name: "Неделя" }));
+    expect(fit).toHaveAttribute("aria-pressed", "false");
+    await user.keyboard("{Shift>}1{/Shift}");
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=fit");
+    expect(screen.getByRole("button", { name: "Вписать" })).toHaveAttribute("aria-pressed", "true");
+    // T: today at 30 % of the window (25 Nov is two days before ARIS-4's Friday)
+    await act(async () => {
+      scroller().scrollLeft = 0;
+      fireEvent.scroll(scroller());
+    });
+    await user.keyboard("t");
+    expect(scroller().scrollLeft).toBeCloseTo(x("ARIS-4") - 2 * dw - 0.3 * VISIBLE, 6);
+  });
+
+  it("Ctrl/⌘ + wheel zooms smoothly; the day under the pointer stays put; a segment brings a fixed zoom back", async () => {
+    mockApi(projectRoutes());
+    await openGantt("/projects/ARIS?view=gantt&zoom=week");
+    const user = userEvent.setup();
+    const offset = x("ARIS-5") - scroller().scrollLeft; // where ARIS-5 starts in the window
+    fireEvent.wheel(scroller(), { deltaY: -100, ctrlKey: true, clientX: 300 + offset, clientY: 200 });
+    const width = Number(body("ARIS-5").getAttribute("width"));
+    expect(width).toBeGreaterThan(2 * 16);
+    expect(x("ARIS-5") - scroller().scrollLeft).toBeCloseTo(offset, 3);
+    expect(screen.getByRole("radio", { name: "Неделя" })).not.toBeChecked();
+    // a plain wheel scrolls, it does not zoom
+    fireEvent.wheel(scroller(), { deltaY: -100, clientX: 300 + offset });
+    expect(Number(body("ARIS-5").getAttribute("width"))).toBe(width);
+    await user.click(screen.getByRole("radio", { name: "Неделя" }));
+    expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 16));
+    expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
+  });
+
+  it("a smooth zoom stays in the page: the URL and the remembered zoom get the nearest named one, no segment is lit", async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal("localStorage", storage);
+    mockApi(projectRoutes());
+    await openGantt("/projects/ARIS?view=gantt&zoom=week");
+    // 16 px per day × e^0.45 ≈ 25.1: nearer to «День» (36) than to «Неделя» (16) by ratio
+    fireEvent.wheel(scroller(), { deltaY: -150, ctrlKey: true, clientX: 500, clientY: 200 });
+    const smooth = Number(body("ARIS-5").getAttribute("width")) / 2;
+    expect(smooth).toBeCloseTo(16 * Math.exp(0.45), 6);
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=day");
+    expect(screen.getByTestId("location").textContent).not.toMatch(/zoom=\d/);
+    expect(storage.getItem("skh.work.zoom")).toBe("day");
+    // the smooth scale survives its own URL change; no segment claims it
+    expect(Number(body("ARIS-5").getAttribute("width"))).toBeCloseTo(2 * smooth, 6);
+    for (const name of ["День", "Неделя", "Месяц", "Квартал", "Год"]) expect(screen.getByRole("radio", { name })).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Вписать" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("a fixed zoom opens on today at 30 %; a project yet to start on its start; a finished one with its end at 70 %", async () => {
+    const dayX = (iso: string) => x("ARIS-3") + (toDay(iso) - toDay("2026-11-02")) * DAY; // ARIS-3 starts on 2 Nov
+    mockApi(projectRoutes());
+    const first = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(scroller().scrollLeft).toBeCloseTo(dayX("2026-11-25") - 0.3 * VISIBLE, 6);
+    first.unmount();
+    vi.restoreAllMocks();
+
+    mockApi(projectRoutes({ snapshot: gantt(planTasks(), { today: "2026-10-20" }) }));
+    const early = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(scroller().scrollLeft).toBeCloseTo(dayX("2026-10-30"), 6); // 2 Nov less the «Вписать» margin of 3 days
+    early.unmount();
+    vi.restoreAllMocks();
+
+    mockApi(projectRoutes({ snapshot: gantt(planTasks(), { today: "2027-01-15" }) }));
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(scroller().scrollLeft).toBeCloseTo(dayX("2026-12-09") - 0.7 * VISIBLE, 6); // the day after its last one
+  });
+
+  it("the critical path item appears only when the server enables it and returns a path (no fake path)", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    expect(screen.queryByRole("menuitemcheckbox", { name: /Критический путь/ })).not.toBeInTheDocument();
+    unmount();
+    vi.restoreAllMocks();
+    mockApi(
+      projectRoutes({
+        caps: capabilities({ features: { critical_path: true, comments: false, document_links: false, ai_proposals: false, lag: false } }),
+        snapshot: gantt(planTasks(), { critical_path: ["t4", "t5", "t6"], features: { critical_path: true, dependency_kinds: ["FS"], lag: false } }),
+      }),
+    );
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /Критический путь/ }));
+    expect(bar("ARIS-4")).toHaveClass("is-critical");
+    expect(bar("ARIS-8")).not.toHaveClass("is-critical");
+    expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-critical");
+  });
+});
+
+describe("Gantt: the task column (Planner v2 §3.1, §3.9)", () => {
+  function names(): HTMLElement {
+    return document.querySelector(".gantt__names") as HTMLElement;
+  }
+
+  it("shows the key, the title, the overdue mark and the assignee's initials with the full name in a tooltip", async () => {
+    mockApi(projectRoutes());
+    await openGantt();
+    expect(screen.getByText("Исп.")).toBeInTheDocument();
+    const row = document.querySelector('.gantt-name[data-task-key="ARIS-4"]') as HTMLElement;
+    const avatar = within(row).getByRole("img", { name: "Исполнитель: Анна Лебедева (демо)" });
+    expect(avatar).toHaveTextContent("АЛ");
+    expect(avatar).toHaveAttribute("title", "Анна Лебедева (демо)");
+    const late = document.querySelector('.gantt-name[data-task-key="ARIS-9"]') as HTMLElement;
+    expect(within(late).getByRole("img", { name: "Просрочена" })).toBeInTheDocument();
+    expect(names().style.width).toBe("300px");
+  });
+
+  it("the column's width follows a drag or ← / → on its border (240–480 px) and is remembered; it can be folded", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    const border = screen.getByRole("separator", { name: "Ширина колонки задач" });
+    expect(border).toHaveAttribute("aria-valuenow", "300");
+    act(() => border.focus());
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(border).toHaveAttribute("aria-valuenow", "332");
+    expect(names().style.width).toBe("332px");
+    await user.keyboard("{End}");
+    expect(border).toHaveAttribute("aria-valuenow", "480");
+    fireEvent.pointerDown(border, { clientX: 780, button: 0, pointerId: 3 });
+    fireEvent.pointerMove(border, { clientX: 500, pointerId: 3 });
+    fireEvent.pointerUp(border, { clientX: 500, pointerId: 3 });
+    expect(border).toHaveAttribute("aria-valuenow", "240"); // never narrower than 240
+    expect(JSON.parse(window.localStorage.getItem("skh.work.gantt.view") ?? "{}")).toMatchObject({ namesWidth: 240 });
+    await user.click(screen.getByRole("button", { name: "Свернуть колонку задач" }));
+    expect(document.querySelector('.gantt-name[data-task-key="ARIS-4"]')).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Ширина колонки задач" })).not.toBeInTheDocument();
+    unmount();
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Развернуть колонку задач" }));
+    expect(names().style.width).toBe("240px");
+    expect(document.querySelector('.gantt-name[data-task-key="ARIS-4"]')).not.toBeNull();
+  });
+
+  it("up to 1100 px: a 240 px column without «Исп.»; a phone: 132 px, the zoom as a menu", async () => {
+    const user = userEvent.setup();
+    mockViewport(1000);
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(names().style.width).toBe("240px");
+    expect(screen.queryByText("Исп.")).not.toBeInTheDocument();
+    expect(document.querySelector('.gantt-name [role="img"][aria-label^="Исполнитель"]')).toBeNull();
+    unmount();
+    mockViewport(390);
+    renderRoutes("/projects/ARIS?view=gantt", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(names().style.width).toBe("132px");
+    expect(screen.queryByRole("radio", { name: "Неделя" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Масштаб: Вписать" }));
+    await user.click(screen.getByRole("menuitemradio", { name: "Неделя" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=week");
+    expect(screen.queryByRole("separator", { name: "Ширина колонки задач" })).not.toBeInTheDocument(); // no dragging on a phone
+    expect(screen.getByText(/Сроки меняются в карточке задачи/)).toBeVisible();
+  });
+
+  describe("the filter row stays one line: the controls follow the row's own width (§3.9)", () => {
+    /** A ResizeObserver the test drives: jsdom has none (and no layout). */
+    class FakeResizeObserver {
+      static all: FakeResizeObserver[] = [];
+      elements: Element[] = [];
+      constructor(readonly callback: ResizeObserverCallback) {
+        FakeResizeObserver.all.push(this);
+      }
+      observe(element: Element) {
+        this.elements.push(element);
+      }
+      unobserve() {}
+      disconnect() {
+        this.elements = [];
+      }
+    }
+
+    let rowWidth = 1200;
+    function resizeRow(width: number) {
+      rowWidth = width;
+      const row = document.querySelector(".work-toolbar") as Element;
+      for (const observer of FakeResizeObserver.all) {
+        if (observer.elements.includes(row)) act(() => observer.callback([], observer as unknown as ResizeObserver));
+      }
+    }
+
+    beforeEach(() => {
+      FakeResizeObserver.all = [];
+      vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+      // the row's room comes from the row; the filters are 4 × 120 px, the full controls 575 px (as in Chrome)
+      vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(function (this: Element) {
+        return this.classList.contains("work-toolbar") ? rowWidth : 0;
+      });
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+        const controls = this.classList.contains("work-toolbar__view") ? (this.querySelector(".work-toolbar__fit") ? 575 : 300) : 0;
+        const width = controls || (this.parentElement?.classList.contains("work-filters") ? 120 : 0);
+        return { x: 0, y: 0, top: 0, left: 0, right: width, bottom: 0, width, height: 0, toJSON: () => ({}) } as DOMRect;
+      });
+    });
+
+    it("the zoom becomes a menu and «Вписать», «Сегодня» icons with a tooltip and a name — and back when room returns", async () => {
+      const user = userEvent.setup();
+      mockViewport(1440); // the window is wide: only the row decides
+      rowWidth = 1200;
+      mockApi(projectRoutes());
+      await openGantt("/projects/ARIS?view=gantt&zoom=week");
+      expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Вписать" })).not.toHaveClass("button--icon");
+      expect(screen.getByRole("button", { name: "Сегодня" })).not.toHaveClass("button--icon");
+
+      resizeRow(900); // e.g. the window shrank, or a docked panel took room: 4 × 120 + 575 > 900
+      expect(screen.queryByRole("radio", { name: "Неделя" })).not.toBeInTheDocument();
+      const fit = screen.getByRole("button", { name: "Вписать" });
+      expect(fit).toHaveClass("button--icon");
+      expect(fit).toHaveAttribute("title", "Весь проект по ширине (Shift + 1)");
+      const today = screen.getByRole("button", { name: "Сегодня" });
+      expect(today).toHaveClass("button--icon");
+      expect(today).toHaveAttribute("title", "К сегодня (T)");
+      await user.click(screen.getByRole("button", { name: "Масштаб: Неделя" }));
+      await user.click(screen.getByRole("menuitemradio", { name: "Месяц" }));
+      expect(screen.getByTestId("location")).toHaveTextContent("zoom=month");
+      expect(screen.getByRole("button", { name: "Масштаб: Месяц" })).toBeInTheDocument();
+
+      resizeRow(1100); // the sidebar collapsed: the full form fits again (4 × 120 + 575 = 1055)
+      expect(screen.getByRole("radio", { name: "Месяц" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Сегодня" })).not.toHaveClass("button--icon");
+    });
+
+    it("each view's controls decide with their own full width: back on the Gantt after the row grew, the segments return", async () => {
+      const user = userEvent.setup();
+      mockViewport(1440);
+      rowWidth = 900; // the Gantt does not fit (480 + 575), the list does (480 + 300)
+      mockApi(projectRoutes());
+      await openGantt("/projects/ARIS?view=gantt&zoom=week");
+      expect(screen.getByRole("button", { name: "Масштаб: Неделя" })).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Список" }));
+      expect(await screen.findByRole("button", { name: "Группировка: нет" })).toHaveTextContent(/^Группировка: нет$/);
+      resizeRow(1200); // the sidebar folded while on the list
+      await user.click(screen.getByRole("button", { name: "Гант" }));
+      await screen.findByRole("group", { name: "Полосы задач" });
+      expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Сегодня" })).not.toHaveClass("button--icon");
+    });
+
+    it("the list's grouping shows only its value while the row is short; its name and tooltip keep the whole", async () => {
+      mockViewport(1440);
+      rowWidth = 1200;
+      mockApi(projectRoutes());
+      renderRoutes("/projects/ARIS?view=list&group=assignee", ROUTES);
+      const full = await screen.findByRole("button", { name: "Группировка: по исполнителю" });
+      expect(full).not.toHaveAttribute("title");
+      resizeRow(700); // 480 + 300 > 700
+      const short = screen.getByRole("button", { name: "Группировка: по исполнителю" });
+      expect(short).toHaveTextContent(/^По исполнителю$/);
+      expect(short).toHaveAttribute("title", "Группировка");
+      expect(screen.queryByRole("button", { name: /^Масштаб/ })).not.toBeInTheDocument();
+      resizeRow(1200);
+      expect(screen.getByRole("button", { name: "Группировка: по исполнителю" })).toHaveTextContent(/^Группировка: по исполнителю$/);
+    });
+  });
+});
+

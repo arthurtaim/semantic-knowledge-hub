@@ -114,6 +114,18 @@ describe("Sidebar", () => {
     expect(calls.some((call) => call.url === "/api/drafts")).toBe(false); // never the total of every status
   });
 
+  it("shows the number of active projects next to «Проекты» (planner v2 §6), from the API", async () => {
+    const calls = mockApi([
+      { path: "/api/knowledge/facets", body: facets },
+      { path: "/api/projects?status=active", body: { items: [], total: 3 } },
+    ]);
+    renderShell("/");
+    const projects = within(nav()).getByRole("link", { name: "Проекты" });
+    expect(await within(projects).findByText("3")).toHaveClass("sidebar__count");
+    expect(projects).toHaveAccessibleDescription("Активных проектов: 3");
+    expect(calls.some((call) => call.url === "/api/projects")).toBe(false); // never archived or on-hold ones
+  });
+
   it("shows no «Ревью» badge when everything ready for review is the reader's own (the single-user demo)", async () => {
     mockApi([
       { path: "/api/knowledge/facets", body: facets },
