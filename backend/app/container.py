@@ -131,6 +131,7 @@ def build_work(settings: Settings) -> WorkService:
         auth_mode=settings.auth_mode,
         public_exposure=settings.work_public_exposure,
         writes_enabled=settings.work_writes_enabled,
+        shared_login_writes=settings.work_shared_login_writes,
     )
     timezone = settings.work_default_timezone
     if not WorkService.valid_timezone(timezone):

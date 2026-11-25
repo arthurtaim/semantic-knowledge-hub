@@ -26,7 +26,8 @@ class NativeTaskSystem:
     def access(self) -> IntegrationAccess:
         return (
             "read_write"
-            if self._gate.mode in (WorkAccessMode.local_operator, WorkAccessMode.membership)
+            if self._gate.mode
+            in (WorkAccessMode.local_operator, WorkAccessMode.shared_login, WorkAccessMode.membership)
             else "read"
         )
 

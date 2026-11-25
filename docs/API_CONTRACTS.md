@@ -602,7 +602,7 @@ operator has both). Design and rules: `docs/TEMPLATE_HUB.md` «Template Studio»
 ## Implemented contract (v0.7, M6 Work Management — steps 1–5)
 
 Additive only. Design, semantics and the identity gate: `docs/WORK_MANAGEMENT.md`. Every route declares one action
-on the global policy; the work gate then applies `local_operator` / `read_only` / `membership` (§4 there). `{project_id}`
+on the global policy; the work gate then applies `local_operator` / `read_only` / `shared_login` / `membership` (§4 there). `{project_id}`
 accepts the id or the key (`ARIS`); `{task_id}` the id or the key (`ARIS-12`). Request bodies are strict (unknown or
 server-owned fields → `422 invalid_request`). Dates are `YYYY-MM-DD`; a scheduled task is `[start_date, end_exclusive)`.
 
@@ -655,6 +655,6 @@ server-owned fields → `422 invalid_request`). Dates are `YYYY-MM-DD`; a schedu
 - Read-only exposure: every write, preview/apply and activity route answers `403 forbidden` with `details.mode =
   "read_only"` and `details.reason`; reads keep working. Membership mode: a non-member gets `404` for the project and
   everything in it (no titles, counts or existence leaks).
-- Additive elsewhere: `SessionResponse.features.work_management` (`local_operator\|read_only\|membership\|disabled`);
+- Additive elsewhere: `SessionResponse.features.work_management` (`local_operator\|read_only\|shared_login\|membership\|disabled`; the configured gate — per-request read-only on the open link is in `GET /api/work/capabilities`);
   `GET /api/integrations/status` item `task_system` is the built-in module (`connected`, target `local`, access
   `read_write`/`read`); CORS allows `PATCH`.

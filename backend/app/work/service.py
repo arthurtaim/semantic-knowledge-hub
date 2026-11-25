@@ -659,9 +659,11 @@ class WorkService:
     # --- capabilities ------------------------------------------------------------------------------------------
     def capabilities(self, principal: WorkPrincipal) -> WorkCapabilities:
         mode = self.gate.effective_mode(principal)
-        can_write = mode in (WorkAccessMode.local_operator, WorkAccessMode.membership) and (
-            mode == WorkAccessMode.membership or principal.user.is_demo
-        )
+        can_write = mode in (
+            WorkAccessMode.local_operator,
+            WorkAccessMode.shared_login,
+            WorkAccessMode.membership,
+        ) and (mode == WorkAccessMode.membership or principal.user.is_demo)
         kind = "member" if mode == WorkAccessMode.membership else "local_operator"
         return WorkCapabilities(
             enabled=mode != WorkAccessMode.disabled,

@@ -94,3 +94,14 @@ describe("Projects overview", () => {
     expect((post?.body as { client_request_id: string }).client_request_id).toMatch(/^[A-Za-z0-9-]{8,}$/);
   });
 });
+
+describe("Work mode line — the demo stand's shared login", () => {
+  it("says that everyone behind the login is one user and that the team is invented", async () => {
+    const { render } = await import("@testing-library/react");
+    const { WorkModeNote } = await import("../components/work/WorkBits");
+    render(<WorkModeNote capabilities={capabilities({ mode: "shared_login", label: "Демо-стенд — общий вход, один пользователь" })} />);
+    expect(screen.getByText("Демо-стенд — общий вход, один пользователь")).toBeInTheDocument();
+    expect(screen.getByText(/работают от имени одного пользователя: история не различает людей/)).toBeInTheDocument();
+    expect(screen.getByText(/вымышленная команда для примера/)).toBeInTheDocument();
+  });
+});

@@ -1836,7 +1836,7 @@ export interface AiProposalRequest {
 // Dates are project-local `YYYY-MM-DD`; a scheduled task occupies [start_date, end_exclusive). Show `last_day`
 // (the last occupied working day), never `end_exclusive`, as «по …». A milestone is a point: start == end.
 
-export type WorkAccessMode = "local_operator" | "read_only" | "membership" | "disabled";
+export type WorkAccessMode = "local_operator" | "read_only" | "shared_login" | "membership" | "disabled";
 export type TaskStatus = "todo" | "in_progress" | "review" | "done";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";

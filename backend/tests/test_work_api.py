@@ -571,6 +571,49 @@ def test_writes_can_be_switched_off_explicitly(client_factory: Client) -> None:
     assert c.get("/api/work/capabilities").json()["mode"] == "read_only"
 
 
+LOGIN = {
+    "X-SKH-Exposure": "public-login"
+}  # what the LOGIN gateway (deploy/claude-test/Caddyfile.login) sends
+
+
+def test_shared_login_may_write_through_the_login_gateway_only(client_factory: Client) -> None:
+    # Owner decision 2026-11-25 (docs/WORK_MANAGEMENT.md «Общий вход демо-стенда»): on the demo stand one shared
+    # super-user login may change tasks. Everyone behind it is ONE identity; the open link stays read-only.
+    c = client_factory(work_public_exposure=True, work_shared_login_writes=True)
+    caps = c.get("/api/work/capabilities", headers=LOGIN).json()
+    assert (caps["mode"], caps["can_write"], caps["can_view_audit"], caps["team_ready"]) == (
+        "shared_login",
+        True,
+        True,
+        False,
+    )
+    assert caps["label"] == "Демо-стенд — общий вход, один пользователь" and caps["read_only_reason"] is None
+    created = c.post("/api/projects", json={"key": "SHR", "title": "Общий вход"}, headers=LOGIN)
+    assert created.status_code == 201 and created.json()["my_role"] == "shared_login"
+    t = c.post("/api/projects/SHR/tasks", json={"title": "x"}, headers=LOGIN).json()
+    assert t["created_by"] == "local-demo-user"  # one server-defined identity for everyone behind the login
+    assert c.get(f"/api/tasks/{t['key']}/activity", headers=LOGIN).status_code == 200
+    assert c.post("/api/projects/SHR/tasks", json={"title": "y"}).status_code == 201  # loopback / SSH tunnel
+    for marker in ("public", "anything-else"):  # the OPEN link, or any other marker: read-only as before
+        refused = c.post("/api/projects/SHR/tasks", json={"title": "z"}, headers={"X-SKH-Exposure": marker})
+        assert refused.status_code == 403 and refused.json()["details"]["mode"] == "read_only", marker
+    status = {i["name"]: i for i in c.get("/api/integrations/status").json()["items"]}["task_system"]
+    assert status["access"] == "read_write"
+
+
+def test_shared_login_writes_are_opt_in_and_the_kill_switch_wins(client_factory: Client) -> None:
+    off = client_factory(work_public_exposure=True)  # the default: the login gateway is read-only too
+    refused = off.post("/api/projects", json={"key": "OFF", "title": "x"}, headers=LOGIN)
+    assert refused.status_code == 403 and refused.json()["details"]["mode"] == "read_only"
+    killed = client_factory(
+        work_public_exposure=True, work_shared_login_writes=True, work_writes_enabled=False
+    )
+    assert killed.post("/api/projects", json={"key": "OFF", "title": "x"}, headers=LOGIN).status_code == 403
+    assert killed.get("/api/work/capabilities", headers=LOGIN).json()["mode"] == "read_only"
+    local = client_factory(work_shared_login_writes=True)  # not exposed: the switch changes nothing locally
+    assert local.get("/api/work/capabilities").json()["mode"] == "local_operator"
+
+
 def _member(client: TestClient, project_id: str, user_id: str, role: str) -> None:
     with client.app.state.container.work.db.write() as conn:  # type: ignore[attr-defined]
         store.put_member(conn, project_id, user_id, role, "test-admin", datetime.now(UTC).isoformat())

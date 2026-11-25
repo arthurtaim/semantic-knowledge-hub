@@ -83,6 +83,7 @@ def acting(action: Action) -> Callable[..., Awaitable[WorkPrincipal]]:
             user=user,
             request_id=request_id_of(request),
             exposed=bool(request.headers.get(EXPOSURE_HEADER)),
+            exposure=(request.headers.get(EXPOSURE_HEADER) or "").strip().lower()[:32] or None,
             documents=await reader_documents(container, user),
         )
 

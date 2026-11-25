@@ -135,6 +135,8 @@ describe("filters and the tree", () => {
     expect(canWriteProject(READ_ONLY, project({ my_role: "read_only" }))).toBe(false);
     expect(canWriteProject(capabilities({ mode: "membership" }), project({ my_role: "viewer" }))).toBe(false);
     expect(canWriteProject(capabilities({ mode: "membership" }), project({ my_role: "member" }))).toBe(true);
+    // The demo stand's one shared login (owner decision 2026-11-25) writes as the single operator.
+    expect(canWriteProject(capabilities({ mode: "shared_login" }), project({ my_role: "shared_login" }))).toBe(true);
     expect(canWriteProject(capabilities(), project({ status: "archived" }))).toBe(false);
   });
 });

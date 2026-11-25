@@ -17,7 +17,10 @@ export function WorkModeNote({ capabilities }: { capabilities: WorkCapabilities 
       <span>
         <span className="work-mode__label">{capabilities.label}</span>
         {readOnly && capabilities.read_only_reason ? <span className="work-mode__reason"> {capabilities.read_only_reason}</span> : null}
-        {!capabilities.team_ready && capabilities.mode === "local_operator" ? (
+        {capabilities.mode === "shared_login" ? (
+          <span className="work-mode__reason"> Все, кто входит по логину стенда, работают от имени одного пользователя: история не различает людей.</span>
+        ) : null}
+        {!capabilities.team_ready && (capabilities.mode === "local_operator" || capabilities.mode === "shared_login") ? (
           <span className="work-mode__reason"> Исполнители «(демо)» — вымышленная команда для примера, не учётные записи.</span>
         ) : null}
       </span>

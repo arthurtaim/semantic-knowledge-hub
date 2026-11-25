@@ -160,8 +160,9 @@ export function pluralWorkdays(n: number): string {
 
 // --- capabilities ------------------------------------------------------------------------------------------------
 
-/** Roles that may change tasks of a project (membership: admin and member; the single local operator). */
-const WRITING_ROLES = new Set(["local_operator", "admin", "member"]);
+/** Roles that may change tasks of a project (membership: admin and member; the single operator, local or behind the
+ * demo stand's one shared login). */
+const WRITING_ROLES = new Set(["local_operator", "shared_login", "admin", "member"]);
 
 /** Whether this reader may change tasks of `project`: the mode allows writes AND the project role does. */
 export function canWriteProject(capabilities: WorkCapabilities | null, project: Pick<WorkProject, "my_role" | "status"> | null): boolean {

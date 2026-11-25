@@ -179,7 +179,7 @@ class ProjectOut(BaseModel):
     updated_at: datetime
     archived_at: datetime | None
     stats: ProjectStats | None = None
-    my_role: str  # local_operator | admin | member | viewer | read_only
+    my_role: str  # local_operator | shared_login | admin | member | viewer | read_only
 
 
 class ProjectList(BaseModel):
@@ -744,7 +744,7 @@ class WorkFeatures(BaseModel):
 
 class WorkCapabilities(BaseModel):
     enabled: bool
-    mode: Literal["local_operator", "read_only", "membership", "disabled"]
+    mode: Literal["local_operator", "read_only", "shared_login", "membership", "disabled"]
     label: str
     can_write: bool
     can_view_audit: bool

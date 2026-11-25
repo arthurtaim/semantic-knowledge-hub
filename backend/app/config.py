@@ -196,8 +196,12 @@ class Settings(BaseSettings):
     task_system: Literal["native", "disabled"] = "native"
     work_state_path: Path = Path("./workspace/work.sqlite3")
     # The backend is reachable through a shared/public link (set by docker-compose.claude-public.yml). A shared Basic
-    # Auth password is not a user identity: the work module becomes READ-ONLY. There is no switch to re-enable writes.
+    # Auth password is not a user identity: the work module becomes READ-ONLY.
     work_public_exposure: bool = False
+    # Owner-approved deviation for the personal demo stand (2026-11-25): behind the LOGIN gateway the one shared
+    # super-user login may change tasks, as the single server-defined operator (mode `shared_login`). The open
+    # public link stays read-only; WORK_WRITES_ENABLED=false still wins. Off by default.
+    work_shared_login_writes: bool = False
     # Explicit kill switch for task writes (false = read-only work module everywhere).
     work_writes_enabled: bool = True
     # Synthetic demo projects on first start (single-operator modes only; never in the team membership mode).

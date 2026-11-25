@@ -12,7 +12,12 @@ Two layers, both server-side:
      (WORK_PUBLIC_EXPOSURE=true, set by docker-compose.claude-public.yml, or the gateway marker header
      `X-SKH-Exposure` on the request) or writes are switched off (WORK_WRITES_ENABLED=false). A shared Basic Auth
      password is NOT an identity: only view actions pass; no writes, no private audit, no AI proposals.
-     There is deliberately no setting that re-enables writes on a public exposure.
+   - `shared_login`: an OWNER-APPROVED deviation for the personal demo stand (2026-11-25, docs/WORK_MANAGEMENT.md
+     «Общий вход демо-стенда»): with WORK_PUBLIC_EXPOSURE=true AND WORK_SHARED_LOGIN_WRITES=true, a request the LOGIN
+     gateway marks (`X-SKH-Exposure: public-login`, deploy/claude-test/Caddyfile.login) — or a loopback request without
+     a marker (SSH tunnel) — acts as the ONE server-defined operator and may write. Everyone behind the shared login
+     is that one identity: history does not tell people apart. The open link (`public`) or any other marker stays
+     read-only, and WORK_WRITES_ENABLED=false still wins.
    - `membership`: the team-ready gate. Needs a REAL, server-verified identity (a future SSO identity provider in
      `Container.identity`); each request checks the `ProjectMember` role: viewer = read, member = + write/schedule/
      audit/proposals, admin = + project settings. Unreachable in production today (AUTH_MODE=sso refuses to start);
@@ -37,11 +42,14 @@ if TYPE_CHECKING:
     from app.work.links import DocumentScope
 
 EXPOSURE_HEADER = "x-skh-exposure"
+# The marker the LOGIN gateway sets (Caddyfile.login). The open gateway sets `public`.
+EXPOSURE_LOGIN = "public-login"
 
 
 class WorkAccessMode(StrEnum):
     local_operator = "local_operator"
     read_only = "read_only"
+    shared_login = "shared_login"
     membership = "membership"
     disabled = "disabled"
 
@@ -78,6 +86,7 @@ ROLE_ACTIONS: dict[ProjectRole, frozenset[Action]] = {
 LABELS = {
     WorkAccessMode.local_operator: "Локальная демонстрация — один оператор",
     WorkAccessMode.read_only: "Только просмотр — изменения задач отключены",
+    WorkAccessMode.shared_login: "Демо-стенд — общий вход, один пользователь",
     WorkAccessMode.membership: "Командный режим — права участников проекта",
     WorkAccessMode.disabled: "Модуль задач отключён",
 }
@@ -90,6 +99,7 @@ class WorkPrincipal:
     user: UserContext
     request_id: str
     exposed: bool = False  # the request carries the public-gateway marker
+    exposure: str | None = None  # its value (`public` · `public-login`), None without a marker
     # The documents this identity may see NOW (its knowledge snapshot), resolved by the API layer for the request;
     # task ↔ document links are shown and counted only against it. None = not resolved (no document facts shown).
     documents: DocumentScope | None = None
@@ -103,6 +113,12 @@ class WorkAccessGate:
     def effective_mode(self, principal: WorkPrincipal) -> WorkAccessMode:
         if self.mode == WorkAccessMode.local_operator and principal.exposed:
             return WorkAccessMode.read_only
+        if (
+            self.mode == WorkAccessMode.shared_login
+            and principal.exposed
+            and principal.exposure != EXPOSURE_LOGIN
+        ):
+            return WorkAccessMode.read_only
         return self.mode
 
     def reason(self, principal: WorkPrincipal) -> str | None:
@@ -114,6 +130,8 @@ class WorkAccessGate:
                 "Запрос пришёл через общий/публичный шлюз: общий пароль не является идентичностью пользователя, "
                 "поэтому изменения задач отключены."
             )
+        if self.mode == WorkAccessMode.shared_login:
+            return "Запрос пришёл по открытой публичной ссылке без входа: изменения задач доступны только после входа."
         return self.read_only_reason
 
     def role_based(self) -> bool:
@@ -123,7 +141,7 @@ class WorkAccessGate:
         mode = self.effective_mode(principal)
         if mode == WorkAccessMode.disabled:
             return False
-        if mode == WorkAccessMode.local_operator:
+        if mode in (WorkAccessMode.local_operator, WorkAccessMode.shared_login):
             return principal.user.is_demo  # the server-defined operator only; never another actor
         if mode == WorkAccessMode.read_only:
             return principal.user.is_demo and action in VIEW_ACTIONS
@@ -158,12 +176,19 @@ class WorkAccessGate:
 
 
 def build_gate(
-    *, task_system: str, auth_mode: str, public_exposure: bool, writes_enabled: bool
+    *,
+    task_system: str,
+    auth_mode: str,
+    public_exposure: bool,
+    writes_enabled: bool,
+    shared_login_writes: bool = False,
 ) -> WorkAccessGate:
     if task_system == "disabled":
         return WorkAccessGate(WorkAccessMode.disabled)
     if auth_mode != "local_demo":
         return WorkAccessGate(WorkAccessMode.membership)
+    if public_exposure and shared_login_writes and writes_enabled:
+        return WorkAccessGate(WorkAccessMode.shared_login)
     if public_exposure:
         return WorkAccessGate(
             WorkAccessMode.read_only,
