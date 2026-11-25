@@ -59,6 +59,11 @@ from app.work.models import (
     TaskStatus,
     TaskUpdate,
     WorkCapabilities,
+    WorkPlanCreate,
+    WorkProposalApply,
+    WorkProposalApplyResult,
+    WorkProposalEdits,
+    WorkProposalOut,
 )
 from app.work.permissions import EXPOSURE_HEADER, WorkPrincipal
 
@@ -422,3 +427,64 @@ def document_tasks(
     reader cannot see is `404 document_not_found` (as for its links)."""
     ensure_allowed(container.policy, principal.user, Action.read_knowledge)
     return container.work.document_tasks(principal, document_id)
+
+
+# --- AI task-plan proposals (Step 5) ---------------------------------------------------------------------------
+ProposalId = Annotated[str, Path(min_length=5, max_length=40, pattern=r"^WAP-[0-9a-f]{16}$")]
+
+
+@router.post("/work-ai/proposals", response_model=WorkProposalOut, status_code=201)
+async def create_work_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    body: WorkPlanCreate,
+) -> WorkProposalOut:
+    """«AI план»: a typed task-plan PROPOSAL from documents of the knowledge base. Writes NO task: the proposal is
+    stored for review. The gate is checked before any model call; `503 feature_unavailable` without a planning-capable
+    AI provider; `422 proposal_invalid` when the model's plan has unknown ids or a cycle (nothing stored)."""
+    return await container.work_ai.propose(principal, body)
+
+
+@router.get("/work-ai/proposals/{proposal_id}", response_model=WorkProposalOut)
+def get_work_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ProposalId,
+) -> WorkProposalOut:
+    """The proposal with its current state: `ready`, or `stale` with reasons (plan changed, a source document changed
+    or is unavailable, expired) — a stale proposal cannot be applied."""
+    return container.work_ai.get(principal, proposal_id)
+
+
+@router.post("/work-ai/proposals/{proposal_id}/preview", response_model=WorkProposalOut)
+def preview_work_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ProposalId,
+    body: WorkProposalEdits,
+) -> WorkProposalOut:
+    """The reviewed plan (edits, dropped tasks/dependencies, start) with dates computed by the server; writes nothing."""
+    return container.work_ai.preview(principal, proposal_id, body)
+
+
+@router.post("/work-ai/proposals/{proposal_id}/apply", response_model=WorkProposalApplyResult)
+def apply_work_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.apply_work_proposal))],
+    proposal_id: ProposalId,
+    body: WorkProposalApply,
+) -> WorkProposalApplyResult:
+    """Explicit Accept: the stored proposal + the person's edits, re-validated and written in ONE transaction (tasks,
+    FS dependencies, links to its verified sources, audit). `409 proposal_stale` when anything it was based on
+    changed; a replay with the same `client_request_id` returns the first result."""
+    return container.work_ai.apply(principal, proposal_id, body)
+
+
+@router.post("/work-ai/proposals/{proposal_id}/reject", response_model=WorkProposalOut)
+def reject_work_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ProposalId,
+) -> WorkProposalOut:
+    """Reject: the proposal is closed; no task is created."""
+    return container.work_ai.reject(principal, proposal_id)

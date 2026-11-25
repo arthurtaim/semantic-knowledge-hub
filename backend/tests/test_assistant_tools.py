@@ -31,6 +31,7 @@ from app.domain.assistant_tools import (
     TOOL_DESCRIPTIONS,
     CatalogFilters,
     ToolArgumentError,
+    WorkTaskFilters,
     validate_call,
 )
 from app.domain.models import DocStatus, UserContext
@@ -748,7 +749,7 @@ def test_descriptions_advertise_only_arguments_the_schemas_accept() -> None:
         signature = description.split("arguments:", 1)[1]
         advertised = set(json.loads(json.dumps(_keys(signature))))
         fields = set(TOOL_ARGS[name].model_fields)
-        nested = set(CatalogFilters.model_fields)
+        nested = set(CatalogFilters.model_fields) | set(WorkTaskFilters.model_fields)
         assert advertised <= fields | nested, (name, advertised - fields - nested)
     assert '"needs_attention": true' in TOOL_DESCRIPTIONS["catalog_query"]
 

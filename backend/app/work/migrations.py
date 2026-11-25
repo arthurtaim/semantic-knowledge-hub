@@ -18,6 +18,7 @@ restore that file (`python -m app.tools.work_db restore`), start the previous ap
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 
 
@@ -193,9 +194,41 @@ _V2 = (
         WHERE status = 'active'""",
 )
 
+# v3 (Step 5): typed AI task-plan proposals. A proposal is a PROPOSAL: nothing in work_tasks changes until a person
+# applies it, and then in one transaction with the status change below. `stale` is computed on read (the plan revision
+# or a source document changed, or it expired) and never stored, so a stale proposal cannot be «un-staled» by a
+# write; applied/rejected are final. Stored: the user's request (for review), the normalized plan with local ids, the
+# sources' document ids + revisions + verified quotes (≤ 300 chars) — never the composed prompt or document bodies.
+_V3 = (
+    """CREATE TABLE work_ai_proposals (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES work_projects(id),
+        actor_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'task_plan' CHECK (kind IN ('task_plan')),
+        schema_version TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested', 'applied', 'rejected')),
+        provider TEXT NOT NULL,
+        request_text TEXT NOT NULL,
+        goal TEXT NOT NULL DEFAULT '',
+        parent_task_id TEXT REFERENCES work_tasks(id),
+        start_date TEXT,
+        base_plan_revision INTEGER NOT NULL CHECK (base_plan_revision >= 1),
+        sources_json TEXT NOT NULL,
+        plan_json TEXT NOT NULL,
+        issues_json TEXT NOT NULL DEFAULT '[]',
+        assumptions_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        result_json TEXT)""",
+    "CREATE INDEX work_ai_proposals_by_project ON work_ai_proposals (project_id, created_at)",
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "work_core", _V1),
     Migration(2, "task_document_links", _V2),
+    Migration(3, "work_ai_proposals", _V3),
 )
 LATEST_VERSION = MIGRATIONS[-1].version
 
@@ -211,5 +244,23 @@ REQUIRED_TABLES = frozenset(
         "work_audit_events",
         "work_idempotency",
         "work_schedule_previews",
+        "work_ai_proposals",
     }
 )
+
+
+_CREATE_TABLE_RE = re.compile(r"^\s*CREATE TABLE (\w+)", re.IGNORECASE)
+
+
+def required_tables(version: int, migrations: tuple[Migration, ...] = MIGRATIONS) -> frozenset[str]:
+    """Tables a database at schema `version` must have (a backup made before an upgrade is checked against ITS
+    version, not the latest one)."""
+    names: set[str] = set()
+    for migration in migrations:
+        if migration.version > version:
+            break
+        for statement in migration.statements:
+            match = _CREATE_TABLE_RE.match(statement)
+            if match:
+                names.add(match.group(1))
+    return frozenset(names)

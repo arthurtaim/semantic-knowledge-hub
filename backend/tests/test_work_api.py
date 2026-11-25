@@ -77,6 +77,12 @@ WORK_ROUTES = {
     ("POST", "/api/tasks/{task_id}/links/{link_id}/acknowledge"): Action.edit_task,
     ("GET", "/api/projects/{project_id}/documents"): Action.view_tasks,
     ("GET", "/api/documents/{document_id}/tasks"): Action.view_tasks,
+    # Step 5: AI task-plan proposals
+    ("POST", "/api/work-ai/proposals"): Action.propose_work,
+    ("GET", "/api/work-ai/proposals/{proposal_id}"): Action.propose_work,
+    ("POST", "/api/work-ai/proposals/{proposal_id}/preview"): Action.propose_work,
+    ("POST", "/api/work-ai/proposals/{proposal_id}/apply"): Action.apply_work_proposal,
+    ("POST", "/api/work-ai/proposals/{proposal_id}/reject"): Action.propose_work,
 }
 
 
@@ -484,6 +490,7 @@ WRITE_CALLS: list[tuple[str, str, dict[str, Any] | None, dict[str, Any] | None]]
     ("POST", "/api/tasks/ARIS-1/links", {"document_id": "SEM-ARCH-001"}, None),
     ("DELETE", "/api/tasks/ARIS-1/links/x", None, None),
     ("POST", "/api/tasks/ARIS-1/links/x/acknowledge", None, None),
+    ("POST", "/api/work-ai/proposals", {"project_id": "ARIS", "request": "План работ"}, None),
     ("GET", "/api/tasks/ARIS-1/activity", None, None),  # the private audit is not public either
     ("GET", "/api/projects/ARIS/activity", None, None),
 ]

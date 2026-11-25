@@ -35,6 +35,7 @@ from app.adapters.ai.base import (
     ToolTurnEvent,
     ToolTurnReply,
     ToolTurnRequest,
+    WorkPlanRequest,
 )
 from app.config import is_loopback_host
 from app.domain.instructions import RuntimeInstructions, compose
@@ -364,6 +365,8 @@ class OpenAICompatibleAIProvider:
     supports_tools = True
     # Template Studio «Создать с помощью AI»: the model-agnostic JSON protocol of template_protocol.py.
     supports_template_drafting = True
+    # M6 «AI план»: the model-agnostic JSON protocol of work_protocol.py (a proposal; the backend validates everything).
+    supports_work_planning = True
 
     def __init__(
         self,
@@ -537,6 +540,20 @@ class OpenAICompatibleAIProvider:
                     "content": compose(self._instructions.for_task("authoring"), TEMPLATE_PROMPT),
                 },
                 {"role": "user", "content": build_template_message(request, self._max_context_chars)},
+            ]
+        )
+
+    async def plan_work(self, request: WorkPlanRequest) -> str:
+        """M6 «AI план»: a PROPOSAL of tasks, the raw reply; the backend parses and validates it (work_protocol.py)."""
+        from app.adapters.ai.work_protocol import build_work_plan_message, system_prompt
+
+        return await self._post_chat(
+            [
+                {
+                    "role": "system",
+                    "content": compose(self._instructions.for_task("authoring"), system_prompt(request)),
+                },
+                {"role": "user", "content": build_work_plan_message(request, self._max_context_chars)},
             ]
         )
 

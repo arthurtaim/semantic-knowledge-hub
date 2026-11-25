@@ -243,6 +243,9 @@ def test_v1_database_upgrades_to_task_links_with_a_backup(
     upgraded = WorkDatabase(path)
     assert schema_version(path) == migrations.LATEST_VERSION
     assert len(upgraded.backups) == 1 and schema_version(upgraded.backups[0]) == 1
+    assert (
+        verify_database(upgraded.backups[0]) == []
+    )  # a v1 backup is checked against v1, so it stays restorable
     row = {
         "project_id": project.id,
         "task_id": created.id,

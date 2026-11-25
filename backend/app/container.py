@@ -53,7 +53,9 @@ from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
 from app.services.template_studio import TemplateStudioService
+from app.work.ai import WorkAiService
 from app.work.db import WorkDatabase
+from app.work.inspect import WorkInspector
 from app.work.permissions import WorkAccessMode, build_gate
 from app.work.seed import seed_demo, seed_demo_links
 from app.work.service import WorkService
@@ -94,6 +96,7 @@ class Container:
     skills: AssistantSkillService
     template_studio: TemplateStudioService
     work: WorkService
+    work_ai: WorkAiService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
@@ -469,6 +472,10 @@ def build_container(settings: Settings) -> Container:
     template_studio = TemplateStudioService(
         registry=templates, knowledge=knowledge, ai=ai, workflows=ai_workflows, policy=policy
     )
+    # M6 «AI план»: typed task-plan proposals through the configured AIProvider (an optional capability; the mock and
+    # the disabled provider have none, so the feature says it is unavailable instead of faking a plan).
+    work_ai = WorkAiService(work, knowledge, ai)
+    work.ai_planning = work_ai.available
     # M5.7: the tool loop. Off when disabled by configuration or when the runtime policy fell back to the built-in
     # safe text (which forbids tools): fail closed, never a tool loop under a weaker prompt.
     if settings.ai_tools_enabled and not instructions.fallback:
@@ -480,6 +487,8 @@ def build_container(settings: Settings) -> Container:
                     graph=graph_service,
                     templates=template_hub,
                     workflows=ai_workflows,
+                    # M6: read-only work facts; the global policy decides who may view tasks at all.
+                    work=WorkInspector(work, may_view=lambda user: policy.allows(user, Action.view_tasks)),
                 ),
                 tool_limits(settings),
             ),
@@ -522,6 +531,7 @@ def build_container(settings: Settings) -> Container:
         template_hub=template_hub,
         template_studio=template_studio,
         work=work,
+        work_ai=work_ai,
         discovery=discovery,
         external=external,
         instructions=instructions,

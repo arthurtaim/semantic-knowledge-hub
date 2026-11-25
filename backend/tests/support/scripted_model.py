@@ -35,7 +35,9 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «метаданные <ID>» | catalog_query get_metadata |
 | «что такое rag» / «what is rag» | general knowledge, no tools |
 | «confluence» | no tool: says a Confluence total is not available |
-| «задач» | no tool: says tasks are not available |
+| «задач» (work_inspect offered) | M6: work_inspect — get_task for a task key, list_project_tasks overdue for «просроч» + a |
+|  | project key, get_project_schedule otherwise (status / risks), list_projects without a key |
+| «задач» (work_inspect not offered) | no tool: says tasks are not available |
 | «сломанный формат» | malformed reply first, valid after the server's repair note |
 | «всегда мусор» | malformed replies forever |
 | «неизвестный инструмент» | requests `sql_query` (rejected), then answers |
@@ -45,6 +47,11 @@ and point a backend at it (docs/AI_NATIVE_TOOLS.md §Scripted model). Scenarios 
 | «интересны» + history | follow-up: knowledge_search for the PREVIOUS question's subject, then a cited continuation |
 | «реальные данные» | catalog_query facets → discloses the provenance breakdown of the accessible catalog |
 | anything else | cites the first passage verbatim (content answer), or «insufficient» without passages |
+
+M6 «AI план» (app/adapters/ai/work_protocol.py), keyed by the REQUEST text: default — one task per source with a
+verbatim quote, an implementation task with a subtask, a check and a milestone (FS chain); «цикл» — a dependency
+cycle; «неизвестн» — a dependency on an unknown local id; «галлюцин» — an assignee, dates, an invented source and a
+non-verbatim quote; «сломанный формат» — not JSON; «упади» — the model fails.
 
 Template Studio «Создать с помощью AI» (app/adapters/ai/template_protocol.py), keyed by the REQUEST text:
 
@@ -100,6 +107,9 @@ class Round:
     @property
     def tools_offered(self) -> bool:
         return "### catalog_query" in self.system
+
+    def offers(self, tool: str) -> bool:
+        return f"### {tool}" in self.system
 
     @property
     def repair(self) -> bool:
@@ -223,6 +233,8 @@ def tool_script(r: Round) -> str:
             "Общее количество страниц Confluence ассистенту недоступно: частичный поиск не даёт полного числа.",
             confidence="insufficient_evidence",
         )
+    if "задач" in q and r.offers("work_inspect"):
+        return _work_script(r, q)
     if "задач" in q:
         return final(
             "Инструмента для задач в SKH нет — проверить нельзя.", confidence="insufficient_evidence"
@@ -387,6 +399,65 @@ def tool_script(r: Round) -> str:
         quote = _verbatim(body)
         return final(f"Согласно источнику: «{quote}» [{cid}].", citations=[{"id": cid, "quote": quote}])
     return final("Данных недостаточно.", confidence="insufficient_evidence")
+
+
+_TASK_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,9})\b")
+_PROJECT_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,9})\b")
+
+
+def _work_script(r: Round, q: str) -> str:
+    """M6 `work_inspect` (read-only): the double reads work facts and repeats ONLY values from the results."""
+    facts = r.facts("work_inspect")
+    if r.results and not facts:
+        errors = [res.get("error", {}).get("message", "ошибка") for _, _, _, res in r.results]
+        return final(f"Не удалось проверить: {'; '.join(errors)}", confidence="insufficient_evidence")
+    task = _TASK_KEY_RE.search(r.question)
+    project = next(
+        (m.group(1) for m in _PROJECT_KEY_RE.finditer(r.question) if m.group(1) not in ("SKH", "FS", "AI")),
+        None,
+    )
+    if task:
+        if not r.results:
+            return tool_request(("work_inspect", {"operation": "get_task", "task": task.group(1)}))
+        fact = facts[0]
+        t = fact["task"]
+        waits = ", ".join(t["waits_for"]) or "нет"
+        return final(
+            f"{t['key']} «{t['title']}»: статус {t['status']}, ждёт предшественников: {waits} [{fact['fact_id']}].",
+            facts=[fact["fact_id"]],
+        )
+    if project is None:
+        if not r.results:
+            return tool_request(("work_inspect", {"operation": "list_projects"}))
+        fact = facts[0]
+        rows = "; ".join(
+            f"{p['key']}: открыто {p['open']}, просрочено {p['overdue']}" for p in fact["projects"]
+        )
+        return final(
+            f"Доступно проектов: {fact['total']} [{fact['fact_id']}] — {rows}.", facts=[fact["fact_id"]]
+        )
+    if "просроч" in q:
+        if not r.results:
+            args = {"operation": "list_project_tasks", "project": project, "filters": {"overdue": True}}
+            return tool_request(("work_inspect", args))
+        fact = facts[0]
+        keys = ", ".join(t["key"] for t in fact["tasks"]) or "нет"
+        return final(
+            f"Просроченных задач в {project}: {fact['total']} [{fact['fact_id']}] — {keys}.",
+            facts=[fact["fact_id"]],
+        )
+    if not r.results:  # status, risks, delays: the plan summary
+        return tool_request(("work_inspect", {"operation": "get_project_schedule", "project": project}))
+    fact = facts[0]
+    c = fact["counts"]
+    late = ", ".join(t["key"] for t in fact["late"]) or "нет"
+    waiting = "; ".join(f"{w['key']} ждёт {', '.join(w['waits_for'])}" for w in fact["waiting"]) or "нет"
+    return final(
+        f"План {project}, ревизия {fact['plan_revision']} [{fact['fact_id']}]: задач {c['tasks']}, просрочено "
+        f"{c['overdue']}, отстают от плана {c['late']} ({late}), ждут предшественников "
+        f"{c['waiting_for_predecessors']} ({waiting}), без дат {c['unscheduled']}.",
+        facts=[fact["fact_id"]],
+    )
 
 
 def _attention_script(r: Round, q: str, facts: list[dict[str, Any]]) -> str:
@@ -646,12 +717,118 @@ def template_script(prompt: str) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+_PLAN_SOURCE_RE = re.compile(r"<<<SOURCE (\S+)>>>\n(.*?)\n(.*?)\n<<<END SOURCE>>>", re.S)
+
+
+def work_plan_script(prompt: str) -> str:
+    """M6 «AI план» in the model-agnostic JSON protocol (app/adapters/ai/work_protocol.py), keyed by the REQUEST text.
+    Default: one analysis task per source (with a VERBATIM quote from that source), an implementation task with a
+    subtask, a check and a milestone, chained by FS dependencies. Variants exercise the server's validation."""
+    match = _REQUEST_RE.search(prompt)
+    request = (match.group(1) if match else "").strip()
+    q = request.casefold()
+    if "сломанный формат" in q:
+        return "Вот план: сначала анализ, потом разработка — без JSON."
+    if "упади" in q:
+        raise ScriptedFailure("scripted model failure")
+    if "цикл" in q:
+        tasks = [
+            {"local_id": "t1", "title": "Первая", "estimate_workdays": 1, "sources": []},
+            {"local_id": "t2", "title": "Вторая", "estimate_workdays": 1, "sources": []},
+        ]
+        deps = [{"predecessor": "t1", "successor": "t2"}, {"predecessor": "t2", "successor": "t1"}]
+        return json.dumps({"goal": request[:80], "tasks": tasks, "dependencies": deps}, ensure_ascii=False)
+    if "неизвестн" in q:
+        tasks = [{"local_id": "t1", "title": "Единственная", "estimate_workdays": 1, "sources": []}]
+        deps = [{"predecessor": "t1", "successor": "t9"}]
+        return json.dumps({"goal": request[:80], "tasks": tasks, "dependencies": deps}, ensure_ascii=False)
+    sources = []
+    for doc_id, head, body in _PLAN_SOURCE_RE.findall(prompt):
+        text = body.split("\n", 1)[1] if body.startswith("## ") and "\n" in body else body
+        sources.append((doc_id, json.loads(head).get("title", doc_id), _verbatim(text, 80)))
+    tasks: list[dict[str, Any]] = []
+    for index, (doc_id, title, quote) in enumerate(sources[:3], start=1):
+        tasks.append(
+            {
+                "local_id": f"t{index}",
+                "title": f"Разобрать требования: {title}"[:120],
+                "description": "Выписать требования и ограничения из документа.",
+                "estimate_workdays": 2,
+                "priority": "high",
+                "milestone": False,
+                "parent_local_id": None,
+                "sources": [{"document_id": doc_id, "quote": quote}],
+            }
+        )
+    n = len(tasks)
+    first = sources[0] if sources else None
+    impl, sub, check, done = f"t{n + 1}", f"t{n + 2}", f"t{n + 3}", f"t{n + 4}"
+    tasks += [
+        {
+            "local_id": impl,
+            "title": "Реализовать по требованиям",
+            "description": "Реализация по разобранным требованиям.",
+            "estimate_workdays": 3,
+            "priority": "medium",
+            "sources": [{"document_id": first[0], "quote": first[2]}] if first else [],
+        },
+        {
+            "local_id": sub,
+            "title": "Подготовить тестовые данные (синтетические)",
+            "estimate_workdays": 1,
+            "priority": "low",
+            "parent_local_id": impl,
+            "sources": [],
+        },
+        {
+            "local_id": check,
+            "title": "Проверить результат",
+            "estimate_workdays": 1,
+            "priority": "medium",
+            "sources": [],
+        },
+        {
+            "local_id": done,
+            "title": "Готово к приёмке",
+            "estimate_workdays": 0,
+            "milestone": True,
+            "sources": [],
+        },
+    ]
+    deps = [{"predecessor": f"t{i}", "successor": impl} for i in range(1, n + 1)]
+    deps += [{"predecessor": impl, "successor": check}, {"predecessor": check, "successor": done}]
+    if "галлюцин" in q:  # fields the model must not set, an invented source and a non-verbatim quote
+        tasks[0]["assignee_id"] = "real.person@bank.example"
+        tasks[0]["start_date"] = "2026-12-01"
+        tasks[0]["sources"] = [
+            {"document_id": "SEC-HIDDEN-001", "quote": "Секретное требование, которого нет в документах."},
+            *(
+                [{"document_id": first[0], "quote": "Этой фразы в документе точно нет никогда."}]
+                if first
+                else []
+            ),
+        ]
+    payload = {
+        "goal": request[:120],
+        "tasks": tasks,
+        "dependencies": deps,
+        "assumptions": [
+            "Исполнители не назначены — их выбирает человек.",
+            "Оценки предварительные (синтетический пример).",
+        ],
+        "warnings": [],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
     if "Режим системных инструментов SKH" in system:
         return tool_script(parse_round(system, prompt))
     if "Режим проектирования шаблона SKH" in system:
         return template_script(prompt)
+    if "Режим планирования задач SKH" in system:
+        return work_plan_script(prompt)
     return legacy_script(system, prompt, transport)
 
 

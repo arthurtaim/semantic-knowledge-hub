@@ -47,4 +47,10 @@ def enable_membership(client: TestClient) -> ServerSideTestIdentity:
     container.identity = identity
     container.policy = TeamTestPolicy()
     container.work.gate = WorkAccessGate(WorkAccessMode.membership)
+    # The tool loop's work inspector was built with the container's original policy: follow the replacement, as a
+    # deployment built with this policy from the start would.
+    loop = container.assistant._tool_loop
+    inspector = getattr(loop.executor, "_work", None) if loop is not None else None
+    if inspector is not None:
+        inspector._may_view = lambda user: container.policy.allows(user, Action.view_tasks)
     return identity

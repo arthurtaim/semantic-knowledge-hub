@@ -93,6 +93,11 @@ import type {
   TaskLinks,
   ProjectDocuments,
   DocumentTasks,
+  WorkPlanCreate,
+  WorkProposal,
+  WorkProposalApply,
+  WorkProposalApplyResult,
+  WorkProposalEdits,
 } from "./types";
 
 const TIMEOUT_MS = 30_000;
@@ -777,4 +782,17 @@ export const api = {
   workProjectDocuments: (projectId: string) => request<ProjectDocuments>(`/projects/${seg(projectId)}/documents`),
   /** Back-links of a document (tasks from projects the reader may view); 404 when the document is not visible. */
   workDocumentTasks: (documentId: string) => request<DocumentTasks>(`/documents/${seg(documentId)}/tasks`),
+  // --- M6 Step 5: «AI план» — a typed task-plan PROPOSAL; nothing is created until «Создать задачи». ---
+  // Errors: 503 feature_unavailable (no planning-capable AI provider), 422 proposal_invalid (the model's plan has
+  // unknown ids or a cycle, or no evidence was found), 409 proposal_stale (details.reason: plan_changed,
+  // source_changed, source_unavailable, expired, already_applied, already_rejected), 403 forbidden (read-only).
+  // The model call can take a while (a long timeout, like other AI drafts).
+  workCreateProposal: (payload: WorkPlanCreate) =>
+    request<WorkProposal>("/work-ai/proposals", { method: "POST", body: json(payload), timeoutMs: 600_000 }),
+  workProposal: (id: string) => request<WorkProposal>(`/work-ai/proposals/${seg(id)}`),
+  workPreviewProposal: (id: string, edits: WorkProposalEdits) =>
+    request<WorkProposal>(`/work-ai/proposals/${seg(id)}/preview`, { method: "POST", body: json(edits) }),
+  workApplyProposal: (id: string, payload: WorkProposalApply) =>
+    request<WorkProposalApplyResult>(`/work-ai/proposals/${seg(id)}/apply`, { method: "POST", body: json(payload) }),
+  workRejectProposal: (id: string) => request<WorkProposal>(`/work-ai/proposals/${seg(id)}/reject`, { method: "POST" }),
 };

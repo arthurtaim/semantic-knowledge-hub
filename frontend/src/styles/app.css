@@ -14075,3 +14075,194 @@ a.fact-item__title:hover {
   margin: var(--space-2) 0 0;
   font-size: var(--fs-small);
 }
+
+/* ── M6 Step 5: «AI план» — the request and the review of a task-plan proposal ── */
+.work-plan__request,
+.work-plan__review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.work-plan__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.work-plan__request-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.work-plan__meta {
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.work-plan__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--fs-small);
+}
+
+.work-plan__issues {
+  padding-left: 0;
+  list-style: none;
+}
+
+.work-plan__issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+
+.work-plan__issue--warning {
+  color: var(--status-review-text);
+}
+
+.work-plan__issue--info {
+  color: var(--text-secondary);
+}
+
+.work-plan__chosen {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-small);
+}
+
+.work-plan__chosen li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.work-plan__key {
+  margin-right: var(--space-2);
+  font-weight: 500;
+}
+
+.work-plan__start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+}
+
+.work-plan__actions {
+  position: sticky;
+  bottom: 0;
+  padding: var(--space-2) 0;
+  background: var(--bg-raised);
+}
+
+.plan-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--bg-subtle);
+}
+
+.plan-task--child {
+  margin-left: var(--space-4);
+}
+
+.plan-task--dropped {
+  opacity: 0.6;
+}
+
+.plan-task__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.plan-task__include {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.plan-task__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+input.plan-task__title {
+  width: 100%;
+}
+
+.plan-task__parent,
+.plan-task__description,
+.plan-task__plan {
+  margin: 0;
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.plan-task__plan {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.plan-task__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-2);
+}
+
+.plan-task__fields .field {
+  min-width: 0;
+}
+
+.plan-task__fields select,
+.plan-task__fields input {
+  width: 100%;
+  min-width: 0;
+}
+
+.plan-task__sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+.plan-task__quote {
+  margin-left: var(--space-2);
+  color: var(--text-secondary);
+}

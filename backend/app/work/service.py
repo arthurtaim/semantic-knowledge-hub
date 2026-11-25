@@ -93,6 +93,7 @@ from app.work.models import (
     WorkFeatures,
     WorkIdentity,
     WorkLimits,
+    WorkProposalApplyResult,
 )
 from app.work.permissions import LABELS, WorkAccessGate, WorkAccessMode, WorkPrincipal
 
@@ -284,6 +285,49 @@ class _Ctx:
         return sorted(set(found), key=self.number)
 
 
+@dataclass(frozen=True)
+class PlanningContext:
+    project_id: str
+    project_key: str
+    project_title: str
+    plan_revision: int
+    today: date
+    existing: list[tuple[str, str]]  # (key, title) of active tasks
+    anchor: tuple[str, str, int] | None  # (id, key, depth) of the parent the plan goes under
+
+
+@dataclass(frozen=True)
+class ProposalView:
+    project_key: str
+    plan_revision: int
+    may_apply: bool
+    parent_key: str | None
+
+
+@dataclass(frozen=True)
+class PlannedTask:
+    """One task of a reviewed, re-validated AI plan, ready to be written (dates computed by the server)."""
+
+    local_id: str
+    title: str
+    description: str
+    priority: str
+    estimate: int | None
+    milestone: bool
+    parent_local_id: str | None
+    assignee_id: str | None
+    start: date | None
+    end: date | None
+    sources: tuple[tuple[str, str], ...]  # (canonical document id, revision) — verified sources to link
+
+
+@dataclass(frozen=True)
+class PlanToApply:
+    tasks: tuple[PlannedTask, ...]
+    dependencies: tuple[tuple[str, str], ...]  # (predecessor local id, successor local id), FS
+    anchor_id: str | None
+
+
 class WorkService:
     def __init__(
         self,
@@ -303,6 +347,11 @@ class WorkService:
         self.now: Callable[[], datetime] = now or (lambda: datetime.now(UTC))
         # Fault-injection seam for tests (M6-18): called inside the apply transaction after each written task.
         self._after_schedule_write: Callable[[str], None] | None = None
+        # The same seam for applying an AI task plan (after each created task, inside the transaction).
+        self._after_plan_write: Callable[[str], None] | None = None
+        # Step 5: whether «AI план» can work at all here (the configured AIProvider supports work planning); set by
+        # the container. Shown as `features.ai_proposals`; the server still checks the gate on every request.
+        self.ai_planning = False
 
     # --- infrastructure ----------------------------------------------------------------------------------------
     @property
@@ -634,7 +683,7 @@ class WorkService:
             schedule_modes=[m.value for m in ScheduleMode],
             link_relations=[r.value for r in LinkRelation],
             limits=WorkLimits(preview_ttl_seconds=self.preview_ttl_seconds),
-            features=WorkFeatures(document_links=True),
+            features=WorkFeatures(document_links=True, ai_proposals=self.ai_planning),
         )
 
     @staticmethod
@@ -2120,6 +2169,284 @@ class WorkService:
                 for doc_id in sorted(docs, key=str.casefold)
             ],
         )
+
+    # --- AI task plans (Step 5): context reads and the ONE apply transaction --------------------------------------
+    def planning_context(
+        self, principal: WorkPrincipal, project_ref: str, parent_ref: str | None
+    ) -> PlanningContext:
+        """Everything «AI план» may tell the model about the project, after the `propose_work` gate: key, title, plan
+        revision and the active tasks' keys/titles (de-duplication only). Never another project's data."""
+        with self.db.read() as conn:
+            project, _ = self._project_for(conn, principal, project_ref, Action.propose_work)
+            self._require_open(project)
+            ctx = self._ctx(conn, project)
+            anchor: tuple[str, str, int] | None = None
+            if parent_ref is not None:
+                parent = self._lookup_task(conn, parent_ref)
+                if parent is None or parent["project_id"] != project["id"]:
+                    raise _invalid_hierarchy(
+                        "parent_not_in_project", "Родительская задача не найдена в этом проекте."
+                    )
+                self._validate_parent(conn, ctx, parent["id"])
+                anchor = (parent["id"], ctx.key(parent["id"]), ctx.depth(parent["id"]))
+            existing = [
+                (ctx.key(r["id"]), str(r["title"]))
+                for r in sorted(ctx.skeleton.values(), key=lambda r: int(r["number"]))
+                if r["archived_at"] is None
+            ]
+            return PlanningContext(
+                project_id=project["id"],
+                project_key=project["key"],
+                project_title=project["title"],
+                plan_revision=int(project["plan_revision"]),
+                today=ctx.today,
+                existing=existing,
+                anchor=anchor,
+            )
+
+    def proposal_view(
+        self, principal: WorkPrincipal, project_id: str, parent_task_id: str | None
+    ) -> ProposalView:
+        """The project facts a stored proposal is shown with (after the `propose_work` gate)."""
+        with self.db.read() as conn:
+            project, role = self._project_for(conn, principal, project_id, Action.propose_work)
+            parent_key = None
+            if parent_task_id:
+                parent = store.get_task(conn, parent_task_id)
+                parent_key = f"{project['key']}-{parent['number']}" if parent is not None else None
+            return ProposalView(
+                project_key=project["key"],
+                plan_revision=int(project["plan_revision"]),
+                may_apply=project["status"] != ProjectStatus.archived.value
+                and self.gate.allows(principal, Action.apply_work_proposal, role),
+                parent_key=parent_key,
+            )
+
+    def apply_task_plan(
+        self,
+        principal: WorkPrincipal,
+        proposal_id: str,
+        *,
+        client_request_id: str,
+        request_hash: str,
+        prepare: Callable[[sqlite3.Row, sqlite3.Row], PlanToApply],
+    ) -> WorkProposalApplyResult:
+        """Apply a reviewed AI task plan in ONE write transaction: idempotent replay → proposal visible and still
+        `suggested` → `prepare` re-validates it against the CURRENT state (plan revision, expiry, sources, edits;
+        raises `409 proposal_stale` / `422 proposal_invalid`) → tasks (real ids and keys replace local ids),
+        FS dependencies, document links, audit, one plan-revision bump, the proposal marked `applied`. Any error rolls
+        EVERYTHING back (M6-18); a replay with the same `client_request_id` returns the first result."""
+        with self.db.write() as conn:
+            row = store.get_proposal(conn, proposal_id)
+            if row is None or row["actor_id"] != principal.user.user_id:
+                raise _not_found("Предложение не найдено.")  # proposals are personal, like schedule previews
+            project, _ = self._project_for(conn, principal, row["project_id"], Action.apply_work_proposal)
+            scope = f"proposal_apply:{proposal_id}"
+            replay = self._replay(conn, scope, principal, client_request_id, request_hash)
+            if replay is not None:
+                return WorkProposalApplyResult.model_validate({**replay, "replayed": True})
+            self._require_open(project)
+            if row["status"] != "suggested":
+                raise ApiError(
+                    409,
+                    "proposal_stale",
+                    "Предложение уже применено или отклонено — подготовьте новое.",
+                    {"reason": f"already_{row['status']}"},
+                )
+            plan = prepare(row, project)
+            ctx = self._ctx(conn, project)
+            depth = ctx.depth(plan.anchor_id) if plan.anchor_id else 0
+            if plan.anchor_id is not None:
+                self._validate_parent(conn, ctx, plan.anchor_id)
+            by_local = {t.local_id: t for t in plan.tasks}
+
+            def level(task: PlannedTask) -> int:
+                n, current, seen = 1, task, set()
+                while (
+                    current.parent_local_id
+                    and current.parent_local_id in by_local
+                    and current.local_id not in seen
+                ):
+                    seen.add(current.local_id)
+                    current = by_local[current.parent_local_id]
+                    n += 1
+                return n
+
+            if any(depth + level(t) > MAX_DEPTH for t in plan.tasks):
+                raise _invalid_hierarchy("too_deep", f"Допустимо не более {MAX_DEPTH} уровней вложенности.")
+            if store.count_active_tasks(conn, project["id"]) + len(plan.tasks) > MAX_TASKS_PER_PROJECT:
+                raise ApiError(
+                    409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
+                )
+            for task in plan.tasks:
+                self._check_assignee(conn, project["id"], task.assignee_id)
+            at = self._now_iso()
+            ids: dict[str, str] = {}
+            created: list[str] = []
+            for task in sorted(plan.tasks, key=level):  # parents before their subtasks; stable proposal order
+                number = store.allocate_task_number(conn, project["id"])
+                task_id = store.new_id()
+                ids[task.local_id] = task_id
+                parent_id = ids.get(task.parent_local_id) if task.parent_local_id else plan.anchor_id
+                row_out = {
+                    "id": task_id,
+                    "project_id": project["id"],
+                    "number": number,
+                    "parent_task_id": parent_id,
+                    "title": task.title,
+                    "description": task.description,
+                    "status": TaskStatus.todo.value,
+                    "priority": task.priority,
+                    "assignee_id": task.assignee_id,
+                    "reporter_id": principal.user.user_id,
+                    "estimate_workdays": task.estimate,
+                    "start_date": _iso(task.start),
+                    "end_exclusive": _iso(task.end),
+                    "due_date": None,
+                    "is_milestone": int(task.milestone),
+                    "date_locked": 0,
+                    "sort_order": number * 1024,
+                    "is_demo": 0,
+                    "created_by": principal.user.user_id,
+                    "created_at": at,
+                    "updated_by": principal.user.user_id,
+                    "updated_at": at,
+                }
+                store.insert_task(conn, row_out)
+                self._audit(
+                    conn,
+                    principal,
+                    operation="task_created",
+                    entity_type="task",
+                    entity_id=task_id,
+                    project_id=project["id"],
+                    task_id=task_id,
+                    changes={**_created_changes(row_out), "proposal_id": proposal_id},
+                    correlation_id=proposal_id,
+                    at=at,
+                )
+                created.append(task_id)
+                if self._after_plan_write is not None:
+                    self._after_plan_write(task_id)
+            for pred, succ in plan.dependencies:
+                dep_id = store.new_id()
+                store.insert_dependency(
+                    conn,
+                    {
+                        "id": dep_id,
+                        "project_id": project["id"],
+                        "predecessor_id": ids[pred],
+                        "successor_id": ids[succ],
+                        "kind": "FS",
+                        "lag_workdays": 0,
+                        "created_by": principal.user.user_id,
+                        "created_at": at,
+                    },
+                )
+                self._audit(
+                    conn,
+                    principal,
+                    operation="dependency_added",
+                    entity_type="dependency",
+                    entity_id=dep_id,
+                    project_id=project["id"],
+                    task_id=ids[succ],
+                    related_task_id=ids[pred],
+                    changes={
+                        "predecessor_id": ids[pred],
+                        "successor_id": ids[succ],
+                        "kind": "FS",
+                        "via": "ai_proposal",
+                    },
+                    correlation_id=proposal_id,
+                    at=at,
+                )
+            links = 0
+            for task in plan.tasks:
+                for document_id, revision in dict.fromkeys(task.sources):
+                    link_id = store.new_id()
+                    store.insert_link(
+                        conn,
+                        {
+                            "id": link_id,
+                            "project_id": project["id"],
+                            "task_id": ids[task.local_id],
+                            "target_type": "document",
+                            "source_system": "skh",
+                            "document_id": document_id,
+                            "relation": "implements",
+                            "revision_at_link": revision,
+                            "status": "active",
+                            "created_by": principal.user.user_id,
+                            "created_at": at,
+                        },
+                    )
+                    self._audit(
+                        conn,
+                        principal,
+                        operation="link_added",
+                        entity_type="link",
+                        entity_id=link_id,
+                        project_id=project["id"],
+                        task_id=ids[task.local_id],
+                        changes={
+                            "document_id": document_id,
+                            "relation": "implements",
+                            "revision_at_link": revision,
+                        },
+                        correlation_id=proposal_id,
+                        at=at,
+                    )
+                    links += 1
+            revision_now, project = self._bump_and_read(conn, project["id"])
+            keys = {
+                local: f"{project['key']}-{_must(store.get_task(conn, tid))['number']}"
+                for local, tid in ids.items()
+            }
+            if not store.decide_proposal(
+                conn,
+                proposal_id,
+                "applied",
+                principal.user.user_id,
+                at,
+                {"task_ids": ids, "task_keys": keys, "plan_revision": revision_now},
+            ):
+                raise ApiError(
+                    409, "proposal_stale", "Предложение уже применено.", {"reason": "already_applied"}
+                )
+            self._audit(
+                conn,
+                principal,
+                operation="proposal_applied",
+                entity_type="proposal",
+                entity_id=proposal_id,
+                project_id=project["id"],
+                changes={"tasks": len(created), "dependencies": len(plan.dependencies), "links": links},
+                correlation_id=proposal_id,
+                at=at,
+            )
+            ctx = self._ctx(conn, project, principal)
+            out = WorkProposalApplyResult(
+                proposal_id=proposal_id,
+                project_id=project["id"],
+                applied=True,
+                plan_revision=revision_now,
+                created_tasks=[self._task_out(_must(store.get_task(conn, t)), ctx) for t in created],
+                created_dependencies=len(plan.dependencies),
+                created_links=links,
+            )
+            self._remember(
+                conn, scope, principal, client_request_id, request_hash, out.model_dump(mode="json")
+            )
+            logger.info(
+                "work ai plan applied project=%s tasks=%s deps=%s links=%s plan_revision=%s",
+                project["key"],
+                len(created),
+                len(plan.dependencies),
+                links,
+                revision_now,
+            )
+            return out
 
     # --- activity ----------------------------------------------------------------------------------------------
     def _activity(

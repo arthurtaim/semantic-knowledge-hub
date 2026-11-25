@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.work.migrations import LATEST_VERSION, MIGRATIONS, REQUIRED_TABLES
+from app.work.migrations import LATEST_VERSION, MIGRATIONS, required_tables
 
 logger = logging.getLogger("skh.work.db")
 
@@ -82,7 +82,7 @@ def verify_database(path: Path) -> list[str]:
             problems.append(f"схема v{version} новее, чем знает приложение (v{LATEST_VERSION})")
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         if version >= 1:
-            missing = sorted(REQUIRED_TABLES - tables)
+            missing = sorted(required_tables(version, MIGRATIONS) - tables)
             if missing:
                 problems.append("нет таблиц: " + ", ".join(missing))
             if conn.execute("PRAGMA foreign_key_check").fetchall():
@@ -201,7 +201,9 @@ class WorkDatabase:
     @staticmethod
     def _schema_problems(conn: sqlite3.Connection) -> list[str]:
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        problems = [f"missing table {name}" for name in sorted(REQUIRED_TABLES - tables)]
+        problems = [
+            f"missing table {name}" for name in sorted(required_tables(LATEST_VERSION, MIGRATIONS) - tables)
+        ]
         if conn.execute("PRAGMA foreign_key_check").fetchall():
             problems.append("foreign_key_check reported violations")
         return problems

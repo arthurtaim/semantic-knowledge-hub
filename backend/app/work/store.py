@@ -516,3 +516,38 @@ def purge_previews(conn: sqlite3.Connection, older_than: str) -> int:
     return conn.execute(
         "DELETE FROM work_schedule_previews WHERE applied_at IS NULL AND expires_at < ?", (older_than,)
     ).rowcount
+
+
+# --- AI task-plan proposals (Step 5) ---------------------------------------------------------------------------
+def insert_proposal(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    columns = ", ".join(row)
+    placeholders = ", ".join(f":{k}" for k in row)
+    conn.execute(f"INSERT INTO work_ai_proposals ({columns}) VALUES ({placeholders})", dict(row))
+
+
+def get_proposal(conn: sqlite3.Connection, proposal_id: str) -> Row | None:
+    row: Row | None = conn.execute("SELECT * FROM work_ai_proposals WHERE id = ?", (proposal_id,)).fetchone()
+    return row
+
+
+def decide_proposal(
+    conn: sqlite3.Connection,
+    proposal_id: str,
+    status: str,
+    actor: str,
+    at: str,
+    result: Mapping[str, Any] | None,
+) -> bool:
+    """suggested → applied | rejected, once (compare-and-set on the status)."""
+    cursor = conn.execute(
+        "UPDATE work_ai_proposals SET status = ?, decided_by = ?, decided_at = ?, result_json = ? "
+        "WHERE id = ? AND status = 'suggested'",
+        (
+            status,
+            actor,
+            at,
+            json.dumps(result, ensure_ascii=False) if result is not None else None,
+            proposal_id,
+        ),
+    )
+    return cursor.rowcount == 1

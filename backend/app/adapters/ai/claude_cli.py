@@ -41,6 +41,7 @@ from app.adapters.ai.base import (
     ToolTurnEvent,
     ToolTurnReply,
     ToolTurnRequest,
+    WorkPlanRequest,
 )
 from app.adapters.ai.openai_compatible import (
     ASSIST_PROMPT,
@@ -198,6 +199,8 @@ class ClaudeCodeCLIProvider:
     supports_edit_suggestions = True
     supports_authoring = True
     supports_template_drafting = True  # Template Studio: the model-agnostic protocol of template_protocol.py
+    # M6 «AI план»: the model-agnostic JSON protocol of work_protocol.py (a proposal; the backend validates everything).
+    supports_work_planning = True
     # M5.7: tool loop through the constrained text envelope. The CLI keeps every tool disabled (the worker flags are
     # unchanged): SKH tools are executed by the backend, never by the CLI (docs/AI_NATIVE_TOOLS.md).
     supports_tools = True
@@ -370,6 +373,16 @@ class ClaudeCodeCLIProvider:
         return await self._collect(
             compose(self._instructions.for_task("authoring"), TEMPLATE_PROMPT),
             build_template_message(request, self._max_context_chars),
+            self._draft_timeout,
+        )
+
+    async def plan_work(self, request: WorkPlanRequest) -> str:
+        """M6 «AI план»: a PROPOSAL of tasks, the raw reply; the backend parses and validates it (work_protocol.py)."""
+        from app.adapters.ai.work_protocol import build_work_plan_message, system_prompt
+
+        return await self._collect(
+            compose(self._instructions.for_task("authoring"), system_prompt(request)),
+            build_work_plan_message(request, self._max_context_chars),
             self._draft_timeout,
         )
 

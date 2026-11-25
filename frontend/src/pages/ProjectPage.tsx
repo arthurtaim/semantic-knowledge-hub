@@ -8,6 +8,7 @@ import { SidePanel, useSidePanelMode } from "../components/shell/SidePanel";
 import { Button, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { TaskCreateSheet } from "../components/work/CreateForms";
+import { WorkPlanSheet } from "../components/work/WorkPlan";
 import { GanttChart } from "../components/work/GanttChart";
 import { SchedulePreviewDialog, type ScheduleRequest } from "../components/work/SchedulePreviewDialog";
 import { TaskBoard } from "../components/work/TaskBoard";
@@ -49,8 +50,9 @@ import { writePreference } from "../lib/storage";
  * all three views (docked ≥ 1200 px, a sheet below). Every screen starts from `GET /api/work/capabilities`: without
  * write rights there are no write controls at all.
  *
- * Step 5 (AI task proposals) adds its entry («AI план») to the toolbar actions next to «Задача» when
- * `capabilities.features.ai_proposals` is on.
+ * «AI план» (Step 5, typed AI task-plan proposals) sits next to «Задача» only when the server reports
+ * `capabilities.features.ai_proposals` (a planning-capable AI provider) AND the reader may write; the open proposal is
+ * in the URL (`?proposal=WAP-…`). Without AI the button is simply absent — everything else works as before.
  */
 
 const PHONE = "(max-width: 719.98px)";
@@ -63,6 +65,9 @@ export function ProjectPage() {
   const filters = useMemo(() => filtersFromParams(params), [params]);
   const zoom = resolveZoom(params);
   const selectedKey = params.get("task");
+  const proposalParam = params.get("proposal");
+  const proposalId = proposalParam && /^WAP-[0-9a-f]{16}$/.test(proposalParam) ? proposalParam : null;
+  const [planning, setPlanning] = useState(false);
   const phone = useMediaQuery(PHONE);
   const panelMode = useSidePanelMode();
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
@@ -211,6 +216,7 @@ export function ProjectPage() {
   }
 
   const selected = selectedKey ? (tasks.find((t) => t.key === selectedKey) ?? null) : null;
+  const aiPlanOn = Boolean(capabilities?.features.ai_proposals);
   const maxDepth = capabilities?.limits.max_depth ?? 4;
 
   const viewSwitch = (
@@ -265,9 +271,16 @@ export function ProjectPage() {
         meta={phone ? null : viewSwitch}
         actions={
           canWrite ? (
-            <Button variant="primary" icon="plus" className="button--collapsible button--with-icon" onClick={() => setCreating({ parent: null })}>
-              <span className="button__label">Задача</span>
-            </Button>
+            <>
+              {aiPlanOn ? (
+                <Button icon="assistant" className="button--collapsible button--with-icon" onClick={() => setPlanning(true)} aria-label="AI план">
+                  <span className="button__label">AI план</span>
+                </Button>
+              ) : null}
+              <Button variant="primary" icon="plus" className="button--collapsible button--with-icon" onClick={() => setCreating({ parent: null })}>
+                <span className="button__label">Задача</span>
+              </Button>
+            </>
           ) : null
         }
       />
@@ -352,6 +365,28 @@ export function ProjectPage() {
           onApplied={applied}
           onRefresh={ws.refresh}
           onPreview={onPreview}
+        />
+      ) : null}
+      {(planning || proposalId) && project ? (
+        <WorkPlanSheet
+          project={project}
+          assignees={ws.assignees}
+          canWrite={canWrite && aiPlanOn}
+          proposalId={proposalId}
+          onProposal={(id) => setUrl({ proposal: id })}
+          onClose={() => {
+            setPlanning(false);
+            setUrl({ proposal: null });
+          }}
+          onApplied={(result) => {
+            setPlanning(false);
+            setUrl({ proposal: null });
+            say(
+              "success",
+              `${result.replayed ? "Повтор того же подтверждения: " : ""}создано задач по предложению AI — ${result.created_tasks.length}, зависимостей — ${result.created_dependencies}, связей с документами — ${result.created_links}. Ревизия плана ${result.plan_revision}.`,
+            );
+            void ws.refresh();
+          }}
         />
       ) : null}
       {creating ? (

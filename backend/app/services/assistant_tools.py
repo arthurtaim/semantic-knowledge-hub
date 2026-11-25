@@ -9,10 +9,16 @@ the assistant's own (`prepare_passage_text`), so quotes are verified by the exis
 Nothing here writes knowledge. `drafts_propose` delegates to the existing AiWorkflowService, which stores a
 PROPOSAL (Accept/Reject stays an explicit user action, stale checks unchanged); it is offered only to users who may
 create proposals.
+
+M6: `work_inspect` reads projects, tasks, dependencies and plan summaries of the work module through
+`app/work/inspect.py` (read-only, the reader's own projects, bounded); it is offered only when the work module is
+enabled and the reader may view tasks. There is no work WRITE tool: AI task plans are typed proposals created and
+applied only from the project UI after an explicit Accept (app/work/ai.py).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from collections.abc import Callable
@@ -25,6 +31,7 @@ from app.adapters.knowledge.base import KnowledgeSnapshot, RepositoryUnavailable
 from app.adapters.search.base import SearchFilters
 from app.domain.assistant_tools import (
     READ_TOOLS,
+    WORK_TOOL,
     CatalogFilters,
     CatalogQueryArgs,
     DraftsProposeArgs,
@@ -32,6 +39,7 @@ from app.domain.assistant_tools import (
     KnowledgeSearchArgs,
     TemplatesInspectArgs,
     ToolName,
+    WorkInspectArgs,
     _Args,
 )
 from app.domain.doc_tree import ATTENTION_REASON_LABELS, AttentionReason
@@ -52,6 +60,7 @@ from app.services import graph as g
 from app.services.knowledge import owner_missing as _owner_missing
 from app.services.knowledge import sort_documents
 from app.services.retrieval import only_boilerplate
+from app.work.links import DocumentScope
 
 if TYPE_CHECKING:
     from app.services.ai_workflows import AiWorkflowService
@@ -59,6 +68,7 @@ if TYPE_CHECKING:
     from app.services.knowledge import KnowledgeService
     from app.services.links import LinkService
     from app.services.template_hub import TemplateHubService
+    from app.work.inspect import WorkInspector
 
 logger = logging.getLogger("skh.assistant.tools")
 
@@ -176,6 +186,7 @@ class SystemToolExecutor:
         graph: GraphService,
         templates: TemplateHubService,
         workflows: AiWorkflowService | None = None,
+        work: WorkInspector | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._knowledge = knowledge
@@ -183,13 +194,17 @@ class SystemToolExecutor:
         self._graph = graph
         self._templates = templates
         self._workflows = workflows
+        self._work = work
         self._clock = clock
 
     def available(self, ctx: ToolContext) -> tuple[ToolName, ...]:
         """Tools offered to the model for this request (a tool the user may not use is not even described)."""
+        tools: tuple[ToolName, ...] = READ_TOOLS
+        if self._work is not None and self._work.offered(ctx.user):
+            tools = (*tools, WORK_TOOL)
         if ctx.can_propose and self._workflows is not None:
-            return (*READ_TOOLS, "drafts_propose")
-        return READ_TOOLS
+            tools = (*tools, "drafts_propose")
+        return tools
 
     async def execute(
         self, ctx: ToolContext, tool: ToolName, args: _Args, *, fact_ref: str, cid_start: int
@@ -206,6 +221,8 @@ class SystemToolExecutor:
                 return await self._templates_inspect(ctx, args, fact_ref)
             if isinstance(args, DraftsProposeArgs):
                 return await self._propose(ctx, args, fact_ref)
+            if isinstance(args, WorkInspectArgs):
+                return await self._work_inspect(ctx, args, fact_ref)
             raise ToolFailure("unknown_tool", "unknown_tool", "Такого инструмента нет.")
         except ToolFailure as failure:
             return failure_result(tool, operation, failure)
@@ -1036,6 +1053,35 @@ class SystemToolExecutor:
     def _templates_label(self) -> str | None:
         label = self._knowledge.template_registry_label()
         return label if label and label != "-" else None
+
+    # --- work_inspect (M6): read-only work facts -------------------------------------------------------------------
+    async def _work_inspect(self, ctx: ToolContext, args: WorkInspectArgs, ref: str) -> ToolResult:
+        if self._work is None or not self._work.offered(ctx.user):
+            raise ToolFailure("denied", "forbidden", "Модуль задач недоступен для этого запроса.")
+        try:
+            snapshot = await self._knowledge.snapshot(ctx.user)
+            documents = DocumentScope.from_snapshot(snapshot, self._knowledge.generation_label(snapshot))
+        except RepositoryUnavailableError:
+            documents = DocumentScope.unavailable()  # tasks stay readable; linked documents are not named
+        result = await asyncio.to_thread(self._work.inspect, ctx.user, args, documents)
+        fact = self._fact(
+            ref=ref,
+            tool=WORK_TOOL,
+            operation=result.operation,
+            label=result.label,
+            source="skh_work",
+            generation=None,  # work facts carry their plan revision in the filters, not a knowledge generation
+            value=result.value,
+            unit=result.unit,
+            effective_filters=result.effective_filters,
+            definition=result.definition,
+            items=result.items,
+            truncated=result.truncated,
+        )
+        payload: dict[str, Any] = {**self._provenance(fact), **result.payload, "read_only": True}
+        if result.definition:
+            payload["definition"] = result.definition
+        return ToolResult(WORK_TOOL, result.operation, "ok", payload, fact=fact, result_count=result.value)
 
     # --- drafts_propose (P1): a proposal through the existing M5.6.3 workflow -----------------------------------
     async def _propose(self, ctx: ToolContext, args: DraftsProposeArgs, ref: str) -> ToolResult:

@@ -761,3 +761,175 @@ class WorkCapabilities(BaseModel):
 
 ProjectStats.model_rebuild()
 TaskDependencies.model_rebuild()
+
+
+# --- AI task-plan proposals (Step 5) ---------------------------------------------------------------------------
+PLAN_TASKS_MAX = 30
+PLAN_DEPENDENCIES_MAX = 60
+PLAN_DOCUMENTS_MAX = 5
+PLAN_REQUEST_MAX = 2000
+PLAN_ESTIMATE_MAX = 60
+LocalId = Annotated[str, Field(min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")]
+
+
+class WorkPlanCreate(_Request):
+    """«AI план»: decompose documents of the knowledge base into a task PROPOSAL. Nothing is written to tasks. The
+    documents must be visible to the reader; without any, the server picks approved documents matching the request."""
+
+    project_id: EntityId
+    request: Annotated[str, Field(min_length=3, max_length=PLAN_REQUEST_MAX)]
+    document_ids: Annotated[list[DocumentIdField], Field(max_length=PLAN_DOCUMENTS_MAX)] = Field(
+        default_factory=list
+    )
+    start_date: date | None = (
+        None  # dates are computed by the server from this start, or the tasks stay unscheduled
+    )
+    parent_task_id: EntityId | None = None  # all top-level proposed tasks go under this task
+
+    @field_validator("request")
+    @classmethod
+    def _request(cls, value: str) -> str:
+        value = _clean_text(value).strip()
+        if len(value) < 3:
+            raise ValueError("request is too short")
+        return value
+
+
+class ProposalSourceRef(BaseModel):
+    """A document a proposed task relies on. `quote` is kept only when the server found it VERBATIM in that
+    document; `title`/`status`/`state` are read from the reader's current snapshot (null when not visible now)."""
+
+    document_id: str | None  # null when the reader cannot see the document now (no id is revealed)
+    revision: str | None
+    quote: str | None
+    verified: bool
+    title: str | None = None
+    status: str | None = None
+    state: LinkState = "current"
+
+
+class ProposalIssue(BaseModel):
+    # assignee_ignored · dates_ignored · task_id_ignored · unknown_source · quote_not_verified · estimate_missing ·
+    # estimate_clamped · priority_defaulted · duplicate_of_existing · duplicate_dependency · not_approved_source ·
+    # predecessor_unscheduled · truncated
+    code: str
+    message: str
+    local_id: str | None = None
+    severity: Literal["info", "warning"] = "warning"
+
+
+class ProposedTask(BaseModel):
+    local_id: str
+    title: str
+    description: str
+    priority: TaskPriority
+    estimate_workdays: int | None  # null: no estimate → the task stays unscheduled (dates are never invented)
+    is_milestone: bool
+    parent_local_id: str | None
+    assignee_id: str | None = None  # only ever set by a person while reviewing (the model cannot)
+    sources: list[ProposalSourceRef]
+    duplicate_of: str | None = None  # the key of an existing task with the same title
+    # Computed by the server from `start_date` and the FS dependencies (Mon–Fri); null when unscheduled.
+    start_date: date | None = None
+    end_exclusive: date | None = None
+    last_day: date | None = None
+    included: bool = True
+
+
+class ProposedDependency(BaseModel):
+    predecessor: str
+    successor: str
+    kind: Literal["FS"] = "FS"
+
+
+class WorkProposalOut(BaseModel):
+    id: str
+    project_id: str
+    project_key: str
+    kind: Literal["task_plan"] = "task_plan"
+    schema_version: str
+    status: Literal["suggested", "applied", "rejected"]
+    # ready: may be applied · stale: the base changed (see stale_reasons) — regenerate, never applied silently
+    state: Literal["ready", "stale", "applied", "rejected"]
+    stale_reasons: list[
+        str
+    ]  # plan_changed · source_changed · source_unavailable · expired · knowledge_unavailable
+    provider: str
+    request: str
+    goal: str
+    start_date: date | None
+    parent_task_id: str | None
+    parent_task_key: str | None
+    base_plan_revision: int
+    current_plan_revision: int
+    created_at: datetime
+    expires_at: datetime
+    decided_at: datetime | None
+    tasks: list[ProposedTask]
+    dependencies: list[ProposedDependency]
+    sources: list[ProposalSourceRef]
+    assumptions: list[str]
+    issues: list[ProposalIssue]
+    can_apply: bool
+    applied_task_keys: list[str]
+
+
+class ProposalTaskEdit(_Request):
+    """A person's edit of ONE proposed task (only these fields; a proposal is never replaced by an arbitrary plan)."""
+
+    local_id: LocalId
+    include: bool = True
+    title: TaskTitle | None = None
+    description: Annotated[str, Field(max_length=DESCRIPTION_MAX)] | None = None
+    priority: TaskPriority | None = None
+    estimate_workdays: Annotated[int, Field(ge=0, le=PLAN_ESTIMATE_MAX)] | None = None
+    assignee_id: AssigneeId | None = None  # chosen from the directory; validated like any assignment
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = _clean_text(value).strip()
+        if not value:
+            raise ValueError("title must not be blank")
+        return value
+
+
+class DependencyRef(_Request):
+    predecessor: LocalId
+    successor: LocalId
+
+
+class WorkProposalEdits(_Request):
+    """The reviewed version of a stored proposal: per-task edits, dependencies to DROP, the planned start. Tasks and
+    dependencies can only be kept, edited or dropped — never added."""
+
+    tasks: Annotated[list[ProposalTaskEdit], Field(max_length=PLAN_TASKS_MAX)] = Field(default_factory=list)
+    excluded_dependencies: Annotated[list[DependencyRef], Field(max_length=PLAN_DEPENDENCIES_MAX)] = Field(
+        default_factory=list
+    )
+    start_date: date | None = None  # when present (also null) it replaces the proposal's start
+
+    @model_validator(mode="after")
+    def _unique(self) -> WorkProposalEdits:
+        ids = [t.local_id for t in self.tasks]
+        if len(ids) != len(set(ids)):
+            raise ValueError("a task may appear only once in tasks")
+        return self
+
+
+class WorkProposalApply(WorkProposalEdits):
+    expected_plan_revision: Annotated[int, Field(ge=1)]
+    client_request_id: ClientRequestId
+
+
+class WorkProposalApplyResult(BaseModel):
+    proposal_id: str
+    project_id: str
+    applied: bool
+    plan_revision: int
+    created_tasks: list[TaskOut]
+    created_dependencies: int
+    created_links: int
+    replayed: bool = False

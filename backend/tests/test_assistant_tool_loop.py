@@ -352,7 +352,7 @@ def test_general_question_is_answered_and_labelled_as_general(tool_client: Facto
 
 
 def test_unavailable_capability_is_said_not_invented(tool_client: Factory) -> None:
-    client, _ = tool_client()
+    client, _ = tool_client(task_system="disabled")  # M6: with the work module on, work_inspect answers this
     data = ask(client, "Сколько просроченных задач?")
     assert data["confidence"] == "insufficient_evidence" and data["system_facts"] == []
     assert data["answer"].startswith(FIXED_INSUFFICIENT) and "каталог документов" in data["answer"]

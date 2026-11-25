@@ -364,13 +364,15 @@ export type SystemFactSource =
   | "skh_document_registry"
   | "skh_knowledge_graph"
   | "skh_template_registry"
-  | "skh_ai_proposals";
+  | "skh_ai_proposals"
+  /** M6: read-only work facts (`work_inspect`): projects, tasks, dependencies, plan summaries. */
+  | "skh_work";
 
 /** One visible object of a structured observation. `app_path` is an in-app link when the app can open it. */
 export interface SystemFactItem {
   id: string;
   title: string;
-  kind: "document" | "template" | "relation" | "proposal";
+  kind: "document" | "template" | "relation" | "proposal" | "task" | "project";
   status: string | null;
   /** e.g. «guide · владелец не назначен · обновлён 2026-11-21», «references · body:12», «v2 · действующая». */
   detail: string | null;
@@ -2351,4 +2353,113 @@ export interface ProjectDocuments {
   project_id: string;
   knowledge_available: boolean;
   items: ProjectDocumentRef[];
+}
+
+// --- M6 Step 5: «AI план» — typed task-plan proposals (docs/WORK_MANAGEMENT.md §11) ---------------------------------
+
+export interface WorkPlanCreate {
+  project_id: string;
+  request: string;
+  document_ids?: string[];
+  start_date?: string | null;
+  parent_task_id?: string | null;
+}
+
+export interface ProposalSourceRef {
+  /** null when the reader cannot see the document now (nothing about it is shown). */
+  document_id: string | null;
+  revision: string | null;
+  /** Kept only when the server found it verbatim in the document. */
+  quote: string | null;
+  verified: boolean;
+  title: string | null;
+  status: string | null;
+  state: LinkState;
+}
+
+export interface ProposalIssue {
+  code: string;
+  message: string;
+  local_id: string | null;
+  severity: "info" | "warning";
+}
+
+export interface ProposedTask {
+  local_id: string;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  /** null: no estimate — the task stays without dates. */
+  estimate_workdays: number | null;
+  is_milestone: boolean;
+  parent_local_id: string | null;
+  assignee_id: string | null;
+  sources: ProposalSourceRef[];
+  duplicate_of: string | null;
+  /** Computed by the server from the chosen start and the FS dependencies (Mon–Fri). */
+  start_date: string | null;
+  end_exclusive: string | null;
+  last_day: string | null;
+  included: boolean;
+}
+
+export interface WorkProposal {
+  id: string;
+  project_id: string;
+  project_key: string;
+  kind: "task_plan";
+  schema_version: string;
+  status: "suggested" | "applied" | "rejected";
+  state: "ready" | "stale" | "applied" | "rejected";
+  stale_reasons: string[];
+  provider: string;
+  request: string;
+  goal: string;
+  start_date: string | null;
+  parent_task_id: string | null;
+  parent_task_key: string | null;
+  base_plan_revision: number;
+  current_plan_revision: number;
+  created_at: string;
+  expires_at: string;
+  decided_at: string | null;
+  tasks: ProposedTask[];
+  dependencies: { predecessor: string; successor: string; kind: "FS" }[];
+  sources: ProposalSourceRef[];
+  assumptions: string[];
+  issues: ProposalIssue[];
+  can_apply: boolean;
+  applied_task_keys: string[];
+}
+
+export interface ProposalTaskEdit {
+  local_id: string;
+  include?: boolean;
+  title?: string;
+  description?: string;
+  priority?: TaskPriority;
+  estimate_workdays?: number;
+  assignee_id?: string | null;
+}
+
+export interface WorkProposalEdits {
+  tasks?: ProposalTaskEdit[];
+  excluded_dependencies?: { predecessor: string; successor: string }[];
+  start_date?: string | null;
+}
+
+export interface WorkProposalApply extends WorkProposalEdits {
+  expected_plan_revision: number;
+  client_request_id: string;
+}
+
+export interface WorkProposalApplyResult {
+  proposal_id: string;
+  project_id: string;
+  applied: boolean;
+  plan_revision: number;
+  created_tasks: WorkTask[];
+  created_dependencies: number;
+  created_links: number;
+  replayed: boolean;
 }

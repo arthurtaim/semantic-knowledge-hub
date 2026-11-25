@@ -12,6 +12,7 @@ import {
   filtersText,
   isProposalFact,
   proposalCardId,
+  workItemStatus,
 } from "../lib/systemFacts";
 import { OriginMark } from "./Provenance";
 import { StatusMark } from "./ui/StatusMark";
@@ -31,6 +32,7 @@ const SCOPE_TEXT: Record<string, string> = {
   skh_knowledge_graph: "доступные вам документы",
   skh_template_registry: "реестр шаблонов",
   skh_ai_proposals: "ваше предложение",
+  skh_work: "доступные вам проекты",
 };
 const ITEMS_SHOWN = 8;
 
@@ -116,6 +118,8 @@ export function FactMarker({ fact, label, turnNo, hasProposal }: FactMarkerProps
 
 function ItemStatus({ item }: { item: SystemFactItem }) {
   if (!item.status) return null;
+  const work = workItemStatus(item);
+  if (work) return <span className="fact-item__kind">{work}</span>;
   if (item.kind === "template") {
     return <span className="fact-item__kind">{TEMPLATE_STATUS_LABEL[item.status] ?? item.status}</span>;
   }
