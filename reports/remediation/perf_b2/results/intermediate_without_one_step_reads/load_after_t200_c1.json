@@ -1,0 +1,96 @@
+{
+ "label": "load_after_t200_c1",
+ "base": "http://127.0.0.1:8051",
+ "clients": 1,
+ "seconds": 30.0,
+ "warmup_s": 5.0,
+ "aborted": null,
+ "requests": 9247,
+ "rps": 308.2,
+ "status": {
+  "200": 9247
+ },
+ "endpoints": {
+  "documents": {
+   "n": 459,
+   "p50": 1.57,
+   "p95": 1.7,
+   "max": 1.85,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "gantt": {
+   "n": 1062,
+   "p50": 5.4,
+   "p95": 5.77,
+   "max": 17.07,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "list200": {
+   "n": 1243,
+   "p50": 4.39,
+   "p95": 4.66,
+   "max": 15.67,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "project": {
+   "n": 735,
+   "p50": 1.78,
+   "p95": 1.94,
+   "max": 8.36,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "schedule_preview": {
+   "n": 753,
+   "p50": 7.24,
+   "p95": 7.66,
+   "max": 26.28,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "search": {
+   "n": 742,
+   "p50": 1.59,
+   "p95": 6.46,
+   "max": 11.28,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "task_get": {
+   "n": 789,
+   "p50": 1.73,
+   "p95": 1.9,
+   "max": 9.48,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "task_get_for_write": {
+   "n": 2109,
+   "p50": 1.73,
+   "p95": 1.9,
+   "max": 6.95,
+   "4xx": 0,
+   "5xx": 0
+  },
+  "task_patch": {
+   "n": 1355,
+   "p50": 2.55,
+   "p95": 2.8,
+   "max": 31.28,
+   "4xx": 0,
+   "5xx": 0
+  }
+ },
+ "rss_mb_max": 86,
+ "rss_mb_first": 86,
+ "cpu_pct_max": 81.5,
+ "cpu_pct_avg": 79.5,
+ "loadavg_before": "{ 2.98 3.35 3.40 }",
+ "loadavg1_min": 2.75,
+ "loadavg1_max": 3.12,
+ "loadavg1_mean": 2.9,
+ "retry_rate": 0.0
+}

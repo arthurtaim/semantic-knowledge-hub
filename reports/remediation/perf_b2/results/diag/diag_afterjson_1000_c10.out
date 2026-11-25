@@ -1,0 +1,11 @@
+{"label": "diag_afterjson_1000_c10", "clients": 10, "requests": 4731, "rps": 189.2, "status": {"200": 4727, "409": 4}, "rss_mb_max": 150, "cpu_pct_max": 271.7, "retry_rate": 0.005, "aborted": null, "loadavg1_mean": 3.0}
+  documents            n=  270 p50=     5.0 p95=    27.6 max=   351.8 4xx=0 5xx=0
+  gantt                n=  485 p50=    73.8 p95=   141.8 max=   345.0 4xx=0 5xx=0
+  list200              n=  585 p50=    58.8 p95=   121.7 max=   333.7 4xx=0 5xx=0
+  project              n=  395 p50=    20.1 p95=    66.4 max=   183.4 4xx=0 5xx=0
+  schedule_preview     n=  367 p50=    96.5 p95=   342.0 max=   887.9 4xx=0 5xx=0
+  search               n=  376 p50=     9.0 p95=    50.2 max=   232.9 4xx=0 5xx=0
+  task_get             n=  385 p50=    17.6 p95=    69.6 max=   399.2 4xx=0 5xx=0
+  task_get_for_write   n= 1118 p50=    16.9 p95=    63.8 max=   490.2 4xx=0 5xx=0
+  task_patch           n=  746 p50=    50.3 p95=   282.4 max=  2722.2 4xx=4 5xx=0
+  task_patch_retry     n=    4 p50=    81.0 p95=    98.6 max=    98.6 4xx=0 5xx=0

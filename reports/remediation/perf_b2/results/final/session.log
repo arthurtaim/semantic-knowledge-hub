@@ -1,0 +1,233 @@
+23:03:01 loadavg={ 2.31 2.48 2.73 } prepare 25
+tasks now 25
+tasks 25 changed 23 columns {'in_progress': 7, 'review': 6, 'done': 6, 'todo': 6}
+tasks now 25
+tasks 25 changed 23 columns {'in_progress': 7, 'review': 6, 'done': 6, 'todo': 6}
+23:03:02 loadavg={ 2.31 2.48 2.73 } http bench 25
+http_base_25 25 {"projects_list": {"n": 40, "p50": 2.08, "p95": 2.27, "max": 2.41}, "project": {"n": 40, "p50": 1.5, "p95": 1.56, "max": 1.58}, "list200": {"n": 40, "p50": 1.6, "p95": 1.69, "max": 1.94}, "gantt": {"n": 40, "p50": 1.69, "p95": 1.77, "max": 1.92}, "task_get": {"n": 40, "p50": 1.3, "p95": 1.36, "max": 1.4}, "task_patch": {"n": 40, "p50": 1.94, "p95": 2.06, "max": 2.28}, "schedule_preview": {"n": 40, "p50": 2.51, "p95": 2.82, "max": 13.52}, "task_activity": {"n": 40, "p50": 1.71, "p95": 1.86, "max": 1.94}}
+http_after_25 25 {"projects_list": {"n": 40, "p50": 1.35, "p95": 1.43, "max": 1.58}, "project": {"n": 40, "p50": 1.23, "p95": 1.31, "max": 1.68}, "list200": {"n": 40, "p50": 1.62, "p95": 1.69, "max": 1.87}, "gantt": {"n": 40, "p50": 1.73, "p95": 1.95, "max": 2.24}, "task_get": {"n": 40, "p50": 1.34, "p95": 1.45, "max": 1.57}, "task_patch": {"n": 40, "p50": 1.94, "p95": 2.21, "max": 2.26}, "schedule_preview": {"n": 40, "p50": 2.55, "p95": 2.75, "max": 2.96}, "task_activity": {"n": 40, "p50": 1.71, "p95": 1.81, "max": 1.94}}
+23:03:03 loadavg={ 2.31 2.48 2.73 } load base tasks=25 clients=1
+{"label": "load_base_t25_c1", "clients": 1, "requests": 14460, "rps": 482.0, "status": {"200": 14460}, "rss_mb_max": 89, "cpu_pct_max": 73.5, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 2.27}
+  documents            n=  746 p50=     1.5 p95=     1.7 max=    11.9 4xx=0 5xx=0
+  gantt                n= 1683 p50=     2.0 p95=     2.2 max=     6.9 4xx=0 5xx=0
+  list200              n= 1923 p50=     1.9 p95=     2.1 max=    15.1 4xx=0 5xx=0
+  project              n= 1172 p50=     1.8 p95=     1.9 max=     7.5 4xx=0 5xx=0
+  schedule_preview     n= 1139 p50=     3.4 p95=     3.8 max=    25.1 4xx=0 5xx=0
+  search               n= 1172 p50=     1.6 p95=     6.3 max=    11.2 4xx=0 5xx=0
+  task_get             n= 1205 p50=     1.6 p95=     1.7 max=     6.6 4xx=0 5xx=0
+  task_get_for_write   n= 3280 p50=     1.6 p95=     1.7 max=    27.7 4xx=0 5xx=0
+  task_patch           n= 2140 p50=     2.4 p95=     2.6 max=    19.1 4xx=0 5xx=0
+23:03:42 loadavg={ 2.37 2.47 2.71 } load after tasks=25 clients=1
+{"label": "load_after_t25_c1", "clients": 1, "requests": 14242, "rps": 474.7, "status": {"200": 14242}, "rss_mb_max": 89, "cpu_pct_max": 72.4, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 2.47}
+  documents            n=  733 p50=     1.6 p95=     1.7 max=    12.5 4xx=0 5xx=0
+  gantt                n= 1652 p50=     2.1 p95=     2.2 max=    16.4 4xx=0 5xx=0
+  list200              n= 1889 p50=     2.0 p95=     2.1 max=    14.8 4xx=0 5xx=0
+  project              n= 1148 p50=     1.6 p95=     1.7 max=     6.9 4xx=0 5xx=0
+  schedule_preview     n= 1118 p50=     3.5 p95=     3.9 max=    15.2 4xx=0 5xx=0
+  search               n= 1149 p50=     1.6 p95=     6.4 max=    15.0 4xx=0 5xx=0
+  task_get             n= 1195 p50=     1.6 p95=     1.8 max=    11.4 4xx=0 5xx=0
+  task_get_for_write   n= 3238 p50=     1.6 p95=     1.8 max=    17.3 4xx=0 5xx=0
+  task_patch           n= 2120 p50=     2.4 p95=     2.6 max=    18.1 4xx=0 5xx=0
+23:04:20 loadavg={ 2.32 2.45 2.69 } load after tasks=25 clients=3
+{"label": "load_after_t25_c3", "clients": 3, "requests": 21952, "rps": 731.7, "status": {"200": 21889, "409": 63}, "rss_mb_max": 88, "cpu_pct_max": 145.0, "retry_rate": 0.018, "aborted": null, "loadavg1_mean": 2.46}
+  documents            n= 1153 p50=     2.1 p95=     2.9 max=    17.6 4xx=0 5xx=0
+  gantt                n= 2427 p50=     3.6 p95=     6.8 max=    37.8 4xx=0 5xx=0
+  list200              n= 2882 p50=     3.4 p95=     6.3 max=    33.3 4xx=0 5xx=0
+  project              n= 1736 p50=     2.8 p95=     5.8 max=    18.8 4xx=0 5xx=0
+  schedule_preview     n= 1706 p50=     7.1 p95=    12.3 max=    47.8 4xx=0 5xx=0
+  search               n= 1813 p50=     2.3 p95=     8.0 max=    20.3 4xx=0 5xx=0
+  task_get             n= 1781 p50=     3.1 p95=     6.1 max=    30.4 4xx=0 5xx=0
+  task_get_for_write   n= 5080 p50=     3.1 p95=     6.0 max=    32.4 4xx=0 5xx=0
+  task_patch           n= 3314 p50=     4.8 p95=    10.1 max=    45.9 4xx=60 5xx=0
+  task_patch_retry     n=   60 p50=     4.9 p95=    10.5 max=    27.8 4xx=3 5xx=0
+23:04:59 loadavg={ 2.48 2.48 2.69 } load base tasks=25 clients=3
+{"label": "load_base_t25_c3", "clients": 3, "requests": 21082, "rps": 702.7, "status": {"200": 21012, "409": 70}, "rss_mb_max": 87, "cpu_pct_max": 142.9, "retry_rate": 0.022, "aborted": null, "loadavg1_mean": 2.94}
+  documents            n= 1099 p50=     2.1 p95=     2.9 max=    27.9 4xx=0 5xx=0
+  gantt                n= 2334 p50=     3.9 p95=     7.0 max=    32.8 4xx=0 5xx=0
+  list200              n= 2755 p50=     3.6 p95=     6.6 max=    32.8 4xx=0 5xx=0
+  project              n= 1681 p50=     3.5 p95=     6.5 max=    35.1 4xx=0 5xx=0
+  schedule_preview     n= 1620 p50=     7.2 p95=    12.9 max=    46.3 4xx=0 5xx=0
+  search               n= 1744 p50=     2.4 p95=     8.3 max=    19.0 4xx=0 5xx=0
+  task_get             n= 1719 p50=     3.2 p95=     6.0 max=    30.4 4xx=0 5xx=0
+  task_get_for_write   n= 4874 p50=     3.2 p95=     5.8 max=    35.8 4xx=0 5xx=0
+  task_patch           n= 3186 p50=     4.9 p95=    10.1 max=    44.9 4xx=70 5xx=0
+  task_patch_retry     n=   70 p50=     5.2 p95=     8.9 max=    16.6 4xx=0 5xx=0
+23:05:37 loadavg={ 3.13 2.65 2.74 } load base tasks=25 clients=10
+{"label": "load_base_t25_c10", "clients": 10, "requests": 15589, "rps": 519.6, "status": {"200": 15314, "409": 275}, "rss_mb_max": 94, "cpu_pct_max": 272.8, "retry_rate": 0.103, "aborted": null, "loadavg1_mean": 3.31}
+  documents            n=  793 p50=     3.2 p95=     5.8 max=   190.3 4xx=0 5xx=0
+  gantt                n= 1613 p50=    10.4 p95=    34.8 max=   293.5 4xx=0 5xx=0
+  list200              n= 2001 p50=    10.3 p95=    34.2 max=   264.2 4xx=0 5xx=0
+  project              n= 1249 p50=    10.2 p95=    35.4 max=   198.2 4xx=0 5xx=0
+  schedule_preview     n= 1145 p50=    22.4 p95=   164.1 max=  1211.1 4xx=0 5xx=0
+  search               n= 1143 p50=     3.7 p95=    12.4 max=   136.8 4xx=0 5xx=0
+  task_get             n= 1163 p50=     8.2 p95=    23.4 max=   337.5 4xx=0 5xx=0
+  task_get_for_write   n= 3814 p50=     8.5 p95=    23.9 max=   286.1 4xx=0 5xx=0
+  task_patch           n= 2418 p50=    16.9 p95=   138.1 max=  1423.7 4xx=250 5xx=0
+  task_patch_retry     n=  250 p50=    18.1 p95=   169.2 max=   878.6 4xx=25 5xx=0
+23:06:15 loadavg={ 3.35 2.77 2.78 } load after tasks=25 clients=10
+{"label": "load_after_t25_c10", "clients": 10, "requests": 21871, "rps": 729.0, "status": {"200": 21491, "409": 380}, "rss_mb_max": 92, "cpu_pct_max": 205.5, "retry_rate": 0.103, "aborted": null, "loadavg1_mean": 3.47}
+  documents            n= 1107 p50=     3.1 p95=     5.6 max=    72.2 4xx=0 5xx=0
+  gantt                n= 2249 p50=     6.7 p95=    14.3 max=   168.8 4xx=0 5xx=0
+  list200              n= 2875 p50=     6.7 p95=    14.6 max=   199.7 4xx=0 5xx=0
+  project              n= 1745 p50=     5.8 p95=    13.4 max=   177.8 4xx=0 5xx=0
+  schedule_preview     n= 1590 p50=    17.3 p95=   123.8 max=   907.1 4xx=0 5xx=0
+  search               n= 1623 p50=     3.9 p95=    11.9 max=    39.4 4xx=0 5xx=0
+  task_get             n= 1650 p50=     6.9 p95=    15.8 max=   265.1 4xx=0 5xx=0
+  task_get_for_write   n= 5311 p50=     6.9 p95=    15.3 max=   310.3 4xx=0 5xx=0
+  task_patch           n= 3375 p50=    13.4 p95=   114.7 max=  1191.5 4xx=347 5xx=0
+  task_patch_retry     n=  346 p50=    15.5 p95=   123.9 max=   806.3 4xx=33 5xx=0
+23:06:54 loadavg={ 3.66 2.91 2.83 } prepare 200
+tasks now 200
+tasks 200 changed 182 columns {'in_progress': 50, 'review': 50, 'done': 50, 'todo': 50}
+tasks now 200
+tasks 200 changed 181 columns {'in_progress': 50, 'review': 50, 'done': 50, 'todo': 50}
+23:06:58 loadavg={ 3.53 2.89 2.83 } http bench 200
+http_base_200 200 {"projects_list": {"n": 40, "p50": 4.08, "p95": 4.25, "max": 4.29}, "project": {"n": 40, "p50": 3.53, "p95": 3.63, "max": 14.45}, "list200": {"n": 40, "p50": 3.86, "p95": 4.05, "max": 4.06}, "gantt": {"n": 40, "p50": 4.79, "p95": 5.04, "max": 15.38}, "task_get": {"n": 40, "p50": 1.7, "p95": 1.81, "max": 1.91}, "task_patch": {"n": 40, "p50": 2.67, "p95": 2.83, "max": 2.92}, "schedule_preview": {"n": 40, "p50": 6.45, "p95": 6.6, "max": 6.92}, "task_activity": {"n": 40, "p50": 3.68, "p95": 3.85, "max": 3.91}}
+http_after_200 200 {"projects_list": {"n": 40, "p50": 1.6, "p95": 1.72, "max": 1.86}, "project": {"n": 40, "p50": 1.42, "p95": 1.49, "max": 1.51}, "list200": {"n": 40, "p50": 4.0, "p95": 4.35, "max": 14.85}, "gantt": {"n": 40, "p50": 4.79, "p95": 4.97, "max": 5.01}, "task_get": {"n": 40, "p50": 1.41, "p95": 1.49, "max": 1.51}, "task_patch": {"n": 40, "p50": 2.05, "p95": 2.19, "max": 2.84}, "schedule_preview": {"n": 40, "p50": 7.07, "p95": 7.38, "max": 18.92}, "task_activity": {"n": 40, "p50": 1.75, "p95": 1.85, "max": 1.88}}
+23:07:00 loadavg={ 3.41 2.88 2.82 } load base tasks=200 clients=1
+{"label": "load_base_t200_c1", "clients": 1, "requests": 8413, "rps": 280.4, "status": {"200": 8413}, "rss_mb_max": 88, "cpu_pct_max": 83.2, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 3.17}
+  documents            n=  415 p50=     1.6 p95=     1.7 max=     6.4 4xx=0 5xx=0
+  gantt                n=  961 p50=     5.2 p95=     5.5 max=    16.7 4xx=0 5xx=0
+  list200              n= 1122 p50=     4.2 p95=     4.5 max=    17.9 4xx=0 5xx=0
+  project              n=  657 p50=     3.8 p95=     4.0 max=    14.8 4xx=0 5xx=0
+  schedule_preview     n=  692 p50=     7.1 p95=     7.7 max=    18.8 4xx=0 5xx=0
+  search               n=  689 p50=     1.6 p95=     6.4 max=     9.5 4xx=0 5xx=0
+  task_get             n=  715 p50=     2.0 p95=     2.2 max=    21.9 4xx=0 5xx=0
+  task_get_for_write   n= 1927 p50=     2.1 p95=     2.2 max=    14.3 4xx=0 5xx=0
+  task_patch           n= 1235 p50=     3.2 p95=     3.5 max=    14.0 4xx=0 5xx=0
+23:07:39 loadavg={ 3.13 2.86 2.82 } load after tasks=200 clients=1
+{"label": "load_after_t200_c1", "clients": 1, "requests": 9249, "rps": 308.3, "status": {"200": 9249}, "rss_mb_max": 90, "cpu_pct_max": 81.4, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 2.91}
+  documents            n=  459 p50=     1.6 p95=     1.7 max=     6.9 4xx=0 5xx=0
+  gantt                n= 1062 p50=     5.2 p95=     5.5 max=    16.6 4xx=0 5xx=0
+  list200              n= 1244 p50=     4.3 p95=     4.6 max=    21.0 4xx=0 5xx=0
+  project              n=  736 p50=     1.8 p95=     2.0 max=     7.3 4xx=0 5xx=0
+  schedule_preview     n=  751 p50=     7.8 p95=     8.2 max=    40.4 4xx=0 5xx=0
+  search               n=  743 p50=     1.6 p95=     6.3 max=     9.7 4xx=0 5xx=0
+  task_get             n=  792 p50=     1.7 p95=     1.9 max=     6.9 4xx=0 5xx=0
+  task_get_for_write   n= 2107 p50=     1.7 p95=     1.9 max=     7.0 4xx=0 5xx=0
+  task_patch           n= 1355 p50=     2.6 p95=     2.8 max=    11.8 4xx=0 5xx=0
+23:08:17 loadavg={ 2.67 2.78 2.79 } load after tasks=200 clients=3
+{"label": "load_after_t200_c3", "clients": 3, "requests": 13321, "rps": 444.0, "status": {"200": 13314, "409": 7}, "rss_mb_max": 92, "cpu_pct_max": 146.8, "retry_rate": 0.003, "aborted": null, "loadavg1_mean": 2.75}
+  documents            n=  704 p50=     2.2 p95=     5.2 max=    18.5 4xx=0 5xx=0
+  gantt                n= 1456 p50=     8.5 p95=    15.4 max=    30.4 4xx=0 5xx=0
+  list200              n= 1771 p50=     7.7 p95=    13.2 max=    33.5 4xx=0 5xx=0
+  project              n= 1037 p50=     3.9 p95=     8.3 max=    28.2 4xx=0 5xx=0
+  schedule_preview     n= 1031 p50=    14.2 p95=    25.3 max=    54.9 4xx=0 5xx=0
+  search               n= 1046 p50=     3.0 p95=     9.9 max=    25.5 4xx=0 5xx=0
+  task_get             n= 1100 p50=     3.8 p95=     8.4 max=    19.2 4xx=0 5xx=0
+  task_get_for_write   n= 3103 p50=     3.8 p95=     8.3 max=    48.0 4xx=0 5xx=0
+  task_patch           n= 2066 p50=     6.8 p95=    17.0 max=    91.4 4xx=7 5xx=0
+  task_patch_retry     n=    7 p50=     8.5 p95=    13.7 max=    13.7 4xx=0 5xx=0
+23:08:56 loadavg={ 2.67 2.77 2.79 } load base tasks=200 clients=3
+{"label": "load_base_t200_c3", "clients": 3, "requests": 9082, "rps": 302.7, "status": {"200": 9077, "409": 5}, "rss_mb_max": 89, "cpu_pct_max": 146.0, "retry_rate": 0.004, "aborted": null, "loadavg1_mean": 2.55}
+  documents            n=  477 p50=     2.3 p95=     5.2 max=    32.0 4xx=0 5xx=0
+  gantt                n=  981 p50=    12.5 p95=    19.9 max=    55.1 4xx=0 5xx=0
+  list200              n= 1217 p50=    11.3 p95=    18.9 max=    47.6 4xx=0 5xx=0
+  project              n=  750 p50=    10.7 p95=    19.0 max=    43.5 4xx=0 5xx=0
+  schedule_preview     n=  694 p50=    17.5 p95=    30.9 max=    78.6 4xx=0 5xx=0
+  search               n=  716 p50=     3.0 p95=    10.8 max=    26.6 4xx=0 5xx=0
+  task_get             n=  742 p50=     6.4 p95=    11.6 max=    54.0 4xx=0 5xx=0
+  task_get_for_write   n= 2100 p50=     6.3 p95=    11.5 max=    50.3 4xx=0 5xx=0
+  task_patch           n= 1400 p50=    11.3 p95=    23.8 max=    79.3 4xx=5 5xx=0
+  task_patch_retry     n=    5 p50=    16.8 p95=    25.7 max=    25.7 4xx=0 5xx=0
+23:09:34 loadavg={ 2.68 2.75 2.77 } load base tasks=200 clients=10
+{"label": "load_base_t200_c10", "clients": 10, "requests": 3543, "rps": 118.1, "status": {"200": 3535, "409": 8}, "rss_mb_max": 95, "cpu_pct_max": 351.4, "retry_rate": 0.015, "aborted": null, "loadavg1_mean": 3.77}
+  documents            n=  192 p50=     3.1 p95=     9.2 max=   127.5 4xx=0 5xx=0
+  gantt                n=  371 p50=    49.4 p95=   286.8 max=   410.9 4xx=0 5xx=0
+  list200              n=  430 p50=    47.5 p95=   253.1 max=   596.4 4xx=0 5xx=0
+  project              n=  301 p50=    49.2 p95=   269.0 max=   417.6 4xx=0 5xx=0
+  schedule_preview     n=  289 p50=    92.8 p95=  1010.3 max=  2448.1 4xx=0 5xx=0
+  search               n=  273 p50=     4.5 p95=    18.2 max=   409.8 4xx=0 5xx=0
+  task_get             n=  297 p50=    26.1 p95=   125.8 max=   421.4 4xx=0 5xx=0
+  task_get_for_write   n=  841 p50=    24.5 p95=   118.5 max=   585.0 4xx=0 5xx=0
+  task_patch           n=  541 p50=    69.7 p95=   806.6 max=  2364.6 4xx=8 5xx=0
+  task_patch_retry     n=    8 p50=   176.1 p95=  1038.9 max=  1038.9 4xx=0 5xx=0
+23:10:12 loadavg={ 4.23 3.14 2.91 } load after tasks=200 clients=10
+{"label": "load_after_t200_c10", "clients": 10, "requests": 13288, "rps": 442.9, "status": {"200": 13240, "409": 48}, "rss_mb_max": 98, "cpu_pct_max": 203.1, "retry_rate": 0.023, "aborted": null, "loadavg1_mean": 4.07}
+  documents            n=  693 p50=     3.9 p95=     9.6 max=    85.5 4xx=0 5xx=0
+  gantt                n= 1419 p50=    15.2 p95=    29.2 max=   124.8 4xx=0 5xx=0
+  list200              n= 1752 p50=    13.9 p95=    28.3 max=   339.4 4xx=0 5xx=0
+  project              n= 1070 p50=     8.9 p95=    20.5 max=   239.1 4xx=0 5xx=0
+  schedule_preview     n=  993 p50=    31.0 p95=   176.7 max=  1846.5 4xx=0 5xx=0
+  search               n=  996 p50=     6.0 p95=    17.3 max=   238.7 4xx=0 5xx=0
+  task_get             n= 1022 p50=    10.1 p95=    23.0 max=   246.1 4xx=0 5xx=0
+  task_get_for_write   n= 3167 p50=    10.0 p95=    23.1 max=   274.5 4xx=0 5xx=0
+  task_patch           n= 2128 p50=    21.7 p95=   172.8 max=  1844.3 4xx=48 5xx=0
+  task_patch_retry     n=   48 p50=    21.1 p95=   165.1 max=   279.6 4xx=0 5xx=0
+23:10:51 loadavg={ 3.92 3.20 2.94 } prepare 1000
+tasks now 1000
+tasks 1000 changed 920 columns {'in_progress': 250, 'review': 250, 'done': 250, 'todo': 250}
+tasks now 1000
+tasks 1000 changed 922 columns {'in_progress': 250, 'review': 250, 'done': 250, 'todo': 250}
+23:11:18 loadavg={ 3.81 3.23 2.96 } http bench 1000
+http_base_1000 1000 {"projects_list": {"n": 40, "p50": 13.19, "p95": 24.39, "max": 24.65}, "project": {"n": 40, "p50": 12.67, "p95": 22.87, "max": 24.63}, "list200": {"n": 40, "p50": 13.55, "p95": 24.5, "max": 26.05}, "gantt": {"n": 40, "p50": 19.97, "p95": 31.08, "max": 31.75}, "task_get": {"n": 40, "p50": 3.38, "p95": 3.58, "max": 14.27}, "task_patch": {"n": 40, "p50": 6.15, "p95": 16.85, "max": 17.31}, "schedule_preview": {"n": 40, "p50": 13.87, "p95": 25.28, "max": 25.67}, "task_activity": {"n": 40, "p50": 6.38, "p95": 6.55, "max": 17.2}}
+http_after_1000 1000 {"projects_list": {"n": 40, "p50": 2.28, "p95": 2.44, "max": 2.5}, "project": {"n": 40, "p50": 2.14, "p95": 2.34, "max": 2.67}, "list200": {"n": 40, "p50": 8.4, "p95": 8.64, "max": 19.29}, "gantt": {"n": 40, "p50": 19.28, "p95": 30.6, "max": 31.79}, "task_get": {"n": 40, "p50": 1.56, "p95": 1.69, "max": 1.77}, "task_patch": {"n": 40, "p50": 2.31, "p95": 2.51, "max": 2.64}, "schedule_preview": {"n": 40, "p50": 16.7, "p95": 27.41, "max": 39.35}, "task_activity": {"n": 40, "p50": 1.76, "p95": 1.88, "max": 1.93}}
+23:11:25 loadavg={ 3.77 3.24 2.97 } load base tasks=1000 clients=1
+{"label": "load_base_t1000_c1", "clients": 1, "requests": 3221, "rps": 107.4, "status": {"200": 3221}, "rss_mb_max": 99, "cpu_pct_max": 93.4, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 3.32}
+  documents            n=  154 p50=     1.7 p95=     1.8 max=     1.8 4xx=0 5xx=0
+  gantt                n=  347 p50=    20.3 p95=    31.8 max=    37.1 4xx=0 5xx=0
+  list200              n=  432 p50=    13.0 p95=    24.0 max=    29.2 4xx=0 5xx=0
+  project              n=  267 p50=    12.6 p95=    23.9 max=    30.5 4xx=0 5xx=0
+  schedule_preview     n=  259 p50=    14.3 p95=    25.4 max=    26.8 4xx=0 5xx=0
+  search               n=  259 p50=     1.7 p95=     6.5 max=    11.4 4xx=0 5xx=0
+  task_get             n=  286 p50=     3.8 p95=     4.6 max=    16.2 4xx=0 5xx=0
+  task_get_for_write   n=  738 p50=     3.9 p95=     5.8 max=    17.0 4xx=0 5xx=0
+  task_patch           n=  479 p50=     6.6 p95=    17.0 max=    19.1 4xx=0 5xx=0
+23:12:03 loadavg={ 2.98 3.10 2.93 } load after tasks=1000 clients=1
+{"label": "load_after_t1000_c1", "clients": 1, "requests": 4430, "rps": 147.7, "status": {"200": 4430}, "rss_mb_max": 99, "cpu_pct_max": 91.6, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 2.71}
+  documents            n=  223 p50=     1.6 p95=     1.8 max=    12.2 4xx=0 5xx=0
+  gantt                n=  503 p50=    19.9 p95=    31.5 max=    32.7 4xx=0 5xx=0
+  list200              n=  598 p50=     8.9 p95=    14.2 max=    20.9 4xx=0 5xx=0
+  project              n=  332 p50=     2.6 p95=     2.9 max=    17.4 4xx=0 5xx=0
+  schedule_preview     n=  366 p50=    16.7 p95=    28.1 max=    57.7 4xx=0 5xx=0
+  search               n=  355 p50=     1.6 p95=     6.4 max=     7.9 4xx=0 5xx=0
+  task_get             n=  384 p50=     2.0 p95=     2.3 max=     3.2 4xx=0 5xx=0
+  task_get_for_write   n= 1017 p50=     2.0 p95=     2.2 max=     9.0 4xx=0 5xx=0
+  task_patch           n=  652 p50=     2.9 p95=     3.2 max=    13.6 4xx=0 5xx=0
+23:12:42 loadavg={ 2.56 2.98 2.89 } load after tasks=1000 clients=3
+{"label": "load_after_t1000_c3", "clients": 3, "requests": 5559, "rps": 185.3, "status": {"200": 5559}, "rss_mb_max": 119, "cpu_pct_max": 146.5, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 2.63}
+  documents            n=  314 p50=     2.4 p95=    15.1 max=    56.5 4xx=0 5xx=0
+  gantt                n=  567 p50=    36.7 p95=    61.9 max=    79.7 4xx=0 5xx=0
+  list200              n=  785 p50=    22.1 p95=    43.8 max=    75.3 4xx=0 5xx=0
+  project              n=  480 p50=     6.9 p95=    25.1 max=    76.3 4xx=0 5xx=0
+  schedule_preview     n=  414 p50=    38.6 p95=    63.4 max=   154.4 4xx=0 5xx=0
+  search               n=  424 p50=     3.2 p95=    26.0 max=    52.6 4xx=0 5xx=0
+  task_get             n=  423 p50=     4.6 p95=    22.1 max=    33.4 4xx=0 5xx=0
+  task_get_for_write   n= 1284 p50=     4.5 p95=    22.0 max=    48.0 4xx=0 5xx=0
+  task_patch           n=  868 p50=     9.3 p95=    35.2 max=    83.6 4xx=0 5xx=0
+23:13:20 loadavg={ 2.56 2.93 2.88 } load base tasks=1000 clients=3
+{"label": "load_base_t1000_c3", "clients": 3, "requests": 2443, "rps": 81.4, "status": {"200": 2443}, "rss_mb_max": 110, "cpu_pct_max": 151.8, "retry_rate": 0.0, "aborted": null, "loadavg1_mean": 2.62}
+  documents            n=  133 p50=     2.6 p95=    10.7 max=    27.0 4xx=0 5xx=0
+  gantt                n=  252 p50=    60.9 p95=    83.5 max=   115.1 4xx=0 5xx=0
+  list200              n=  306 p50=    52.3 p95=    72.8 max=    99.9 4xx=0 5xx=0
+  project              n=  214 p50=    51.4 p95=    75.6 max=   101.7 4xx=0 5xx=0
+  schedule_preview     n=  170 p50=    62.2 p95=   101.9 max=   117.4 4xx=0 5xx=0
+  search               n=  218 p50=     2.9 p95=    27.9 max=    75.8 4xx=0 5xx=0
+  task_get             n=  195 p50=    21.2 p95=    45.0 max=    58.0 4xx=0 5xx=0
+  task_get_for_write   n=  562 p50=    20.6 p95=    43.4 max=    92.6 4xx=0 5xx=0
+  task_patch           n=  393 p50=    42.6 p95=    80.9 max=   120.0 4xx=0 5xx=0
+23:13:59 loadavg={ 2.86 2.95 2.88 } load base tasks=1000 clients=10
+{"label": "load_base_t1000_c10", "clients": 10, "requests": 560, "rps": 18.7, "status": {"200": 559, "409": 1}, "rss_mb_max": 122, "cpu_pct_max": 377.4, "retry_rate": 0.012, "aborted": null, "loadavg1_mean": 3.98}
+  documents            n=   28 p50=     3.3 p95=    12.9 max=    15.4 4xx=0 5xx=0
+  gantt                n=   66 p50=   344.9 p95=  1559.0 max=  1769.7 4xx=0 5xx=0
+  list200              n=   82 p50=   520.1 p95=  1684.0 max=  1908.5 4xx=0 5xx=0
+  project              n=   47 p50=   437.4 p95=  1625.6 max=  1929.8 4xx=0 5xx=0
+  schedule_preview     n=   33 p50=   727.8 p95=  3073.0 max=  8001.6 4xx=0 5xx=0
+  search               n=   49 p50=     3.6 p95=    48.8 max=    71.2 4xx=0 5xx=0
+  task_get             n=   52 p50=   258.2 p95=   730.8 max=   945.8 4xx=0 5xx=0
+  task_get_for_write   n=  119 p50=   192.2 p95=   762.9 max=   976.9 4xx=0 5xx=0
+  task_patch           n=   83 p50=   555.6 p95=  3652.2 max=  8628.3 4xx=1 5xx=0
+  task_patch_retry     n=    1 p50=  3946.7 p95=  3946.7 max=  3946.7 4xx=0 5xx=0
+23:14:37 loadavg={ 4.17 3.30 3.01 } load after tasks=1000 clients=10
+{"label": "load_after_t1000_c10", "clients": 10, "requests": 5346, "rps": 178.2, "status": {"200": 5343, "409": 3}, "rss_mb_max": 146, "cpu_pct_max": 275.8, "retry_rate": 0.004, "aborted": null, "loadavg1_mean": 4.28}
+  documents            n=  302 p50=     4.8 p95=    35.6 max=   317.8 4xx=0 5xx=0
+  gantt                n=  556 p50=    74.4 p95=   139.5 max=   464.3 4xx=0 5xx=0
+  list200              n=  684 p50=    56.1 p95=   119.8 max=   328.7 4xx=0 5xx=0
+  project              n=  445 p50=    19.7 p95=    69.3 max=   288.2 4xx=0 5xx=0
+  schedule_preview     n=  405 p50=   100.9 p95=   348.6 max=  1314.3 4xx=0 5xx=0
+  search               n=  427 p50=     7.9 p95=    57.0 max=   187.1 4xx=0 5xx=0
+  task_get             n=  440 p50=    16.0 p95=    69.7 max=   326.4 4xx=0 5xx=0
+  task_get_for_write   n= 1246 p50=    15.2 p95=    65.3 max=   564.7 4xx=0 5xx=0
+  task_patch           n=  838 p50=    56.5 p95=   488.0 max=  1847.5 4xx=3 5xx=0
+  task_patch_retry     n=    3 p50=    59.7 p95=   305.8 max=   305.8 4xx=0 5xx=0
+23:15:16 loadavg={ 3.59 3.29 3.03 } session done
