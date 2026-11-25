@@ -15,6 +15,66 @@ from datetime import UTC, datetime
 from typing import Any
 
 Row = sqlite3.Row
+# A row of a project-wide read fetched in one step (`_rows_in_one_step`): the same keys and values as `sqlite3.Row`.
+RowDict = dict[str, Any]
+
+# Every column of `work_tasks` / `work_dependencies` (schema v3; tests/test_work_perf_equivalence.py checks the list).
+TASK_COLUMNS = (
+    "id",
+    "project_id",
+    "number",
+    "parent_task_id",
+    "title",
+    "description",
+    "status",
+    "priority",
+    "assignee_id",
+    "reporter_id",
+    "estimate_workdays",
+    "start_date",
+    "end_exclusive",
+    "due_date",
+    "is_milestone",
+    "date_locked",
+    "sort_order",
+    "is_demo",
+    "version",
+    "created_by",
+    "created_at",
+    "updated_by",
+    "updated_at",
+    "archived_at",
+    "archived_by",
+)
+DEPENDENCY_COLUMNS = (
+    "id",
+    "project_id",
+    "predecessor_id",
+    "successor_id",
+    "kind",
+    "lag_workdays",
+    "created_by",
+    "created_at",
+)
+
+
+def _rows_in_one_step(
+    conn: sqlite3.Connection, columns: Iterable[str], alias: str, from_where: str, params: Iterable[Any]
+) -> list[RowDict]:
+    """A whole result set in ONE sqlite3 step: `json_group_array(json_object(...))`, decoded by `json.loads`.
+
+    Why (B2, measured): the sqlite3 module releases and re-takes the GIL for every row it steps. A project-wide read
+    (a Gantt, a list, a preview: ~3 000 rows at 1000 tasks) under concurrent requests spent most of its time waiting
+    to re-take the GIL row by row (macOS `sample`: `pysqlite_cursor_iternext > PyEval_RestoreThread > take_gil`).
+    TEXT/INTEGER/NULL come back as str/int/None, as from a row. The caller orders the rows (aggregate order is not
+    guaranteed by older SQLite)."""
+    pairs = ", ".join(f"'{c}', {alias}.{c}" for c in columns)
+    text = conn.execute(
+        f"SELECT COALESCE(json_group_array(json_object({pairs})), '[]') {from_where}", tuple(params)
+    ).fetchone()[0]
+    rows: list[RowDict] = json.loads(text)
+    return rows
+
 
 PROJECT_FIELDS = frozenset(
     {"title", "description", "status", "timezone", "start_date", "target_date", "archived_at"}
@@ -187,9 +247,10 @@ def project_tasks(
     assignee: str | None = None,
     parent: str | None = None,
     milestone: bool | None = None,
-) -> list[Row]:
-    """Tasks of one project with the indexed structured filters applied in SQL (project, status, assignee …)."""
-    sql = "SELECT * FROM work_tasks WHERE project_id = ?"
+) -> list[RowDict]:
+    """Tasks of one project with the indexed structured filters applied in SQL (project, status, assignee …), every
+    column, ordered by number — read in one step (`_rows_in_one_step`)."""
+    sql = "FROM work_tasks t WHERE project_id = ?"
     params: list[Any] = [project_id]
     if not include_archived:
         sql += " AND archived_at IS NULL"
@@ -211,23 +272,33 @@ def project_tasks(
     if milestone is not None:
         sql += " AND is_milestone = ?"
         params.append(1 if milestone else 0)
-    sql += " ORDER BY number"
-    return list(conn.execute(sql, params).fetchall())
+    rows = _rows_in_one_step(conn, TASK_COLUMNS, "t", sql, params)
+    rows.sort(key=lambda r: int(r["number"]))
+    return rows
 
 
-SKELETON_COLUMNS = (
-    "id, number, parent_task_id, status, archived_at, title, start_date, end_exclusive, is_milestone"
+SKELETON_FIELDS = (
+    "id",
+    "number",
+    "parent_task_id",
+    "status",
+    "archived_at",
+    "title",
+    "start_date",
+    "end_exclusive",
+    "is_milestone",
 )
+SKELETON_COLUMNS = ", ".join(SKELETON_FIELDS)
 
 
-def task_skeleton(conn: sqlite3.Connection, project_id: str) -> list[Row]:
-    """Light rows of EVERY task of a project (also archived): hierarchy, status, keys — for derived fields."""
-    return list(
-        conn.execute(
-            f"SELECT {SKELETON_COLUMNS} FROM work_tasks WHERE project_id = ? ORDER BY number",
-            (project_id,),
-        ).fetchall()
+def task_skeleton(conn: sqlite3.Connection, project_id: str) -> list[RowDict]:
+    """Light rows of EVERY task of a project (also archived): hierarchy, status, keys — for derived fields. One step
+    (`_rows_in_one_step`), ordered by number."""
+    rows = _rows_in_one_step(
+        conn, SKELETON_FIELDS, "t", "FROM work_tasks t WHERE project_id = ?", (project_id,)
     )
+    rows.sort(key=lambda r: int(r["number"]))
+    return rows
 
 
 def task_skeleton_around(conn: sqlite3.Connection, project_id: str, task_id: str) -> list[Row]:
@@ -371,17 +442,21 @@ def get_dependency(conn: sqlite3.Connection, dependency_id: str) -> Row | None:
     return row
 
 
-def project_dependencies(conn: sqlite3.Connection, project_id: str) -> list[Row]:
-    """Edges whose both ends are active tasks (archiving removes a task's edges; this is defence in depth)."""
-    return list(
-        conn.execute(
-            "SELECT d.* FROM work_dependencies d "
-            "JOIN work_tasks p ON p.id = d.predecessor_id AND p.archived_at IS NULL "
-            "JOIN work_tasks s ON s.id = d.successor_id AND s.archived_at IS NULL "
-            "WHERE d.project_id = ? ORDER BY d.created_at, d.id",
-            (project_id,),
-        ).fetchall()
+def project_dependencies(conn: sqlite3.Connection, project_id: str) -> list[RowDict]:
+    """Edges whose both ends are active tasks (archiving removes a task's edges; this is defence in depth). One step
+    (`_rows_in_one_step`), ordered by (created_at, id) — text compares by code point, as SQLite's BINARY collation."""
+    rows = _rows_in_one_step(
+        conn,
+        DEPENDENCY_COLUMNS,
+        "d",
+        "FROM work_dependencies d "
+        "JOIN work_tasks p ON p.id = d.predecessor_id AND p.archived_at IS NULL "
+        "JOIN work_tasks s ON s.id = d.successor_id AND s.archived_at IS NULL "
+        "WHERE d.project_id = ?",
+        (project_id,),
     )
+    rows.sort(key=lambda r: (r["created_at"], r["id"]))
+    return rows
 
 
 def task_active_dependencies(conn: sqlite3.Connection, project_id: str, task_id: str) -> list[Row]:

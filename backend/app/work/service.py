@@ -17,7 +17,7 @@ import logging
 import re
 import sqlite3
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -227,24 +227,24 @@ class _Ctx:
     """Derived facts of one project inside one snapshot (hierarchy, dependencies, link counts, today)."""
 
     project: sqlite3.Row
-    skeleton: dict[str, sqlite3.Row]
-    deps: list[sqlite3.Row]
+    skeleton: dict[str, RowLike]
+    deps: Sequence[RowLike]
     links: dict[str, list[str]]
     today: date
     members: frozenset[str] | None = None
     # The reader's knowledge snapshot (None: not known in this context — e.g. a scheduling computation that returns
     # no task to anyone). Document links are counted only against it.
     docs: DocumentScope | None = None
-    preds: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
-    succs: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
+    preds: dict[str, list[RowLike]] = field(default_factory=dict)
+    succs: dict[str, list[RowLike]] = field(default_factory=dict)
     children: dict[str, int] = field(default_factory=dict)
     # A per-task context (`WorkService._task_ctx`, B2) holds only the rows one task needs; its active child count is
     # given here, because the skeleton then does not hold the children. None: counted from the whole skeleton.
     child_counts: dict[str, int] | None = None
 
     def __post_init__(self) -> None:
-        preds: dict[str, list[sqlite3.Row]] = defaultdict(list)
-        succs: dict[str, list[sqlite3.Row]] = defaultdict(list)
+        preds: dict[str, list[RowLike]] = defaultdict(list)
+        succs: dict[str, list[RowLike]] = defaultdict(list)
         for dep in self.deps:
             preds[dep["successor_id"]].append(dep)
             succs[dep["predecessor_id"]].append(dep)
@@ -2658,16 +2658,16 @@ def _full(ctx: _Ctx, task_id: str) -> RowLike:
     }
 
 
-def _hierarchy_order(rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+def _hierarchy_order(rows: Sequence[RowLike]) -> list[RowLike]:
     """Depth-first: parents before their children, siblings by (sort_order, number) — the Gantt/tree order."""
-    by_parent: dict[str | None, list[sqlite3.Row]] = defaultdict(list)
+    by_parent: dict[str | None, list[RowLike]] = defaultdict(list)
     ids = {r["id"] for r in rows}
     for row in rows:
         parent = row["parent_task_id"] if row["parent_task_id"] in ids else None
         by_parent[parent].append(row)
     for siblings in by_parent.values():
         siblings.sort(key=lambda r: (int(r["sort_order"]), int(r["number"])))
-    ordered: list[sqlite3.Row] = []
+    ordered: list[RowLike] = []
     stack = list(reversed(by_parent[None]))
     seen: set[str] = set()
     while stack:

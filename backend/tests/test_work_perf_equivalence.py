@@ -448,6 +448,63 @@ def test_task_activity_names_other_tasks_by_their_keys(world: World) -> None:
             assert event.task_key == (ctx.key(event.task_id) if event.task_id else None)
 
 
+# --- project-wide reads in one step (B2: no GIL hand-off per row under concurrent requests) --------------------------
+def test_one_step_reads_cover_every_column_of_the_schema(tmp_path: Path) -> None:
+    db = WorkDatabase(tmp_path / "cols.sqlite3")
+    with db.read() as conn:
+        for table, columns in (
+            ("work_tasks", store.TASK_COLUMNS),
+            ("work_dependencies", store.DEPENDENCY_COLUMNS),
+        ):
+            assert tuple(r[1] for r in conn.execute(f"PRAGMA table_info({table})")) == columns
+
+
+def test_one_step_reads_equal_the_row_by_row_reads(world: World) -> None:
+    """Same keys, values, types and order as `SELECT …` row by row (the pre-B2 store functions)."""
+    with world.svc.db.read() as conn:
+        for project in store.list_projects(conn, None, True):
+            pid = project["id"]
+            old_tasks = conn.execute(
+                "SELECT * FROM work_tasks WHERE project_id = ? ORDER BY number", (pid,)
+            ).fetchall()
+            for flag in (False, True):
+                active = [dict(r) for r in old_tasks if flag or r["archived_at"] is None]
+                assert store.project_tasks(conn, pid, include_archived=flag) == active
+            filtered = [
+                dict(r)
+                for r in old_tasks
+                if r["archived_at"] is None
+                and r["status"] in ("todo", "review")
+                and r["parent_task_id"] is None
+            ]
+            assert (
+                store.project_tasks(conn, pid, statuses=frozenset({"review", "todo"}), parent="root")
+                == filtered
+            )
+            assert store.task_skeleton(conn, pid) == [
+                dict(r)
+                for r in conn.execute(
+                    f"SELECT {store.SKELETON_COLUMNS} FROM work_tasks WHERE project_id = ? ORDER BY number",  # noqa: S608 — fixed column names
+                    (pid,),
+                ).fetchall()
+            ]
+            assert store.project_dependencies(conn, pid) == [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT d.* FROM work_dependencies d "
+                    "JOIN work_tasks p ON p.id = d.predecessor_id AND p.archived_at IS NULL "
+                    "JOIN work_tasks s ON s.id = d.successor_id AND s.archived_at IS NULL "
+                    "WHERE d.project_id = ? ORDER BY d.created_at, d.id",
+                    (pid,),
+                ).fetchall()
+            ]
+            # `==` would accept 1 == True or 1 == 1.0: the types must be the row's types too.
+            new = store.project_tasks(conn, pid, include_archived=True)
+            assert [{k: type(v) for k, v in r.items()} for r in new] == [
+                {k: type(v) for k, v in dict(r).items()} for r in old_tasks
+            ]
+
+
 def test_task_activity_reads_the_audit_through_the_task_indexes(tmp_path: Path) -> None:
     db = WorkDatabase(tmp_path / "plan.sqlite3")
     with db.read() as conn:
