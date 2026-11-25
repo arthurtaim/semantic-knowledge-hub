@@ -1,4 +1,4 @@
-import type { TaskPriority, TaskStatus, WorkCapabilities, WorkTask } from "../../api/types";
+import type { AssigneeRef, TaskPriority, TaskStatus, WorkCapabilities, WorkTask } from "../../api/types";
 import { formatDay, PRIORITY_LABEL, TASK_STATUS_LABEL } from "../../lib/work";
 import { Icon } from "../ui/Icon";
 
@@ -18,7 +18,7 @@ export function WorkModeNote({ capabilities }: { capabilities: WorkCapabilities 
         <span className="work-mode__label">{capabilities.label}</span>
         {readOnly && capabilities.read_only_reason ? <span className="work-mode__reason"> {capabilities.read_only_reason}</span> : null}
         {!capabilities.team_ready && capabilities.mode === "local_operator" ? (
-          <span className="work-mode__reason"> Исполнители — синтетические роли «(демо)», не учётные записи.</span>
+          <span className="work-mode__reason"> Исполнители «(демо)» — вымышленная команда для примера, не учётные записи.</span>
         ) : null}
       </span>
     </p>
@@ -103,7 +103,27 @@ export function TaskFlags({ task, keyOf, today }: { task: WorkTask; keyOf?: (id:
 
 export function AssigneeName({ task }: { task: Pick<WorkTask, "assignee" | "assignee_id"> }) {
   if (!task.assignee_id) return <span className="muted">Не назначен</span>;
-  return <span>{task.assignee?.display_name ?? task.assignee_id}</span>;
+  return <span title={task.assignee?.role ?? undefined}>{task.assignee?.display_name ?? task.assignee_id}</span>;
+}
+
+/** The options of an assignee select: people without a role first, then the demo team grouped by role. */
+export function AssigneeOptions({ assignees }: { assignees: AssigneeRef[] }) {
+  const roles = [...new Set(assignees.flatMap((a) => (a.role ? [a.role] : [])))];
+  const option = (a: AssigneeRef) => (
+    <option key={a.id} value={a.id}>
+      {a.display_name}
+    </option>
+  );
+  return (
+    <>
+      {assignees.filter((a) => !a.role).map(option)}
+      {roles.map((role) => (
+        <optgroup key={role} label={role}>
+          {assignees.filter((a) => a.role === role).map(option)}
+        </optgroup>
+      ))}
+    </>
+  );
 }
 
 /** A live region for the result of an action (saved, rolled back, applied). */

@@ -114,7 +114,7 @@ test.describe("M6 work management", () => {
     await page.getByRole("button", { name: "Задача" }).click();
     const taskSheet = page.getByRole("dialog", { name: "Новая задача" });
     await taskSheet.getByLabel(/Название/).fill("Собрать требования");
-    await taskSheet.getByLabel("Исполнитель").selectOption({ label: "Аналитик (демо)" });
+    await taskSheet.getByLabel("Исполнитель").selectOption({ label: "Анна Лебедева (демо)" });
     await taskSheet.getByRole("radio", { name: "Начало и длительность" }).check();
     await taskSheet.getByLabel("Начало", { exact: true }).fill(await nextMonday(page.request, key));
     await taskSheet.getByLabel("Рабочих дней").fill("3");

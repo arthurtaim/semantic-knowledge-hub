@@ -206,7 +206,7 @@ def test_reviewed_edits_are_the_only_changes_a_person_can_make(ai_client: Factor
                 "local_id": "t1",
                 "title": "Разобрать архитектуру (правка)",
                 "estimate_workdays": 3,
-                "assignee_id": "demo-analyst",
+                "assignee_id": "demo-analyst-1",
             },
         ],
         "excluded_dependencies": [{"predecessor": "t5", "successor": "t6"}],
@@ -236,7 +236,7 @@ def test_reviewed_edits_are_the_only_changes_a_person_can_make(ai_client: Factor
     assert "Разобрать архитектуру (правка)" in titles and not any(
         t.startswith("Разобрать требования: Стандарт") for t in titles
     )
-    assert titles["Разобрать архитектуру (правка)"]["assignee_id"] == "demo-analyst"
+    assert titles["Разобрать архитектуру (правка)"]["assignee_id"] == "demo-analyst-1"
     assert len(done["created_tasks"]) == 5 and done["created_dependencies"] == 2
 
 

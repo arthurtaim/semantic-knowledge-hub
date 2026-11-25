@@ -29,13 +29,15 @@ interface TaskFiltersBarProps {
   /** How many tasks match / all, for the screen reader and the line under the bar. */
   shown: number;
   total: number;
+  /** Tasks of the project per assignee id: shows how the work is distributed in the «Исполнитель» menu. */
+  assigneeCounts?: Record<string, number>;
 }
 
 function toggle<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
 }
 
-export function TaskFiltersBar({ filters, onChange, assignees, documents = [], shown, total }: TaskFiltersBarProps) {
+export function TaskFiltersBar({ filters, onChange, assignees, documents = [], shown, total, assigneeCounts }: TaskFiltersBarProps) {
   const [text, setText] = useState(filters.q);
   const searchId = useId();
 
@@ -80,6 +82,8 @@ export function TaskFiltersBar({ filters, onChange, assignees, documents = [], s
         ...assignees.map((a) => ({
           id: a.id,
           label: a.display_name,
+          description: a.role ?? undefined,
+          meta: assigneeCounts ? String(assigneeCounts[a.id] ?? 0) : undefined,
           checked: filters.assignee === a.id,
           onSelect: () => onChange({ ...filters, assignee: a.id }),
         })),

@@ -137,8 +137,8 @@ export function task(overrides: Partial<WorkTask> & { key: string }): WorkTask {
 
 export const ASSIGNEES: AssigneeRef[] = [
   { id: "local-demo-user", display_name: "Демо-пользователь (localhost)", kind: "operator" },
-  { id: "demo-analyst", display_name: "Аналитик (демо)", kind: "fixture" },
-  { id: "demo-engineer", display_name: "Инженер данных (демо)", kind: "fixture" },
+  { id: "demo-analyst-1", display_name: "Анна Лебедева (демо)", kind: "fixture", role: "Аналитик" },
+  { id: "demo-dev-1", display_name: "Дмитрий Орлов (демо)", kind: "fixture", role: "Разработчик" },
 ];
 
 /**
@@ -158,7 +158,7 @@ export function planTasks(): WorkTask[] {
       end_exclusive: "2026-11-28",
       last_day: "2026-11-27",
       duration_workdays: 1,
-      assignee_id: "demo-analyst",
+      assignee_id: "demo-analyst-1",
       assignee: ASSIGNEES[1] ?? null,
     }),
     task({ key: "ARIS-5", title: "Загрузчик", start_date: "2026-11-30", end_exclusive: "2026-12-02", last_day: "2026-12-01", duration_workdays: 2, blocked_by: ["t4"], is_blocked: true }),

@@ -104,6 +104,11 @@ export function ProjectPage() {
   }, [message, clearMessage]);
 
   const tasks = useMemo(() => snapshot?.tasks ?? [], [snapshot]);
+  const assigneeCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const t of tasks) if (t.assignee_id) counts[t.assignee_id] = (counts[t.assignee_id] ?? 0) + 1;
+    return counts;
+  }, [tasks]);
   const tree = useMemo(() => buildTree(tasks), [tasks]);
   const byId = tree.byId;
   const keyOf = useCallback((id: string) => byId.get(id)?.key ?? id, [byId]);
@@ -302,7 +307,7 @@ export function ProjectPage() {
             <WorkModeNote capabilities={capabilities} />
           </header>
           {phone ? <div className="project-page__views">{viewSwitch}</div> : null}
-          <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} documents={documents} shown={shownCount} total={tasks.length} />
+          <TaskFiltersBar filters={filters} onChange={onFilters} assignees={ws.assignees} documents={documents} shown={shownCount} total={tasks.length} assigneeCounts={assigneeCounts} />
           {message ? (
             <div className={`work-message work-message--${message.tone}`} role={message.tone === "danger" ? "alert" : "status"} key={message.nonce}>
               <Icon name={message.tone === "success" ? "check" : message.tone === "info" ? "info" : "alert"} size={14} />

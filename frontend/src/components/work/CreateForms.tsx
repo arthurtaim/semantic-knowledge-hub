@@ -7,6 +7,7 @@ import { PRIORITY_LABEL, PRIORITY_ORDER, TASK_STATUS_LABEL, TASK_STATUS_ORDER } 
 import { ErrorState } from "../Feedback";
 import { SidePanel, useSidePanelMode } from "../shell/SidePanel";
 import { Button } from "../ui/Button";
+import { AssigneeOptions } from "./WorkBits";
 
 /*
  * «Новая задача» and «Новый проект» (M6): forms in a sheet (a bottom sheet on phones). One idempotency key per
@@ -144,15 +145,11 @@ export function TaskCreateSheet({ project, tasks, assignees, parent, maxDepth, o
           <label htmlFor={`${id}-assignee`}>Исполнитель</label>
           <select id={`${id}-assignee`} value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-describedby={`${id}-assignee-hint`}>
             <option value="">Не назначен</option>
-            {assignees.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.display_name}
-              </option>
-            ))}
+            <AssigneeOptions assignees={assignees} />
           </select>
           {assignees.some((a) => a.kind === "fixture") ? (
             <p className="field__hint" id={`${id}-assignee-hint`}>
-              Роли «(демо)» — синтетические, не учётные записи: назначение не даёт никому прав.
+              Исполнители «(демо)» — вымышленная команда для примера, не учётные записи: назначение не даёт никому прав.
             </p>
           ) : null}
         </div>

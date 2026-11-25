@@ -113,7 +113,7 @@ def test_m6_01_project_with_three_tasks_is_visible_in_every_view(wc: TestClient)
             title="Анализ",
             start_date="2026-11-30",
             duration_workdays=2,
-            assignee_id="demo-analyst",
+            assignee_id="demo-analyst-1",
         ),
         task(wc, p["id"], title="Разработка", priority="high"),
         task(
@@ -128,7 +128,12 @@ def test_m6_01_project_with_three_tasks_is_visible_in_every_view(wc: TestClient)
         "2026-12-01",
         2,
     )
-    assert first["assignee"] == {"id": "demo-analyst", "display_name": "Аналитик (демо)", "kind": "fixture"}
+    assert first["assignee"] == {
+        "id": "demo-analyst-1",
+        "display_name": "Анна Лебедева (демо)",
+        "kind": "fixture",
+        "role": "Аналитик",
+    }
     listed = wc.get("/api/projects/CRUD/tasks").json()
     gantt = wc.get("/api/projects/CRUD/gantt").json()
     detail = wc.get("/api/tasks/CRUD-2").json()
@@ -253,7 +258,12 @@ def test_m6_27_unscheduled_task_lives_in_list_board_and_the_unscheduled_pool(wc:
 def test_patch_semantics_move_keeps_duration_and_null_clears(wc: TestClient) -> None:
     project(wc)
     t = task(
-        wc, "TST", start_date="2026-11-30", duration_workdays=3, assignee_id="demo-qa", due_date="2026-12-10"
+        wc,
+        "TST",
+        start_date="2026-11-30",
+        duration_workdays=3,
+        assignee_id="demo-dev-2",
+        due_date="2026-12-10",
     )
     moved = patch(wc, "TST-1", expected_version=1, start_date="2026-12-03").json()
     assert (moved["start_date"], moved["end_exclusive"], moved["duration_workdays"]) == (
@@ -376,7 +386,9 @@ def test_filters_sorting_pagination_and_case_insensitive_search(wc: TestClient) 
             ("дельта", "medium", "review"),
         ]
     ):
-        task(wc, "TST", title=title, priority=prio, status=status, assignee_id="demo-qa" if i % 2 else None)
+        task(
+            wc, "TST", title=title, priority=prio, status=status, assignee_id="demo-dev-2" if i % 2 else None
+        )
     get = lambda **p: wc.get("/api/projects/TST/tasks", params=p).json()  # noqa: E731
     assert [t["title"] for t in get(sort="priority")["items"]] == ["бета", "Гамма", "дельта", "Альфа"]
     assert [t["title"] for t in get(sort="title", order="desc")["items"]] == [
@@ -387,7 +399,7 @@ def test_filters_sorting_pagination_and_case_insensitive_search(wc: TestClient) 
     ]
     assert get(q="БЕТА")["total"] == 1 and get(q="tst-3")["items"][0]["title"] == "Гамма"
     assert get(status="todo,review")["total"] == 3 and get(priority="critical")["total"] == 1
-    assert get(assignee="none")["total"] == 2 and get(assignee="demo-qa")["total"] == 2
+    assert get(assignee="none")["total"] == 2 and get(assignee="demo-dev-2")["total"] == 2
     page = get(limit=2, offset=2, sort="key")
     assert page["total"] == 4 and [t["key"] for t in page["items"]] == ["TST-3", "TST-4"]
     assert wc.get("/api/projects/TST/tasks", params={"status": "blocked"}).status_code == 400
@@ -433,11 +445,30 @@ def test_demo_seed_has_the_required_shape(client: TestClient) -> None:
     assert sum(t["is_milestone"] for t in tasks) >= 3 and any(t["date_locked"] for t in tasks)
     assert any(not t["scheduled"] for t in tasks)
     assert any(t["overdue"] for t in tasks) and any(t["late"] for t in tasks)
-    fixture_ids = {"demo-analyst", "demo-architect", "demo-engineer", "demo-qa", "demo-owner"}
-    assert {t["assignee_id"] for t in tasks if t["assignee_id"]} <= fixture_ids
+    # The synthetic demo team: 3 analysts, a project manager, 2 developers — every one of them has seeded work.
+    people = {a["id"]: a for a in client.get("/api/work/assignees").json() if a["kind"] == "fixture"}
+    roles = sorted(a["role"] for a in people.values())
+    assert roles == ["Аналитик", "Аналитик", "Аналитик", "Разработчик", "Разработчик", "Руководитель проекта"]
+    assert all(a["display_name"].endswith("(демо)") for a in people.values())
+    assert {t["assignee_id"] for t in tasks if t["assignee_id"]} == set(people)
     for p in projects:
         gantt = client.get(f"/api/projects/{p['id']}/gantt").json()
         assert gantt["violations"] == [] and len(gantt["dependencies"]) >= 3
+
+
+def test_retired_demo_roles_keep_their_names_but_are_no_longer_offered(wc: TestClient) -> None:
+    # An older work database may still hold tasks of the earlier role placeholders («Аналитик (демо)», …): the seed
+    # never rewrites persisted tasks, so those stay named (not a raw id), but nobody new can be assigned to them.
+    from app.domain.models import UserContext
+    from app.work.directory import AssigneeDirectory
+
+    directory = AssigneeDirectory(operator=UserContext(user_id="local-demo-user", display_name="Оператор"))
+    old = directory.ref("demo-analyst")
+    assert old is not None and (old.display_name, old.kind, old.role) == ("Аналитик (демо)", "fixture", None)
+    assert "demo-analyst" not in directory.local_ids()
+    project(wc, "OLD")
+    refused = wc.post("/api/projects/OLD/tasks", json={"title": "x", "assignee_id": "demo-analyst"})
+    assert refused.status_code == 422 and refused.json()["code"] == "invalid_assignee"
 
 
 def test_m6_21_data_survives_a_restart(client_factory: Client) -> None:
@@ -556,7 +587,8 @@ def test_m6_19_m6_37_project_roles_with_server_side_identities(wc: TestClient) -
     _member(wc, alpha["id"], "carol", "member")
     # assignees in team mode are project members only (no fixtures, no free-form ids)
     assert (
-        wc.post("/api/projects/ALPHA/tasks", json={"title": "x", "assignee_id": "demo-qa"}).status_code == 422
+        wc.post("/api/projects/ALPHA/tasks", json={"title": "x", "assignee_id": "demo-dev-2"}).status_code
+        == 422
     )
     assert task(wc, "ALPHA", assignee_id="carol")["assignee"]["kind"] == "member"
 

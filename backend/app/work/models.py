@@ -284,6 +284,9 @@ class AssigneeRef(BaseModel):
     # operator: the server-defined local operator · fixture: a synthetic demo person (NOT an account, NOT a security
     # subject) · member: a project member of a real identity provider · unknown: an id no longer in the directory
     kind: Literal["operator", "fixture", "member", "unknown"]
+    # The person's role in the synthetic demo team («Аналитик», «Разработчик», …); None when unknown. Descriptive
+    # only: it grants nothing.
+    role: str | None = None
 
 
 class TaskOut(BaseModel):

@@ -14,7 +14,7 @@ import {
 import { IconButton } from "../ui/Button";
 import { Icon } from "../ui/Icon";
 import { InlineDate, InlineText } from "./InlineEdit";
-import { AssigneeName, PriorityMark, TaskFlags, TaskStatusMark } from "./WorkBits";
+import { AssigneeName, AssigneeOptions, PriorityMark, TaskFlags, TaskStatusMark } from "./WorkBits";
 
 /*
  * «Список» (M6): the task tree as a table — subtasks up to four levels with expand / collapse, inline editing of
@@ -195,7 +195,7 @@ const TaskRow = memo(function TaskRow({
       <td data-label="Исполнитель">
         {canWrite ? (
           <select
-            className="task-row__select"
+            className="task-row__select task-row__select--assignee"
             aria-label={`Исполнитель ${name}`}
             value={task.assignee_id ?? ""}
             onChange={(event) => void updateTask(task, { assignee_id: event.target.value || null })}
@@ -204,11 +204,7 @@ const TaskRow = memo(function TaskRow({
             {task.assignee_id && !assignees.some((a) => a.id === task.assignee_id) ? (
               <option value={task.assignee_id}>{task.assignee?.display_name ?? task.assignee_id}</option>
             ) : null}
-            {assignees.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.display_name}
-              </option>
-            ))}
+            <AssigneeOptions assignees={assignees} />
           </select>
         ) : (
           <AssigneeName task={task} />

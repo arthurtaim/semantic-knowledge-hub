@@ -12801,6 +12801,11 @@ a.fact-item__title:hover {
   font-size: var(--fs-small);
 }
 
+/* A person's full name fits: «Екатерина Белова (демо)». */
+.task-row__select--assignee {
+  min-width: 12.5rem;
+}
+
 .task-row__date {
   white-space: nowrap;
 }
@@ -12898,7 +12903,9 @@ a.fact-item__title:hover {
     color: var(--text-tertiary);
   }
 
-  .task-row__select {
+  .task-row__select,
+  .task-row__select--assignee {
+    min-width: 0;
     max-width: none;
   }
 

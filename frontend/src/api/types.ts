@@ -1887,8 +1887,10 @@ export interface WorkCapabilities {
 export interface AssigneeRef {
   id: string;
   display_name: string;
-  /** fixture = a synthetic demo role, NOT an account; member = a project member of a real identity provider. */
+  /** fixture = a person of the synthetic demo team, NOT an account; member = a project member of a real identity provider. */
   kind: "operator" | "fixture" | "member" | "unknown";
+  /** The role in the synthetic demo team («Аналитик», «Разработчик», …): descriptive only, grants nothing. */
+  role?: string | null;
 }
 
 export interface MilestoneRef {

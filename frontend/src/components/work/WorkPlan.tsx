@@ -22,6 +22,7 @@ import { SidePanel, useSidePanelMode } from "../shell/SidePanel";
 import { StatusStamp } from "../StatusStamp";
 import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
+import { AssigneeOptions } from "./WorkBits";
 
 /*
  * «AI план» (M6 Step 5, docs/WORK_MANAGEMENT.md §11): a typed task-plan PROPOSAL from documents of the knowledge base.
@@ -606,11 +607,7 @@ function PlanTaskRow({
           <label htmlFor={`${id}-as`}>Исполнитель</label>
           <select id={`${id}-as`} value={assignee ?? ""} disabled={!editable} onChange={(e) => onEdit({ assignee_id: e.target.value || null })}>
             <option value="">Не назначен</option>
-            {assignees.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.display_name}
-              </option>
-            ))}
+            <AssigneeOptions assignees={assignees} />
           </select>
         </div>
       </div>

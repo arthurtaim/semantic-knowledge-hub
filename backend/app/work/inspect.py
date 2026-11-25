@@ -88,6 +88,7 @@ class WorkInspector:
             "status": task.status.value,
             "priority": task.priority.value,
             "assignee": task.assignee.display_name if task.assignee else None,
+            "assignee_role": task.assignee.role if task.assignee else None,
             "start": task.start_date.isoformat() if task.start_date else None,
             "last_day": task.last_day.isoformat() if task.last_day else None,
             "due": task.due_date.isoformat() if task.due_date else None,

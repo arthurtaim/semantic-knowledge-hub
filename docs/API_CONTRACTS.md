@@ -609,7 +609,7 @@ server-owned fields → `422 invalid_request`). Dates are `YYYY-MM-DD`; a schedu
 | Route | Action | Request | Response | Errors |
 |---|---|---|---|---|
 | `GET /api/work/capabilities` | `view_projects` | — | `WorkCapabilities {enabled, mode, label, can_write, can_view_audit, read_only_reason, team_ready (false), identity, calendar, statuses, priorities, project_statuses, schedule_modes, link_relations, limits, features}` | `503 feature_unavailable` |
-| `GET /api/work/assignees?project_id=` | `view_projects` | — | `AssigneeRef[] {id, display_name, kind: operator\|fixture\|member\|unknown}` | `404` |
+| `GET /api/work/assignees?project_id=` | `view_projects` | — | `AssigneeRef[] {id, display_name, kind: operator\|fixture\|member\|unknown, role?}` (`role` — роль в синтетической демо-команде, только описание) | `404` |
 | `GET /api/projects?status=&include_archived=` | `view_projects` | — | `{items: ProjectOut[], total}`; only member projects in `membership` | `400 invalid_filter` |
 | `POST /api/projects` | `manage_project` | `{key, title, description?, status?, timezone?, start_date?, target_date?, client_request_id?}` | `201 ProjectOut` (replay of `client_request_id` → the first result) | `409 conflict` (`key_taken`, `idempotency_key_reused`), `422 invalid_request\|invalid_date_range`, `403` |
 | `GET /api/projects/{project_id}` | `view_projects` | — | `ProjectOut {…, version, plan_revision, is_demo, stats {total, by_status, open, blocked, overdue, milestones, unscheduled, next_milestone}, my_role}` | `404` (also not a member) |

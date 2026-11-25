@@ -41,7 +41,7 @@ const HISTORY = {
       task_id: "t5",
       task_key: "ARIS-5",
       correlation_id: null,
-      changes: { status: { before: "todo", after: "in_progress" }, assignee_id: { before: null, after: "demo-analyst" }, description: { changed: true } },
+      changes: { status: { before: "todo", after: "in_progress" }, assignee_id: { before: null, after: "demo-analyst-1" }, description: { changed: true } },
     },
     {
       seq: 1,
@@ -90,7 +90,7 @@ describe("Task detail", () => {
     const history = within(panel).getByRole("heading", { name: "История" }).closest("section") as HTMLElement;
     expect(within(history).getByText("Демо-пользователь (localhost)")).toBeInTheDocument();
     expect(within(history).getByText("Статус: К работе → В работе")).toBeInTheDocument();
-    expect(within(history).getByText("Исполнитель: — → Аналитик (демо)")).toBeInTheDocument();
+    expect(within(history).getByText("Исполнитель: — → Анна Лебедева (демо)")).toBeInTheDocument();
     expect(within(history).getByText("Описание: изменено")).toBeInTheDocument();
     expect(within(history).getByText("создал(а) задачу")).toBeInTheDocument();
     const docs = within(panel).getByRole("heading", { name: "Документы" }).closest("section") as HTMLElement;

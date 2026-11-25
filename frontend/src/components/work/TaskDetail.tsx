@@ -39,7 +39,7 @@ import { Icon } from "../ui/Icon";
 import { InlineDate, InlineText } from "./InlineEdit";
 import { SchedulePreviewInline, type ScheduleRequest } from "./SchedulePreviewDialog";
 import { TaskDocuments } from "./TaskDocuments";
-import { AssigneeName, PriorityMark, TaskFlags, TaskStatusMark } from "./WorkBits";
+import { AssigneeName, AssigneeOptions, PriorityMark, TaskFlags, TaskStatusMark } from "./WorkBits";
 
 /*
  * Task detail (M6): every field, subtasks, Finish-to-Start dependencies (add / remove; a cycle is refused with the
@@ -135,11 +135,7 @@ export function TaskDetail(props: TaskDetailProps) {
                 {task.assignee_id && !assignees.some((a) => a.id === task.assignee_id) ? (
                   <option value={task.assignee_id}>{task.assignee?.display_name ?? task.assignee_id}</option>
                 ) : null}
-                {assignees.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.display_name}
-                  </option>
-                ))}
+                <AssigneeOptions assignees={assignees} />
               </select>
             ) : (
               <AssigneeName task={task} />

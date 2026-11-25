@@ -111,9 +111,12 @@ describe("Task list", () => {
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByRole("table");
     const select = screen.getByRole("combobox", { name: "Исполнитель ARIS-4 Маппинг метаданных" });
-    await user.selectOptions(select, "demo-engineer");
+    // Options are grouped by the demo team's roles; the operator (no role) comes first.
+    expect(within(select).getByRole("group", { name: "Аналитик" })).toHaveTextContent("Анна Лебедева (демо)");
+    expect(within(select).getByRole("group", { name: "Разработчик" })).toHaveTextContent("Дмитрий Орлов (демо)");
+    await user.selectOptions(select, "demo-dev-1");
     expect(await screen.findByText("ARIS-4: Такого исполнителя нет в проекте.")).toBeInTheDocument();
-    expect(select).toHaveValue("demo-analyst");
+    expect(select).toHaveValue("demo-analyst-1");
   });
 
   it("renames inline (Enter saves, Esc cancels)", async () => {
@@ -173,8 +176,13 @@ describe("Task list", () => {
     expect(document.querySelectorAll("tbody tr")).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Вехи" }));
     await user.click(screen.getByRole("button", { name: "Исполнитель" }));
-    await user.click(screen.getByRole("menuitemradio", { name: "Аналитик (демо)" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("assignee=demo-analyst");
+    // The menu shows the demo team's distribution: each person's role and how many tasks of the project they hold.
+    const anna = screen.getByRole("menuitemradio", { name: /Анна Лебедева \(демо\)/ });
+    expect(anna).toHaveTextContent("Аналитик");
+    expect(anna).toHaveTextContent(/1$/);
+    expect(screen.getByRole("menuitemradio", { name: /Дмитрий Орлов \(демо\)/ })).toHaveTextContent(/Разработчик.*0$/);
+    await user.click(anna);
+    expect(screen.getByTestId("location")).toHaveTextContent("assignee=demo-analyst-1");
     expect(Array.from(document.querySelectorAll("tbody tr")).map((r) => r.getAttribute("data-task-key"))).toEqual(["ARIS-4"]);
   });
 
@@ -197,7 +205,7 @@ describe("Task list", () => {
     const dialog = screen.getByRole("dialog", { name: "Подзадача к ARIS-4" });
     expect(within(dialog).getByLabelText("Родительская задача")).toHaveValue("t4");
     await user.type(within(dialog).getByLabelText(/Название/), "Новая подзадача");
-    await user.selectOptions(within(dialog).getByLabelText("Исполнитель"), "demo-analyst");
+    await user.selectOptions(within(dialog).getByLabelText("Исполнитель"), "demo-analyst-1");
     await user.click(within(dialog).getByRole("radio", { name: "Начало и длительность" }));
     await user.type(within(dialog).getByLabelText("Начало"), "2026-11-30");
     await user.click(within(dialog).getByRole("button", { name: "Создать задачу" }));
@@ -205,7 +213,7 @@ describe("Task list", () => {
     expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({
       title: "Новая подзадача",
       parent_task_id: "t4",
-      assignee_id: "demo-analyst",
+      assignee_id: "demo-analyst-1",
       start_date: "2026-11-30",
       duration_workdays: 1,
       is_milestone: false,
