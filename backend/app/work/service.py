@@ -238,6 +238,9 @@ class _Ctx:
     preds: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
     succs: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
     children: dict[str, int] = field(default_factory=dict)
+    # A per-task context (`WorkService._task_ctx`, B2) holds only the rows one task needs; its active child count is
+    # given here, because the skeleton then does not hold the children. None: counted from the whole skeleton.
+    child_counts: dict[str, int] | None = None
 
     def __post_init__(self) -> None:
         preds: dict[str, list[sqlite3.Row]] = defaultdict(list)
@@ -246,6 +249,9 @@ class _Ctx:
             preds[dep["successor_id"]].append(dep)
             succs[dep["predecessor_id"]].append(dep)
         self.preds, self.succs = dict(preds), dict(succs)
+        if self.child_counts is not None:
+            self.children = dict(self.child_counts)
+            return
         children: dict[str, int] = defaultdict(int)
         for row in self.skeleton.values():
             if row["parent_task_id"] and row["archived_at"] is None:
@@ -469,17 +475,64 @@ class WorkService:
     def _ctx(
         self, conn: sqlite3.Connection, project: sqlite3.Row, principal: WorkPrincipal | None = None
     ) -> _Ctx:
-        members = None
-        if self.gate.role_based():
-            members = frozenset(r["user_id"] for r in store.list_members(conn, project["id"]) if r["active"])
         return _Ctx(
             project=project,
             skeleton={r["id"]: r for r in store.task_skeleton(conn, project["id"])},
             deps=store.project_dependencies(conn, project["id"]),
             links=store.active_document_links(conn, project["id"]),
             today=self._today(project["timezone"]),
-            members=members,
+            members=self._members(conn, project),
             docs=principal.documents if principal is not None else None,
+        )
+
+    def _members(self, conn: sqlite3.Connection, project: sqlite3.Row) -> frozenset[str] | None:
+        if not self.gate.role_based():
+            return None
+        return frozenset(r["user_id"] for r in store.list_members(conn, project["id"]) if r["active"])
+
+    def _task_ctx(
+        self,
+        conn: sqlite3.Connection,
+        project: sqlite3.Row,
+        task_id: str,
+        principal: WorkPrincipal | None = None,
+    ) -> _Ctx:
+        """The context of ONE task (B2, audit CODE-015): its ancestors, its active dependency neighbours, its own
+        links and active child count — the same derived fields as `_ctx` for this task (and the neighbour facts a
+        date check needs), read without the whole project. Not for hierarchy moves: they need the full context."""
+        return _Ctx(
+            project=project,
+            skeleton={r["id"]: r for r in store.task_skeleton_around(conn, project["id"], task_id)},
+            deps=store.task_active_dependencies(conn, project["id"], task_id),
+            links=store.active_document_links(conn, project["id"], task_id),
+            today=self._today(project["timezone"]),
+            members=self._members(conn, project),
+            docs=principal.documents if principal is not None else None,
+            child_counts={task_id: store.count_active_children(conn, project["id"], task_id)},
+        )
+
+    def _project_stats(self, conn: sqlite3.Connection, project: sqlite3.Row) -> ProjectStats:
+        """Project counters as SQL aggregates over the active tasks (B2, audit CODE-015) — the same numbers as
+        counting the derived fields of every task, without building them."""
+        counts = store.project_stats(conn, project["id"], self._today(project["timezone"]).isoformat())
+        by_status = {s.value: counts["by_status"].get(s.value, 0) for s in TaskStatus}
+        milestone = counts["next_milestone"]
+        return ProjectStats(
+            total=counts["total"],
+            by_status=by_status,
+            open=counts["total"] - by_status[TaskStatus.done.value],
+            blocked=counts["blocked"],
+            overdue=counts["overdue"],
+            milestones=counts["milestones"],
+            unscheduled=counts["unscheduled"],
+            next_milestone=None
+            if milestone is None
+            else MilestoneRef(
+                task_id=milestone["id"],
+                key=f"{project['key']}-{milestone['number']}",
+                title=milestone["title"],
+                date=date.fromisoformat(milestone["start_date"]),
+            ),
         )
 
     def _task_out(self, row: RowLike, ctx: _Ctx) -> TaskOut:
@@ -490,7 +543,7 @@ class WorkService:
         done = row["status"] == TaskStatus.done.value
         active = row["archived_at"] is None
         due = _d(row["due_date"])
-        blocked = ctx.blocked_by(row["id"]) if active else []
+        blocked = _blocked_by(row, ctx)
         point = start if milestone else last_day
         documents = ctx.visible_documents(row["id"])
         return TaskOut(
@@ -526,37 +579,11 @@ class WorkService:
             archived_at=_dt(row["archived_at"]),
             blocked_by=blocked,
             is_blocked=bool(blocked) and not done,
-            overdue=active and not done and due is not None and due < ctx.today,
+            overdue=_overdue(row, ctx.today),
             late=active and not done and point is not None and point < ctx.today,
             child_count=ctx.children.get(row["id"], 0),
             link_count=None if documents is None else len(documents),
             document_ids=documents,
-        )
-
-    def _stats(self, ctx: _Ctx, tasks: list[TaskOut]) -> ProjectStats:
-        by_status = {s.value: 0 for s in TaskStatus}
-        for task in tasks:
-            by_status[task.status.value] += 1
-        upcoming = sorted(
-            (t for t in tasks if t.is_milestone and t.start_date and t.status != TaskStatus.done),
-            key=lambda t: (t.start_date, t.number),
-        )
-        next_milestone = None
-        if upcoming:
-            first = upcoming[0]
-            assert first.start_date is not None
-            next_milestone = MilestoneRef(
-                task_id=first.id, key=first.key, title=first.title, date=first.start_date
-            )
-        return ProjectStats(
-            total=len(tasks),
-            by_status=by_status,
-            open=sum(1 for t in tasks if t.status != TaskStatus.done),
-            blocked=sum(1 for t in tasks if t.is_blocked),
-            overdue=sum(1 for t in tasks if t.overdue),
-            milestones=sum(1 for t in tasks if t.is_milestone),
-            unscheduled=sum(1 for t in tasks if not t.scheduled),
-            next_milestone=next_milestone,
         )
 
     def _project_out(
@@ -742,17 +769,13 @@ class WorkService:
             items = []
             for row in rows:
                 role = self._role(conn, principal, row["id"])
-                ctx = self._ctx(conn, row, principal)
-                tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, row["id"])]
-                items.append(self._project_out(row, principal, role, self._stats(ctx, tasks)))
+                items.append(self._project_out(row, principal, role, self._project_stats(conn, row)))
         return ProjectList(items=items, total=len(items))
 
     def get_project(self, principal: WorkPrincipal, ref: str) -> ProjectOut:
         with self.db.read() as conn:
             project, role = self._project_for(conn, principal, ref, Action.view_projects)
-            ctx = self._ctx(conn, project, principal)
-            tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, project["id"])]
-            return self._project_out(project, principal, role, self._stats(ctx, tasks))
+            return self._project_out(project, principal, role, self._project_stats(conn, project))
 
     def members(self, principal: WorkPrincipal, ref: str) -> ProjectMembers:
         with self.db.read() as conn:
@@ -854,8 +877,7 @@ class WorkService:
             )
             created = store.get_project(conn, project_id)
             assert created is not None
-            ctx = self._ctx(conn, created, principal)
-            out = self._project_out(created, principal, role, self._stats(ctx, []))
+            out = self._project_out(created, principal, role, self._project_stats(conn, created))
             self._remember(
                 conn,
                 "project_create",
@@ -910,9 +932,7 @@ class WorkService:
                     self._now_iso() if fields["status"] == ProjectStatus.archived.value else None
                 )
             if not fields:
-                ctx = self._ctx(conn, project, principal)
-                tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, project["id"])]
-                return self._project_out(project, principal, role, self._stats(ctx, tasks))
+                return self._project_out(project, principal, role, self._project_stats(conn, project))
             at = self._now_iso()
             if not store.update_project(
                 conn, project["id"], body.expected_version, fields, principal.user.user_id, at
@@ -932,9 +952,7 @@ class WorkService:
             )
             updated = store.get_project(conn, project["id"])
             assert updated is not None
-            ctx = self._ctx(conn, updated, principal)
-            tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, updated["id"])]
-            return self._project_out(updated, principal, role, self._stats(ctx, tasks))
+            return self._project_out(updated, principal, role, self._project_stats(conn, updated))
 
     # --- tasks -------------------------------------------------------------------------------------------------
     def list_tasks(
@@ -973,28 +991,34 @@ class WorkService:
                 parent=parent,
                 milestone=milestone,
             )
-            tasks = [self._task_out(r, ctx) for r in rows]
             plan_revision = int(project["plan_revision"])
+        # B2 (audit CODE-015): filter and sort the ROWS by the same derived rules as TaskOut, then build TaskOut only
+        # for the page — not for every task of the project.
         if q:
             needle = q.casefold().strip()
-            tasks = [t for t in tasks if needle in t.title.casefold() or needle in t.key.casefold()]
+            rows = [
+                r
+                for r in rows
+                if needle in r["title"].casefold() or needle in f"{project['key']}-{r['number']}".casefold()
+            ]
         if scheduled is not None:
-            tasks = [t for t in tasks if t.scheduled == scheduled]
+            rows = [r for r in rows if (r["start_date"] is not None) == scheduled]
         if overdue is not None:
-            tasks = [t for t in tasks if t.overdue == overdue]
+            rows = [r for r in rows if _overdue(r, ctx.today) == overdue]
         if blocked is not None:
-            tasks = [t for t in tasks if t.is_blocked == blocked]
+            rows = [r for r in rows if _is_blocked(r, ctx) == blocked]
         if document is not None:
-            # `document_ids` hold only documents the reader can see: a hidden id matches nothing (no leak).
+            # Only documents the reader can see count: a hidden id matches nothing (no leak).
             wanted = document.casefold()
-            tasks = [t for t in tasks if any(d.casefold() == wanted for d in t.document_ids or [])]
-        tasks.sort(key=_sort_key(sort), reverse=order == "desc")
-        total = len(tasks)
+            rows = [
+                r for r in rows if any(d.casefold() == wanted for d in ctx.visible_documents(r["id"]) or [])
+            ]
+        rows.sort(key=_row_sort_key(sort), reverse=order == "desc")
         return TaskPage(
             project_id=project["id"],
             plan_revision=plan_revision,
-            items=tasks[offset : offset + limit],
-            total=total,
+            items=[self._task_out(r, ctx) for r in rows[offset : offset + limit]],
+            total=len(rows),
             limit=limit,
             offset=offset,
             today=ctx.today,
@@ -1003,7 +1027,7 @@ class WorkService:
     def get_task(self, principal: WorkPrincipal, ref: str) -> TaskOut:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_tasks)
-            return self._task_out(task, self._ctx(conn, project, principal))
+            return self._task_out(task, self._task_ctx(conn, project, task["id"], principal))
 
     def _bump_and_read(self, conn: sqlite3.Connection, project_id: str) -> tuple[int, sqlite3.Row]:
         revision = store.bump_plan_revision(conn, project_id)
@@ -1067,10 +1091,9 @@ class WorkService:
                 raise ApiError(
                     409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
                 )
-            ctx = self._ctx(conn, project, principal)
             parent_id = None if body.parent_task_id is None else self._task_id_of(conn, body.parent_task_id)
             if parent_id is not None:
-                self._validate_parent(conn, ctx, parent_id)
+                self._validate_parent(conn, self._ctx(conn, project, principal), parent_id)
             self._check_assignee(conn, project["id"], body.assignee_id)
             _check_year(body.due_date, "due_date")
             start = end = None
@@ -1130,7 +1153,7 @@ class WorkService:
             )
             created = store.get_task(conn, task_id)
             assert created is not None
-            out = self._task_out(created, self._ctx(conn, project, principal))
+            out = self._task_out(created, self._task_ctx(conn, project, task_id, principal))
             self._remember(
                 conn, scope, principal, body.client_request_id, request_hash, out.model_dump(mode="json"), 201
             )
@@ -1155,7 +1178,12 @@ class WorkService:
                     409, "conflict", "Задача в архиве — сначала восстановите её.", {"reason": "task_archived"}
                 )
             given = body.model_fields_set - {"expected_version"}
-            ctx = self._ctx(conn, project, principal)
+            # A hierarchy move checks the whole tree; any other edit needs only this task's neighbourhood (B2).
+            ctx = (
+                self._ctx(conn, project, principal)
+                if "parent_task_id" in given
+                else self._task_ctx(conn, project, task["id"], principal)
+            )
             fields: dict[str, Any] = {}
 
             for name in ("title", "description", "status", "priority", "estimate_workdays", "sort_order"):
@@ -1236,7 +1264,7 @@ class WorkService:
             )
             updated = store.get_task(conn, task["id"])
             assert updated is not None
-            return self._task_out(updated, self._ctx(conn, project, principal))
+            return self._task_out(updated, self._task_ctx(conn, project, task["id"], principal))
 
     @staticmethod
     def _merge_schedule(
@@ -2557,9 +2585,18 @@ class WorkService:
     ) -> ActivityPage:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_work_audit)
-            ctx = self._ctx(conn, project, principal)
             rows = store.audit_page(
                 conn, project_id=project["id"], task_id=task["id"], before_seq=before_seq, limit=limit
+            )
+            # B2: the page names its tasks by key — read only those tasks, not the whole project.
+            named = store.task_skeleton_of(conn, project["id"], (r["task_id"] for r in rows if r["task_id"]))
+            ctx = _Ctx(
+                project=project,
+                skeleton={r["id"]: r for r in named},
+                deps=[],
+                links={},
+                today=self._today(project["timezone"]),
+                docs=principal.documents,
             )
             return self._activity(conn, ctx, rows, limit)
 
@@ -2643,25 +2680,45 @@ def _hierarchy_order(rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
     return ordered
 
 
-def _sort_key(sort: str) -> Callable[[TaskOut], tuple[Any, ...]]:
+def _blocked_by(row: RowLike, ctx: _Ctx) -> list[str]:
+    """Unfinished active FS predecessors of an ACTIVE task (an archived task waits for nothing)."""
+    return ctx.blocked_by(row["id"]) if row["archived_at"] is None else []
+
+
+def _is_blocked(row: RowLike, ctx: _Ctx) -> bool:
+    return row["status"] != TaskStatus.done.value and bool(_blocked_by(row, ctx))
+
+
+def _overdue(row: RowLike, today: date) -> bool:
+    due = _d(row["due_date"])
+    return (
+        row["archived_at"] is None
+        and row["status"] != TaskStatus.done.value
+        and due is not None
+        and due < today
+    )
+
+
+def _row_sort_key(sort: str) -> Callable[[RowLike], tuple[Any, ...]]:
+    """The list order on stored rows — the same keys TaskOut has (dates and timestamps parsed, titles casefolded)."""
     far = date(9999, 12, 31)
     match sort:
         case "key":
-            return lambda t: (t.number,)
+            return lambda r: (int(r["number"]),)
         case "title":
-            return lambda t: (t.title.casefold(), t.number)
+            return lambda r: (r["title"].casefold(), int(r["number"]))
         case "status":
-            return lambda t: (STATUS_ORDER[t.status.value], t.number)
+            return lambda r: (STATUS_ORDER[r["status"]], int(r["number"]))
         case "priority":
-            return lambda t: (PRIORITY_ORDER[t.priority.value], t.number)
+            return lambda r: (PRIORITY_ORDER[r["priority"]], int(r["number"]))
         case "start_date":
-            return lambda t: (t.start_date or far, t.number)
+            return lambda r: (_d(r["start_date"]) or far, int(r["number"]))
         case "due_date":
-            return lambda t: (t.due_date or far, t.number)
+            return lambda r: (_d(r["due_date"]) or far, int(r["number"]))
         case "updated_at":
-            return lambda t: (t.updated_at, t.number)
+            return lambda r: (_dt(r["updated_at"]), int(r["number"]))
         case _:
-            return lambda t: (t.sort_order, t.number)
+            return lambda r: (int(r["sort_order"]), int(r["number"]))
 
 
 def _created_changes(row: Mapping[str, Any]) -> dict[str, Any]:
