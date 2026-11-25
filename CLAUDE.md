@@ -36,7 +36,8 @@ registry. GitLab MR workflow and Confluence publication: `docs/GITLAB_KNOWLEDGE_
 `docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`. Overall: `docs/ARCHITECTURE.md`.
 M5.6.3: metadata without YAML + WikiLinks/backlinks (`docs/METADATA_AND_LINKS.md`), Template Hub
 (`docs/TEMPLATE_HUB.md`), AI-first proposals with Accept/Reject (`docs/AI_WORKFLOWS.md`).
-M6: native Work Management — projects/tasks/FS scheduling/identity gate in `backend/app/work/` (`docs/WORK_MANAGEMENT.md`).
+M6: native Work Management — projects/tasks/FS scheduling/identity gate, task↔document links (reader-scoped),
+`work_inspect` (read-only M5.7 tool) and typed «AI план» proposals in `backend/app/work/` (`docs/WORK_MANAGEMENT.md`).
 Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
 AI service; no embeddings, vector DB, LLM re-ranker or orchestration framework by default. Claude Code is the
 current developer agent, GigaCode the future one — never couple app logic to either, never assume a
@@ -53,7 +54,8 @@ revision, fragment).
 ## 5. Commands (all exist; run them, paste real output)
 `make setup` · `make check` (ruff, mypy strict, tsc, eslint, pytest, vitest) · `make e2e` ·
 `make preflight` · `make mock-kb-validate` · `make mock-kb-sync` · `make knowledge-eval` (deterministic,
-216 cases) · `make knowledge-eval-live` (opt-in, `SKH_LIVE_EVAL=1`) · `make claude-test-*` (personal stack).
+216 cases) · `make work-eval` (M6, deterministic) · `make knowledge-eval-live` (opt-in, `SKH_LIVE_EVAL=1`) ·
+`make claude-test-*` (personal stack).
 Hetzner test stack: `deploy/claude-test/deploy.sh` (see `docs/CLAUDE_CODE_CLI_INTEGRATION.md`).
 
 ## 6. Changing schemas, documents and templates

@@ -17,7 +17,13 @@ FastAPI backend — every route: require(Action) → AuthorizationPolicy (LocalD
   │                        optional StreamingAIProvider.stream_answer → POST /api/assistant/ask/stream (NDJSON)
   │                        claude_cli (EXPERIMENTAL, personal test) → claude-worker container → Claude Code CLI
   │                        M5.7: optional ToolCallingAIProvider.tool_turn → bounded ToolLoop → SystemToolExecutor
-  │                        (catalog / search / graph / templates / proposals; reader's snapshot; docs/AI_NATIVE_TOOLS.md)
+  │                        (catalog / search / graph / templates / proposals / work_inspect; reader's snapshot;
+  │                         docs/AI_NATIVE_TOOLS.md)
+   ├─ WorkService (M6) ──── work.sqlite3 (versioned migrations v1–v3, backup before migrating): projects, tasks,
+   │   (identity gate,       FS dependencies, schedule previews, task↔document links, AI task-plan proposals, audit;
+   │    scheduler,           links read the READER's knowledge snapshot on every request (no document copies);
+   │    links, AI plan)      WorkAiService: AIProvider.plan_work (optional capability) → validated typed proposal →
+   │                         explicit apply in one transaction (docs/WORK_MANAGEMENT.md)
    ├─ AuthoringService ──── templates (files) · generated frontmatter · ID/path checks · safe preview
    │                        AIProvider.draft_document + verbatim citation check (scope "team")
    ├─ ProposalService ───── ProposalStore (SQLite: proposals, content-free audit)

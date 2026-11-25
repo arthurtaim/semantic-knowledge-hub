@@ -27,6 +27,13 @@
   применяется без явного «Принять».
 - **Карта знаний** (`/graph`). Типизированный граф с происхождением связей, группировка по типам, перетаскивание
   узлов, режимы «Вся база», «Вокруг узла», «Граф ответа».
+- **Работа: проекты и задачи** (`/projects`, M6). Собственный лёгкий трекер внутри SKH: проекты, задачи и
+  подзадачи, «Список | Доска | Гант» над одним снимком, зависимости «окончание → начало», серверный предпросмотр
+  сроков и атомарное применение, история. Задачи связываются с документами базы (ревизия документа сверяется при
+  каждом открытии, скрытый документ не раскрывается), документ показывает свои задачи. «AI план» предлагает задачи
+  по документам — ничего не создаётся до проверки и «Создать задачи»; ассистент отвечает о статусе задач только по
+  данным модуля. Без модели всё, кроме AI, работает. Подробно — [docs/WORK_MANAGEMENT.md](docs/WORK_MANAGEMENT.md),
+  руководство — [docs/WORK_USER_GUIDE.md](docs/WORK_USER_GUIDE.md).
 - **Публикации** (`/publications`). Публикация утверждённых ревизий в Confluence Data Center только после
   предпросмотра и явным действием; список заданий со статусами.
 - **Интеграции.** Для каждой видно, настроена ли она, на что направлена (локально / тестовый дубль / реальный
@@ -113,6 +120,9 @@ cd frontend && npx vite
 5. **«Карта знаний»** и **«Шаблоны»** (версии, сравнение версий).
 6. **«Интеграции».** Локальная база подключена, внешние системы — «Не подключено», AI — «Без модели (mock)». Блок
    синхронизации индекса.
+7. **«Проекты»** (группа «Работа»). Три синтетических проекта: ARIS → «Список», «Доска», «Гант»; карточка задачи
+   ARIS-1 → «Документы» (в том числе устаревший документ с пометкой). Документ `DEMO-INT-002` → «Связи» → «Задачи».
+   «AI план» появляется только с языковой моделью (в `mock` его нет).
 
 В офлайн-режиме отправка в GitLab и публикация в Confluence не настроены — их можно посмотреть в профиле с
 тестовыми дублями.
@@ -192,6 +202,7 @@ make e2e-gitlab # только сценарии на тестовых дубля
 make mock-e2e   # сквозной сценарий профиля integration_mock в Docker (нужен `make mock-up`)
 make preflight  # офлайн-проверка конфигурации, соединений не выполняет
 make readiness  # opt-in read-only проверка настроенных интеграций (обращается к ним, ничего не пишет)
+make work-eval  # M6: детерминированные проверки задач, планирования, связей и AI-плана без AI и сети
 ```
 
 Без `make`:
@@ -216,6 +227,11 @@ cd frontend && npx playwright test                             # нужен за
 | Playwright, все проекты (стенды mock и disabled, тестовые дубли GitLab, MCP, Confluence) | **82 passed, 1 skipped** (desktop, mobile, gitlab-mock; пропущен сценарий, которому нужен Confluence) |
 | E2E ассистента на сценарном двойнике модели | **15 passed** (`E2E_SCRIPTED_URL`, см. [docs/AI_NATIVE_TOOLS.md](docs/AI_NATIVE_TOOLS.md)) |
 | `make knowledge-eval` | 216 случаев, 207 пройдено; Recall@1 0.9487, MRR 0.9647, утечек 0 |
+
+**Ветка M6 (2026-11-25, `feature/m6-native-work-management`):** `make check` — backend **1029 passed, 6 skipped**,
+frontend **634 passed**; Playwright desktop + mobile **86 passed, 1 skipped**; сценарии на двойнике модели **21 passed**
+(через `internal_api` и через `claude_cli`); `make work-eval` **17/17**; `make knowledge-eval` без изменений (207 из
+216). Подробно — [reports/m6/FINAL_REPORT.md](reports/m6/FINAL_REPORT.md).
 
 Реальные GitLab, Confluence MCP и Confluence REST **не проверялись**.
 
@@ -328,6 +344,7 @@ reports/               отчёты оценки поиска и M5.7
 |---|---|
 | [docs/PRODUCT.md](docs/PRODUCT.md), [docs/UX.md](docs/UX.md) | Требования к продукту и интерфейсу |
 | [docs/UI_REDESIGN.md](docs/UI_REDESIGN.md), [docs/ui-v2/](docs/ui-v2/) | Интерфейс: фазы, UI v2, «Документы» v2, «Пустой документ», отклонения от макетов |
+| [docs/WORK_MANAGEMENT.md](docs/WORK_MANAGEMENT.md), [docs/WORK_USER_GUIDE.md](docs/WORK_USER_GUIDE.md), [reports/m6/FINAL_REPORT.md](reports/m6/FINAL_REPORT.md) | Работа (M6): проекты, задачи, Гант, связи с документами, AI план — контракт, руководство, итог |
 | [docs/AI_NATIVE_TOOLS.md](docs/AI_NATIVE_TOOLS.md), [docs/AI_WORKFLOWS.md](docs/AI_WORKFLOWS.md), [docs/ASSISTANT_INSTRUCTIONS.md](docs/ASSISTANT_INSTRUCTIONS.md) | Ассистент: инструменты системы (M5.7), навыки и вложения, ИИ-предложения, политика |
 | [docs/METADATA_AND_LINKS.md](docs/METADATA_AND_LINKS.md), [docs/TEMPLATE_HUB.md](docs/TEMPLATE_HUB.md), [docs/KNOWLEDGE_GRAPH.md](docs/KNOWLEDGE_GRAPH.md), [docs/SEARCH_SYNC_TEMPLATES.md](docs/SEARCH_SYNC_TEMPLATES.md), [docs/EXTERNAL_RAG.md](docs/EXTERNAL_RAG.md) | Метаданные и WikiLinks, шаблоны, граф, поиск и синхронизация, внешние источники |
 | [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) | История вех M0–M5: как реализовано и проверено |

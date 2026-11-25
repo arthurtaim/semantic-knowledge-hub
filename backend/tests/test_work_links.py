@@ -367,3 +367,27 @@ def test_seed_skips_documents_missing_from_the_base(client_factory: Client) -> N
     with c.app.state.container.work.db.read() as conn:  # type: ignore[attr-defined]
         ids = sorted(r[0] for r in conn.execute("SELECT document_id FROM work_task_links"))
     assert ids == ["SEM-ARCH-001", "SEM-DEC-001", "SEM-INT-ARIS-001"]
+
+
+def test_m6_38_template_version_change_keeps_the_canonical_id_and_flags_the_revision(wc: TestClient) -> None:
+    """A linked document re-pinned to a new template version (what a Template Studio update produces on its next
+    revision): the link keeps the SAME canonical id and reports the changed revision; no task template appears, the
+    task is untouched, and the work module writes nothing into the document."""
+    project(wc)
+    t = task(wc, "LNK", title="Опирается на стандарт")
+    created = link(wc, t["key"], "SEM-STD-001", "requires").json()
+    path = doc_file(wc, "SEM-STD-001")
+    text = path.read_text(encoding="utf-8")
+    repinned = text.replace(
+        "updated_at: 2025-01-15\n", "updated_at: 2025-01-15\ntemplate: standard\ntemplate_version: 2\n", 1
+    )
+    assert repinned != text
+    path.write_text(repinned, encoding="utf-8")
+    item = wc.get(f"/api/tasks/{t['key']}/links").json()["items"][0]
+    assert item["id"] == created["id"] and item["document"]["document_id"] == "SEM-STD-001"
+    assert item["state"] == "revision_changed" and item["revision_at_link"] == created["revision_at_link"]
+    assert wc.get(f"/api/tasks/{t['key']}").json()["version"] == t["version"]
+    assert path.read_text(encoding="utf-8") == repinned  # nothing written back by the work module
+    with wc.app.state.container.work.db.read() as conn:  # type: ignore[attr-defined]
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert not any("template" in name for name in tables)  # no task-template entity exists in M6

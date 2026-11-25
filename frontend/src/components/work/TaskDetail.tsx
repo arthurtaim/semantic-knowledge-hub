@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../../api/client";
 import type {
+  LinkRelation,
   AssigneeRef,
   ScheduleApplyResult,
   TaskDependencies,
@@ -27,6 +28,8 @@ import {
   TASK_STATUS_LABEL,
   TASK_STATUS_ORDER,
   toDay,
+  LINK_RELATION_LABEL,
+  shortRevision,
 } from "../../lib/work";
 import { AnswerMarkdown } from "../AnswerMarkdown";
 import { Notice } from "../Feedback";
@@ -619,6 +622,8 @@ function describeValue(field: string, value: unknown, assignees: AssigneeRef[], 
   if (field === "priority" && typeof value === "string") return PRIORITY_LABEL[value as TaskPriority] ?? value;
   if (field === "assignee_id" && typeof value === "string") return assignees.find((a) => a.id === value)?.display_name ?? value;
   if ((field === "parent_task_id" || field === "predecessor" || field === "successor") && typeof value === "string") return keyOf(value);
+  if (field === "relation" && typeof value === "string") return LINK_RELATION_LABEL[value as LinkRelation] ?? value;
+  if (field === "revision_at_link" && typeof value === "string") return shortRevision(value);
   if (typeof value === "boolean") return value ? "да" : "нет";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDay(value);
   if (typeof value === "object") return JSON.stringify(value);

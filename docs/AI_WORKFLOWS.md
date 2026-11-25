@@ -65,6 +65,18 @@ eval cases `KM-AI-*`.
 - Checks: `tests/test_template_studio.py::test_s8_*` (scripted model double, keyword logic only inside the double),
   `e2e/templateStudioAi.spec.ts` (projects `scripted`, `scripted-mobile`).
 
+## Task-plan proposals («AI план», M6)
+
+The same contract as the proposals above — a typed proposal with evidence, nothing applied without an explicit
+Accept, a proposal whose base changed is invalidated, never merged silently — for TASKS of the work module. It lives in
+`work.sqlite3` (`work_ai_proposals`) so that apply (tasks + dependencies + links + the status change) is ONE
+transaction; it is created and applied only from the project UI (the chat has no write tool). Flow, validation
+(cycles / unknown ids reject the plan; assignees, dates, invented sources and unverifiable quotes are dropped and shown
+as review issues; dates are computed by the server), staleness (`plan_changed`, `source_changed`,
+`source_unavailable`, `expired`) and the API: `docs/WORK_MANAGEMENT.md` §11, `docs/API_CONTRACTS.md` v0.7. Providers:
+the optional `WorkPlanningAIProvider.plan_work` over the model-agnostic JSON protocol `app/adapters/ai/work_protocol.py`
+(`internal_api`, `claude_cli`); `mock` and `disabled` have none, and the feature says it is unavailable.
+
 ## Навыки ассистента и вложения (UI v2, фаза C)
 
 Навык — именованный сценарий с явным правом поверх тех же сценариев: реестр отдаёт
