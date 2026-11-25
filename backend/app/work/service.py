@@ -30,11 +30,14 @@ from app.work import scheduler as sched
 from app.work import store
 from app.work.calendar import (
     CALENDAR_ID,
+    MAX_YEAR,
+    MIN_YEAR,
     WORKDAY_NUMBERS,
     add_workdays,
     canonical_interval,
     count_workdays,
     fs_earliest_start,
+    in_supported_range,
     last_workday,
     next_workday,
 )
@@ -101,7 +104,6 @@ logger = logging.getLogger("skh.work")
 
 TASK_KEY_RE = re.compile(r"^([A-Z][A-Z0-9]{1,9})-(\d{1,9})$")
 PROJECT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
-MIN_YEAR, MAX_YEAR = 2000, 2100
 STATUS_ORDER = {s.value: i for i, s in enumerate(TaskStatus)}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 # A database row or a plain mapping with the same column names.
@@ -149,9 +151,15 @@ def _stale_schedule(reason: str, message: str, **details: Any) -> ApiError:
     return ApiError(409, "stale_schedule", message, {"reason": reason, **details})
 
 
-def _check_year(value: date | None, name: str) -> None:
-    if value is not None and not (MIN_YEAR <= value.year <= MAX_YEAR):
-        raise _invalid_dates("out_of_range", f"{name}: дата должна быть между {MIN_YEAR} и {MAX_YEAR} годом.")
+def check_work_date(value: date | None, name: str) -> None:
+    """A person's or a derived work date outside the supported range → 422 `invalid_date_range` naming the field."""
+    if value is not None and not in_supported_range(value):
+        raise _invalid_dates(
+            "out_of_range", f"{name}: дата должна быть между {MIN_YEAR} и {MAX_YEAR} годом.", field=name
+        )
+
+
+_check_year = check_work_date
 
 
 def resolve_interval(
@@ -172,6 +180,7 @@ def resolve_interval(
         if duration < 1:
             raise _invalid_dates("duration_zero", "У задачи (не вехи) длительность не меньше 1 рабочего дня.")
         computed = (next_workday(start), add_workdays(start, duration))
+        _check_year(computed[1], "end_exclusive")  # a derived end obeys the same bound as an explicit one
         if end is not None and canonical_interval(start, end) != computed:
             raise _invalid_dates(
                 "duration_mismatch", "end_exclusive и duration_workdays противоречат друг другу (Пн–Пт)."
@@ -1362,6 +1371,54 @@ class WorkService:
                 archived=archived, removed_dependency_ids=removed, plan_revision=revision
             )
 
+    @staticmethod
+    def _check_restore_parent(
+        conn: sqlite3.Connection, project: RowLike, parent_id: str, height: int
+    ) -> None:
+        """The hierarchy invariants of create/move, re-checked for a restore (audit CODE-002, CODE-003).
+
+        While a task sat in the archive its parent stayed editable: it may have been archived, turned into a
+        milestone or moved deeper. A restore that would break «at most MAX_DEPTH levels» or «a milestone has no
+        subtasks» is refused as a conflict before anything is written; the person fixes the parent and retries.
+        """
+        parent = store.get_task(conn, parent_id)
+        if parent is None or parent["project_id"] != project["id"]:
+            raise ApiError(
+                409,
+                "conflict",
+                "Родительской задачи нет в этом проекте — восстановить задачу на прежнее место нельзя.",
+                {"reason": "parent_not_in_project"},
+            )
+        if parent["archived_at"] is not None:
+            raise ApiError(
+                409,
+                "conflict",
+                "Родительская задача в архиве — восстановите сначала её.",
+                {"reason": "parent_archived"},
+            )
+        if parent["is_milestone"]:
+            raise ApiError(
+                409,
+                "conflict",
+                "Родительская задача стала вехой, а у вехи не может быть подзадач. Снимите у неё признак вехи "
+                "и повторите восстановление.",
+                {"reason": "milestone_parent", "parent_task_id": parent_id},
+            )
+        parent_depth, seen = 1, {parent["id"]}
+        current: sqlite3.Row | None = parent
+        while current is not None and current["parent_task_id"] and current["parent_task_id"] not in seen:
+            seen.add(current["parent_task_id"])
+            parent_depth += 1
+            current = store.get_task(conn, current["parent_task_id"])
+        if parent_depth + height > MAX_DEPTH:
+            raise ApiError(
+                409,
+                "conflict",
+                f"После восстановления вложенность превысит {MAX_DEPTH} уровня: родительскую задачу перенесли "
+                "глубже. Перенесите её выше и повторите восстановление.",
+                {"reason": "too_deep", "max_depth": MAX_DEPTH, "depth": parent_depth + height},
+            )
+
     def restore_task(self, principal: WorkPrincipal, ref: str, expected_version: int) -> TaskOut:
         with self.db.write() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.edit_task)
@@ -1375,19 +1432,17 @@ class WorkService:
             self._require_open(project)
             if task["archived_at"] is None:
                 raise ApiError(409, "conflict", "Задача не в архиве.", {"reason": "task_active"})
+            # Restore the subtree archived by the same operation (an «undo» of a cascade), nothing else: a descendant
+            # returns only together with its parent, so nothing comes back under a task that stays archived.
+            returning = {task["id"]}
+            same_op: list[sqlite3.Row] = []
+            for row in store.descendants(conn, task["id"]):  # nearest first
+                if row["archived_at"] == task["archived_at"] and row["parent_task_id"] in returning:
+                    returning.add(row["id"])
+                    same_op.append(row)
             if task["parent_task_id"]:
-                parent = store.get_task(conn, task["parent_task_id"])
-                if parent is not None and parent["archived_at"] is not None:
-                    raise ApiError(
-                        409,
-                        "conflict",
-                        "Родительская задача в архиве — восстановите сначала её.",
-                        {"reason": "parent_archived"},
-                    )
-            # Restore the subtree archived by the same operation (an «undo» of a cascade), nothing else.
-            same_op = [
-                r for r in store.descendants(conn, task["id"]) if r["archived_at"] == task["archived_at"]
-            ]
+                height = 1 + max((int(r["rel_depth"]) for r in same_op), default=0)
+                self._check_restore_parent(conn, project, task["parent_task_id"], height)
             if store.count_active_tasks(conn, project["id"]) + 1 + len(same_op) > MAX_TASKS_PER_PROJECT:
                 raise ApiError(
                     409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
@@ -2256,6 +2311,9 @@ class WorkService:
                     {"reason": f"already_{row['status']}"},
                 )
             plan = prepare(row, project)
+            for planned in plan.tasks:  # the same bound as a direct create (audit CODE-005), before any write
+                check_work_date(planned.start, "start_date")
+                check_work_date(planned.end, "end_exclusive")
             ctx = self._ctx(conn, project)
             depth = ctx.depth(plan.anchor_id) if plan.anchor_id else 0
             if plan.anchor_id is not None:

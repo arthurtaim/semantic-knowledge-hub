@@ -22,6 +22,14 @@ CALENDAR_ID = "mon_fri_v1"
 WORKDAYS_PER_WEEK = 5
 WORKDAY_NUMBERS = (1, 2, 3, 4, 5)  # ISO weekday numbers: Monday = 1 … Friday = 5
 _ONE_DAY = timedelta(days=1)
+# The one supported date range of the work module (audit CODE-005, CODE-011). Every stored work date — given by a
+# person, derived from a duration, shifted by the scheduler or computed for an AI plan — has its year in
+# [MIN_YEAR, MAX_YEAR]; checking derived dates too keeps calendar arithmetic far from date.max (no overflow).
+MIN_YEAR, MAX_YEAR = 2000, 2100
+
+
+def in_supported_range(day: date) -> bool:
+    return MIN_YEAR <= day.year <= MAX_YEAR
 
 
 def is_workday(day: date) -> bool:

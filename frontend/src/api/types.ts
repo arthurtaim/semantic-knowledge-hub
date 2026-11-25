@@ -2269,7 +2269,7 @@ export interface ScheduleOperation {
 }
 
 export interface ScheduleConflict {
-  /** task_locked | locked_successor | successor_violation | requested_violates_predecessor */
+  /** task_locked | locked_successor | successor_violation | requested_violates_predecessor | out_of_range */
   code: string;
   task_id: string;
   key: string;

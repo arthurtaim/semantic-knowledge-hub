@@ -520,7 +520,8 @@ class ScheduleOperation(BaseModel):
 
 
 class ScheduleConflict(BaseModel):
-    # task_locked · locked_successor · successor_violation · requested_violates_predecessor · invalid_interval
+    # task_locked · locked_successor · successor_violation · requested_violates_predecessor · invalid_interval ·
+    # out_of_range (a shift would leave the supported years)
     code: str
     task_id: str
     key: str

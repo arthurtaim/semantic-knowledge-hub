@@ -29,9 +29,11 @@ from datetime import date
 
 from app.work.calendar import (
     CALENDAR_ID,
+    MAX_YEAR,
     add_workdays,
     count_workdays,
     fs_earliest_start,
+    in_supported_range,
     last_workday,
 )
 from app.work.models import (
@@ -389,6 +391,19 @@ def plan(
             if task.milestone
             else add_workdays(new_start, max(1, count_workdays(cur_start, cur_end)))
         )
+        if not (in_supported_range(new_start) and in_supported_range(new_end)):
+            # A shift is a derived date: it obeys the same bound as a person's date (audit CODE-005/011).
+            conflicts.append(
+                ScheduleConflict(
+                    code="out_of_range",
+                    task_id=task_id,
+                    key=key(task_id),
+                    related_task_ids=related,
+                    message=f"{key(task_id)} пришлось бы сдвинуть за {MAX_YEAR} год из-за {names} — "
+                    "такие даты не поддерживаются.",
+                )
+            )
+            continue
         state[task_id] = (new_start, new_end)
         shifted[task_id] = related
 

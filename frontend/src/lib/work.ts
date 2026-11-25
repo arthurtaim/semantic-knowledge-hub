@@ -133,12 +133,17 @@ export function actorName(id: string, identity: { user_id: string; display_name:
   return assignees.find((a) => a.id === id)?.display_name ?? id;
 }
 
+/** The supported range of work dates (the server's calendar.MIN_YEAR..MAX_YEAR): the date pickers offer only these. */
+export const WORK_DATE_MIN = "2000-01-01";
+export const WORK_DATE_MAX = "2100-12-31";
+
 /** Server conflicts of a schedule preview, in words. */
 export const CONFLICT_LABEL: Record<string, string> = {
   task_locked: "Сроки задачи закреплены",
   locked_successor: "Зависимой задаче с закреплёнными сроками пришлось бы сдвинуться",
   successor_violation: "Зависимая задача начнётся раньше окончания этой",
   requested_violates_predecessor: "Задача начнётся раньше окончания предшественника",
+  out_of_range: "Зависимую задачу пришлось бы сдвинуть за 2100 год — такие даты не поддерживаются",
 };
 
 /** The reasons of `409 stale_schedule`. */
