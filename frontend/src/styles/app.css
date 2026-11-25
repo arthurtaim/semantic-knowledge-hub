@@ -13532,9 +13532,8 @@ a.fact-item__title:hover {
 
 /* ── «Доска» ── */
 
-.board__hint {
-  margin: 0 0 var(--space-2);
-  font-size: var(--fs-small);
+.board-view__panel {
+  width: 18rem;
 }
 
 .board__columns {

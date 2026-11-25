@@ -14,7 +14,7 @@ import { GanttControls } from "../components/work/GanttControls";
 import { Menu } from "../components/ui/Popover";
 import { ProjectStrip, projectSummary, type StripLayout } from "../components/work/ProjectStrip";
 import { SchedulePreviewDialog, type ScheduleRequest } from "../components/work/SchedulePreviewDialog";
-import { TaskBoard } from "../components/work/TaskBoard";
+import { BoardViewMenu, TaskBoard } from "../components/work/TaskBoard";
 import { TaskDetail } from "../components/work/TaskDetail";
 import { TaskFiltersBar } from "../components/work/TaskFiltersBar";
 import { TaskList } from "../components/work/TaskList";
@@ -389,6 +389,8 @@ export function ProjectPage() {
   const viewControls =
     view === "list" ? (
       listControls
+    ) : view === "board" ? (
+      <BoardViewMenu canWrite={canWrite} />
     ) : view === "gantt" ? (
       <GanttControls
         zoom={zoom}
