@@ -1,5 +1,5 @@
 import type { WorkTask } from "../api/types";
-import { readPreference } from "./storage";
+import { readPreference, writePreference } from "./storage";
 import { formatDay, fromDay, isoWeekday, toDay } from "./work";
 
 /*
@@ -628,6 +628,45 @@ export function linksNote(mode: Exclude<LinksMode, "auto">, hasSelection: boolea
   if (mode === "none") return "Связи скрыты";
   if (mode === "selected") return hasSelection ? "Связи — только у выбранной задачи" : "Связи — только у выбранной: выберите задачу";
   return hasSelection ? "Связи выбранной выделены" : "Выберите задачу — её связи выделятся";
+}
+
+// --- the view settings («Вид») --------------------------------------------------------------------------------------
+
+/** The left column's width can be dragged within these bounds (§3.1). */
+export const NAMES_MIN = 240;
+export const NAMES_MAX = 480;
+
+export interface GanttViewSettings {
+  links: LinksMode;
+  labels: LabelsMode;
+  /** A dragged width of the left column, or null for the default of the layout. */
+  namesWidth: number | null;
+  namesCollapsed: boolean;
+  /** Highlight the critical path — only offered when the server computes one (§7.2). */
+  criticalPath: boolean;
+}
+
+export const GANTT_VIEW_KEY = "skh.work.gantt.view";
+export const DEFAULT_GANTT_VIEW: GanttViewSettings = { links: "auto", labels: "auto", namesWidth: null, namesCollapsed: false, criticalPath: false };
+
+/** The remembered «Вид» of the Gantt in this browser; anything unknown falls back to the defaults. */
+export function readGanttView(): GanttViewSettings {
+  let raw: unknown = null;
+  try {
+    raw = JSON.parse(readPreference(GANTT_VIEW_KEY) ?? "null");
+  } catch {
+    raw = null;
+  }
+  if (!raw || typeof raw !== "object") return { ...DEFAULT_GANTT_VIEW };
+  const value = raw as Record<string, unknown>;
+  const links = LINKS_MODES.includes(value.links as LinksMode) ? (value.links as LinksMode) : "auto";
+  const labels = value.labels === "none" ? "none" : "auto";
+  const width = typeof value.namesWidth === "number" && Number.isFinite(value.namesWidth) ? Math.min(NAMES_MAX, Math.max(NAMES_MIN, Math.round(value.namesWidth))) : null;
+  return { links, labels, namesWidth: width, namesCollapsed: value.namesCollapsed === true, criticalPath: value.criticalPath === true };
+}
+
+export function writeGanttView(settings: GanttViewSettings): void {
+  writePreference(GANTT_VIEW_KEY, JSON.stringify(settings));
 }
 
 // --- text measurement -------------------------------------------------------------------------------------------

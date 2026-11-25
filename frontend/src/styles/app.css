@@ -13941,6 +13941,124 @@ a.fact-item__title:hover {
   text-align: right;
 }
 
+/* the selected task: its row tinted in both panels, a green rule in the left column, a ring around its bar; its links
+   in the accent colour above the others; a hovered row is tinted lightly */
+.gantt__row-selected {
+  fill: var(--gantt-row-selected);
+}
+
+.gantt__row-hover {
+  fill: var(--gantt-row-hover);
+}
+
+.gantt-name.is-hovered {
+  background: var(--gantt-row-hover);
+}
+
+.gantt-name.is-selected {
+  background: var(--accent-wash);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.gantt-bar__ring {
+  fill: none;
+  stroke: var(--focus-ring);
+  stroke-width: 3;
+  pointer-events: none;
+}
+
+.gantt-bar.is-selected .gantt-bar__body,
+.gantt-bar.is-selected .gantt-bar__diamond {
+  stroke: var(--accent);
+}
+
+.gantt-bar--summary.is-selected .gantt-bar__summary {
+  fill: var(--accent);
+}
+
+.gantt-arrow.is-hi .gantt-arrow__line {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+}
+
+.gantt-arrow.is-hi .gantt-arrow__head {
+  fill: var(--accent);
+}
+
+/* the critical path (only when the server computes one, §7.2): its bars framed and its links in the error tone */
+.gantt-bar.is-critical .gantt-bar__body,
+.gantt-bar.is-critical .gantt-bar__diamond {
+  stroke: var(--danger);
+  stroke-width: 2;
+}
+
+.gantt-arrow.is-critical .gantt-arrow__line {
+  stroke: var(--danger);
+}
+
+.gantt-arrow.is-critical .gantt-arrow__head {
+  fill: var(--danger);
+}
+
+/* «Вписать» pressed; «Вид»: 292 px with the keys under the choices */
+.work-toolbar__fit[aria-pressed="true"] {
+  border-color: var(--accent-wash-border);
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+.gantt-view-menu__panel {
+  width: 18.25rem;
+  max-width: calc(100vw - 2 * var(--space-4));
+}
+
+.gantt-view-menu__panel .menu__group-label {
+  font-size: var(--fs-caption);
+}
+
+.menu__footer {
+  margin-top: var(--space-1);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--line);
+}
+
+.gantt-keys {
+  padding: var(--space-1) var(--space-2) var(--space-1);
+}
+
+.gantt-keys__title {
+  padding: var(--space-1) 0 var(--space-2);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.gantt-keys__list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px var(--space-3);
+  margin: 0;
+}
+
+.gantt-keys__list > div {
+  display: contents;
+}
+
+.gantt-keys__list dt {
+  white-space: nowrap;
+}
+
+.gantt-keys__list dt {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.gantt-keys__list dd {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--text);
+}
+
 /* the legend: one 30 px line under the chart */
 .gantt-legend-row {
   display: flex;

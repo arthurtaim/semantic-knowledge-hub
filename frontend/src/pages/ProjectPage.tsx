@@ -38,7 +38,7 @@ import {
   type WorkView,
 } from "../lib/work";
 import { writePreference } from "../lib/storage";
-import { GANTT_ZOOM_KEY, resolveZoom, type GanttZoom } from "../lib/gantt";
+import { GANTT_ZOOM_KEY, readGanttView, resolveZoom, writeGanttView, type GanttViewSettings, type GanttZoom } from "../lib/gantt";
 
 /*
  * A project (M6, Planner v2 frame — docs/ui-v2/planner/specs/PLANNER_V2.md §2): the 52 px toolbar (path, key,
@@ -89,6 +89,10 @@ export function ProjectPage() {
   const smallPhone = useMediaQuery(SMALL_PHONE);
   const panelMode = useSidePanelMode();
   const ganttRef = useRef<GanttHandle>(null);
+  // The Gantt's «Вид» (remembered in this browser), a smooth zoom (Ctrl/⌘ + wheel; not in the URL) and «Вписать» again.
+  const [ganttView, setGanttView] = useState<GanttViewSettings>(readGanttView);
+  const [customWidth, setCustomWidth] = useState<number | null>(null);
+  const [fitRequest, setFitRequest] = useState(0);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const [creating, setCreating] = useState<{ parent: WorkTask | null } | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRequest | null>(null);
@@ -152,10 +156,27 @@ export function ProjectPage() {
   const onZoom = useCallback(
     (next: GanttZoom) => {
       writePreference(GANTT_ZOOM_KEY, next);
+      setCustomWidth(null);
       setUrl({ zoom: next }, true);
     },
     [setUrl],
   );
+
+  // Back / Forward to another zoom drops a smooth one.
+  useEffect(() => setCustomWidth(null), [zoom]);
+
+  const onFit = useCallback(() => {
+    if (zoom !== "fit") onZoom("fit");
+    else {
+      setCustomWidth(null);
+      setFitRequest((n) => n + 1);
+    }
+  }, [zoom, onZoom]);
+
+  const onGanttView = useCallback((next: GanttViewSettings) => {
+    setGanttView(next);
+    writeGanttView(next);
+  }, []);
 
   const onToggle = useCallback((taskId: string) => {
     setCollapsed((current) => {
@@ -292,8 +313,22 @@ export function ProjectPage() {
   const countText = filtered ? `Найдено: ${shownCount} из ${tasks.length}` : tasksText(tasks.length);
 
   // The view's own controls at the right end of the filter row.
+  const criticalPathAvailable = capabilities?.features.critical_path === true && Boolean(snapshot.critical_path?.length);
   const viewControls =
-    view === "gantt" ? <GanttControls zoom={zoom} onZoom={onZoom} onToday={() => ganttRef.current?.scrollToToday()} phone={phone} /> : null;
+    view === "gantt" ? (
+      <GanttControls
+        zoom={zoom}
+        dayWidthOverride={customWidth}
+        onZoom={onZoom}
+        onFit={onFit}
+        onToday={() => ganttRef.current?.scrollToToday()}
+        settings={ganttView}
+        onSettings={onGanttView}
+        criticalPathAvailable={criticalPathAvailable}
+        medium={medium}
+        phone={phone}
+      />
+    ) : null;
 
   return (
     <div className={`work-page project-page project-page--${view}${panel && panelMode === "inline" ? " project-page--with-panel" : ""}`}>
@@ -383,6 +418,13 @@ export function ProjectPage() {
               dependencies={snapshot.dependencies}
               violations={snapshot.violations}
               zoom={zoom}
+              dayWidthOverride={customWidth}
+              onDayWidth={setCustomWidth}
+              onFit={onFit}
+              fitRequest={fitRequest}
+              settings={ganttView}
+              criticalPath={criticalPathAvailable ? snapshot.critical_path : null}
+              selectedKey={selectedKey}
               today={today}
               canWrite={canWrite}
               compact={phone}

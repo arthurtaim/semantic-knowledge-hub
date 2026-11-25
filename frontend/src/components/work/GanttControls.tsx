@@ -1,23 +1,110 @@
-import { FIXED_ZOOMS, GANTT_ZOOM_LABEL, GANTT_ZOOMS, type GanttZoom } from "../../lib/gantt";
-import { Button } from "../ui/Button";
+import {
+  FIXED_ZOOMS,
+  GANTT_ZOOM_LABEL,
+  GANTT_ZOOMS,
+  LINKS_MODE_LABEL,
+  LINKS_MODES,
+  zoomForDayWidth,
+  type GanttViewSettings,
+  type GanttZoom,
+} from "../../lib/gantt";
+import { Button, IconButton } from "../ui/Button";
 import { Icon } from "../ui/Icon";
-import { Menu } from "../ui/Popover";
+import { Menu, type MenuGroup } from "../ui/Popover";
 import { SegmentedControl } from "../ui/SegmentedControl";
 
 /*
  * The Gantt's controls at the right end of the filter row (Planner v2, docs/ui-v2/planner/specs/PLANNER_V2.md §2.4,
- * §3.2, §3.9): the zoom as segments «День | Неделя | Месяц | Квартал | Год» — a menu on a phone — and «Сегодня».
+ * §3.2, §3.7, §3.9): the zoom as segments «День | Неделя | Месяц | Квартал | Год» (a menu on a phone), «Вписать»
+ * (pressed while the zoom is «Вписать»; an icon at the medium width), «Сегодня» and «Вид» — how links and labels are
+ * drawn and the keys. A smooth zoom (Ctrl/⌘ + wheel) lights a segment only when it lands exactly on its scale.
  */
+
+const KEYS: [string, string][] = [
+  ["⌘/Ctrl + колесо", "масштаб"],
+  ["Shift + 1", "вписать проект"],
+  ["T", "к сегодня"],
+  ["← →", "сдвиг выбранной"],
+  ["Shift + ← →", "длительность"],
+  ["Enter", "последствия"],
+  ["Esc", "отмена"],
+];
+
+const LINKS_HINT: Partial<Record<GanttViewSettings["links"], string>> = { auto: "по масштабу" };
 
 interface GanttControlsProps {
   zoom: GanttZoom;
+  /** The smooth zoom in px per day, when there is one. */
+  dayWidthOverride: number | null;
   onZoom: (zoom: GanttZoom) => void;
+  onFit: () => void;
   onToday: () => void;
+  settings: GanttViewSettings;
+  onSettings: (next: GanttViewSettings) => void;
+  /** The server computes a critical path and returned one: «Критический путь» is offered (never a fake one). */
+  criticalPathAvailable: boolean;
+  /** Up to 1100 px: «Вписать» is an icon. */
+  medium: boolean;
   /** Phones: the zoom is a menu (it includes «Вписать»). */
   phone: boolean;
 }
 
-export function GanttControls({ zoom, onZoom, onToday, phone }: GanttControlsProps) {
+export function GanttControls({ zoom, dayWidthOverride, onZoom, onFit, onToday, settings, onSettings, criticalPathAvailable, medium, phone }: GanttControlsProps) {
+  const shown: GanttZoom | null = dayWidthOverride !== null ? zoomForDayWidth(dayWidthOverride) : zoom;
+  const fitted = shown === "fit";
+
+  const viewGroups: MenuGroup[] = [
+    {
+      label: "Связи между задачами",
+      radio: true,
+      items: LINKS_MODES.map((mode) => ({
+        id: `links:${mode}`,
+        label: LINKS_MODE_LABEL[mode],
+        meta: LINKS_HINT[mode],
+        checked: settings.links === mode,
+        onSelect: () => onSettings({ ...settings, links: mode }),
+      })),
+    },
+    {
+      label: "Подписи на полосах",
+      radio: true,
+      items: [
+        { id: "labels:auto", label: "Авто", meta: "внутри, если помещается", checked: settings.labels === "auto", onSelect: () => onSettings({ ...settings, labels: "auto" }) },
+        { id: "labels:none", label: "Без подписей", meta: "названия слева", checked: settings.labels === "none", onSelect: () => onSettings({ ...settings, labels: "none" }) },
+      ],
+    },
+    ...(criticalPathAvailable
+      ? [
+          {
+            multi: true,
+            items: [
+              {
+                id: "critical",
+                label: "Критический путь",
+                description: "по расчёту сервера",
+                checked: settings.criticalPath,
+                onSelect: () => onSettings({ ...settings, criticalPath: !settings.criticalPath }),
+              },
+            ],
+          } satisfies MenuGroup,
+        ]
+      : []),
+  ];
+
+  const keys = (
+    <div className="gantt-keys">
+      <div className="gantt-keys__title">Клавиши</div>
+      <dl className="gantt-keys__list">
+        {KEYS.map(([key, what]) => (
+          <div key={key}>
+            <dt>{key}</dt>
+            <dd>{what}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+
   return (
     <>
       {phone ? (
@@ -28,28 +115,56 @@ export function GanttControls({ zoom, onZoom, onToday, phone }: GanttControlsPro
           groups={[
             {
               radio: true,
-              items: GANTT_ZOOMS.map((value) => ({ id: value, label: GANTT_ZOOM_LABEL[value], checked: zoom === value, onSelect: () => onZoom(value) })),
+              items: GANTT_ZOOMS.map((value) => ({
+                id: value,
+                label: GANTT_ZOOM_LABEL[value],
+                checked: shown === value,
+                onSelect: () => (value === "fit" ? onFit() : onZoom(value)),
+              })),
             },
           ]}
           trigger={(props) => (
-            <button {...props} type="button" className="docs-filter" aria-label={`Масштаб: ${GANTT_ZOOM_LABEL[zoom]}`}>
-              <span className="docs-filter__text">{GANTT_ZOOM_LABEL[zoom]}</span>
+            <button {...props} type="button" className="docs-filter" aria-label={`Масштаб: ${shown ? GANTT_ZOOM_LABEL[shown] : "свой"}`}>
+              <span className="docs-filter__text">{shown ? GANTT_ZOOM_LABEL[shown] : "Масштаб"}</span>
               <Icon name="chevron" size={12} />
             </button>
           )}
         />
       ) : (
-        <SegmentedControl
-          label="Масштаб"
-          className="work-toolbar__zoom"
-          options={FIXED_ZOOMS.map((value): { value: GanttZoom; label: string } => ({ value, label: GANTT_ZOOM_LABEL[value] }))}
-          value={zoom}
-          onChange={onZoom}
-        />
+        <>
+          <SegmentedControl
+            label="Масштаб"
+            className="work-toolbar__zoom"
+            options={FIXED_ZOOMS.map((value): { value: GanttZoom; label: string } => ({ value, label: GANTT_ZOOM_LABEL[value] }))}
+            value={shown ?? "fit"}
+            onChange={onZoom}
+          />
+          {medium ? (
+            <IconButton icon="fit" size="sm" variant="secondary" label="Вписать" title="Весь проект по ширине (Shift + 1)" aria-pressed={fitted} className="work-toolbar__fit" onClick={onFit} />
+          ) : (
+            <Button size="sm" icon="fit" aria-pressed={fitted} title="Весь проект по ширине (Shift + 1)" className="work-toolbar__fit" onClick={onFit}>
+              Вписать
+            </Button>
+          )}
+        </>
       )}
-      <Button size="sm" onClick={onToday}>
+      <Button size="sm" title="К сегодня (T)" onClick={onToday}>
         Сегодня
       </Button>
+      <Menu
+        label="Вид диаграммы"
+        align="end"
+        className="gantt-view-menu"
+        panelClassName="gantt-view-menu__panel"
+        groups={viewGroups}
+        footer={keys}
+        trigger={(props) => (
+          <button {...props} type="button" className="button button--secondary button--sm" title="Связи, подписи, клавиши">
+            <Icon name="sliders" size={14} />
+            Вид
+          </button>
+        )}
+      />
     </>
   );
 }

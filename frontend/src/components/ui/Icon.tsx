@@ -206,6 +206,14 @@ const PATHS = {
     </>
   ),
   milestone: <path d="M12 4.5 19.5 12 12 19.5 4.5 12Z" />,
+  sliders: (
+    <>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </>
+  ),
+  fit: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
   dependency: (
     <>
       <path d="M4 7h6v10h7" />

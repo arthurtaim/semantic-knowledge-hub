@@ -101,6 +101,10 @@ interface MenuProps {
   groups: MenuGroup[];
   /** Non-interactive content above the items (who is signed in and the like). */
   header?: ReactNode;
+  /** Non-interactive content below the items (the keys of a view). */
+  footer?: ReactNode;
+  /** A class for the floating panel (its width). */
+  panelClassName?: string;
   side?: PopoverSide;
   align?: PopoverAlign;
   className?: string;
@@ -112,7 +116,7 @@ interface MenuProps {
  * chooses and closes (an item of a `multi` group toggles and keeps the menu open); Esc closes and returns focus to
  * the button; Tab or a press outside closes it.
  */
-export function Menu({ label, trigger, groups, header, side = "bottom", align = "start", className }: MenuProps) {
+export function Menu({ label, trigger, groups, header, footer, panelClassName, side = "bottom", align = "start", className }: MenuProps) {
   const [open, setOpen] = useState(false);
   const [initial, setInitial] = useState<"first" | "last">("first");
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -215,7 +219,7 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
         onClick: () => (open ? setOpen(false) : openAt("first")),
         onKeyDown: onTriggerKeyDown,
       })}
-      <div className={placementClass("popover", side, align, "menu-popup")} hidden={!open}>
+      <div className={placementClass("popover", side, align, ["menu-popup", panelClassName ?? ""].filter(Boolean).join(" "))} hidden={!open}>
         {header ? <div className="menu__header">{header}</div> : null}
         <div id={menuId} role="menu" aria-label={label} className="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
           {groups.map((group, groupIndex) => {
@@ -255,6 +259,7 @@ export function Menu({ label, trigger, groups, header, side = "bottom", align = 
             );
           })}
         </div>
+        {footer ? <div className="menu__footer">{footer}</div> : null}
       </div>
     </div>
   );

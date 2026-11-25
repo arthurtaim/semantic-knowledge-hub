@@ -232,6 +232,107 @@ test.describe("M6 work management", () => {
   });
 });
 
+test.describe("Planner v2 Gantt (docs/ui-v2/planner/specs/PLANNER_V2.md §8)", () => {
+  // The seeded synthetic project ARIS, only read: 14 tasks, summaries, milestones, an overdue task, 10 FS links.
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  async function openGantt(page: Page, zoom: string) {
+    await page.goto(`/projects/ARIS?view=gantt&zoom=${zoom}`);
+    await expect(page.locator("g.gantt-bar").first()).toBeVisible();
+    await page.evaluate(() => document.fonts.ready);
+  }
+
+  /** The chart's visible window on the screen: right of the sticky task column, inside the scroller. */
+  async function chartWindow(page: Page): Promise<{ left: number; right: number }> {
+    return page.evaluate(() => {
+      const scroller = document.querySelector(".gantt__scroller") as HTMLElement;
+      const names = document.querySelector(".gantt__names") as HTMLElement;
+      const box = scroller.getBoundingClientRect();
+      return { left: names.getBoundingClientRect().right, right: box.left + scroller.clientWidth };
+    });
+  }
+
+  /** Horizontal arrow segments crossing a label's box (the label backing would hide the line or the text). */
+  async function arrowsOverLabels(page: Page): Promise<string[]> {
+    return page.evaluate(() => {
+      const labels = Array.from(document.querySelectorAll<HTMLElement>(".gantt__label")).map((el) => ({ text: el.textContent ?? "", r: el.getBoundingClientRect() }));
+      const problems: string[] = [];
+      for (const path of Array.from(document.querySelectorAll<SVGPathElement>(".gantt-arrow__line"))) {
+        const svg = path.ownerSVGElement?.getBoundingClientRect();
+        if (!svg) continue;
+        let x = 0;
+        let y = 0;
+        for (const [, op, a, b] of (path.getAttribute("d") ?? "").matchAll(/([MHV])\s*(-?[\d.]+)(?:\s+(-?[\d.]+))?/g)) {
+          if (op === "M") {
+            x = Number(a);
+            y = Number(b);
+          } else if (op === "V") {
+            y = Number(a);
+          } else {
+            const x1 = Math.min(x, Number(a)) + svg.left;
+            const x2 = Math.max(x, Number(a)) + svg.left;
+            const sy = y + svg.top;
+            for (const { text, r } of labels) {
+              if (sy > r.top + 0.5 && sy < r.bottom - 0.5 && x1 < r.right - 0.5 && x2 > r.left + 0.5) problems.push(`${path.parentElement?.getAttribute("data-dependency-id")} over «${text}»`);
+            }
+            x = Number(a);
+          }
+        }
+      }
+      return problems;
+    });
+  }
+
+  test("«Вписать» shows the first and the last task of the project whole", async ({ page }) => {
+    await openGantt(page, "fit");
+    await expect(page.getByRole("button", { name: "Вписать" })).toHaveAttribute("aria-pressed", "true");
+    const win = await chartWindow(page);
+    const boxes = await page.locator('g.gantt-bar [data-part="body"]').evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
+    expect(boxes.length).toBe(14);
+    expect(Math.min(...boxes.map((b) => b.left))).toBeGreaterThanOrEqual(win.left);
+    expect(Math.max(...boxes.map((b) => b.right))).toBeLessThanOrEqual(win.right);
+  });
+
+  test("«Год»: no label runs outside the chart, arrows are hidden (Авто)", async ({ page }) => {
+    await openGantt(page, "year");
+    const win = await chartWindow(page);
+    const labels = await page.locator(".gantt__label").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().toJSON() as DOMRect));
+    expect(labels.length).toBeGreaterThan(0);
+    for (const label of labels) {
+      expect(label.left).toBeGreaterThanOrEqual(win.left);
+      expect(label.right).toBeLessThanOrEqual(win.right);
+    }
+    await expect(page.locator("[data-dependency-id]")).toHaveCount(0);
+    await expect(page.getByText("Связи скрыты")).toBeVisible();
+  });
+
+  test("selecting a task highlights its links, incoming and outgoing", async ({ page }) => {
+    await openGantt(page, "week");
+    await page.locator('g.gantt-bar[data-task-key="ARIS-6"] [data-part="body"]').click();
+    await expect(page.locator('g.gantt-bar[data-task-key="ARIS-6"]')).toHaveClass(/is-selected/);
+    const lit = page.locator(".gantt-arrow.is-hi");
+    await expect(lit).toHaveCount(4); // ARIS-2 → 6; 6 → 7, 8, 9
+    for (const arrow of await lit.all()) {
+      expect([await arrow.getAttribute("data-from"), await arrow.getAttribute("data-to")]).toContain("ARIS-6");
+    }
+    await expect(page.locator('.gantt-arrow[data-from="ARIS-11"]').first()).not.toHaveClass(/is-hi/);
+    await expect(page.getByText("Связи выбранной выделены")).toBeVisible();
+    await expect(page).not.toHaveURL(/task=/);
+    await page.locator('g.gantt-bar[data-task-key="ARIS-6"] [data-part="body"]').dblclick();
+    await expect(page).toHaveURL(/task=ARIS-6/);
+  });
+
+  test("no horizontal arrow segment crosses a label on «День», «Неделя», «Месяц» and «Вписать»", async ({ page }) => {
+    for (const zoom of ["day", "week", "month", "fit"]) {
+      await openGantt(page, zoom);
+      // «Месяц» draws only the selected task's links: select the busiest one
+      await page.locator('g.gantt-bar[data-task-key="ARIS-6"] [data-part="body"]').click();
+      expect(await page.locator(".gantt-arrow").count(), zoom).toBeGreaterThan(0);
+      expect(await arrowsOverLabels(page), zoom).toEqual([]);
+    }
+  });
+});
+
 test.describe("M6 task ↔ document links", () => {
   test("M6-11 links a task to a document and navigates both ways; the document filter narrows the views", async ({ page }) => {
     const key = await createProject(page.request, "LK");

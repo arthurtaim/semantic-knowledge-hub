@@ -21,9 +21,11 @@ import {
   createTextMeasure,
   DAY_WIDTH,
   decideLabel,
+  effectiveLinks,
   fitDayWidth,
   fitStartDay,
   lateEnd as lateEndOf,
+  linksNote,
   markerText,
   MILESTONE_HALF,
   projectSpan,
@@ -32,9 +34,12 @@ import {
   scrollForDay,
   summarySpans,
   TODAY_AT,
+  wheelDayWidth,
+  clampDayWidth,
   type BarBox,
   type ChartWindow,
   type DaySpan,
+  type GanttViewSettings,
   type GanttZoom,
   type LabelDecision,
 } from "../../lib/gantt";
@@ -69,6 +74,12 @@ import { Icon } from "../ui/Icon";
  *   calendar exactly as the server will). Nothing changes on drop: the parent opens the schedule preview.
  * - Keyboard (WCAG 2.5.7): a focused bar moves with ← / →, changes its duration with Shift + ← / →; Enter shows the
  *   consequences (or opens the task when nothing is pending), Esc cancels.
+ * - A click (or focus) selects a task: its row is tinted in both panels and its links — incoming and outgoing — are
+ *   drawn above the others in the accent colour; hovering a bar does the same for a while. A double click opens it.
+ * - Which arrows are drawn is the «Вид» setting (§3.6): «Авто» — all from 8 px per day, only the selected task's
+ *   from 1.5 px, none below; «Все»; «Только у выбранной»; «Скрыть».
+ * - Ctrl/⌘ + wheel or a pinch zooms smoothly (0.5–48 px per day) around the pointer; Shift + 1 fits the project,
+ *   T goes to today (anywhere on the page outside fields, dialogs and menus).
  * - Rows are virtualised (only the visible window plus a margin is in the DOM); only what touches the visible window
  *   horizontally is computed; a drag paints the bar directly in one animation frame per move — no React render per
  *   pointer frame.
@@ -97,6 +108,18 @@ export interface GanttChartProps {
   dependencies: WorkDependency[];
   violations: ScheduleViolation[];
   zoom: GanttZoom;
+  /** A smooth zoom (Ctrl/⌘ + wheel, a pinch) in px per day; null — the zoom named in the URL. */
+  dayWidthOverride?: number | null;
+  onDayWidth?: (dayWidth: number) => void;
+  /** Shift + 1: fit the project (the page switches the zoom to «Вписать»). */
+  onFit?: () => void;
+  /** Changes when «Вписать» is asked for again while the zoom already is «Вписать»: back to the project's start. */
+  fitRequest?: number;
+  settings?: Pick<GanttViewSettings, "links" | "labels" | "criticalPath">;
+  /** The critical path's task ids when the server computes one (never invented); null otherwise. */
+  criticalPath?: string[] | null;
+  /** The task open in the panel (`?task=`) is selected too. */
+  selectedKey?: string | null;
   today: string;
   canWrite: boolean;
   /** Phones: no dragging (the task panel's form changes dates). */
@@ -199,6 +222,18 @@ function barLabel(task: WorkTask, today: string, summary: DaySpan | undefined): 
   return parts.join(", ");
 }
 
+const DEFAULT_SETTINGS: Pick<GanttViewSettings, "links" | "labels" | "criticalPath"> = { links: "auto", labels: "auto", criticalPath: false };
+
+/** Typing into a field or working in a dialog / menu: the Gantt's own keys stay out of the way. */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      "input:not([type='radio']):not([type='checkbox']):not([type='button']):not([type='submit']), textarea, select, [contenteditable='true'], [role='dialog'], [role='menu'], [role='listbox']",
+    ),
+  );
+}
+
 /** What a row draws: its box on the scale, the overdue hatching, where its label goes. */
 interface RowModel {
   task: WorkTask;
@@ -227,6 +262,7 @@ function useElementSize(ref: RefObject<HTMLElement | null>): { width: number; he
 
 export function GanttChart(props: GanttChartProps) {
   const { rows, pool, tasks, dependencies, violations, zoom, today, canWrite, compact, collapsed, onToggle, keyOf, onOpen, onRequestSchedule, previewOps, ref } = props;
+  const { dayWidthOverride = null, onDayWidth, onFit, fitRequest = 0, settings = DEFAULT_SETTINGS, criticalPath = null, selectedKey = null } = props;
   const scrollerRef = useRef<HTMLDivElement>(null);
   const size = useElementSize(scrollerRef);
   const namesWidth = compact ? NAMES_WIDTH_PHONE : NAMES_WIDTH;
@@ -260,7 +296,7 @@ export function GanttChart(props: GanttChartProps) {
     }
     return merged;
   }, [rows, summaries]);
-  const dayWidth = zoom === "fit" ? fitDayWidth(visibleWidth, extent) : DAY_WIDTH[zoom];
+  const dayWidth = dayWidthOverride !== null ? clampDayWidth(dayWidthOverride) : zoom === "fit" ? fitDayWidth(visibleWidth, extent) : DAY_WIDTH[zoom];
   const range = useMemo(() => chartRange(tasks, today, dayWidth, visibleWidth), [tasks, today, dayWidth, visibleWidth]);
   const chartWidth = (range.end - range.start) * dayWidth;
   const height = Math.max(rows.length, 1) * ROW_HEIGHT;
@@ -272,6 +308,17 @@ export function GanttChart(props: GanttChartProps) {
   const suppressClick = useRef(false);
   const [announcement, setAnnouncement] = useState("");
   const canDrag = canWrite && !compact;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoverBar, setHoverBar] = useState<string | null>(null);
+  const [hoverRow, setHoverRow] = useState<number | null>(null);
+  const criticalSet = useMemo(() => new Set(settings.criticalPath && criticalPath ? criticalPath : []), [settings.criticalPath, criticalPath]);
+
+  // The task open in the panel is the selected one.
+  useEffect(() => {
+    if (!selectedKey) return;
+    const task = tasks.find((t) => t.key === selectedKey);
+    if (task) setSelectedId(task.id);
+  }, [selectedKey, tasks]);
 
   const rowIndex = useMemo(() => new Map(rows.map((row, index) => [row.task.id, index] as const)), [rows]);
   const byId = useMemo(() => new Map(tasks.map((task) => [task.id, task] as const)), [tasks]);
@@ -303,7 +350,7 @@ export function GanttChart(props: GanttChartProps) {
 
   // Where the window goes when the scale changes: «Вписать» shows the project from its start; any other change keeps
   // the date in the middle of the window in the middle; the first render shows today at 30 % of the width.
-  const layout = useRef<{ dayWidth: number; start: number; visible: number; zoom: GanttZoom } | null>(null);
+  const layout = useRef<{ dayWidth: number; start: number; visible: number; zoom: GanttZoom; fitRequest: number } | null>(null);
   const anchor = useRef<{ day: number; offset: number } | null>(null);
   useLayoutEffect(() => {
     const el = scrollerRef.current;
@@ -313,21 +360,22 @@ export function GanttChart(props: GanttChartProps) {
     if (anchor.current) {
       target = scrollForDay(anchor.current.day, anchor.current.offset, range, dayWidth);
       anchor.current = null;
-    } else if (!prev || (prev.zoom !== zoom && zoom === "fit")) {
+    } else if (!prev || (prev.zoom !== zoom && zoom === "fit") || prev.fitRequest !== fitRequest) {
       target =
-        zoom === "fit"
+        zoom === "fit" || (prev && prev.fitRequest !== fitRequest)
           ? scrollForDay(fitStartDay(extent, todayDay), 0, range, dayWidth)
           : scrollForDay(todayDay, visibleWidth * TODAY_AT, range, dayWidth);
     } else if (prev.dayWidth !== dayWidth || prev.start !== range.start || prev.visible !== visibleWidth) {
       const centre = prev.start + (el.scrollLeft + prev.visible / 2) / prev.dayWidth;
       target = scrollForDay(centre, visibleWidth / 2, range, dayWidth);
     }
-    layout.current = { dayWidth, start: range.start, visible: visibleWidth, zoom };
+    layout.current = { dayWidth, start: range.start, visible: visibleWidth, zoom, fitRequest };
+    pendingWidth.current = null;
     if (target !== null) {
       el.scrollLeft = target;
       setView({ left: el.scrollLeft, top: el.scrollTop });
     }
-  }, [zoom, dayWidth, range, visibleWidth, extent, todayDay]);
+  }, [zoom, dayWidth, range, visibleWidth, extent, todayDay, fitRequest]);
 
   const scrollToToday = useCallback(() => {
     const el = scrollerRef.current;
@@ -337,6 +385,71 @@ export function GanttChart(props: GanttChartProps) {
   }, [todayDay, visibleWidth, range, dayWidth]);
 
   useImperativeHandle(ref, () => ({ scrollToToday }), [scrollToToday]);
+
+  // Shift + 1 — fit, T — today: anywhere on the page except fields, dialogs and menus (the key codes, so a Russian
+  // layout works too).
+  const keys = useRef({ onFit, scrollToToday });
+  keys.current = { onFit, scrollToToday };
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isTyping(event.target)) return;
+      if (event.code === "Digit1" && event.shiftKey) {
+        event.preventDefault();
+        keys.current.onFit?.();
+      } else if (event.code === "KeyT" && !event.shiftKey) {
+        event.preventDefault();
+        keys.current.scrollToToday();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Ctrl/⌘ + wheel and a trackpad pinch (Chrome, Firefox: a wheel with ctrlKey; Safari: gesture events) zoom smoothly
+  // around the pointer. Several events within a frame build on each other.
+  const pendingWidth = useRef<number | null>(null);
+  const zoomAt = useRef<(next: number, offset: number) => void>(() => {});
+  zoomAt.current = (next: number, offset: number) => {
+    const el = scrollerRef.current;
+    const current = pendingWidth.current ?? dayWidth;
+    if (!el || !onDayWidth || Math.abs(next - current) < 1e-9) return;
+    const from = layout.current;
+    const start = from?.start ?? range.start;
+    anchor.current = { day: start + (el.scrollLeft + offset) / current, offset };
+    pendingWidth.current = next;
+    onDayWidth(next);
+  };
+  const wheelBase = useRef<{ width: number; offset: number; visible: number; names: number }>({ width: dayWidth, offset: 0, visible: visibleWidth, names: namesWidth });
+  wheelBase.current = { width: pendingWidth.current ?? dayWidth, offset: 0, visible: visibleWidth, names: namesWidth };
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return undefined;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const base = wheelBase.current;
+      const offset = Math.min(Math.max(event.clientX - el.getBoundingClientRect().left - base.names, 0), base.visible);
+      zoomAt.current(wheelDayWidth(base.width, event.deltaY, event.deltaMode), offset);
+    };
+    let gestureStart = 0;
+    const onGestureStart = (event: Event) => {
+      event.preventDefault();
+      gestureStart = wheelBase.current.width;
+    };
+    const onGestureChange = (event: Event) => {
+      event.preventDefault();
+      const scale = (event as Event & { scale?: number }).scale ?? 1;
+      zoomAt.current(clampDayWidth(gestureStart * scale), wheelBase.current.visible / 2);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("gesturestart", onGestureStart);
+    el.addEventListener("gesturechange", onGestureChange);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("gesturestart", onGestureStart);
+      el.removeEventListener("gesturechange", onGestureChange);
+    };
+  }, []);
 
   /** Scrolls so that a task outside the window starts at 10 % of its width (a marker was pressed). */
   function scrollToTask(box: BarBox) {
@@ -361,7 +474,7 @@ export function GanttChart(props: GanttChartProps) {
         done: task.status === "done",
         textWidth: measure(task.title, strong ? "label-strong" : "label"),
         window: win,
-        labels: "auto",
+        labels: settings.labels,
       });
       let marker: RowModel["marker"] = null;
       if (label.place === "before" || label.place === "after") {
@@ -370,7 +483,7 @@ export function GanttChart(props: GanttChartProps) {
       }
       return { task, index, box, lateEnd: late, label, marker };
     },
-    [range, dayWidth, summaries, todayDay, measure, win],
+    [range, dayWidth, summaries, todayDay, measure, win, settings.labels],
   );
 
   const windowRows = rows.slice(first, last + 1);
@@ -400,14 +513,19 @@ export function GanttChart(props: GanttChartProps) {
     [rowIndex, byId],
   );
 
+  const linksMode = effectiveLinks(settings.links, dayWidth);
+  const lit = useMemo(() => new Set([selectedId, hoverBar].filter((id): id is string => id !== null)), [selectedId, hoverBar]);
   const arrows = useMemo(() => {
-    const result: { id: string; d: string; head: string; violated: boolean; title: string }[] = [];
+    const result: { id: string; from: string; to: string; d: string; head: string; violated: boolean; hi: boolean; critical: boolean; title: string }[] = [];
+    if (linksMode === "none") return result;
     const model = (index: number) => {
       const row = rows[index];
       if (!row) return null;
       return models.get(row.task.id) ?? modelOf(row.task, index);
     };
     for (const dep of dependencies) {
+      const hi = lit.has(dep.predecessor_id) || lit.has(dep.successor_id);
+      if (linksMode === "selected" && !hi) continue;
       const from = shownRow(dep.predecessor_id);
       const to = shownRow(dep.successor_id);
       if (from === undefined || to === undefined || from === to) continue;
@@ -424,14 +542,19 @@ export function GanttChart(props: GanttChartProps) {
       const isViolated = violated.has(dep.id);
       result.push({
         id: dep.id,
+        from: pred?.key ?? "",
+        to: succ?.key ?? "",
         d: routeDependency(ends.x1, y1, ends.x2, y2, ROW_HEIGHT),
         head: arrowHead(ends.x2, y2),
         violated: isViolated,
+        hi,
+        critical: criticalSet.has(dep.predecessor_id) && criticalSet.has(dep.successor_id),
         title: `${pred?.key ?? "?"} → ${succ?.key ?? "?"}: ${succ?.key ?? "?"} начинается после окончания ${pred?.key ?? "?"}${isViolated ? " (сейчас нарушено)" : ""}`,
       });
     }
-    return result;
-  }, [dependencies, shownRow, rows, models, modelOf, first, last, byId, violated, win]);
+    // The selected task's links are drawn last: above the others.
+    return result.sort((a, b) => Number(a.hi) - Number(b.hi));
+  }, [dependencies, shownRow, rows, models, modelOf, first, last, byId, violated, win, linksMode, lit, criticalSet]);
 
   const ghosts = useMemo(() => {
     if (!previewOps) return [];
@@ -559,7 +682,7 @@ export function GanttChart(props: GanttChartProps) {
       suppressClick.current = false;
       return;
     }
-    onOpen(task);
+    setSelectedId(task.id);
   }
 
   // --- keyboard (WCAG 2.5.7: the same change without dragging) ------------------------------------------------------
@@ -582,6 +705,8 @@ export function GanttChart(props: GanttChartProps) {
         reset(pending.current);
         pending.current = null;
         setAnnouncement("Изменение отменено.");
+      } else if (selectedId) {
+        setSelectedId(null);
       }
       return;
     }
@@ -633,6 +758,13 @@ export function GanttChart(props: GanttChartProps) {
   const gridLines = scale.bottom
     .map((cell) => (cell.day - range.start) * dayWidth)
     .filter((x) => x >= win.x0 - 1 && x > 0);
+  function onRowHover(event: PointerEvent<HTMLDivElement>) {
+    if (drag.current?.dragging) return;
+    const index = Math.floor((event.clientY - event.currentTarget.getBoundingClientRect().top) / ROW_HEIGHT);
+    if (index !== hoverRow) setHoverRow(index >= 0 && index < rows.length ? index : null);
+  }
+  const selectedIndex = selectedId !== null ? rowIndex.get(selectedId) : undefined;
+
   const modelList = windowRows.flatMap((row) => {
     const model = models.get(row.task.id);
     return model ? [{ row, model }] : [];
@@ -677,7 +809,7 @@ export function GanttChart(props: GanttChartProps) {
               ) : null}
             </div>
           </div>
-          <div className="gantt__body" style={{ height }}>
+          <div className="gantt__body" style={{ height }} onPointerMove={onRowHover} onPointerLeave={() => setHoverRow(null)}>
             <div className="gantt__names" style={{ width: namesWidth, height }}>
               {windowRows.map((row, i) => (
                 <GanttName
@@ -685,6 +817,8 @@ export function GanttChart(props: GanttChartProps) {
                   row={row}
                   top={(first + i) * ROW_HEIGHT}
                   expanded={!collapsed.has(row.task.id)}
+                  selected={row.task.id === selectedId}
+                  hovered={first + i === hoverRow}
                   onToggle={onToggle}
                   onOpen={onOpen}
                   compact={compact}
@@ -700,6 +834,12 @@ export function GanttChart(props: GanttChartProps) {
                   </pattern>
                 </defs>
                 <g className="gantt__grid" aria-hidden="true">
+                  {hoverRow !== null && hoverRow !== selectedIndex ? (
+                    <rect x={win.x0} y={hoverRow * ROW_HEIGHT} width={visibleWidth} height={ROW_HEIGHT} className="gantt__row-hover" />
+                  ) : null}
+                  {selectedIndex !== undefined ? (
+                    <rect x={win.x0} y={selectedIndex * ROW_HEIGHT} width={visibleWidth} height={ROW_HEIGHT} className="gantt__row-selected" />
+                  ) : null}
                   {weekends.map((day) => (
                     <rect key={day} x={(day - range.start) * dayWidth} y={0} width={2 * dayWidth} height={height} className="gantt__weekend" />
                   ))}
@@ -712,7 +852,13 @@ export function GanttChart(props: GanttChartProps) {
                 </g>
                 <g className="gantt__arrows">
                   {arrows.map((arrow) => (
-                    <g key={arrow.id} className={`gantt-arrow${arrow.violated ? " is-violated" : ""}`} data-dependency-id={arrow.id}>
+                    <g
+                      key={arrow.id}
+                      className={`gantt-arrow${arrow.violated ? " is-violated" : ""}${arrow.hi ? " is-hi" : ""}${arrow.critical ? " is-critical" : ""}`}
+                      data-dependency-id={arrow.id}
+                      data-from={arrow.from}
+                      data-to={arrow.to}
+                    >
                       <title>{arrow.title}</title>
                       <path d={arrow.d} className="gantt-arrow__hit" />
                       <path d={arrow.d} className="gantt-arrow__line" />
@@ -753,11 +899,16 @@ export function GanttChart(props: GanttChartProps) {
                       today={today}
                       summary={summaries.get(row.task.id)}
                       violated={violatedSuccessors.has(row.task.id)}
+                      selected={row.task.id === selectedId}
+                      critical={criticalSet.has(row.task.id)}
+                      onSelect={setSelectedId}
+                      onHover={setHoverBar}
                       draggable={canDrag && !row.task.date_locked && model.box.kind !== "summary"}
                       onPointerDown={onPointerDown}
                       onPointerMove={onPointerMove}
                       onPointerEnd={onPointerEnd}
                       onClick={onBarClick}
+                      onOpen={onOpen}
                       onKeyDown={onBarKeyDown}
                       onBlur={onBarBlur}
                     />
@@ -780,7 +931,7 @@ export function GanttChart(props: GanttChartProps) {
           </div>
         </div>
       </div>
-      <GanttLegend ghosts={ghosts.length > 0} />
+      <GanttLegend ghosts={ghosts.length > 0} note={linksNote(linksMode, selectedId !== null)} />
       <div className="visually-hidden" role="status" aria-live="polite">
         {announcement}
       </div>
@@ -813,16 +964,18 @@ interface GanttNameProps {
   row: VisibleRow;
   top: number;
   expanded: boolean;
+  selected: boolean;
+  hovered: boolean;
   onToggle: (taskId: string) => void;
   onOpen: (task: WorkTask) => void;
   compact: boolean;
 }
 
-const GanttName = memo(function GanttName({ row, top, expanded, onToggle, onOpen, compact }: GanttNameProps) {
+const GanttName = memo(function GanttName({ row, top, expanded, selected, hovered, onToggle, onOpen, compact }: GanttNameProps) {
   const { task } = row;
   return (
     <div
-      className={`gantt-name${row.context ? " is-context" : ""}${task.status === "done" ? " is-done" : ""}`}
+      className={`gantt-name${row.context ? " is-context" : ""}${task.status === "done" ? " is-done" : ""}${selected ? " is-selected" : ""}${hovered ? " is-hovered" : ""}`}
       style={{ top, ["--depth" as string]: compact ? 0 : task.depth - 1 }}
       data-task-key={task.key}
     >
@@ -855,16 +1008,23 @@ interface GanttBarProps {
   today: string;
   summary: DaySpan | undefined;
   violated: boolean;
+  selected: boolean;
+  critical: boolean;
   draggable: boolean;
+  onSelect: (taskId: string) => void;
+  onHover: (taskId: string | null) => void;
   onPointerDown: (event: PointerEvent<SVGGElement>, task: WorkTask) => void;
   onPointerMove: (event: PointerEvent<SVGGElement>) => void;
   onPointerEnd: (event: PointerEvent<SVGGElement>, cancelled: boolean) => void;
   onClick: (task: WorkTask) => void;
+  onOpen: (task: WorkTask) => void;
   onKeyDown: (event: KeyboardEvent<SVGGElement>, task: WorkTask) => void;
   onBlur: (task: WorkTask) => void;
 }
 
-function GanttBar({ model, context, today, summary, violated, draggable, onPointerDown, onPointerMove, onPointerEnd, onClick, onKeyDown, onBlur }: GanttBarProps) {
+function GanttBar(props: GanttBarProps) {
+  const { model, context, today, summary, violated, selected, critical, draggable, onSelect, onHover } = props;
+  const { onPointerDown, onPointerMove, onPointerEnd, onClick, onOpen, onKeyDown, onBlur } = props;
   const { task, box, lateEnd, label, index } = model;
   const y = index * ROW_HEIGHT;
   const done = task.status === "done";
@@ -876,6 +1036,8 @@ function GanttBar({ model, context, today, summary, violated, draggable, onPoint
     task.overdue || task.late ? "is-late" : "",
     task.date_locked ? "is-locked" : "",
     violated ? "is-violated" : "",
+    selected ? "is-selected" : "",
+    critical ? "is-critical" : "",
     draggable ? "is-draggable" : "",
     context ? "is-context" : "",
   ]
@@ -896,6 +1058,10 @@ function GanttBar({ model, context, today, summary, violated, draggable, onPoint
       onPointerUp={(event) => onPointerEnd(event, false)}
       onPointerCancel={(event) => onPointerEnd(event, true)}
       onClick={() => onClick(task)}
+      onDoubleClick={() => onOpen(task)}
+      onFocus={() => onSelect(task.id)}
+      onPointerEnter={() => onHover(task.id)}
+      onPointerLeave={() => onHover(null)}
       onKeyDown={(event) => onKeyDown(event, task)}
       onBlur={() => onBlur(task)}
     >
@@ -905,6 +1071,13 @@ function GanttBar({ model, context, today, summary, violated, draggable, onPoint
           <rect x={box.x + box.width} y={y + BAR_TOP} width={lateEnd - box.x - box.width} height={BAR_HEIGHT} className="gantt-bar__hatch" />
           <line x1={lateEnd - 1} x2={lateEnd - 1} y1={y + BAR_TOP} y2={y + BAR_TOP + BAR_HEIGHT} className="gantt-bar__late-line" />
         </g>
+      ) : null}
+      {selected ? (
+        box.kind === "milestone" ? (
+          <path d={`M${cx},${midY - MILESTONE_HALF - 4} l${MILESTONE_HALF + 4},${MILESTONE_HALF + 4} l${-MILESTONE_HALF - 4},${MILESTONE_HALF + 4} l${-MILESTONE_HALF - 4},${-MILESTONE_HALF - 4} Z`} className="gantt-bar__ring" />
+        ) : box.kind === "task" ? (
+          <rect x={box.x - 3} y={y + BAR_TOP - 3} width={box.width + 6} height={BAR_HEIGHT + 6} rx={8} className="gantt-bar__ring" />
+        ) : null
       ) : null}
       {box.kind === "milestone" ? (
         <path d={`M${cx},${midY - MILESTONE_HALF} l${MILESTONE_HALF},${MILESTONE_HALF} l${-MILESTONE_HALF},${MILESTONE_HALF} l${-MILESTONE_HALF},${-MILESTONE_HALF} Z`} className="gantt-bar__diamond" data-part="body" />
@@ -974,7 +1147,7 @@ function GanttLabel({ model, onMarker }: { model: RowModel; onMarker: (box: BarB
   return null;
 }
 
-function GanttLegend({ ghosts }: { ghosts: boolean }) {
+function GanttLegend({ ghosts, note }: { ghosts: boolean; note: string }) {
   return (
     <div className="gantt-legend-row">
       <ul className="gantt-legend" aria-label="Обозначения">
@@ -1009,6 +1182,7 @@ function GanttLegend({ ghosts }: { ghosts: boolean }) {
           </li>
         ) : null}
       </ul>
+      <span className="gantt-legend-row__note">{note}</span>
     </div>
   );
 }

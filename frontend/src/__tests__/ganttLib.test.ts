@@ -17,6 +17,7 @@ import {
   MIN_DAY_WIDTH,
   pathSegments,
   projectSpan,
+  readGanttView,
   resolveZoom,
   routeDependency,
   scaleRows,
@@ -24,6 +25,7 @@ import {
   scrollForDay,
   summarySpans,
   wheelDayWidth,
+  writeGanttView,
   zoomForDayWidth,
   type LabelInput,
   type TextMeasure,
@@ -322,6 +324,18 @@ describe("arrows (§3.6)", () => {
     expect(linksNote("all", true)).toBe("Связи выбранной выделены");
     expect(linksNote("selected", true)).toBe("Связи — только у выбранной задачи");
     expect(linksNote("none", false)).toBe("Связи скрыты");
+  });
+});
+
+describe("the view settings («Вид»)", () => {
+  it("are remembered and read back; anything unknown falls back to the defaults", () => {
+    expect(readGanttView()).toEqual({ links: "auto", labels: "auto", namesWidth: null, namesCollapsed: false, criticalPath: false });
+    writeGanttView({ links: "selected", labels: "none", namesWidth: 360, namesCollapsed: true, criticalPath: true });
+    expect(readGanttView()).toEqual({ links: "selected", labels: "none", namesWidth: 360, namesCollapsed: true, criticalPath: true });
+    window.localStorage.setItem("skh.work.gantt.view", JSON.stringify({ links: "sometimes", labels: 3, namesWidth: 9000, namesCollapsed: "yes" }));
+    expect(readGanttView()).toEqual({ links: "auto", labels: "auto", namesWidth: 480, namesCollapsed: false, criticalPath: false });
+    window.localStorage.setItem("skh.work.gantt.view", "{not json");
+    expect(readGanttView().links).toBe("auto");
   });
 });
 

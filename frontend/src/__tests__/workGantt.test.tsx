@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkTask } from "../api/types";
 import { ProjectPage } from "../pages/ProjectPage";
-import { mockApi, renderRoutes } from "./helpers";
-import { gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPointerAndFrames, task } from "./workFixtures";
+import { memoryStorage, mockApi, renderRoutes } from "./helpers";
+import { capabilities, gantt, planTasks, preview, project, projectRoutes, READ_ONLY, stubPointerAndFrames, task } from "./workFixtures";
 
 /*
  * M6 «Гант»: bars from the server's [start, end_exclusive), milestones, arrows, the unscheduled pool, zoom; drag / resize /
@@ -308,7 +308,7 @@ describe("Gantt", () => {
     const calls = mockApi([{ method: "POST", path: "/api/projects/p1/schedule/preview", body: preview() }, ...projectRoutes()]);
     await openGantt();
     const before = x("ARIS-4");
-    bar("ARIS-4").focus();
+    act(() => bar("ARIS-4").focus());
     await user.keyboard("{ArrowRight}{ArrowRight}");
     expect(screen.getByText(/ARIS-4: 30 нояб\.\. Enter — показать последствия, Esc — отменить\./)).toBeInTheDocument();
     await user.keyboard("{Escape}");
@@ -325,12 +325,12 @@ describe("Gantt", () => {
     const user = userEvent.setup();
     const calls = mockApi(projectRoutes());
     await openGantt();
-    bar("ARIS-8").focus();
+    act(() => bar("ARIS-8").focus());
     await user.keyboard("{ArrowRight}");
     expect(screen.getByText(/ARIS-8: сроки закреплены/)).toBeInTheDocument();
     dragBy(body("ARIS-8"), 3 * DAY);
     expect(calls.some((c) => c.url.endsWith("/schedule/preview"))).toBe(false);
-    bar("ARIS-4").focus();
+    act(() => bar("ARIS-4").focus());
     await user.keyboard("{Enter}");
     expect(screen.getByTestId("location")).toHaveTextContent("task=ARIS-4");
   });
@@ -343,7 +343,7 @@ describe("Gantt", () => {
     expect(bar("ARIS-4")).not.toHaveClass("is-draggable");
     expect(document.querySelector("[data-part='resize']")).toBeNull();
     dragBy(body("ARIS-4"), 3 * DAY);
-    bar("ARIS-4").focus();
+    act(() => bar("ARIS-4").focus());
     await user.keyboard("{ArrowRight}{Enter}");
     expect(calls.some((c) => c.url.endsWith("/schedule/preview"))).toBe(false);
   });
@@ -392,7 +392,7 @@ describe("Gantt", () => {
     // the bracket covers the parent's own day and its subtask: 30 Nov – 2 Dec
     const bracket = body("ARIS-2");
     expect(bracket.getAttribute("d")).toMatch(new RegExp(`^M${x("ARIS-3") - DAY},`));
-    bar("ARIS-2").focus();
+    act(() => bar("ARIS-2").focus());
     await user.keyboard("{ArrowRight}");
     expect(screen.getByText("ARIS-2: сроки по подзадачам — меняйте сроки подзадач.")).toBeInTheDocument();
   });
@@ -425,3 +425,152 @@ describe("Gantt", () => {
     expect(elapsed).toBeLessThan(5000);
   });
 });
+
+describe("Gantt: selection, links, «Вид», «Вписать», zoom gestures (Planner v2)", () => {
+  const VISIBLE = 1100 - 300; // jsdom has no layout: the chart assumes a 1100 px scroller and a 300 px left column
+
+  function scroller(): HTMLElement {
+    return document.querySelector(".gantt__scroller") as HTMLElement;
+  }
+
+  it("a click selects a bar and lights its links both ways; a double click or Enter opens it", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    await openGantt();
+    expect(screen.getByText("Выберите задачу — её связи выделятся")).toBeInTheDocument();
+    await user.click(body("ARIS-5"));
+    expect(bar("ARIS-5")).toHaveClass("is-selected");
+    expect(document.querySelector('.gantt-name[data-task-key="ARIS-5"]')).toHaveClass("is-selected");
+    expect(screen.getByTestId("location")).not.toHaveTextContent("task=");
+    // ARIS-4 → ARIS-5 and ARIS-5 → ARIS-6: incoming and outgoing, both raised above the other arrows
+    expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-hi");
+    expect(document.querySelector('[data-dependency-id="d2"]')).toHaveClass("is-hi");
+    expect(screen.getByText("Связи выбранной выделены")).toBeInTheDocument();
+    await user.click(body("ARIS-8"));
+    expect(bar("ARIS-5")).not.toHaveClass("is-selected");
+    expect(document.querySelector('[data-dependency-id="d1"]')).not.toHaveClass("is-hi");
+    // hovering a bar lights its links for a while
+    fireEvent.pointerEnter(bar("ARIS-4"));
+    expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-hi");
+    fireEvent.pointerLeave(bar("ARIS-4"));
+    expect(document.querySelector('[data-dependency-id="d1"]')).not.toHaveClass("is-hi");
+    await user.dblClick(body("ARIS-8"));
+    expect(screen.getByTestId("location")).toHaveTextContent("task=ARIS-8");
+  });
+
+  it("«Авто»: every link on «День»; on «Месяц» only the selected task's; none on «Год»", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    await openGantt("/projects/ARIS?view=gantt&zoom=month");
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByText("Связи — только у выбранной: выберите задачу")).toBeInTheDocument();
+    await user.click(body("ARIS-5"));
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(2);
+    expect(screen.getByText("Связи — только у выбранной задачи")).toBeInTheDocument();
+    await user.click(screen.getByRole("radio", { name: "Год" }));
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByText("Связи скрыты")).toBeInTheDocument();
+  });
+
+  it("«Вид»: links and labels modes are remembered; the keys are listed; Esc returns focus (APG menu)", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    const menu = screen.getByRole("menu", { name: "Вид диаграммы" });
+    const links = within(menu).getByRole("group", { name: "Связи между задачами" });
+    expect(within(links).getByRole("menuitemradio", { name: /^Авто/ })).toHaveAttribute("aria-checked", "true");
+    // the keys are listed under the choices of the same popover (text, not menu items)
+    expect(screen.getByText("Shift + 1")).toBeVisible();
+    expect(screen.getByText("вписать проект")).toBeVisible();
+    await user.click(within(links).getByRole("menuitemradio", { name: "Скрыть" }));
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Вид" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.click(within(screen.getByRole("group", { name: "Подписи на полосах" })).getByRole("menuitemradio", { name: /^Без подписей/ }));
+    // labels beside the bars are gone; the markers of tasks outside the window and the left column stay
+    expect(document.querySelectorAll(".gantt__label:not(.gantt__marker)")).toHaveLength(0);
+    expect(document.querySelectorAll(".gantt__marker").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Вид" })).toHaveFocus();
+    // remembered with the view
+    expect(JSON.parse(window.localStorage.getItem("skh.work.gantt.view") ?? "{}")).toMatchObject({ links: "none", labels: "none" });
+    unmount();
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    expect(document.querySelectorAll("[data-dependency-id]")).toHaveLength(0);
+    expect(screen.getByText("Связи скрыты")).toBeInTheDocument();
+  });
+
+  it("«Вписать» is the first zoom: the project's first day 3 days from the left edge; Shift + 1 fits, T goes to today", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    renderRoutes("/projects/ARIS?view=gantt", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    const fit = screen.getByRole("button", { name: "Вписать" });
+    expect(fit).toHaveAttribute("aria-pressed", "true");
+    // 2 Nov – 9 Dec (37 days) + 3 + 12 in the visible width
+    const dw = VISIBLE / 52;
+    expect(Number(body("ARIS-5").getAttribute("width"))).toBeCloseTo(2 * dw, 6);
+    expect(scroller().scrollLeft).toBeCloseTo(x("ARIS-3") - 3 * dw, 6); // ARIS-3 starts the project on 2 Nov
+    await user.click(screen.getByRole("radio", { name: "Неделя" }));
+    expect(fit).toHaveAttribute("aria-pressed", "false");
+    await user.keyboard("{Shift>}1{/Shift}");
+    expect(screen.getByTestId("location")).toHaveTextContent("zoom=fit");
+    expect(screen.getByRole("button", { name: "Вписать" })).toHaveAttribute("aria-pressed", "true");
+    // T: today at 30 % of the window (25 Nov is two days before ARIS-4's Friday)
+    await act(async () => {
+      scroller().scrollLeft = 0;
+      fireEvent.scroll(scroller());
+    });
+    await user.keyboard("t");
+    expect(scroller().scrollLeft).toBeCloseTo(x("ARIS-4") - 2 * dw - 0.3 * VISIBLE, 6);
+  });
+
+  it("Ctrl/⌘ + wheel zooms smoothly; the day under the pointer stays put; a segment brings a fixed zoom back", async () => {
+    mockApi(projectRoutes());
+    await openGantt("/projects/ARIS?view=gantt&zoom=week");
+    const user = userEvent.setup();
+    const offset = x("ARIS-5") - scroller().scrollLeft; // where ARIS-5 starts in the window
+    fireEvent.wheel(scroller(), { deltaY: -100, ctrlKey: true, clientX: 300 + offset, clientY: 200 });
+    const width = Number(body("ARIS-5").getAttribute("width"));
+    expect(width).toBeGreaterThan(2 * 16);
+    expect(x("ARIS-5") - scroller().scrollLeft).toBeCloseTo(offset, 3);
+    expect(screen.getByRole("radio", { name: "Неделя" })).not.toBeChecked();
+    // a plain wheel scrolls, it does not zoom
+    fireEvent.wheel(scroller(), { deltaY: -100, clientX: 300 + offset });
+    expect(Number(body("ARIS-5").getAttribute("width"))).toBe(width);
+    await user.click(screen.getByRole("radio", { name: "Неделя" }));
+    expect(body("ARIS-5").getAttribute("width")).toBe(String(2 * 16));
+    expect(screen.getByRole("radio", { name: "Неделя" })).toBeChecked();
+  });
+
+  it("the critical path item appears only when the server enables it and returns a path (no fake path)", async () => {
+    const user = userEvent.setup();
+    mockApi(projectRoutes());
+    const { unmount } = renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    expect(screen.queryByRole("menuitemcheckbox", { name: /Критический путь/ })).not.toBeInTheDocument();
+    unmount();
+    vi.restoreAllMocks();
+    mockApi(
+      projectRoutes({
+        caps: capabilities({ features: { critical_path: true, comments: false, document_links: false, ai_proposals: false, lag: false } }),
+        snapshot: gantt(planTasks(), { critical_path: ["t4", "t5", "t6"], features: { critical_path: true, dependency_kinds: ["FS"], lag: false } }),
+      }),
+    );
+    renderRoutes("/projects/ARIS?view=gantt&zoom=day", ROUTES);
+    await screen.findByRole("group", { name: "Полосы задач" });
+    await user.click(screen.getByRole("button", { name: "Вид" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: /Критический путь/ }));
+    expect(bar("ARIS-4")).toHaveClass("is-critical");
+    expect(bar("ARIS-8")).not.toHaveClass("is-critical");
+    expect(document.querySelector('[data-dependency-id="d1"]')).toHaveClass("is-critical");
+  });
+});
+
