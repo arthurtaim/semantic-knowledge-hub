@@ -67,6 +67,39 @@ import type {
   TemplateDetail,
   TemplateSummary,
   ToolStepInfo,
+  AssigneeRef,
+  DependencyCreate,
+  ProjectCreate,
+  ProjectMembers,
+  ProjectStatus,
+  ProjectUpdate,
+  ScheduleApplyRequest,
+  ScheduleApplyResult,
+  SchedulePreview,
+  SchedulePreviewRequest,
+  TaskArchiveResult,
+  TaskCreate,
+  TaskDependencies,
+  TaskUpdate,
+  WorkActivityPage,
+  WorkCapabilities,
+  WorkDependency,
+  WorkGantt,
+  WorkProject,
+  WorkProjectList,
+  WorkTask,
+  WorkTaskPage,
+  WorkTaskQuery,
+  TaskLink,
+  TaskLinkCreate,
+  TaskLinks,
+  ProjectDocuments,
+  DocumentTasks,
+  WorkPlanCreate,
+  WorkProposal,
+  WorkProposalApply,
+  WorkProposalApplyResult,
+  WorkProposalEdits,
 } from "./types";
 import { browserId } from "../lib/browserId";
 
@@ -372,6 +405,20 @@ function query(params: Record<string, string | number | undefined | null>): stri
 }
 
 const json = (value: unknown): string => JSON.stringify(value);
+
+/** M6 task list filters → query string (lists become comma-separated, booleans "true"/"false"). */
+function workTaskQuery(params: WorkTaskQuery): string {
+  const flat: Record<string, string | number | undefined> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) flat[key] = value.length ? value.join(",") : undefined;
+    else if (typeof value === "boolean") flat[key] = value ? "true" : "false";
+    else flat[key] = value as string | number;
+  }
+  return query(flat);
+}
+
+const seg = (value: string): string => encodeURIComponent(value);
 
 export interface DocumentListParams {
   query?: string;
@@ -684,4 +731,90 @@ export const api = {
       body: json({ item_ids: itemIds, ...(reason ? { reason } : {}) }),
     }),
   aiReject: (id: string) => request<AiProposal>(`/ai/proposals/${encodeURIComponent(id)}/reject`, { method: "POST" }),
+  // --- M6: native Work Management (docs/WORK_MANAGEMENT.md). Path ids accept the id or the key (ARIS, ARIS-12). ---
+  // Errors: 409 stale_task|stale_project (details.current_version), 409 stale_schedule (details.reason), 422
+  // invalid_date_range|invalid_dependency|dependency_cycle|invalid_hierarchy|invalid_assignee|schedule_conflict,
+  // 403 forbidden (details.mode = read_only on a shared link), 404 not_found (also for hidden objects),
+  // 503 feature_unavailable (TASK_SYSTEM=disabled).
+  workCapabilities: () => request<WorkCapabilities>("/work/capabilities"),
+  workAssignees: (projectId?: string) => request<AssigneeRef[]>(`/work/assignees${query({ project_id: projectId })}`),
+  workProjects: (params: { status?: ProjectStatus[]; include_archived?: boolean } = {}) =>
+    request<WorkProjectList>(
+      `/projects${query({ status: params.status?.join(","), include_archived: params.include_archived ? "true" : undefined })}`,
+    ),
+  workProject: (projectId: string) => request<WorkProject>(`/projects/${seg(projectId)}`),
+  workCreateProject: (payload: ProjectCreate) =>
+    request<WorkProject>("/projects", { method: "POST", body: json(payload) }),
+  workUpdateProject: (projectId: string, payload: ProjectUpdate) =>
+    request<WorkProject>(`/projects/${seg(projectId)}`, { method: "PATCH", body: json(payload) }),
+  workProjectMembers: (projectId: string) => request<ProjectMembers>(`/projects/${seg(projectId)}/members`),
+  workProjectActivity: (projectId: string, params: { limit?: number; before_seq?: number } = {}) =>
+    request<WorkActivityPage>(`/projects/${seg(projectId)}/activity${query({ ...params })}`),
+  workTasks: (projectId: string, params: WorkTaskQuery = {}, options: { signal?: AbortSignal } = {}) =>
+    request<WorkTaskPage>(`/projects/${seg(projectId)}/tasks${workTaskQuery(params)}`, { signal: options.signal }),
+  workCreateTask: (projectId: string, payload: TaskCreate) =>
+    request<WorkTask>(`/projects/${seg(projectId)}/tasks`, { method: "POST", body: json(payload) }),
+  workTask: (taskId: string) => request<WorkTask>(`/tasks/${seg(taskId)}`),
+  /** Status (Kanban), fields, dates (only if no FS breaks — otherwise use the schedule preview). */
+  workUpdateTask: (taskId: string, payload: TaskUpdate) =>
+    request<WorkTask>(`/tasks/${seg(taskId)}`, { method: "PATCH", body: json(payload) }),
+  /** Archive (soft delete); active subtasks need `cascade: true`. */
+  workArchiveTask: (taskId: string, expectedVersion: number, cascade = false) =>
+    request<TaskArchiveResult>(
+      `/tasks/${seg(taskId)}${query({ expected_version: expectedVersion, cascade: cascade ? "true" : undefined })}`,
+      { method: "DELETE" },
+    ),
+  workRestoreTask: (taskId: string, expectedVersion: number) =>
+    request<WorkTask>(`/tasks/${seg(taskId)}/restore${query({ expected_version: expectedVersion })}`, { method: "POST" }),
+  workTaskActivity: (taskId: string, params: { limit?: number; before_seq?: number } = {}) =>
+    request<WorkActivityPage>(`/tasks/${seg(taskId)}/activity${query({ ...params })}`),
+  workTaskDependencies: (taskId: string) => request<TaskDependencies>(`/tasks/${seg(taskId)}/dependencies`),
+  /** 422 schedule_conflict (reason dependency_violated) → add it through workSchedulePreview({add_dependencies}). */
+  workAddDependency: (taskId: string, payload: DependencyCreate) =>
+    request<{ dependency: WorkDependency; plan_revision: number }>(`/tasks/${seg(taskId)}/dependencies`, {
+      method: "POST",
+      body: json(payload),
+    }),
+  workRemoveDependency: (taskId: string, dependencyId: string, expectedPlanRevision?: number) =>
+    request<{ dependency_id: string; plan_revision: number }>(
+      `/tasks/${seg(taskId)}/dependencies/${seg(dependencyId)}${query({ expected_plan_revision: expectedPlanRevision })}`,
+      { method: "DELETE" },
+    ),
+  /** One consistent snapshot (tasks in tree order, dependencies, violations) with its plan_revision. */
+  workGantt: (projectId: string, options: { signal?: AbortSignal } = {}) =>
+    request<WorkGantt>(`/projects/${seg(projectId)}/gantt`, { signal: options.signal }),
+  /** Consequences of a drag/resize/new dependency BEFORE anything changes; writes nothing. */
+  workSchedulePreview: (projectId: string, payload: SchedulePreviewRequest) =>
+    request<SchedulePreview>(`/projects/${seg(projectId)}/schedule/preview`, { method: "POST", body: json(payload) }),
+  /** Atomic apply of a confirmed preview; 409 stale_schedule → refresh and preview again. Reuse the same
+   *  client_request_id when retrying the same confirmation (the server replays the first result). */
+  workScheduleApply: (projectId: string, payload: ScheduleApplyRequest) =>
+    request<ScheduleApplyResult>(`/projects/${seg(projectId)}/schedule/apply`, { method: "POST", body: json(payload) }),
+  // --- M6 Step 4: task ↔ document links — read from the reader's CURRENT knowledge snapshot on every request. ---
+  // Errors: 404 not_found (a document the reader cannot see — the same answer as a missing one), 409 conflict
+  // (link_exists, task_archived), 503 knowledge_unavailable (the knowledge source cannot be read; tasks still work).
+  workTaskLinks: (taskId: string) => request<TaskLinks>(`/tasks/${seg(taskId)}/links`),
+  workLinkDocument: (taskId: string, payload: TaskLinkCreate) =>
+    request<TaskLink>(`/tasks/${seg(taskId)}/links`, { method: "POST", body: json(payload) }),
+  workUnlinkDocument: (taskId: string, linkId: string) =>
+    request<{ link_id: string; task_id: string }>(`/tasks/${seg(taskId)}/links/${seg(linkId)}`, { method: "DELETE" }),
+  /** A person checked the changed document: the link records its current revision (never automatic). */
+  workAcknowledgeLink: (taskId: string, linkId: string) =>
+    request<TaskLink>(`/tasks/${seg(taskId)}/links/${seg(linkId)}/acknowledge`, { method: "POST" }),
+  workProjectDocuments: (projectId: string) => request<ProjectDocuments>(`/projects/${seg(projectId)}/documents`),
+  /** Back-links of a document (tasks from projects the reader may view); 404 when the document is not visible. */
+  workDocumentTasks: (documentId: string) => request<DocumentTasks>(`/documents/${seg(documentId)}/tasks`),
+  // --- M6 Step 5: «AI план» — a typed task-plan PROPOSAL; nothing is created until «Создать задачи». ---
+  // Errors: 503 feature_unavailable (no planning-capable AI provider), 422 proposal_invalid (the model's plan has
+  // unknown ids or a cycle, or no evidence was found), 409 proposal_stale (details.reason: plan_changed,
+  // source_changed, source_unavailable, expired, already_applied, already_rejected), 403 forbidden (read-only).
+  // The model call can take a while (a long timeout, like other AI drafts).
+  workCreateProposal: (payload: WorkPlanCreate) =>
+    request<WorkProposal>("/work-ai/proposals", { method: "POST", body: json(payload), timeoutMs: 600_000 }),
+  workProposal: (id: string) => request<WorkProposal>(`/work-ai/proposals/${seg(id)}`),
+  workPreviewProposal: (id: string, edits: WorkProposalEdits) =>
+    request<WorkProposal>(`/work-ai/proposals/${seg(id)}/preview`, { method: "POST", body: json(edits) }),
+  workApplyProposal: (id: string, payload: WorkProposalApply) =>
+    request<WorkProposalApplyResult>(`/work-ai/proposals/${seg(id)}/apply`, { method: "POST", body: json(payload) }),
+  workRejectProposal: (id: string) => request<WorkProposal>(`/work-ai/proposals/${seg(id)}/reject`, { method: "POST" }),
 };

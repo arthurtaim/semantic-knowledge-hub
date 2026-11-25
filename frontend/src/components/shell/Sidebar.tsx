@@ -218,7 +218,7 @@ export function Sidebar({
       })()}
 
       <nav className="sidebar__nav" aria-label="Основная навигация">
-        {navGroups(ask).map((group) => (
+        {navGroups(ask, session?.features.work_management !== "disabled").map((group) => (
           <div key={group.id} className="sidebar__group">
             {group.label ? (
               <p className={rail ? "visually-hidden" : "sidebar__group-label"} id={`${id}-${group.id}`}>

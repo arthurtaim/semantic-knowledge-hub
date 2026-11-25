@@ -33,6 +33,7 @@ ENV PROJECT_ROOT=/app \
     SEARCH_INDEX_PATH=/data/workspace/search.sqlite3 \
     APP_STATE_PATH=/data/workspace/app_state.sqlite3 \
     PUBLICATION_STATE_PATH=/data/workspace/publications.sqlite3 \
+    WORK_STATE_PATH=/data/workspace/work.sqlite3 \
     CONFLUENCE_MOCK_PAGES_PATH=/app/fixtures/confluence_mock/pages.yaml \
     CONFLUENCE_MOCK_STATE_PATH=/data/workspace/mock_confluence_state.json
 

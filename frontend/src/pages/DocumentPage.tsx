@@ -12,6 +12,7 @@ import {
 } from "../components/DocumentAssistant";
 import { DocumentDetails, SourceLocation } from "../components/DocumentDetails";
 import { DocumentLinksPanel } from "../components/DocumentLinks";
+import { DocumentTasksPanel } from "../components/work/DocumentTasks";
 import { PublicationSection } from "../components/DocumentPublication";
 import { ErrorState, Loading, Notice } from "../components/Feedback";
 import { ProposalStateLabel } from "../components/ProposalState";
@@ -326,6 +327,8 @@ function DocumentBody({
   const navigate = useNavigate();
   const session = useSession();
   const aiMode = session?.features.ai_mode;
+  // M6: the document's tasks (back-links of task ↔ document links) when the work module is on.
+  const workOn = Boolean(session?.features.work_management) && session?.features.work_management !== "disabled";
   const aiOff = aiMode === "disabled";
   // The assistant panel, its ⌘J and the selection bar exist only when the assistant can be asked.
   const aiOn = canAsk(aiMode);
@@ -616,6 +619,7 @@ function DocumentBody({
                     Связи на графе
                   </Link>
                 }
+                extra={workOn ? <DocumentTasksPanel documentId={doc.id} /> : null}
               />
             ) : view === "history" ? (
               <DocumentHistory doc={doc} proposals={proposals.items} publication={publication} />

@@ -6,7 +6,7 @@ import { Layout, SIDEBAR_COLLAPSED_KEY } from "../components/Layout";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { initials } from "../components/shell/Sidebar";
 import { SessionContext } from "../lib/session";
-import { activeNav, defaultCrumbs, documentTitle, contentWidth } from "../lib/routes";
+import { activeNav, defaultCrumbs, documentTitle, contentWidth, navGroups } from "../lib/routes";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { facets, proposalSummary, session } from "./fixtures";
 import { memoryStorage, mockApi, mockViewport } from "./helpers";
@@ -259,6 +259,9 @@ describe("Route map", () => {
       ["/proposals", "proposals", "Предложения", "wide"],
       ["/proposals/new", "proposals", "Предложения / Новое предложение", "default"],
       ["/proposals/p-1", "proposals", "Предложения / Предложение", "default"],
+      ["/projects", "projects", "Проекты", "default"],
+      ["/projects/ARIS", "projects", "Проекты / Проект", "wide"],
+      ["/tasks/ARIS-12", "projects", "Проекты / Задача", "default"],
       ["/publications", "publications", "Публикации", "wide"],
       ["/publications/job-1", "publications", "Публикации / Публикация", "default"],
       ["/integrations", "integrations", "Интеграции", "default"],
@@ -274,5 +277,11 @@ describe("Route map", () => {
     expect(documentTitle("/graph", true)).toBe("Карта знаний — база знаний семантического слоя");
     expect(defaultCrumbs("/publications/job-1", true)[0]?.to).toBe("/publications");
     expect(initials("Демо-пользователь (localhost)")).toBe("ДП");
+  });
+
+  it("M6: «Проекты» opens the «Работа» group and disappears only when the server switched the module off", () => {
+    const work = (enabled: boolean) => navGroups(true, enabled).find((g) => g.id === "work")?.items.map((i) => i.label);
+    expect(work(true)).toEqual(["Проекты", "Предложения", "Публикации"]);
+    expect(work(false)).toEqual(["Предложения", "Публикации"]);
   });
 });

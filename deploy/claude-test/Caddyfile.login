@@ -12,6 +12,9 @@
 	}
 	reverse_proxy frontend:8080 {
 		header_up Host 127.0.0.1
+		# M6: requests through this LOGIN gateway are marked `public-login`. The task module answers them read-only,
+		# unless the owner opted in to writes by the one shared login (WORK_SHARED_LOGIN_WRITES=true).
+		header_up X-SKH-Exposure public-login
 		flush_interval -1
 	}
 }

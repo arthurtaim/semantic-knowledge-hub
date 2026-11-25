@@ -5,6 +5,16 @@
 # Use with docker-compose.yml + docker-compose.claude-test.yml (deploy/claude-test/stack.sh adds it).
 
 services:
+  # M6 (docs/WORK_MANAGEMENT.md «Идентичность и права»): behind a shared/public link the backend has no per-user
+  # identity (a Basic Auth password is not one), so the native task module is READ-ONLY — no task writes, no private
+  # audit, no AI work proposals. The gateway also marks every request (X-SKH-Exposure, Caddyfile*).
+  # Owner-approved exception (WORK_SHARED_LOGIN_WRITES=true in the env file): behind the LOGIN gateway the one shared
+  # super-user login may write, as a single identity (docs/WORK_MANAGEMENT.md «Общий вход демо-стенда»).
+  backend:
+    environment:
+      WORK_PUBLIC_EXPOSURE: "true"
+      WORK_SHARED_LOGIN_WRITES: ${WORK_SHARED_LOGIN_WRITES:-false}
+
   public-gateway:
     image: caddy:2.10.2-alpine
     depends_on:

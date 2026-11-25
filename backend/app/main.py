@@ -27,9 +27,10 @@ from app.api import (
     template_apply,
     template_studio,
     templates,
+    work,
 )
 from app.config import InsecureConfigurationError, Settings, get_settings, security_violations
-from app.container import build_container
+from app.container import build_container, seed_work_links
 from app.errors import error_body, install_error_handlers, request_id_of
 from app.middleware import CsrfGuardMiddleware, HostGuardMiddleware, RequestContextMiddleware
 
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             snapshot = await container.knowledge.snapshot(user)
             counts = f"documents={len(snapshot.documents)} issues={len(snapshot.issues)}"
+            seed_work_links(container, snapshot)  # M6 demo links: only to documents present in the base
         except RepositoryUnavailableError as exc:  # remote store down: start degraded, report via status
             counts = f"knowledge_unavailable={exc.code}"
         logger.info(
@@ -102,7 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_origin_list,
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Content-Type", "X-SKH-Client", "X-SKH-Browser"],
         )
     app.add_middleware(CsrfGuardMiddleware)
@@ -124,6 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         templates.router,
         template_apply.router,
         ai.router,
+        work.router,
     ):
         app.include_router(router)
     return app

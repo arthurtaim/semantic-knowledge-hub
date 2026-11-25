@@ -28,6 +28,7 @@ are rejected with a typed error. Names use underscores so they would also work f
 | `knowledge_search` (`knowledge.search`) | `search`, `read` | `query`; `document_id` + `sections[]` ≤ 3; `types[]`, `tags[]`; `limit` 1–8 | passages `C<n>` (document, revision, section) for verified quotes; statuses = what THIS request may cite |
 | `graph_inspect` (`graph.inspect`) | `links`, `neighbours`, `path` | `document_id`, `target_id`, `direction` out/in/both, `relations[]`, `depth` 1–2, `limit` 1–50 | edges with `relation`, `origin`, `confirmed`, `declared_in`, `provenance` (`relations.depends_on`, `related_ids`, `body:<line>`) |
 | `templates_inspect` (`templates.inspect`) | `list`, `get` | `status` active/deprecated/draft/any, `doc_type`, `text`; `template_id` + `version` | template id, current version, versions with status, required sections/metadata, usage among visible documents |
+| `work_inspect` (M6) | `list_projects`, `list_project_tasks`, `get_task`, `get_dependencies`, `get_project_schedule` | `project` (key `ARIS`), `task` (key `ARIS-12`), `filters`: `status[]`, `overdue`, `late`, `blocked`, `milestone`, `scheduled`, `text`; `limit` 1–50; `offset` | READ-ONLY work facts (source `skh_work`): projects with counters, task rows (status, plan, due, overdue/late, waits for, visible linked documents), dependencies, a plan summary (overdue, late, waiting, unscheduled, violations, next milestones, `critical_path: null`); plan revision and project-local today in the filters. Offered only with the work module on and `view_tasks`; through the project gate (another member's project = `not_found`, never counted); task text redacted like passages |
 | `drafts_propose` (`drafts.propose`, P1) | `draft_from_prompt`, `improve_section`, `check_completeness` | `prompt`, `title`, `template_id`, `document_id`, `section`, `goal` | a stored AI **proposal** (existing M5.6.3 workflow): id, status `suggested`, base revision/template version, `applied: false` |
 
 `drafts_propose` is offered only to users with `create_proposal` and at most once per answer; Accept/Reject stay
@@ -225,12 +226,17 @@ as the documents tree), «Какие документы требуют вним�
 with markers in a list and a table; `e2e/answerMarkdown.spec.ts`); answer quality: «Какая у нас модель данных?» (catalog list +
 search → a scoped overview), then «нам интересны демо-файлы» (searches the previous question's subject), «Это реальные
 данные банка?» (`facets` → `breakdown.provenance`); their presentation — one provenance line, «По происхождению» — is
-`e2e/answerProvenance.spec.ts`.
+`e2e/answerProvenance.spec.ts`. M6: «Какие задачи RAG просрочены?» (`work_inspect` list_project_tasks overdue),
+«Каков статус и риски задач ARIS?» (get_project_schedule), «Что с задачей ARIS-6?» (get_task), «Сколько просроченных
+задач?» (list_projects); with the work module off the double says tasks are unavailable. «AI план» requests are keyed
+by the REQUEST text (`e2e/workAi.spec.ts`).
 
 ## Limitations
 
 - No live model was evaluated here; tool choice by a real model is opt-in (`make knowledge-eval-live`, personal stack).
 - No native function calling; no deterministic fast path (not needed: the loop adds ~10–20 ms of backend work per
   count on the demo base; model latency dominates and roughly doubles for a count, which needs two rounds).
-- Confluence has no count tool on purpose (only partial search results exist). Tasks (M6) do not exist.
+- Confluence has no count tool on purpose (only partial search results exist). Tasks (M6) are read through
+  `work_inspect` only; there is no task WRITE tool — an AI task plan is a typed proposal created and applied from the
+  project UI (`docs/WORK_MANAGEMENT.md` §11).
 - The FTS index is shared by readers of one deployment; tools always intersect hits with the reader's snapshot.

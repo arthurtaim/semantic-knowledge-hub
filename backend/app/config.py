@@ -199,8 +199,25 @@ class Settings(BaseSettings):
     # live_write_staging only: must repeat CONFLUENCE_TARGET_SPACE to acknowledge real writes.
     confluence_publish_staging_ack: str = ""
 
-    # --- tasks -----------------------------------------------------------------------------------
-    task_system: Literal["disabled"] = "disabled"
+    # --- tasks: M6 native Work Management (docs/WORK_MANAGEMENT.md) ----------------------------------
+    # native: the built-in projects/tasks/Gantt module · disabled: no task module (routes answer 503).
+    task_system: Literal["native", "disabled"] = "native"
+    work_state_path: Path = Path("./workspace/work.sqlite3")
+    # The backend is reachable through a shared/public link (set by docker-compose.claude-public.yml). A shared Basic
+    # Auth password is not a user identity: the work module becomes READ-ONLY.
+    work_public_exposure: bool = False
+    # Owner-approved deviation for the personal demo stand (2026-11-25): behind the LOGIN gateway the one shared
+    # super-user login may change tasks, as the single server-defined operator (mode `shared_login`). The open
+    # public link stays read-only; WORK_WRITES_ENABLED=false still wins. Off by default.
+    work_shared_login_writes: bool = False
+    # Explicit kill switch for task writes (false = read-only work module everywhere).
+    work_writes_enabled: bool = True
+    # Synthetic demo projects on first start (single-operator modes only; never in the team membership mode).
+    work_seed_demo: bool = True
+    work_default_timezone: str = "Europe/Moscow"
+    work_preview_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+    # A consistent backup of work.sqlite3 before any schema migration of an existing database.
+    work_backup_on_migrate: bool = True
 
     @model_validator(mode="after")
     def _load_secret_files(self) -> Settings:
@@ -268,6 +285,10 @@ class Settings(BaseSettings):
     @cached_property
     def publication_state_file(self) -> Path:
         return self.resolve_path(self.publication_state_path)
+
+    @cached_property
+    def work_state_file(self) -> Path:
+        return self.resolve_path(self.work_state_path)
 
     @cached_property
     def confluence_mock_pages_file(self) -> Path:

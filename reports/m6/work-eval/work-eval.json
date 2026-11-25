@@ -1,0 +1,129 @@
+{
+  "summary": {
+    "cases": 17,
+    "passed": 17,
+    "failed": 0
+  },
+  "machine": "Darwin arm64 Python 3.12.15",
+  "cases": [
+    {
+      "id": "cal-fri-mon",
+      "scenario": "M6-09",
+      "title": "FS after a Friday task starts on Monday",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "cal-mon-2",
+      "scenario": "M6-26",
+      "title": "Mon 30 + 2 working days ends (exclusive) on Wed 2 Dec",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "sched-diamond",
+      "scenario": "M6-28",
+      "title": "Diamond A→B/C→D: D shifts once to the max; X untouched",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "sched-locked",
+      "scenario": "M6-29",
+      "title": "A locked successor makes the preview a conflict",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "sched-unscheduled",
+      "scenario": "M6-27",
+      "title": "An unscheduled predecessor is a diagnostic, not a date",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "write-milestone",
+      "scenario": "M6-10",
+      "title": "A milestone is a zero-duration point",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "write-refusals",
+      "scenario": "M6-05/06/07",
+      "title": "Cycle, self and cross-project dependencies refused, nothing written",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "write-preview-apply",
+      "scenario": "M6-30/31/32",
+      "title": "Preview writes nothing; stale apply 409; replay is one application",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "seed-contract",
+      "scenario": "07 §2",
+      "title": "Three synthetic projects, ≥30 tasks, 4 levels, statuses, delays, milestones, chains",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "seed-idempotent",
+      "scenario": "M6-22",
+      "title": "Seed and demo links twice: no duplicates",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "seed-links",
+      "scenario": "07 §2",
+      "title": "Demo links point only at synthetic documents of the base",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "links-hidden",
+      "scenario": "M6-12/M6-34",
+      "title": "A hidden document leaks no id, title or count",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "links-revision",
+      "scenario": "M6-24",
+      "title": "A changed revision is flagged, never re-approved",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "ai-cycle",
+      "scenario": "M6-16",
+      "title": "A cyclic plan is refused",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "ai-unknown-id",
+      "scenario": "M6-16",
+      "title": "A dependency on an unknown local id is refused",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "ai-hallucinations",
+      "scenario": "M6-33",
+      "title": "Assignees, dates and invented sources never become data",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "id": "ai-dates",
+      "scenario": "M6-09/M6-13",
+      "title": "Plan dates are the server's (Mon–Fri, FS)",
+      "passed": true,
+      "detail": ""
+    }
+  ]
+}

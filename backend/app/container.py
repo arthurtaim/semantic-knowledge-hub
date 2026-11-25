@@ -21,13 +21,14 @@ from app.adapters.corporate.mock import MockCorporateConnector
 from app.adapters.gitlab.client import GitLabClient, validate_gitlab_config
 from app.adapters.gitlab.publisher import GitLabMRPublisher
 from app.adapters.gitlab.repository import GitLabKnowledgeRepository
-from app.adapters.knowledge.base import KnowledgeRepository
+from app.adapters.knowledge.base import KnowledgeRepository, KnowledgeSnapshot
 from app.adapters.knowledge.local import LocalKnowledgeRepository, seed_from_fixtures
 from app.adapters.publishers.base import ConfluencePublisher, ProposalPublisher
 from app.adapters.publishers.disabled import DisabledConfluencePublisher, DisabledProposalPublisher
 from app.adapters.search.sqlite_fts import SqliteFtsSearchProvider
 from app.adapters.tasks.base import DisabledTaskSystem, TaskSystemAdapter
-from app.authz import Action, AuthorizationPolicy, DenyAllPolicy, LocalDemoPolicy
+from app.adapters.tasks.native import NativeTaskSystem
+from app.authz import Action, AuthorizationPolicy, DenyAllPolicy, IdentityProvider, LocalDemoPolicy
 from app.config import Settings, tls_verify
 from app.domain.instructions import DEFAULT_INSTRUCTIONS_DIR, RuntimeInstructions, load_instructions
 from app.domain.models import UserContext
@@ -53,6 +54,12 @@ from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
 from app.services.template_studio import TemplateStudioService
+from app.work.ai import WorkAiService
+from app.work.db import WorkDatabase
+from app.work.inspect import WorkInspector
+from app.work.permissions import WorkAccessMode, build_gate
+from app.work.seed import seed_demo, seed_demo_links
+from app.work.service import WorkService
 
 logger = logging.getLogger("skh.container")
 
@@ -89,19 +96,17 @@ class Container:
     attachments: AttachmentService
     skills: AssistantSkillService
     template_studio: TemplateStudioService
+    work: WorkService
+    work_ai: WorkAiService
     conversations: ConversationService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
     instructions: RuntimeInstructions | None = None
+    # Server-side identity provider (the SSO seam; tests install a fake-but-server-side one). None = local demo.
+    identity: IdentityProvider | None = None
 
     def demo_user(self) -> UserContext:
-        return UserContext(
-            user_id="local-demo-user",
-            display_name="Демо-пользователь (localhost)",
-            roles=["reader", "editor"],
-            allowed_spaces=None,
-            is_demo=True,
-        )
+        return demo_operator()
 
     def close(self) -> None:
         self.search_provider.close()
@@ -109,6 +114,75 @@ class Container:
         self.publication_store.close()
         self.attachments.close()
         self.conversations.close()
+
+
+def demo_operator() -> UserContext:
+    return UserContext(
+        user_id="local-demo-user",
+        display_name="Демо-пользователь (localhost)",
+        roles=["reader", "editor"],
+        allowed_spaces=None,
+        is_demo=True,
+    )
+
+
+def build_work(settings: Settings) -> WorkService:
+    """M6 Work Management: the access gate from configuration, the work database (migrated, backed up before a
+    migration), and the synthetic demo projects in the single-operator modes."""
+    gate = build_gate(
+        task_system=settings.task_system,
+        auth_mode=settings.auth_mode,
+        public_exposure=settings.work_public_exposure,
+        writes_enabled=settings.work_writes_enabled,
+        shared_login_writes=settings.work_shared_login_writes,
+    )
+    timezone = settings.work_default_timezone
+    if not WorkService.valid_timezone(timezone):
+        logger.warning("WORK_DEFAULT_TIMEZONE=%s is not a known IANA zone here; using UTC", timezone)
+        timezone = "UTC"
+    db = (
+        WorkDatabase(settings.work_state_file, backup_before_migrate=settings.work_backup_on_migrate)
+        if gate.mode != WorkAccessMode.disabled
+        else None
+    )
+    service = WorkService(
+        db,
+        gate,
+        operator=demo_operator(),
+        default_timezone=timezone,
+        preview_ttl_seconds=settings.work_preview_ttl_seconds,
+    )
+    if db is not None and settings.work_seed_demo and gate.mode != WorkAccessMode.membership:
+        report = seed_demo(db, now=service.now(), timezone=timezone)
+        if report.created or report.skipped_key_conflict:
+            logger.info(
+                "work demo seed created=%s skipped_key_conflict=%s tasks=%s",
+                report.created,
+                report.skipped_key_conflict,
+                report.tasks_created,
+            )
+    return service
+
+
+def seed_work_links(container: Container, snapshot: KnowledgeSnapshot) -> None:
+    """Demo task ↔ document links (single-operator modes with WORK_SEED_DEMO=true), against the operator's knowledge
+    snapshot read at start-up: only documents present in the base, with the revision seen now."""
+    settings, work = container.settings, container.work
+    if not settings.work_seed_demo or work.gate.mode in (WorkAccessMode.membership, WorkAccessMode.disabled):
+        return
+
+    def document(doc_id: str) -> tuple[str, str] | None:
+        doc = None if doc_id.lower() in snapshot.duplicates else snapshot.get(doc_id)
+        return (doc.id, doc.revision) if doc is not None else None
+
+    report = seed_demo_links(work.db, document=document, now=work.now())
+    if report.created or report.missing_documents:
+        logger.info(
+            "work demo links created=%s existing=%s missing_documents=%s",
+            report.created,
+            report.existing,
+            report.missing_documents,
+        )
 
 
 def build_repository(settings: Settings) -> KnowledgeRepository:
@@ -284,7 +358,10 @@ def build_container(settings: Settings) -> Container:
     corporate = build_corporate(settings)
     proposal_publisher = build_proposal_publisher(settings, repository)
     confluence_publisher = build_confluence_publisher(settings)
-    tasks = DisabledTaskSystem()
+    work = build_work(settings)
+    tasks: TaskSystemAdapter = (
+        DisabledTaskSystem() if work.gate.mode == WorkAccessMode.disabled else NativeTaskSystem(work.gate)
+    )
     store = ProposalStore(settings.app_state_file)
     discovery = (
         DiscoveryStore(
@@ -399,6 +476,10 @@ def build_container(settings: Settings) -> Container:
     template_studio = TemplateStudioService(
         registry=templates, knowledge=knowledge, ai=ai, workflows=ai_workflows, policy=policy
     )
+    # M6 «AI план»: typed task-plan proposals through the configured AIProvider (an optional capability; the mock and
+    # the disabled provider have none, so the feature says it is unavailable instead of faking a plan).
+    work_ai = WorkAiService(work, knowledge, ai)
+    work.ai_planning = work_ai.available
     conversations = ConversationService(
         ConversationStore(
             settings.app_state_file,
@@ -426,6 +507,8 @@ def build_container(settings: Settings) -> Container:
                     graph=graph_service,
                     templates=template_hub,
                     workflows=ai_workflows,
+                    # M6: read-only work facts; the global policy decides who may view tasks at all.
+                    work=WorkInspector(work, may_view=lambda user: policy.allows(user, Action.view_tasks)),
                 ),
                 tool_limits(settings),
             ),
@@ -467,6 +550,8 @@ def build_container(settings: Settings) -> Container:
         skills=skills,
         template_hub=template_hub,
         template_studio=template_studio,
+        work=work,
+        work_ai=work_ai,
         conversations=conversations,
         discovery=discovery,
         external=external,

@@ -198,6 +198,31 @@ class TemplateDraftingAIProvider(Protocol):
     async def draft_template(self, request: TemplateDraftRequest) -> str: ...
 
 
+@dataclass(frozen=True)
+class WorkPlanRequest:
+    """M6 «AI план» (docs/WORK_MANAGEMENT.md §11): a PROPOSAL of tasks from authorized, retrieved documents. The request,
+    the documents and the project's existing tasks are DATA; the reply is the model's raw text, parsed strictly by
+    app/adapters/ai/work_protocol.py and validated by the backend (app/work/ai.py). The provider never creates,
+    stores, schedules or assigns anything; dates and assignees are never the model's."""
+
+    project_key: str
+    project_title: str
+    request: str
+    start_date: str | None  # the planned start the user chose (the server computes dates), or None
+    existing_tasks: tuple[tuple[str, str], ...]  # (key, title) of active tasks, for de-duplication only
+    references: tuple[AuthoringReference, ...]
+    max_tasks: int = 20
+
+
+class WorkPlanningAIProvider(Protocol):
+    """Optional capability (model-agnostic JSON protocol; internal OpenAI-compatible API, a future GigaChat endpoint,
+    the personal-test Claude CLI worker). A provider without it (mock, disabled) has no AI planning."""
+
+    supports_work_planning: bool
+
+    async def plan_work(self, request: WorkPlanRequest) -> str: ...
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)

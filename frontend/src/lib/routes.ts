@@ -6,7 +6,16 @@ import type { IconName } from "../components/ui/Icon";
  * Routes themselves do not change here.
  */
 
-export type NavId = "assistant" | "review" | "documents" | "map" | "templates" | "proposals" | "publications" | "integrations";
+export type NavId =
+  | "assistant"
+  | "review"
+  | "documents"
+  | "map"
+  | "templates"
+  | "projects"
+  | "proposals"
+  | "publications"
+  | "integrations";
 
 export interface NavItem {
   id: NavId;
@@ -46,7 +55,11 @@ export function isReviewList(pathname: string, search: string): boolean {
  */
 export const PUBLISHER_INTEGRATION_HREF = "/integrations#integration-confluence_publisher";
 
-export function navGroups(askAvailable: boolean): NavGroup[] {
+/**
+ * @param work M6 «Проекты»: shown unless the server reports the work module switched off
+ *   (`session.features.work_management === "disabled"`, TASK_SYSTEM=disabled).
+ */
+export function navGroups(askAvailable: boolean, work = true): NavGroup[] {
   return [
     {
       id: "main",
@@ -72,6 +85,7 @@ export function navGroups(askAvailable: boolean): NavGroup[] {
       id: "work",
       label: "Работа",
       items: [
+        ...(work ? [{ id: "projects", label: "Проекты", icon: "projects", to: "/projects" } satisfies NavItem] : []),
         { id: "proposals", label: "Предложения", icon: "proposals", to: PROPOSALS_HREF },
         { id: "publications", label: "Публикации", icon: "publications", to: "/publications" },
       ],
@@ -92,6 +106,7 @@ export function activeNav(pathname: string, search: string): NavId | null {
   if (pathname.startsWith("/documents")) return "documents";
   if (pathname.startsWith("/graph")) return "map";
   if (pathname.startsWith("/templates")) return "templates";
+  if (pathname === "/projects" || pathname.startsWith("/projects/") || pathname.startsWith("/tasks/")) return "projects";
   if (pathname === "/publications" || pathname.startsWith("/publications/")) return "publications";
   if (pathname.startsWith("/integrations")) return "integrations";
   return null;
@@ -124,6 +139,9 @@ export function defaultCrumbs(pathname: string, askAvailable: boolean): Crumb[] 
   if (pathname === "/proposals") return [{ label: "Предложения" }];
   if (pathname === "/proposals/new") return [{ label: "Предложения", to: "/proposals" }, { label: "Новое предложение" }];
   if (pathname.startsWith("/proposals/")) return [{ label: "Предложения", to: "/proposals" }, { label: "Предложение" }];
+  if (pathname === "/projects") return [{ label: "Проекты" }];
+  if (pathname.startsWith("/projects/")) return [{ label: "Проекты", to: "/projects" }, { label: "Проект" }];
+  if (pathname.startsWith("/tasks/")) return [{ label: "Проекты", to: "/projects" }, { label: "Задача" }];
   if (pathname === "/publications") return [{ label: "Публикации" }];
   if (pathname.startsWith("/publications/")) return [{ label: "Публикации", to: "/publications" }, { label: "Публикация" }];
   if (pathname === "/integrations") return [{ label: "Интеграции" }];
@@ -152,6 +170,7 @@ export function contentWidth(pathname: string): "wide" | "text" | "default" {
     pathname === "/documents" ||
     pathname === "/proposals" ||
     pathname === "/publications" ||
+    pathname.startsWith("/projects/") ||
     isDocumentPage(pathname)
   ) {
     return "wide";

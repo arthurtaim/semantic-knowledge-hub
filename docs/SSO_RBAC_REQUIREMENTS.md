@@ -30,6 +30,10 @@
 | `create_template` | `POST /api/templates/studio`; вместе с `create_proposal` — `POST /api/ai/proposals` с `kind: draft_template` | создавать новые шаблоны (черновик), в том числе из предложения ИИ |
 | `edit_template` | `PUT`/`DELETE /api/templates/{id}/studio/draft`, `POST …/acknowledge-shipped` | менять черновик шаблона; на корпоративном стенде — владелец шаблона или методолог |
 | `activate_template` | `POST /api/templates/{id}/studio/activate` | делать черновик или версию действующей — отдельная роль, чтобы правка и выпуск шаблона были разными шагами |
+| `view_projects`, `view_tasks` | M6: `GET /api/projects*`, `GET /api/tasks*` (кроме activity), `GET /api/work/*`, Гант | глобальный допуск; дальше проектный gate (`docs/WORK_MANAGEMENT.md` §4): участник проекта (`ProjectMember`) или единственный локальный оператор; не участник — `404` без утечки названий и счётчиков |
+| `manage_project`, `create_task`, `edit_task`, `schedule_task` | M6: создание/изменение проектов, задач, архив, зависимости, предпросмотр и применение расписания | роль проекта admin (`manage_project`) / member (остальные). При публичной экспозиции (`WORK_PUBLIC_EXPOSURE`, `X-SKH-Exposure`) запрещены всегда |
+| `view_work_audit` | M6: `GET …/activity` | member/admin проекта; не публикуется по общей ссылке |
+| `propose_work`, `apply_work_proposal` | M6 шаг 5: AI-предложения задач и их явное принятие | member/admin; модель сама ничего не пишет |
 
 ## 2. Аутентификация (SSO)
 - Корпоративный IdP по OIDC или SAML, терминируемый на reverse proxy или в приложении. Решение за ИБ.
@@ -50,6 +54,7 @@
 | Администратор | + `sync_knowledge`, детали интеграций |
 | Методолог шаблонов | + `create_template`, `edit_template` (просмотр `view_templates` есть у читателя) |
 | Владелец шаблонов | + `activate_template` |
+| Участник проекта M6 (viewer / member / admin) | проектные роли `ProjectMember` поверх глобальных `view_projects`…`apply_work_proposal`; проверяются на каждом запросе только при настоящей серверной идентичности (режим `membership`) |
 
 Права на разделы берутся из GitLab: CODEOWNERS или участники проекта. Приложение не должно стать вторым,
 расходящимся источником прав.

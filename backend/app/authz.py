@@ -42,6 +42,17 @@ class Action(StrEnum):
     create_template = "create_template"  # a new template (its first draft), also from an AI proposal
     edit_template = "edit_template"  # save / discard the draft of a template, acknowledge a shipped update
     activate_template = "activate_template"  # make a draft or an existing version the current one
+    # M6 Work Management (docs/WORK_MANAGEMENT.md): the global gate. The project-scoped gate (ProjectMember roles, or
+    # the single local operator / read-only exposure) is app/work/permissions.py — it never replaces this one.
+    view_projects = "view_projects"  # project list/cards, members, work capabilities, assignee directory
+    view_tasks = "view_tasks"  # task lists, task details, dependencies, Gantt snapshot
+    manage_project = "manage_project"  # create a project, change its settings
+    create_task = "create_task"  # create tasks and subtasks
+    edit_task = "edit_task"  # change, archive, restore tasks
+    schedule_task = "schedule_task"  # dependencies, schedule preview and apply
+    view_work_audit = "view_work_audit"  # task / project activity (who changed what)
+    propose_work = "propose_work"  # AI work proposals (Step 5; nothing is written)
+    apply_work_proposal = "apply_work_proposal"  # explicit Accept of an AI work proposal (Step 5)
 
 
 class AuthorizationPolicy(Protocol):
@@ -66,6 +77,16 @@ class DenyAllPolicy:
 
     def allows(self, user: UserContext, action: Action) -> bool:
         return False
+
+
+class IdentityProvider(Protocol):
+    """Server-side identity resolution (the seam for a corporate SSO provider). When `Container.identity` is set,
+    `get_user` asks it instead of returning the local demo operator. A provider derives the user from verified
+    server state (a validated session/token) — never from a client-supplied user id, role or header claim."""
+
+    name: str
+
+    def resolve(self, request: Request) -> UserContext: ...
 
 
 def ensure_allowed(policy: AuthorizationPolicy, user: UserContext, action: Action) -> None:

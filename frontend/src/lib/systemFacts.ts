@@ -1,5 +1,6 @@
-import type { AskResponse, DocStatus, DocType, SystemFact, SystemFactSource, ToolOutcome, ToolStepInfo } from "../api/types";
+import type { AskResponse, DocStatus, DocType, ProjectStatus, SystemFact, SystemFactItem, SystemFactSource, TaskStatus, ToolOutcome, ToolStepInfo } from "../api/types";
 import { formatDate, pluralRu, STATUS_LABEL, TEMPLATE_STATUS_LABEL, TYPE_LABEL } from "./labels";
+import { PROJECT_STATUS_LABEL, TASK_STATUS_LABEL } from "./work";
 
 /*
  * M5.7: system facts of an AI-native answer (docs/AI_NATIVE_TOOLS.md «Evidence»). A fact is an authoritative,
@@ -21,6 +22,7 @@ export const FACT_SOURCE_TITLE: Record<SystemFactSource, string> = {
   skh_knowledge_graph: "По данным графа связей SKH",
   skh_template_registry: "По данным реестра шаблонов SKH",
   skh_ai_proposals: "Предложение ИИ в SKH",
+  skh_work: "По данным модуля «Работа» SKH",
 };
 
 /** The source in a few words (copy text, tooltips). */
@@ -29,6 +31,7 @@ export const FACT_SOURCE_SHORT: Record<SystemFactSource, string> = {
   skh_knowledge_graph: "граф связей SKH",
   skh_template_registry: "реестр шаблонов SKH",
   skh_ai_proposals: "предложения ИИ SKH",
+  skh_work: "задачи SKH",
 };
 
 export function factSourceTitle(fact: SystemFact): string {
@@ -40,6 +43,9 @@ const UNIT_FORMS: Record<string, [string, string, string]> = {
   templates: ["шаблон", "шаблона", "шаблонов"],
   relations: ["связь", "связи", "связей"],
   items: ["пункт", "пункта", "пунктов"],
+  tasks: ["задача", "задачи", "задач"],
+  projects: ["проект", "проекта", "проектов"],
+  dependencies: ["зависимость", "зависимости", "зависимостей"],
 };
 
 /** The authoritative value with its unit: «83 документа», «0 документов», «версия 2»; null when there is none. */
@@ -82,7 +88,30 @@ function docTypeText(value: string): string {
  * The filters really applied, in words («статус: утверждён», «тег: aris», «текст содержит «ARIS»»). A text match
  * is named as such — the fact's `definition` says it is not a system tag.
  */
+/** M6 work facts: project / task keys, task statuses, the computed flags and the plan revision. */
+function workFilterParts(fact: SystemFact): string[] {
+  const parts: string[] = [];
+  const flags: Record<string, [string, string]> = {
+    overdue: ["просроченные", "не просроченные"],
+    late: ["отстают от плана", "не отстают от плана"],
+    blocked: ["ждут предшественников", "не ждут предшественников"],
+    milestone: ["вехи", "не вехи"],
+    scheduled: ["с датами", "без дат"],
+  };
+  for (const [key, value] of Object.entries(fact.effective_filters ?? {})) {
+    const list = asList(value);
+    if (key === "project") parts.push(`проект ${list.join(", ")}`);
+    else if (key === "task") parts.push(`задача ${list.join(", ")}`);
+    else if (key === "status" && list.length > 0) parts.push(`статус: ${list.map((s) => (TASK_STATUS_LABEL[s as TaskStatus] ?? s).toLocaleLowerCase("ru")).join(", ")}`);
+    else if (key === "text") parts.push(`название содержит «${list.join(" ")}»`);
+    else if (key === "plan_revision") parts.push(`ревизия плана ${list.join("")}`);
+    else if (key in flags) parts.push((flags[key] ?? ["", ""])[value === false ? 1 : 0]);
+  }
+  return parts;
+}
+
 export function filterParts(fact: SystemFact): string[] {
+  if (fact.source === "skh_work") return workFilterParts(fact);
   const templates = fact.source === "skh_template_registry";
   const parts: string[] = [];
   for (const [key, value] of Object.entries(fact.effective_filters ?? {})) {
@@ -258,4 +287,13 @@ export function failedChecks(answer: Pick<AskResponse, "answer" | "tool_steps">,
 /** The assistant used system tools for this answer and at least one of them did not work out. */
 export function toolChecksFailed(answer: Pick<AskResponse, "tool_steps">): boolean {
   return (answer.tool_steps ?? []).some((step) => step.outcome !== "ok" && !NOT_A_FAILURE.has(step.error_code ?? ""));
+}
+
+
+/** The status of a fact item in words: a task or project status of the work module, else as it is. */
+export function workItemStatus(item: SystemFactItem): string | null {
+  if (!item.status) return null;
+  if (item.kind === "task") return TASK_STATUS_LABEL[item.status as TaskStatus] ?? item.status;
+  if (item.kind === "project") return PROJECT_STATUS_LABEL[item.status as ProjectStatus] ?? item.status;
+  return null;
 }

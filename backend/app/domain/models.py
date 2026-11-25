@@ -409,7 +409,7 @@ def _default_scopes() -> list[SearchScope]:
 
 # --- M5.7: system facts of an AI-native answer (docs/AI_NATIVE_TOOLS.md) ---------------------------------------
 SystemFactSource = Literal[
-    "skh_document_registry", "skh_knowledge_graph", "skh_template_registry", "skh_ai_proposals"
+    "skh_document_registry", "skh_knowledge_graph", "skh_template_registry", "skh_ai_proposals", "skh_work"
 ]
 ToolOutcome = Literal[
     "ok", "invalid", "unknown_tool", "not_found", "denied", "unavailable", "timeout", "error"
@@ -423,7 +423,7 @@ class SystemFactItem(BaseModel):
 
     id: str
     title: str
-    kind: Literal["document", "template", "relation", "proposal"]
+    kind: Literal["document", "template", "relation", "proposal", "task", "project"]
     status: str | None = None
     detail: str | None = (
         None  # e.g. "владелец не назначен", "references · WikiLink, строка 12", "v2 · active"

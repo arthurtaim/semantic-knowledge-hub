@@ -36,6 +36,9 @@ Create understandable UI and documentation for engineers and analysts, not just 
 - **Identity and links (M5.6.3).** The backend allocates a document ID once; titles change, IDs do not. A WikiLink
   `[[ID]]` is a `references` edge — never a typed business dependency; typed relations are declared in YAML by people.
   Links, backlinks and counts are computed from the reader's snapshot only.
+- **Work (M6).** Tasks link to documents by stable id + revision seen; document facts are read from the reader's
+  snapshot on every request (a hidden document leaks nothing). A task link is not a knowledge-graph relation. The chat
+  only READS work facts (`work_inspect`); an AI task plan is a typed proposal applied by a person in one transaction.
 - **AI proposes, people decide.** Every AI output that changes knowledge is a typed proposal with evidence, applied
   to a draft only on explicit Accept; a proposal whose base changed is invalidated, never merged silently. One
   template registry serves people and the AI; a template version is its schema.
