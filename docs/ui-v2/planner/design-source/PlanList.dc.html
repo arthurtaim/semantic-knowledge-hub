@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SKH — проект, список задач</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FFFFFF}
+.pl *{box-sizing:border-box}
+.pl button,.pl input{font-family:inherit}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:8px;border:1px solid #D7DCD8;background:#FFFFFF;color:#1A1F1C;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn.sm{height:28px;padding:0 10px;font-size:12.5px}
+.seg{height:26px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:#4C5550;font-size:12.5px;cursor:pointer}
+.seg.on{background:#FFFFFF;color:#1A1F1C;font-weight:500;box-shadow:0 1px 2px rgba(16,24,20,.08),0 0 0 1px rgba(16,24,20,.06)}
+.fb{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:8px;border:1px solid #D7DCD8;background:#FFFFFF;font-size:12.5px;color:#2B322E;cursor:pointer;white-space:nowrap}
+.fb.on{background:#E7F2EB;border-color:#CFE5D8;color:#14603A;font-weight:500}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11.5px;color:#6B746E}
+.tr{display:grid;grid-template-columns:minmax(340px,1fr) 132px 184px 118px 132px 96px 32px;align-items:center;column-gap:12px;height:40px;padding:0 20px;border-bottom:1px solid #F0F2EF;font-size:13.5px}
+.tr:hover{background:#F8FAF8}
+.th{height:34px;font-size:12px;color:#5E6862;font-weight:500;border-bottom:1px solid #E3E7E3}
+.cell{display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 6px;margin-left:-6px;border-radius:6px;min-width:0;cursor:pointer}
+.cell:hover{background:#EEF1EE}
+.mi{display:flex;align-items:center;gap:9px;height:30px;padding:0 8px;border-radius:6px;font-size:13px}
+.mi:hover{background:#F0F2EF}
+.gh{display:flex;align-items:center;gap:8px;height:36px;padding:0 20px;background:#FAFBFA;border-bottom:1px solid #EBEEEA;font-size:13px;font-weight:600}
+input::placeholder{color:#7D8680}
+</style>
+</helmet>
+<div class="pl" style="display: flex; min-height: 900px; width: 100%; font-family: Inter, system-ui, sans-serif; font-size: 14px; line-height: 20px; color: #1A1F1C; background: #FFFFFF; -webkit-font-smoothing: antialiased">
+  <div style="flex: 0 0 248px; display: flex">
+    <dc-import name="Sidebar" active="projects" hint-size="248px,900px"></dc-import>
+  </div>
+  <main style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; position: relative">
+    <header style="height: 52px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid #EBEEEA">
+      <nav aria-label="Путь" style="display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0">
+        <a href="#" style="color: #5E6862; text-decoration: none">Проекты</a>
+        <span style="color: #B4BCB6">/</span>
+        <span class="ell" style="font-weight: 600">ARIS Metadata Integration</span>
+        <span class="mono">ARIS</span>
+      </nav>
+      <div role="tablist" aria-label="Вид" style="display: inline-flex; gap: 2px; padding: 3px; border-radius: 8px; background: #F0F2EF; margin-left: 6px">
+        <button role="tab" aria-selected="true" class="seg on">Список</button>
+        <button role="tab" aria-selected="false" class="seg">Доска</button>
+        <button role="tab" aria-selected="false" class="seg">Гант</button>
+      </div>
+      <span style="flex: 1"></span>
+      <span style="display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 13px; background: #FBF1DE; color: #7A4A00; font-size: 12.5px; font-weight: 500"><span style="width: 6px; height: 6px; border-radius: 50%; background: #C27A0E"></span>Демо-данные</span>
+      <button class="btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l1-4.2A8 8 0 1 1 20 12Z"></path></svg>План с ассистентом</button>
+      <button class="btn" style="background: #1C7A4C; border-color: #1C7A4C; color: #FFFFFF"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Задача</button>
+    </header>
+
+    <div style="height: 44px; flex: none; display: flex; align-items: center; gap: 18px; padding: 0 20px; border-bottom: 1px solid #EBEEEA; font-size: 13px; color: #3A423D; white-space: nowrap; overflow: hidden">
+      <span style="display: inline-flex; align-items: center; gap: 6px; color: #14603A; font-weight: 500"><span style="width: 7px; height: 7px; border-radius: 50%; background: #2E8B57"></span>Активный</span>
+      <span>2 нояб. – 10 дек. 2026</span>
+      <span style="display: inline-flex; align-items: center; gap: 8px"><span style="width: 96px; height: 6px; border-radius: 3px; background: #E3E7E3; overflow: hidden; display: inline-block"><span style="display: block; width: 36%; height: 6px; background: #2E8B57"></span></span>Готово 5 из 14</span>
+      <a href="#" style="display: inline-flex; align-items: center; gap: 5px; color: #8E2A20; text-decoration: none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v5M12 16v.5"></path></svg>1 просрочена</a>
+      <span style="display: inline-flex; align-items: center; gap: 6px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3A423D" stroke-width="2" aria-hidden="true"><path d="M12 3 21 12 12 21 3 12Z"></path></svg>Ближайшая веха: <a href="#" style="color: #17663F; text-decoration: none">Маппинг согласован</a> · 27 нояб.</span>
+      <span style="flex: 1"></span>
+      <span style="color: #6B746E">Ревизия плана 1</span>
+    </div>
+
+    <div style="height: 48px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 20px; border-bottom: 1px solid #EBEEEA">
+      <label style="display: flex; align-items: center; gap: 8px; height: 28px; width: 200px; padding: 0 9px; border: 1px solid #C9D0CB; border-radius: 8px; color: #6B746E">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7.5"></circle><path d="m20.5 20.5-4-4"></path></svg>
+        <input placeholder="Задача или ключ" style="border: 0; outline: none; flex: 1; font-size: 12.5px; background: transparent; min-width: 0">
+      </label>
+      <button class="fb">Статус<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="fb">Исполнитель<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="fb">Ещё<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <span style="flex: 1"></span>
+      <span style="font-size: 12.5px; color: #6B746E; font-variant-numeric: tabular-nums">14 задач</span>
+      <button class="fb">Группировка: по статусу<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></button>
+      <button class="btn sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"></path><circle cx="16" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg>Вид</button>
+    </div>
+
+    <div role="table" aria-label="Задачи проекта" style="flex: 1 1 auto; overflow: hidden; position: relative">
+      <div class="tr th" role="row">
+        <span role="columnheader">Задача</span>
+        <span role="columnheader">Статус</span>
+        <span role="columnheader">Исполнитель</span>
+        <span role="columnheader">Приоритет</span>
+        <span role="columnheader">Сроки</span>
+        <span role="columnheader">Срок сдачи</span>
+        <span role="columnheader"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Действия</span></span>
+      </div>
+      <sc-for list="{{ groups }}" as="g">
+        <div class="gh" role="row">
+          <span style="{{ g.icon }}"></span>{{ g.label }}<span style="font-weight: 400; color: #6B746E">{{ g.count }}</span>
+        </div>
+        <sc-for list="{{ g.rows }}" as="r">
+          <div class="tr" role="row" style="{{ r.rowStyle }}">
+            <span role="cell" style="display: flex; align-items: center; gap: 8px; min-width: 0">
+              <span style="{{ r.indent }}"></span>
+              <span class="mono" style="flex: none; width: 56px">{{ r.key }}</span>
+              <sc-if value="{{ r.ms }}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3A423D" stroke-width="2.2" aria-label="Веха" style="flex: none"><path d="M12 3 21 12 12 21 3 12Z"></path></svg></sc-if>
+              <sc-if value="{{ r.parent }}"><span title="Подзадача {{ r.parent }}" style="flex: none; display: inline-flex; color: #8A948D"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-label="Подзадача"><path d="M6 4v9a3 3 0 0 0 3 3h9"></path><path d="m15 13 3 3-3 3"></path></svg></span></sc-if>
+              <span class="ell" style="{{ r.titleStyle }}">{{ r.title }}</span>
+              <sc-if value="{{ r.wait }}"><span title="Ждёт предшественника" style="flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #6B746E"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="13" r="8"></circle><path d="M12 9v4l2.5 2M9 2.5h6"></path></svg>{{ r.wait }}</span></sc-if>
+              <sc-if value="{{ r.docs }}"><span title="Связанные документы" style="flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #6B746E"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h12v15H6a2 2 0 0 0-2 2Z"></path></svg>{{ r.docs }}</span></sc-if>
+            </span>
+            <span role="cell"><span class="cell" style="{{ r.stCell }}"><span style="{{ r.stIcon }}"></span><span style="{{ r.stText }}">{{ r.st }}</span></span></span>
+            <span role="cell" style="min-width: 0"><span class="cell" style="max-width: 100%"><span style="flex: none; width: 22px; height: 22px; border-radius: 50%; background: #E4ECE6; color: #2F4A3A; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">{{ r.ini }}</span><span class="ell" style="color: #3A423D">{{ r.who }}</span></span></span>
+            <span role="cell"><span class="cell"><span style="display: inline-flex; align-items: flex-end; gap: 1.5px; height: 12px">
+              <span style="{{ r.p1 }}"></span><span style="{{ r.p2 }}"></span><span style="{{ r.p3 }}"></span></span><span style="font-size: 13px; color: #3A423D">{{ r.prio }}</span></span></span>
+            <span role="cell" style="font-size: 13px; color: #3A423D; font-variant-numeric: tabular-nums; white-space: nowrap">{{ r.dates }}</span>
+            <span role="cell" style="{{ r.dueStyle }}">{{ r.due }}</span>
+            <span role="cell" style="color: #9AA39D; text-align: center">···</span>
+          </div>
+        </sc-for>
+      </sc-for>
+
+      <!-- inline status menu: an editor opens per cell on click instead of a select in every row -->
+      <div role="menu" aria-label="Статус ARIS-7" style="{{ menuStyle }}">
+        <sc-for list="{{ statusMenu }}" as="m">
+          <div class="mi" role="menuitemradio" aria-checked="{{ m.on }}" style="{{ m.bg }}"><span style="{{ m.icon }}"></span><span style="flex: 1">{{ m.label }}</span><span class="mono">{{ m.kb }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const ICON = {
+      todo: 'width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid #8A948D; flex: none',
+      progress: 'width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid #2E8B57; background: linear-gradient(90deg, #2E8B57 50%, transparent 50%); flex: none',
+      review: 'width: 12px; height: 12px; border-radius: 50%; background: #6A50C2; flex: none',
+      done: 'width: 12px; height: 12px; border-radius: 50%; background: #9AA39D; box-shadow: inset 0 0 0 3px #E9ECE9; flex: none'
+    };
+    const ST = { todo: 'К работе', progress: 'В работе', review: 'На проверке', done: 'Готово' };
+    const PR = { critical: ['Критический', 3, '#B3261E'], high: ['Высокий', 3, '#3A423D'], medium: ['Средний', 2, '#3A423D'], low: ['Низкий', 1, '#3A423D'] };
+    const r = (key, title, depth, status, who, prio, dates, due, opts) => {
+      opts = opts || {};
+      const p = PR[prio];
+      const bar = (i, h) => `width: 3px; height: ${h}px; border-radius: 1px; background: ${i <= p[1] ? p[2] : '#D7DCD8'}`;
+      return {
+        key, title, who, st: ST[status], prio: p[0], dates, due: due || '—',
+        ini: who.split(' ').slice(0, 2).map((s) => s[0]).join(''),
+        indent: `width: ${depth * 14}px; flex: none`,
+        stIcon: ICON[status], stText: `font-size: 13px; color: ${status === 'done' ? '#5E6862' : '#1A1F1C'}`,
+        stCell: opts.open ? 'background: #E7F2EB; box-shadow: 0 0 0 1.5px #1C7A4C' : '',
+        titleStyle: `min-width: 0; color: ${status === 'done' ? '#5E6862' : '#1A1F1C'}; font-weight: ${depth === 0 ? 500 : 400}`,
+        dueStyle: `font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; color: ${opts.late ? '#B3261E' : due ? '#3A423D' : '#B4BCB6'}; font-weight: ${opts.late ? 500 : 400}`,
+        p1: bar(1, 5), p2: bar(2, 8), p3: bar(3, 11),
+        ms: !!opts.ms, wait: opts.wait || '', docs: opts.docs || '', parent: opts.parent || '',
+        rowStyle: opts.open ? 'background: #F6FAF7' : ''
+      };
+    };
+    const groups = [
+      { label: 'В работе', count: '4', icon: ICON.progress, rows: [
+        r('ARIS-5', 'Маппинг метаданных', 0, 'progress', 'Анна Лебедева (демо)', 'high', '10 – 25 нояб.', '', { docs: '' }),
+        r('ARIS-6', 'Сопоставить атрибуты моделей', 0, 'progress', 'Анна Лебедева (демо)', 'high', '10 – 19 нояб.', '19 нояб.', { late: true, docs: '1', parent: 'ARIS-5' }),
+        r('ARIS-7', 'Описать правила трансформации', 0, 'progress', 'Илья Громов (демо)', 'medium', '20 – 26 нояб.', '', { wait: 'ARIS-6', docs: '1', open: true, parent: 'ARIS-5' }),
+        r('ARIS-8', 'Правила для справочников', 0, 'progress', 'Дмитрий Орлов (демо)', 'medium', '20 – 25 нояб.', '', { wait: 'ARIS-6', parent: 'ARIS-7' })
+      ] },
+      { label: 'К работе', count: '5', icon: ICON.todo, rows: [
+        r('ARIS-10', 'Маппинг согласован', 0, 'todo', 'Олег Миронов (демо)', 'high', '27 нояб.', '', { ms: true, wait: 'ARIS-7' }),
+        r('ARIS-11', 'Разработка загрузчика метаданных', 0, 'todo', 'Дмитрий Орлов (демо)', 'high', '27 нояб. – 4 дек.', '', { wait: 'ARIS-10', docs: '1' }),
+        r('ARIS-12', 'Проверка загрузки на тестовом контуре', 0, 'todo', 'Екатерина Белова (демо)', 'medium', '7 – 9 дек.', '', { wait: 'ARIS-11', docs: '1' }),
+        r('ARIS-13', 'Документация интеграции', 0, 'todo', 'Илья Громов (демо)', 'medium', '7 – 8 дек.', '', { wait: 'ARIS-11', docs: '1' }),
+        r('ARIS-14', 'Готовность к пилоту', 0, 'todo', 'Олег Миронов (демо)', 'critical', '10 дек.', '10 дек.', { ms: true, wait: 'ARIS-12, 13' })
+      ] },
+      { label: 'Готово', count: '5', icon: ICON.done, rows: [
+        r('ARIS-1', 'Анализ источника ARIS', 0, 'done', 'Анна Лебедева (демо)', 'high', '2 – 9 нояб.', '', { docs: '2' }),
+        r('ARIS-2', 'Инвентаризация моделей ARIS', 0, 'done', 'Анна Лебедева (демо)', 'medium', '2 – 4 нояб.', '', { parent: 'ARIS-1' }),
+        r('ARIS-3', 'Интервью с владельцами процессов', 0, 'done', 'Илья Громов (демо)', 'medium', '5 – 9 нояб.', '', { parent: 'ARIS-1' }),
+        r('ARIS-4', 'Подготовить опросник для интервью', 0, 'done', 'Илья Громов (демо)', 'low', '2 – 3 нояб.', '', { parent: 'ARIS-3' }),
+        r('ARIS-9', 'Проверить коды справочника ролей', 0, 'done', 'Мария Ветрова (демо)', 'low', '20 нояб.', '', { parent: 'ARIS-8' })
+      ] }
+    ];
+    const menu = [['todo', 'К работе', '1'], ['progress', 'В работе', '2'], ['review', 'На проверке', '3'], ['done', 'Готово', '4']];
+    return {
+      groups,
+      menuStyle: 'position: absolute; left: 412px; top: 194px; width: 208px; background: #FFFFFF; border: 1px solid #DDE2DD; border-radius: 12px; box-shadow: 0 12px 32px rgba(16,24,20,.14); padding: 6px; z-index: 5',
+      statusMenu: menu.map(([k, label, kb]) => ({ label, kb, icon: ICON[k], on: String(k === 'progress'), bg: k === 'progress' ? 'background: #F0F2EF' : '' }))
+    };
+  }
+}
+</script>
+</body>
+</html>
