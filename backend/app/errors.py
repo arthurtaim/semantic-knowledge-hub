@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -28,6 +29,23 @@ class ApiError(Exception):
         self.code = code
         self.message = message
         self.details = details or {}
+
+
+# SQLite result codes of «another connection holds the lock» (extended codes keep them in the low byte).
+_BUSY_CODES = frozenset({sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED})
+_BUSY_TEXTS = ("database is locked", "database table is locked", "database is busy")
+STORAGE_RETRY_AFTER_SECONDS = 2
+
+
+def is_storage_busy(exc: BaseException) -> bool:
+    """True only for SQLITE_BUSY / SQLITE_LOCKED — a transient lock, never a schema, disk or integrity error."""
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(code, int):
+        return (code & 0xFF) in _BUSY_CODES
+    text = str(exc).lower()
+    return any(marker in text for marker in _BUSY_TEXTS)
 
 
 def not_found(code: str, message: str) -> ApiError:
@@ -93,6 +111,26 @@ def install_error_handlers(app: FastAPI) -> None:
         message = exc.detail if isinstance(exc.detail, str) else "Ошибка запроса."
         return JSONResponse(
             status_code=exc.status_code, content=error_body(code, message, request_id_of(request))
+        )
+
+    @app.exception_handler(sqlite3.OperationalError)
+    async def _storage(request: Request, exc: sqlite3.OperationalError) -> JSONResponse:
+        # audit SYS-006: a lock held past busy_timeout (a backup, another process) is transient and retryable. The
+        # unit of work was rolled back (WorkDatabase.write / a closed connection), so a retry with the same
+        # idempotency key runs once. Any other SQLite error is NOT masked: it goes on to the 500 handler below.
+        if not is_storage_busy(exc):
+            raise exc
+        logger.warning("storage busy request_id=%s path=%s", request_id_of(request), request.url.path)
+        return JSONResponse(
+            status_code=503,
+            content=error_body(
+                "storage_busy",
+                "Хранилище занято другой операцией (например, резервным копированием) — изменения не сохранены. "
+                "Повторите через несколько секунд.",
+                request_id_of(request),
+                {"retryable": True},
+            ),
+            headers={"Retry-After": str(STORAGE_RETRY_AFTER_SECONDS)},
         )
 
     @app.exception_handler(Exception)
