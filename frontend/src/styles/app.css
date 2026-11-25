@@ -4622,6 +4622,69 @@ dd a.button {
   }
 }
 
+/* Chat history (docs/UI_REDESIGN.md «История диалогов»): a stored turn without a shown answer — it never completed,
+   or its answer is withheld — and the quiet notes of an answer read back from the history. */
+.turn__gap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--line-strong);
+}
+
+.turn__gap-note {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-secondary);
+}
+
+.turn__notes {
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-secondary);
+}
+
+/* The document panel: «Новый разговор» above its conversation. */
+.doc-assistant__history {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dialog__loading {
+  margin: var(--space-5) 0;
+  color: var(--text-secondary);
+}
+
+.dialog__missing {
+  margin: var(--space-3) 0 0;
+}
+
+/* «Удалить диалог?» / «Очистить историю?»: an inline confirmation, the danger button first. */
+.dialog__confirm,
+.assistant-home__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-2) 0 var(--space-3);
+}
+
+.dialog__confirm p,
+.assistant-home__confirm p {
+  flex: 1 1 18rem;
+  margin: 0;
+  color: var(--text);
+}
+
+.assistant-home__confirm {
+  margin: var(--space-2) 0 0 var(--space-3);
+  font-size: var(--fs-small);
+}
+
 /* A conflict (busy, a stale state): amber, with a retry — not a failure. */
 .turn__conflict {
   padding: var(--space-3) var(--space-4);

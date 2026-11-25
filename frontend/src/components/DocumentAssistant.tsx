@@ -1,16 +1,19 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { AiMode, AiProposal, AssistantSkill, DocumentDetail, SkillAccess } from "../api/types";
+import type { AiMode, AiProposal, AskRequest, AssistantSkill, DocumentDetail, SkillAccess } from "../api/types";
 import { AI_CHIP_LABEL } from "../lib/aiMode";
+import { newConversationId } from "../lib/assistant";
+import { ensureLoaded, markNew, peekConversation, useConversation, type LoadOptions } from "../lib/conversationStore";
 import { selectionLabel, type CapturedSelection } from "../lib/selection";
 import { displayOf, useAssistantTurns, type AssistantTurns } from "../lib/useAssistantTurns";
-import { toAskRequest, useComposer, type ComposerController, type ComposerMessage } from "../lib/useComposer";
+import { EMPTY_DRAFT, toAskRequest, useComposer, type ComposerController, type ComposerMessage } from "../lib/useComposer";
 import { useSkills, type SkillsState } from "../lib/useSkills";
 import { AskProposal } from "./AskProposal";
 import { TurnView } from "./AssistantTurn";
 import { Composer } from "./Composer";
 import { SidePanel, type SidePanelMode } from "./shell/SidePanel";
+import { Button } from "./ui/Button";
 import { Chip } from "./ui/Chip";
 import { Icon, type IconName } from "./ui/Icon";
 
@@ -74,28 +77,57 @@ export interface DocumentAssistant {
   /** Makes a selection the context of the field (the chip «Выделение: N строк»). */
   takeSelection: (selection: CapturedSelection) => void;
   send: (message: ComposerMessage) => void;
+  /** The panel opened: continue this document's conversation (this tab's, or the latest stored one). */
+  resume: () => void;
+  /** «Новый разговор»: the next message starts another conversation about this document. */
+  startNew: () => void;
+  /** The stored conversation is being loaded. */
+  loading: boolean;
 }
 
-/** The assistant's state lives with the document page: closing the panel keeps the conversation of this visit. */
+/**
+ * The conversation each document's panel continues while the app is open (chat history, docs/API_CONTRACTS.md
+ * v0.7). After a reload the panel continues the document's latest conversation stored for this browser.
+ */
+const panelConversations = new Map<string, string>();
+
+/** Tests: forget which conversation each document's panel continues. */
+export function forgetPanelConversations(): void {
+  panelConversations.clear();
+}
+
+const PANEL_ACTIONS = [...QUICK_ACTIONS, ...DOCUMENT_ACTIONS];
+
+/**
+ * The assistant's state lives with the document page; its conversation lives in the conversation store and in the
+ * server's history (origin «document»): closing the panel or leaving the page neither cancels an answer in flight
+ * nor loses the conversation — the panel shows it again when the document is opened.
+ */
 export function useDocumentAssistant(doc: DocumentDetail, mode: AiMode | null | undefined): DocumentAssistant {
   const skills = useSkills(mode);
-  const composer = useComposer({ defaults: { documents: [{ id: doc.id, title: doc.title, status: doc.status }] } });
-  const conversation = useAssistantTurns({ composer });
+  const defaults = { documents: [{ id: doc.id, title: doc.title, status: doc.status }] };
+  const [startId] = useState(() => panelConversations.get(doc.id) ?? newConversationId());
+  const composer = useComposer({ defaults, initial: { conversationId: startId, draft: { ...EMPTY_DRAFT, ...defaults } } });
+  const conversationId = composer.conversationId;
+  const conversation = useAssistantTurns({ conversationId, composer });
+  const loading = useConversation(conversationId).load === "loading";
   const skill = (id: string) => skills.items?.find((item) => item.id === id);
+  const field = useRef(composer);
+  field.current = composer;
+  const resumed = useRef(false);
+  const load: LoadOptions = {
+    contextDocumentId: doc.id,
+    origin: "document",
+    actionLabel: (skillId) => PANEL_ACTIONS.find((action) => action.skill === skillId)?.label ?? null,
+  };
 
-  // The panel's conversation ends with the visit: files attached in it are deleted on the server (nobody can
-  // reach that conversation again), as «Новый диалог» does in the dialog.
-  const files = useRef(composer.draft.files);
-  files.current = composer.draft.files;
-  useEffect(
-    () => () => {
-      for (const file of files.current) {
-        if (file.status === "ready" && file.attachment) void api.deleteAttachment(file.attachment.id).catch(() => undefined);
-      }
-    },
-    [],
-  );
   const improve = skill("improve_section");
+
+  /** Every message of the panel belongs to this document's conversation (origin «document» in the history). */
+  function start(request: AskRequest, display: Parameters<AssistantTurns["run"]>[1]) {
+    panelConversations.set(doc.id, conversationId);
+    void conversation.run({ ...request, origin: "document" }, display);
+  }
 
   function runSkill(skillId: string, label: string) {
     if (conversation.busy()) return;
@@ -103,13 +135,36 @@ export function useDocumentAssistant(doc: DocumentDetail, mode: AiMode | null | 
     const message: ComposerMessage = { ...composer.message(), question: "", skill: known ?? null, attachments: [] };
     const request = toAskRequest(message, conversation.history);
     request.skill_id = skillId;
-    void conversation.run(request, {
+    start(request, {
       skill: { id: skillId, name: known?.name ?? label, access: known?.access ?? FALLBACK_ACCESS[skillId] ?? "read" },
       files: [],
       documents: [],
       selection: message.selection?.label ?? null,
       action: label,
     });
+  }
+
+  function resume() {
+    if (resumed.current) return;
+    resumed.current = true;
+    const known = panelConversations.get(doc.id);
+    if (known) {
+      void ensureLoaded(known, load);
+      return;
+    }
+    api
+      .conversations({ origin: "document", document_id: doc.id, limit: 1 })
+      .then((list) => {
+        const found = list.items[0];
+        const current = field.current;
+        // Only an untouched panel moves to the stored conversation (nothing asked, typed or attached here yet).
+        if (!found || panelConversations.has(doc.id) || peekConversation(current.conversationId).turns.length > 0) return;
+        if (current.draft.text.trim() || current.draft.files.length > 0) return;
+        panelConversations.set(doc.id, found.id);
+        current.switchConversation(found.id, { ...EMPTY_DRAFT, ...defaults, selection: current.draft.selection });
+        void ensureLoaded(found.id, load);
+      })
+      .catch(() => undefined); // no history (older server, offline): the panel starts empty, as before
   }
 
   return {
@@ -129,11 +184,21 @@ export function useDocumentAssistant(doc: DocumentDetail, mode: AiMode | null | 
     send: (message) => {
       if (conversation.busy()) return;
       // This document is the context of every message; the panel shows it once, above, not on each bubble.
-      void conversation.run(toAskRequest(message, conversation.history), {
+      start(toAskRequest(message, conversation.history), {
         ...displayOf(message),
         documents: message.documents.filter((item) => item.id !== doc.id).map((item) => ({ id: item.id, title: item.title })),
       });
     },
+    resume,
+    startNew: () => {
+      if (conversation.busy()) return;
+      const id = newConversationId();
+      markNew(id);
+      panelConversations.set(doc.id, id);
+      composer.switchConversation(id, { ...EMPTY_DRAFT, ...defaults, selection: composer.draft.selection });
+      composer.focus();
+    },
+    loading,
   };
 }
 
@@ -300,6 +365,9 @@ export function DocumentAssistantPanel({
 }: DocumentAssistantPanelProps) {
   const { composer, conversation, skills } = assistant;
   const { turns, pending } = conversation;
+  // Opening the panel continues the document's conversation (this tab's, or the latest stored one).
+  const { resume } = assistant;
+  useEffect(() => resume(), [resume]);
   const inputRef = composer.inputRef as RefObject<HTMLElement | null>;
   const conversationRef = useRef<HTMLDivElement>(null);
   const selection = composer.draft.selection;
@@ -378,11 +446,17 @@ export function DocumentAssistantPanel({
         <section className="doc-assistant__conversation" aria-label="Переписка">
           {turns.length === 0 ? (
             <p className="doc-assistant__empty">
-              Ответы — только по документам команды, с цитатами. Правки ассистент предлагает на ревью и ничего не меняет
-              сам.
+              {assistant.loading
+                ? "Загружаю переписку по документу…"
+                : "Ответы — только по документам команды, с цитатами. Правки ассистент предлагает на ревью и ничего не меняет сам."}
             </p>
           ) : (
             <div ref={conversationRef} className="doc-assistant__turns">
+              <div className="doc-assistant__history">
+                <Button variant="quiet" size="sm" onClick={assistant.startNew} disabled={pending}>
+                  Новый разговор
+                </Button>
+              </div>
               {turns.map((turn, index) => (
                 <TurnView
                   key={turn.id}
@@ -390,7 +464,16 @@ export function DocumentAssistantPanel({
                   turnNo={index + 1}
                   compact
                   onRetry={
-                    turn === turns[turns.length - 1] && turn.phase === "error" ? () => void conversation.run(turn.request, turn.display) : undefined
+                    turn === turns[turns.length - 1] && turn.phase === "error" && (turn.stored?.resendable ?? true)
+                      ? () => void conversation.run(turn.request, turn.display)
+                      : undefined
+                  }
+                  onResend={
+                    !pending &&
+                    (turn.stored?.resendable ?? false) &&
+                    (turn.phase === "interrupted" ? turn === turns[turns.length - 1] : Boolean(turn.stored?.withheld))
+                      ? () => void conversation.run(turn.request, turn.display)
+                      : undefined
                   }
                   onRefine={(question) => {
                     composer.setText(question);

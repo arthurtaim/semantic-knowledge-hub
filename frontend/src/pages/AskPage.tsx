@@ -1,26 +1,59 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import type { AskRequest } from "../api/types";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { api, ApiError } from "../api/client";
+import type { AskRequest, AssistantAttachment, StoredTurnRequest } from "../api/types";
 import { NOTHING_ATTACHED, TurnView, type Turn, type TurnDisplay } from "../components/AssistantTurn";
 import { Composer } from "../components/Composer";
+import { ErrorState, Notice } from "../components/Feedback";
 import { PageToolbar } from "../components/shell/PageToolbar";
 import { Button } from "../components/ui/Button";
 import { canAsk } from "../lib/aiMode";
-import { scopeFromParam, scopeSources } from "../lib/assistant";
-import { clearHandOff, peekHandOff, restoreConversation, saveConversation } from "../lib/conversation";
+import { CONVERSATION_ID_PATTERN, newConversationId, scopeFromParam, scopeSources } from "../lib/assistant";
+import {
+  claimFresh,
+  clearHandOff,
+  deleteDraft,
+  dialogKey,
+  forgetLastDialog,
+  freshDialogId,
+  lastDialogId,
+  peekHandOff,
+  rememberLastDialog,
+  restoreDraft,
+  saveDraft,
+  startFreshDialog,
+} from "../lib/conversation";
+import {
+  ensureLoaded,
+  forgetConversation,
+  markNew,
+  runTurn,
+  useConversation,
+  type ConversationState,
+  type TurnEffects,
+} from "../lib/conversationStore";
 import { pluralRu } from "../lib/labels";
 import {
   findSkill,
+  forgetRecentDialog,
   markAttachmentsGone,
   noteDialogSources,
   rememberDialog,
-  rerunsAtOnce,
   restoreDialog,
   type RecentAttachment,
+  type RecentDialog,
+  type RecentSkill,
 } from "../lib/recentQuestions";
 import { useSession } from "../lib/session";
 import { displayOf, MAX_HISTORY_TURNS, useAssistantTurns } from "../lib/useAssistantTurns";
-import { toAskRequest, useComposer, type ComposerMessage } from "../lib/useComposer";
+import {
+  EMPTY_DRAFT,
+  toAskRequest,
+  useComposer,
+  type ComposerDraft,
+  type ComposerFile,
+  type ComposerMessage,
+} from "../lib/useComposer";
 import { usePinnedBottom } from "../lib/usePinnedBottom";
 import { useSkills } from "../lib/useSkills";
 import type { HomeHandOff, RecentHandOff } from "./HomePage";
@@ -30,6 +63,11 @@ import type { HomeHandOff, RecentHandOff } from "./HomePage";
  * was attached, the assistant's answers with citation markers and one list of sources each, the field pinned at
  * the bottom. Streaming stages, «Недостаточно данных», errors with a retry and conflicts are states of a turn
  * (components/AssistantTurn.tsx, lib/useAssistantTurns.ts — shared with the document's assistant panel).
+ *
+ * Chat history (docs/API_CONTRACTS.md v0.7): the URL names the conversation (`/ask?c=<id>`) once it has a
+ * question. Opening it shows the turns of this tab (lib/conversationStore.ts: also an answer still running) or
+ * loads the stored ones from the server — it never asks again. `?q=…&run=1` starts a NEW conversation once and the
+ * URL becomes `?c=<id>`, so Back, Forward or a reload never repeat the question.
  */
 
 const EXAMPLES = [
@@ -56,170 +94,340 @@ function AskUnavailable({ initial }: { initial: string }) {
   );
 }
 
-export function AskPage() {
-  const [params, setParams] = useSearchParams();
-  const session = useSession();
-  const aiMode = session?.features.ai_mode;
-  const userId = session?.user.user_id;
-  const about = params.get("about");
-  const initialQuestion = params.get("q");
-  // `?run=1` (from «Спросить или найти»): ask at once. The flag is removed from the URL first, so a reload or a
-  // second effect run (React StrictMode) never asks twice.
-  const runRequested = params.get("run") === "1";
-  // A message sent from the home page starts a new dialog here with its chips; a reopened recent dialog puts its
-  // question, skill, files and documents back into the field of that dialog (lib/conversation.ts).
-  const [handed] = useState(() => peekHandOff<HomeHandOff | RecentHandOff>());
-  const sent = handed && "message" in handed ? handed : null;
-  const reopened = handed && "recent" in handed ? handed.recent : null;
-  const [restored] = useState(() => (reopened ? restoreDialog(reopened) : null));
-  const reopenDone = useRef(false);
-  // The pinned field: focus moving to a source or a button scrolls it above the field, not under it (2.4.11).
-  const pinned = useRef<HTMLDivElement>(null);
-  usePinnedBottom(pinned);
-  const composer = useComposer({
-    persistKey: "dialog",
-    initial: sent ? { conversationId: sent.conversationId, draft: sent.draft } : restored,
-    // Files deleted on the server can no longer come back with a recent dialog.
-    onDiscard: (ids) => markAttachmentsGone(userId, ids),
+// --- remembering a dialog in this browser (the offline fallback of «Недавние диалоги») ---------------------------
+
+const recentSkill = (display: TurnDisplay): RecentSkill | null =>
+  display.skill ? { id: display.skill.id, name: display.skill.name } : null;
+
+/** What was attached, with the details the field had (size, summary, expiry); a file no longer there was deleted. */
+function attachmentsOf(request: AskRequest, display: TurnDisplay, ready: AssistantAttachment[]): RecentAttachment[] {
+  const known = new Map(ready.map((a) => [a.id, a]));
+  return (request.attachment_ids ?? []).map((id) => {
+    const a = known.get(id);
+    const name = a?.name ?? display.files.find((file) => file.id === id)?.name ?? id;
+    return a
+      ? { id, name, size: a.size, mime: a.mime, summary: a.summary, expiresAt: a.expires_at, gone: false }
+      : { id, name, size: null, mime: null, summary: null, expiresAt: null, gone: true };
   });
-  const skills = useSkills(aiMode);
+}
 
-  /** What was attached, as the field holds it (size, summary, expiry); a file no longer there was deleted. */
-  function attachmentsOf(request: AskRequest, display: TurnDisplay): RecentAttachment[] {
-    const ready = new Map(composer.message().attachments.map((a) => [a.id, a]));
-    return (request.attachment_ids ?? []).map((id) => {
-      const a = ready.get(id);
-      const name = a?.name ?? display.files.find((file) => file.id === id)?.name ?? id;
-      return a
-        ? { id, name, size: a.size, mime: a.mime, summary: a.summary, expiresAt: a.expires_at, gone: false }
-        : { id, name, size: null, mime: null, summary: null, expiresAt: null, gone: true };
-    });
-  }
-
-  const recentSkill = (display: TurnDisplay) => (display.skill ? { id: display.skill.id, name: display.skill.name } : null);
-
-  // Completed turns survive a visit to a cited document (memory only; see lib/conversation.ts).
-  const conversation = useAssistantTurns({
-    composer,
-    initial: () => (handed ? [] : restoreConversation<Turn>()),
+/** Effects of a request that do not need the page: the browser's own list of recent dialogs. */
+function rememberEffects(userId: string | undefined, ready: () => AssistantAttachment[]): TurnEffects {
+  return {
     onStart: (request, display) =>
       rememberDialog(userId, {
         question: request.question,
         skill: recentSkill(display),
         context: display.files[0]?.name ?? display.documents[0]?.title ?? null,
         conversationId: request.conversation_id ?? null,
-        attachments: attachmentsOf(request, display),
+        attachments: attachmentsOf(request, display, ready()),
         documents: display.documents,
       }),
     onAnswer: (request, display, response) =>
       noteDialogSources(userId, { question: request.question, skill: recentSkill(display) }, response.citations.length),
     onError: (request, _display, error) => {
       if (error.code !== "attachment_not_found") return;
-      // The server names the file it could not find; without a name every file of the request is suspect.
       const named = typeof error.details.attachment_id === "string" ? [error.details.attachment_id] : [];
-      const ids = named.length > 0 ? named : (request.attachment_ids ?? []);
-      composer.markUnavailable(ids);
-      markAttachmentsGone(userId, ids);
+      markAttachmentsGone(userId, named.length > 0 ? named : (request.attachment_ids ?? []));
     },
+  };
+}
+
+// --- the field of a stored conversation ----------------------------------------------------------------------------
+
+/** The last stored request of the conversation (the field continues with its skill, files and documents). */
+function lastStoredRequest(turns: Turn[]): StoredTurnRequest | null {
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    const stored = turns[i]?.stored;
+    if (stored) return stored.request;
+  }
+  return null;
+}
+
+/** The field as the dialog leaves it after a message: empty text, the skill (from the registry later), the files
+ * (a file the server still keeps as a ready chip, otherwise grey) and the chosen documents. */
+function draftFromStored(request: StoredTurnRequest, conversationId: string): ComposerDraft {
+  const files: ComposerFile[] = request.attachments.map((file) => {
+    const base = { key: `stored-${file.id}`, name: file.name, size: file.size ?? 0, error: null };
+    if (!file.available || file.size === null) return { ...base, status: "unavailable", attachment: null };
+    const attachment: AssistantAttachment = {
+      id: file.id,
+      conversation_id: conversationId,
+      name: file.name,
+      size: file.size,
+      mime: file.mime ?? "",
+      status: "ready",
+      summary: file.summary,
+      error_code: null,
+      expires_at: file.expires_at,
+    };
+    return { ...base, status: "ready", attachment };
   });
-  const { turns, pending, run, history: context } = conversation;
+  return {
+    ...EMPTY_DRAFT,
+    files,
+    documents: request.documents.map((doc) => ({ id: doc.id, title: doc.title, status: null })),
+    scope: request.sources.includes("corporate") ? (request.sources.includes("team") ? "both" : "corporate") : "team",
+    includeDrafts: request.include_drafts,
+    includeDeprecated: request.include_deprecated,
+  };
+}
 
-  useEffect(() => saveConversation(turns.filter((turn) => turn.phase === "done")), [turns]);
+/** The next dialog that mounts takes the focus («Новый диалог»). */
+let focusNextDialog = false;
 
-  // `?q=` / `?about=` fill the field and `?scope=` the scope (unless a message is about to run).
-  useEffect(() => {
-    if (handed || runRequested) return;
-    if (about) composer.setText(`Что известно о «${about}»?`);
-    else if (initialQuestion) composer.setText(initialQuestion.slice(0, 2000));
-    if (params.get("scope")) composer.setScope(scopeFromParam(params.get("scope")));
-    // Read once, on arrival.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+// --- the page --------------------------------------------------------------------------------------------------------
 
-  function dropRunFlag() {
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        next.delete("run");
-        return next;
-      },
-      { replace: true },
-    );
+export function AskPage() {
+  const [params, setParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const session = useSession();
+  const aiMode = session?.features.ai_mode;
+  const userId = session?.user.user_id;
+  const about = params.get("about");
+  const initialQuestion = params.get("q");
+  const runRequested = params.get("run") === "1";
+  const c = params.get("c");
+  const named = c && CONVERSATION_ID_PATTERN.test(c) ? c : null;
+  // A message sent from the home page runs in its own dialog with its chips; a recent dialog of this browser (or
+  // a document from the catalog) puts its question, skill, files and documents back into the field.
+  const [handed] = useState(() => peekHandOff<HomeHandOff | RecentHandOff>());
+  const sent = handed && "message" in handed ? handed : null;
+  const reopened = handed && "recent" in handed ? handed.recent : null;
+  const [freshId, setFreshId] = useState(() => sent?.conversationId ?? freshDialogId());
+  // Plain `/ask` (a link from another section, coming back from a cited document) continues this tab's dialog.
+  const plain = !named && !sent && !reopened && !runRequested && !initialQuestion && !about;
+  const resumeId = plain ? lastDialogId() : null;
+  const activeId = named ?? resumeId ?? freshId;
+  const ranFor = useRef<string | null>(null);
+
+  function nameInUrl(id: string) {
+    setParams(new URLSearchParams({ c: id }), { replace: true });
   }
 
-  // The hand-off from the home page runs once (the timer survives StrictMode's double effects).
   useEffect(() => {
-    if (!sent || !canAsk(aiMode)) return undefined;
-    const timer = window.setTimeout(() => {
-      clearHandOff();
-      if (runRequested) dropRunFlag();
-      conversation.clear();
-      void run(toAskRequest(sent.message), displayOf(sent.message));
-    }, 0);
-    return () => window.clearTimeout(timer);
+    if (resumeId) nameInUrl(resumeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeId]);
+
+  // The hand-off from the home page runs once; the URL then names its dialog.
+  useEffect(() => {
+    if (!sent || !canAsk(aiMode) || peekHandOff() !== sent) return;
+    clearHandOff();
+    markNew(sent.conversationId);
+    claimFresh(sent.conversationId);
+    nameInUrl(sent.conversationId);
+    const files = sent.message.attachments;
+    void runTurn(sent.conversationId, toAskRequest(sent.message), displayOf(sent.message), rememberEffects(userId, () => files));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sent, aiMode]);
 
-  // A reopened recent dialog: its skill chip comes from the registry (wait for it); a plain question is asked
-  // again at once, anything with a skill or files waits in the field for Enter (lib/recentQuestions.ts).
+  // `?run=1` (from «Спросить или найти», ⌘K): a NEW dialog asked once. The URL becomes `?c=<id>` at once, so Back,
+  // Forward, a reload or a second effect run (StrictMode: the ref survives it) never ask again.
   useEffect(() => {
-    if (!reopened || reopenDone.current || !canAsk(aiMode)) return undefined;
-    if (reopened.skill && skills.items === null && !skills.failed) return undefined;
-    const timer = window.setTimeout(() => {
-      reopenDone.current = true;
-      clearHandOff();
-      const skill = findSkill(skills.items, reopened.skill);
-      if (skill) composer.setSkill(skill);
-      if (rerunsAtOnce(reopened)) {
-        conversation.clear();
-        const message = composer.message();
-        void run(toAskRequest(message), displayOf(message));
-      } else {
-        composer.focus();
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reopened, aiMode, skills.items, skills.failed]);
-
-  useEffect(() => {
-    if (handed || !runRequested || !canAsk(aiMode)) return undefined;
-    const timer = window.setTimeout(() => {
-      const text = (params.get("q") ?? "").trim().slice(0, 2000);
-      const scope = scopeFromParam(params.get("scope"));
-      dropRunFlag();
-      if (text.length < 3) return;
-      // A question from «Спросить или найти» starts a new dialog (no earlier answers, files or skill).
-      conversation.clear();
-      const conversationId = composer.reset();
-      composer.setScope(scope);
-      void run(
-        {
-          question: text,
-          sources: scopeSources(scope),
-          include_drafts: false,
-          include_deprecated: false,
-          history: [],
-          conversation_id: conversationId,
-        },
-        NOTHING_ATTACHED,
-      );
-    }, 0);
-    return () => window.clearTimeout(timer);
+    if (sent || !runRequested || !canAsk(aiMode) || ranFor.current === location.key) return;
+    ranFor.current = location.key;
+    const text = (params.get("q") ?? "").trim().slice(0, 2000);
+    const scope = scopeFromParam(params.get("scope"));
+    if (text.length < 3) {
+      const next = new URLSearchParams(params);
+      next.delete("run");
+      setParams(next, { replace: true });
+      return;
+    }
+    const id = newConversationId();
+    markNew(id);
+    saveDraft(dialogKey(id), { conversationId: id, draft: { ...EMPTY_DRAFT, scope } });
+    nameInUrl(id);
+    void runTurn(
+      id,
+      { question: text, sources: scopeSources(scope), include_drafts: false, include_deprecated: false, history: [], conversation_id: id },
+      NOTHING_ATTACHED,
+      rememberEffects(userId, () => []),
+    );
     // run/params are read at the moment of the request; the effect reacts to the flag only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runRequested, aiMode]);
 
+  // AI_PROVIDER=disabled: no question form with a button that can only fail — the page says so and searches.
+  if (aiMode === "disabled") return <AskUnavailable initial={about ?? initialQuestion ?? ""} />;
+
+  /** «Новый диалог» (and after deleting one): an empty dialog; Back returns to the previous one. */
+  function newDialog(replace = false) {
+    forgetLastDialog();
+    const id = startFreshDialog();
+    setFreshId(id);
+    focusNextDialog = true;
+    navigate("/ask", { replace: replace || !named });
+  }
+
+  const forThis = (id: string | null) => id === activeId || (!named && id === null);
+  return (
+    <AskDialog
+      key={activeId}
+      conversationId={activeId}
+      named={named !== null || resumeId !== null}
+      initial={sent && sent.conversationId === activeId ? { conversationId: activeId, draft: sent.draft } : null}
+      reopened={reopened && forThis(reopened.conversationId) ? reopened : null}
+      prefill={runRequested ? null : about ? `Что известно о «${about}»?` : initialQuestion}
+      scopeParam={runRequested ? null : params.get("scope")}
+      onNamed={() => {
+        claimFresh(activeId);
+        nameInUrl(activeId);
+      }}
+      onNew={newDialog}
+    />
+  );
+}
+
+interface DialogProps {
+  conversationId: string;
+  /** The URL names this dialog (`?c=`): its stored turns may exist on the server. */
+  named: boolean;
+  /** The field handed over by the home page with the message that runs in this dialog. */
+  initial: { conversationId: string; draft: ComposerDraft } | null;
+  /** A recent dialog of this browser, or a document from the catalog, put back into the field. */
+  reopened: RecentDialog | null;
+  prefill: string | null;
+  scopeParam: string | null;
+  /** The first question of an unnamed dialog: the URL names it from now on. */
+  onNamed: () => void;
+  onNew: (replace?: boolean) => void;
+}
+
+/** Loads a named dialog's stored turns (unless this tab has them), then shows it. */
+function AskDialog(props: DialogProps) {
+  const { conversationId, named } = props;
+  const state = useConversation(conversationId);
+  useEffect(() => {
+    if (!named) {
+      markNew(conversationId);
+      return;
+    }
+    rememberLastDialog(conversationId);
+    void ensureLoaded(conversationId);
+  }, [conversationId, named]);
+
+  if (named && (state.load === "none" || state.load === "loading")) {
+    return (
+      <div className="dialog">
+        <PageToolbar crumbs={[{ label: "Ассистент", to: "/" }, { label: "Диалог" }]} />
+        <p className="dialog__loading" role="status">
+          Загружаю диалог…
+        </p>
+      </div>
+    );
+  }
+  if (state.load === "failed" && state.loadError) {
+    return (
+      <div className="dialog">
+        <PageToolbar
+          crumbs={[{ label: "Ассистент", to: "/" }, { label: "Диалог" }]}
+          actions={
+            <Button icon="plus" onClick={() => props.onNew()}>
+              <span className="toolbar-action__label">Новый диалог</span>
+            </Button>
+          }
+        />
+        <ErrorState
+          error={state.loadError}
+          title="Не удалось загрузить диалог"
+          onRetry={() => void ensureLoaded(conversationId, {}, true)}
+        />
+      </div>
+    );
+  }
+  return <DialogView {...props} state={state} />;
+}
+
+function DialogView({ conversationId, named, initial, reopened, prefill, scopeParam, onNamed, onNew, state }: DialogProps & { state: ConversationState }) {
+  const session = useSession();
+  const aiMode = session?.features.ai_mode;
+  const userId = session?.user.user_id;
+  // The pinned field: focus moving to a source or a button scrolls it above the field, not under it (2.4.11).
+  const pinned = useRef<HTMLDivElement>(null);
+  usePinnedBottom(pinned);
+  // The field: this tab's own draft of the dialog wins; otherwise what was handed over, a reopened recent dialog,
+  // or the stored conversation's last request (its skill, files and documents stay for the next message).
+  const [start] = useState(() => {
+    if (restoreDraft(dialogKey(conversationId))) return { field: null, skill: null as RecentSkill | null };
+    if (initial) return { field: initial, skill: null };
+    if (reopened) return { field: restoreDialog(reopened, Date.now(), conversationId), skill: reopened.skill };
+    const last = lastStoredRequest(state.turns);
+    return {
+      field: { conversationId, draft: last ? draftFromStored(last, conversationId) : { ...EMPTY_DRAFT } },
+      skill: last?.skill ? { id: last.skill.id, name: last.skill.name } : null,
+    };
+  });
+  const composer = useComposer({
+    persistKey: dialogKey(conversationId),
+    initial: start.field,
+    // Files deleted on the server can no longer come back with a recent dialog.
+    onDiscard: (ids) => markAttachmentsGone(userId, ids),
+  });
+  const skills = useSkills(aiMode);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<ApiError | null>(null);
+
+  const conversation = useAssistantTurns({
+    conversationId,
+    composer,
+    ...rememberEffects(userId, () => composer.message().attachments),
+  });
+  const { turns, pending, run, history: context } = conversation;
+
+  // Arrival: a reopened entry's hand-off is taken; `?q=` / `?about=` fill the field and `?scope=` the scope.
+  useEffect(() => {
+    if (reopened) clearHandOff();
+    if (prefill) composer.setText(prefill.slice(0, 2000));
+    if (scopeParam) composer.setScope(scopeFromParam(scopeParam));
+    if (focusNextDialog || reopened) {
+      focusNextDialog = false;
+      composer.focus();
+    }
+    // Read once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The skill chip of a restored field comes from the registry (only one that can run now).
+  const wantedSkill = useRef(start.skill);
+  useEffect(() => {
+    const wanted = wantedSkill.current;
+    if (!wanted || (skills.items === null && !skills.failed)) return;
+    wantedSkill.current = null;
+    const skill = findSkill(skills.items, wanted);
+    if (skill && !composer.draft.skill) composer.setSkill(skill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skills.items, skills.failed]);
+
   function send(message: ComposerMessage) {
     if (conversation.busy()) return;
+    if (!named) onNamed();
     void run(toAskRequest(message, context), displayOf(message));
   }
 
-  function newConversation() {
-    if (conversation.busy()) return;
-    conversation.clear();
-    composer.reset();
-    composer.focus();
+  function newDialog() {
+    // A dialog that was never asked anything is gone for good: its files are deleted (a named one stays in the
+    // history with its files).
+    if (!named && turns.length === 0) composer.reset();
+    onNew();
+  }
+
+  async function deleteDialog() {
+    setDeleteError(null);
+    try {
+      await api.deleteConversation(conversationId);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null));
+      return;
+    }
+    setConfirmDelete(false);
+    forgetConversation(conversationId);
+    forgetLastDialog(conversationId);
+    deleteDraft(dialogKey(conversationId));
+    forgetRecentDialog(userId, conversationId);
+    onNew(true);
   }
 
   function refine(question: string) {
@@ -229,38 +437,66 @@ export function AskPage() {
 
   const lastTurn = turns[turns.length - 1];
   const first = turns[0];
-
-  // AI_PROVIDER=disabled: no question form with a button that can only fail — the page says so and searches.
-  if (aiMode === "disabled") return <AskUnavailable initial={about ?? initialQuestion ?? ""} />;
+  const title = first ? first.request.question || first.display.skill?.name || "Диалог" : (state.stored?.title ?? null);
+  const missing = state.load === "missing" && !reopened && !initial && turns.length === 0;
 
   return (
     <div className="dialog">
       <PageToolbar
-        crumbs={
-          first
-            ? [{ label: "Ассистент", to: "/" }, { label: first.request.question || first.display.skill?.name || "Диалог" }]
-            : [{ label: "Ассистент" }]
-        }
+        crumbs={title ? [{ label: "Ассистент", to: "/" }, { label: title }] : [{ label: "Ассистент" }]}
         actions={
-          <Button icon="plus" onClick={newConversation} disabled={pending}>
-            <span className="toolbar-action__label">Новый диалог</span>
-          </Button>
+          <>
+            {turns.length > 0 ? (
+              <Button variant="quiet" icon="trash" onClick={() => setConfirmDelete(true)} disabled={pending || confirmDelete}>
+                <span className="toolbar-action__label">Удалить диалог</span>
+              </Button>
+            ) : null}
+            <Button icon="plus" onClick={newDialog}>
+              <span className="toolbar-action__label">Новый диалог</span>
+            </Button>
+          </>
         }
       />
+      {confirmDelete ? (
+        <div className="dialog__confirm" role="group" aria-labelledby="dialog-delete-text">
+          <p id="dialog-delete-text">Удалить этот диалог из истории? Ответы и прикреплённые к нему файлы будут удалены.</p>
+          <Button variant="danger" size="sm" onClick={() => void deleteDialog()}>
+            Удалить
+          </Button>
+          <Button variant="quiet" size="sm" onClick={() => setConfirmDelete(false)}>
+            Отмена
+          </Button>
+        </div>
+      ) : null}
+      {deleteError ? <ErrorState error={deleteError} title="Не удалось удалить диалог" /> : null}
+      {missing ? (
+        <Notice tone="info" className="dialog__missing">
+          Этого диалога нет в истории этого браузера: он удалён, хранился дольше срока или был начат в другом браузере.
+          Новый вопрос начнёт его заново.
+        </Notice>
+      ) : null}
       {turns.length > 0 ? (
         <>
           <h1 className="visually-hidden">Диалог с ассистентом</h1>
           <section className="conversation" aria-label="Диалог">
-            {turns.map((turn, index) => (
-              <TurnView
-                key={turn.id}
-                turn={turn}
-                turnNo={index + 1}
-                onRetry={turn === lastTurn && turn.phase === "error" ? () => void run(turn.request, turn.display) : undefined}
-                onRefine={refine}
-                onAskCorporate={(request, display) => void run(request, display)}
-              />
-            ))}
+            {turns.map((turn, index) => {
+              const last = turn === lastTurn;
+              const again = () => void run(turn.request, turn.display);
+              const resendable = turn.stored ? turn.stored.resendable : true;
+              return (
+                <TurnView
+                  key={turn.id}
+                  turn={turn}
+                  turnNo={index + 1}
+                  onRetry={last && turn.phase === "error" && resendable ? again : undefined}
+                  onResend={
+                    !pending && resendable && (turn.phase === "interrupted" ? last : Boolean(turn.stored?.withheld)) ? again : undefined
+                  }
+                  onRefine={refine}
+                  onAskCorporate={(request, display) => void run(request, display)}
+                />
+              );
+            })}
           </section>
         </>
       ) : (

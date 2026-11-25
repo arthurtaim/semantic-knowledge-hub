@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiMode, AiProposal, AskResponse, AskStreamEvent, AssistantSkill, DocumentDetail, SessionResponse } from "../api/types";
 import { ASSISTANT_OPEN_KEY, DocumentPage } from "../pages/DocumentPage";
-import { arisDetail, attachmentReady, session, skills, supportedAnswer } from "./fixtures";
-import { memoryStorage, mockApi, mockViewport, renderAt, type MockRoute, type RecordedCall } from "./helpers";
+import { arisDetail, attachmentReady, session, skills, storedConversation, storedTurn, supportedAnswer } from "./fixtures";
+import { memoryStorage, mockApi, mockViewport, ndjsonStream, renderAt, type MockRoute, type RecordedCall } from "./helpers";
 
 /*
  * UI v2 phase D (docs/ui-v2/specs/03_SCREENS.md §3, design-04): the document's assistant panel (toolbar toggle,
@@ -356,7 +356,7 @@ describe("Document assistant panel", () => {
     ]);
   });
 
-  it("deletes the files attached in the panel when the document is left (the conversation ends with the visit)", async () => {
+  it("keeps the files attached in the panel when the document is left: the conversation continues (chat history)", async () => {
     const attachment = attachmentReady({ id: "ATT-00000000000000aa" });
     const calls = mockApi(
       routes([
@@ -370,9 +370,9 @@ describe("Document assistant panel", () => {
     expect(await within(panel()).findByRole("button", { name: "Убрать файл «fields.csv»" })).toBeInTheDocument();
     const upload = calls.find((call) => call.method === "POST" && call.url === "/api/assistant/attachments");
     expect((upload?.body as FormData).get("conversation_id")).toMatch(/^conv-/);
-    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
     unmount();
-    expect(calls.filter((call) => call.method === "DELETE").map((call) => call.url)).toEqual([`/api/assistant/attachments/${attachment.id}`]);
+    // Deleted only with the conversation (from the history) or when its 24 hours run out.
+    expect(calls.some((call) => call.method === "DELETE")).toBe(false);
   });
 
   it("«Предложить правку» opens the manual path when the AI cannot rewrite (mock); an unavailable skill says why", async () => {
@@ -689,3 +689,68 @@ describe("Selection bar", () => {
     expect(within(context).getByText("Выделение: 1 строка")).toBeInTheDocument();
   });
 });
+
+describe("Document assistant panel: chat history", () => {
+  const posts = (calls: RecordedCall[]) => calls.filter((c) => c.method === "POST" && c.url === STREAM);
+  const final = (response: AskResponse): AskStreamEvent => ({ type: "final", response });
+
+  it("leaving the document mid-answer does not cancel it: coming back shows the answer in the panel, asked once", async () => {
+    const stream = ndjsonStream();
+    const calls = mockApi(routes([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]));
+    const first = renderDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    await userEvent.type(within(panel()).getByLabelText("Вопрос по документу"), "Какие слои у архитектуры?{Enter}");
+    expect(await within(panel()).findByText("Ищу источники…")).toBeInTheDocument();
+    first.unmount();
+    expect(stream.state.aborted).toBe(false);
+    await act(async () => {
+      stream.push({ type: "status", stage: "retrieving" }, final(supportedAnswer));
+      stream.close();
+    });
+
+    renderDocument();
+    await loaded();
+    if (!queryPanel()) await userEvent.click(toggle());
+    expect(await within(panel()).findByText("Подтверждено источниками")).toBeInTheDocument();
+    expect(posts(calls)).toHaveLength(1);
+    expect(posts(calls)[0]?.body).toMatchObject({ origin: "document", context_document_ids: [DOC_ID] });
+  });
+
+  it("after a reload continues the document's latest stored conversation without asking; follow-ups join it", async () => {
+    const turn = storedTurn({ request: { ...storedTurn().request, documents: [{ id: DOC_ID, title: archDetail.title }] } });
+    const stored = storedConversation([turn], { origin: "document", document: { id: DOC_ID, title: archDetail.title } });
+    const summary: Partial<typeof stored> = { ...stored };
+    delete summary.turns;
+    delete summary.index_generation;
+    const calls = mockApi(
+      routes([
+        {
+          path: `/api/assistant/conversations?origin=document&document_id=${DOC_ID}&limit=1`,
+          body: { items: [summary], total: 1, enabled: true, retention_days: 30 },
+        },
+        { path: `/api/assistant/conversations/${stored.id}`, body: stored },
+        streamOf(supportedAnswer),
+      ]),
+    );
+    renderDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "Ассистент" }));
+    expect(await within(panel()).findByText("Подтверждено источниками")).toBeInTheDocument();
+    expect(posts(calls)).toHaveLength(0);
+    // The document is the panel's context, shown once above — not repeated on the stored message.
+    expect(within(panel()).queryByRole("list", { name: "Приложено к сообщению" })).toBeNull();
+
+    await userEvent.type(within(panel()).getByLabelText("Вопрос по документу"), "А какие ограничения?{Enter}");
+    await waitFor(() => expect(posts(calls)).toHaveLength(1));
+    expect(posts(calls)[0]?.body).toMatchObject({
+      conversation_id: stored.id,
+      origin: "document",
+      history: [{ question: "Какие слои у архитектуры?", answer: supportedAnswer.answer }],
+    });
+    expect(await within(panel()).findAllByText("Подтверждено источниками")).toHaveLength(2);
+
+    // «Новый разговор»: the next message starts another conversation about this document.
+    await userEvent.click(within(panel()).getByRole("button", { name: "Новый разговор" }));
+    expect(within(panel()).queryByText("Подтверждено источниками")).toBeNull();
+  });
+});
+

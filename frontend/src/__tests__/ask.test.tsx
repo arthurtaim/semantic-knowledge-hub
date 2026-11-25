@@ -51,7 +51,7 @@ async function chooseScope(label: "Команда" | "Корпоративные
 }
 
 describe("Asking from «Спросить или найти» (?run=1)", () => {
-  it("asks once at once in the chosen scope and removes the flag from the URL", async () => {
+  it("asks once at once in the chosen scope; the URL then names the new dialog (?c=), not the question", async () => {
     const calls = mockApi([streamRoute(...mockEvents(supportedAnswer))]);
     renderRoutes("/ask?q=%D0%93%D0%B4%D0%B5%20%D0%B1%D0%B0%D0%B7%D0%B0%3F&run=1&scope=both", { "/ask": <AskPage /> });
     expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
@@ -59,7 +59,9 @@ describe("Asking from «Спросить или найти» (?run=1)", () => {
     expect(posts(calls)[0]?.body).toMatchObject({ question: "Где база?", sources: ["team", "corporate"] });
     // react-router applies the URL change in a transition: it may land after the answer renders.
     await waitFor(() => expect(screen.getByTestId("location")).not.toHaveTextContent("run=1"));
-    expect(screen.getByTestId("location")).toHaveTextContent("/ask?q=");
+    // Back, Forward or a reload open this dialog (chat history) — they never ask the question again.
+    const conversation = (posts(calls)[0]?.body as { conversation_id: string }).conversation_id;
+    expect(screen.getByTestId("location")).toHaveTextContent(`/ask?c=${conversation}`);
     expect(screen.getByLabelText("Оба")).toBeChecked();
   });
 

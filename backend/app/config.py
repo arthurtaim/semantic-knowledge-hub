@@ -148,6 +148,14 @@ class Settings(BaseSettings):
     # Assistant attachments (UI v2): how long the extracted text of a file attached to a conversation is kept.
     # Limits (10 files per conversation, 20 MB each) are fixed by docs/ui-v2/specs/02_ASSISTANT.md §3.
     attachments_ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
+    # Assistant chat history (docs/API_CONTRACTS.md v0.7, docs/SECURITY.md «Chat history»): completed turns of a
+    # conversation per user AND browser (`X-SKH-Browser`) in the app-state SQLite. A convenience scope, not
+    # authentication. Oldest conversations / turns are pruned beyond the limits; nothing older than the retention.
+    assistant_history_enabled: bool = True
+    assistant_history_retention_days: int = Field(default=30, ge=1, le=365)
+    assistant_history_max_conversations: int = Field(default=100, ge=1, le=1000)  # per user and browser
+    assistant_history_max_turns: int = Field(default=50, ge=2, le=500)  # per conversation
+    assistant_history_max_answer_kb: int = Field(default=512, ge=16, le=8192)  # one stored answer (JSON)
 
     # --- Confluence ----------------------------------------------------------------------------
     confluence_connector: Literal["disabled", "mock", "mcp"] = "disabled"

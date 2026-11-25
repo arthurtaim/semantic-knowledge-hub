@@ -155,7 +155,7 @@ test("E2E-13 AI-first entry: Ctrl+K → question → the answer with its sources
   await expect(dialog.getByRole("option").first()).toContainText("Спросить ИИ");
   await field.press("Enter");
 
-  await expect(page).toHaveURL(/\/ask\?q=/);
+  await expect(page).toHaveURL(/\/ask\?c=conv-/); // the dialog is named in the URL (chat history)
   await expect(page.getByText("Подтверждено источниками")).toBeVisible();
   await expect(page.locator(".answer .answer__mode")).toHaveText("Без языковой модели: дословные выдержки");
   // UI v2: the quotes are in «Источники» (team documents in their own group), not repeated in the text.

@@ -9,6 +9,8 @@ import type {
   AskStreamEvent,
   AssistantAttachment,
   AssistantSkill,
+  ConversationList,
+  StoredConversation,
   AuthoringCheckRequest,
   AuthoringCheckResponse,
   BlankDocumentInfo,
@@ -66,6 +68,7 @@ import type {
   TemplateSummary,
   ToolStepInfo,
 } from "./types";
+import { browserId } from "../lib/browserId";
 
 const TIMEOUT_MS = 30_000;
 /** An AI draft may take minutes with the Claude Code CLI provider (the backend bounds it as well). */
@@ -166,6 +169,8 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (signal?.aborted) throw cancelledError();
   const abort = linkedAbort(signal, timeoutMs);
   const headers: Record<string, string> = { Accept: "application/json", "X-SKH-Client": "web" };
+  // The assistant's chat history is kept per user AND browser (docs/API_CONTRACTS.md v0.7).
+  if (path.startsWith("/assistant/")) headers["X-SKH-Browser"] = browserId();
   // FormData sets its own multipart Content-Type with the boundary.
   if (init.body !== undefined && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
   let response: Response;
@@ -293,7 +298,13 @@ async function askStream(payload: AskRequest, options: AskStreamOptions = {}): P
     try {
       response = await fetch("/api/assistant/ask/stream", {
         method: "POST",
-        headers: { Accept: "application/x-ndjson", "Content-Type": "application/json", "X-SKH-Client": "web" },
+        headers: {
+          Accept: "application/x-ndjson",
+          "Content-Type": "application/json",
+          "X-SKH-Client": "web",
+          // The completed turn is stored in this browser's chat history (with `conversation_id`).
+          "X-SKH-Browser": browserId(),
+        },
         body: json(payload),
         signal: abort.signal,
         credentials: "same-origin",
@@ -443,6 +454,17 @@ export const api = {
   /** Idempotent: also succeeds for an attachment that already expired or was never stored. */
   deleteAttachment: (id: string) =>
     request<null>(`/assistant/attachments/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  // --- chat history (v0.7): this user's conversations in THIS browser (X-SKH-Browser) ---
+  /** Newest first. `origin`/`document_id`: the document panel looks up its document's latest conversation. */
+  conversations: (params: { limit?: number; origin?: "dialog" | "document"; document_id?: string } = {}) =>
+    request<ConversationList>(`/assistant/conversations${query({ ...params })}`),
+  /** The stored turns, re-checked for the reader; 404 `conversation_not_found` (unknown, another browser). */
+  conversation: (id: string) => request<StoredConversation>(`/assistant/conversations/${encodeURIComponent(id)}`),
+  /** Idempotent; the conversation's files are deleted with it. */
+  deleteConversation: (id: string) =>
+    request<null>(`/assistant/conversations/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** «Очистить историю»: every conversation of this browser. */
+  clearConversations: () => request<{ deleted: number }>("/assistant/conversations", { method: "DELETE" }),
   corporatePage: (id: string) => request<CorporatePage>(`/corporate/pages/${encodeURIComponent(id)}`),
   /** `exclude_own`: not the caller's own proposals (the «Ревью» list); `open_only`: only open ones (API v0.4). */
   drafts: (params: { status?: ProposalStatus; document_id?: string; exclude_own?: boolean; open_only?: boolean } = {}) =>
