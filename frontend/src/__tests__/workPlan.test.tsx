@@ -191,7 +191,8 @@ describe("«План с ассистентом» (was «AI план»)", () => {
     expect(sent.excluded_dependencies).toEqual([{ predecessor: "t2", successor: "t3" }]);
     expect(sent.tasks).toEqual(expect.arrayContaining([{ local_id: "t3", include: false }, { local_id: "t1", title: "Разобрать маппинг" }]));
     expect(await screen.findByText(/создано задач по предложению AI — 0, зависимостей — 1, связей с документами — 1/)).toBeInTheDocument();
-    expect(screen.getByTestId("location").textContent).not.toContain("proposal=");
+    // The router updates the URL in a transition: it may land a render after the message.
+    await waitFor(() => expect(screen.getByTestId("location").textContent).not.toContain("proposal="));
   });
 
   it("a stale proposal cannot be applied and offers «Подготовить заново»", async () => {
