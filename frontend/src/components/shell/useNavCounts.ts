@@ -10,9 +10,11 @@ export interface NavCounts {
   /** Proposals «Готово к ревью» that someone else created (GET /api/drafts?status=ready_for_review&exclude_own=true
    * → total): the Ревью item opens the same list. Usually 0 in the single-user demo — then no badge. */
   review: number | null;
+  /** Active projects of the work module (GET /api/projects?status=active → total); null when the module is off. */
+  projects: number | null;
 }
 
-const UNKNOWN: NavCounts = { documents: null, proposals: null, review: null };
+const UNKNOWN: NavCounts = { documents: null, proposals: null, review: null, projects: null };
 
 /** Re-read on every navigation (`key`), so a count follows what the user just created or reviewed. */
 export function useNavCounts(key: string): NavCounts {
@@ -44,6 +46,14 @@ export function useNavCounts(key: string): NavCounts {
       })
       .catch(() => {
         if (live) setCounts((prev) => ({ ...prev, review: null }));
+      });
+    api
+      .workProjects({ status: ["active"] })
+      .then((list) => {
+        if (live) setCounts((prev) => ({ ...prev, projects: list.total }));
+      })
+      .catch(() => {
+        if (live) setCounts((prev) => ({ ...prev, projects: null }));
       });
     return () => {
       live = false;

@@ -1155,6 +1155,9 @@ the «предпросмотр → применить» flow are unchanged. Bran
    status shape (ring / half / dot / grey dot) for List, Board and the Gantt legend; priority as three bars.
 7. **Board**: the shared frame and status shapes; the long drag hint moved into «Вид» and stays each card's
    accessible description.
+8. **Sidebar** (spec §6): «Проекты» stays first in «Работа» and shows the number of active projects —
+   `GET /api/projects?status=active` → `total`, like the other counts (none while unknown or 0; «Активных
+   проектов: N» for screen readers).
 
 ### Keyboard
 
