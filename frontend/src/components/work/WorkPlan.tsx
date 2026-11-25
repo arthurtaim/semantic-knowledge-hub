@@ -25,7 +25,7 @@ import { Icon } from "../ui/Icon";
 import { AssigneeOptions } from "./WorkBits";
 
 /*
- * «AI план» (M6 Step 5, docs/WORK_MANAGEMENT.md §11): a typed task-plan PROPOSAL from documents of the knowledge base.
+ * «План с ассистентом» (was «AI план»; M6 Step 5, docs/WORK_MANAGEMENT.md §11): a typed task-plan PROPOSAL from documents of the knowledge base.
  *
  * 1. The request: what is needed, which documents (search by ID or title; without any the server picks approved
  *    documents), an optional planned start. The model only proposes; nothing is created.
@@ -59,7 +59,7 @@ interface WorkPlanSheetProps {
 export function WorkPlanSheet({ project, assignees, canWrite, proposalId, onProposal, onClose, onApplied }: WorkPlanSheetProps) {
   const mode = useSidePanelMode(true);
   return (
-    <SidePanel id="work-plan" title={proposalId ? "Предложение AI: план задач" : "AI план"} mode={mode} onClose={onClose} className="work-form work-plan">
+    <SidePanel id="work-plan" title={proposalId ? "Предложение AI: план задач" : "План с ассистентом"} mode={mode} onClose={onClose} className="work-form work-plan">
       {proposalId ? (
         <ProposalReview
           key={proposalId}

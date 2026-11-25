@@ -2377,6 +2377,13 @@ kbd {
   background: transparent;
 }
 
+/* A page's note on the badge (the M6 work mode): its tooltip opens towards the content, aligned to the badge's end. */
+.header-status__item .tooltip--bottom {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 /* «Демо-данные»: a quiet amber badge with a dot (--demo-*), so a screenshot cannot pass for real data. */
 .demo-pill {
   display: inline-flex;
@@ -12518,8 +12525,7 @@ a.fact-item__title:hover {
   color: var(--text);
 }
 
-.project-card__key,
-.project-head__key {
+.project-card__key {
   font-family: var(--font-mono);
   font-size: var(--fs-caption);
   color: var(--text-secondary);
@@ -12628,7 +12634,27 @@ a.fact-item__title:hover {
   color: var(--danger-text);
 }
 
-/* ── a project: header, views, filters, docked task panel ── */
+/* ── a project (Planner v2, docs/ui-v2/planner/specs/PLANNER_V2.md §2): the project line, the mode line, one row of
+   filters with the view's controls, then the view; the docked task panel beside the view ── */
+
+.content:has(> .content__inner > .project-page) {
+  padding: 0;
+}
+
+.project-page {
+  gap: 0;
+}
+
+/* The project's path gives way (the title ends with an ellipsis) before the key, the view switch and the actions. */
+.page-toolbar__lead:has(.project-page__key) {
+  flex: 1 1 0;
+}
+
+.page-toolbar__meta .project-page__key {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
 
 .project-page__body {
   display: grid;
@@ -12645,31 +12671,157 @@ a.fact-item__title:hover {
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+  padding: var(--space-4) 1.25rem var(--space-6);
 }
 
 .side-panel--task {
   --side-panel-width: var(--assistant-panel-width);
 }
 
-.project-head {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+/* The project page has no content padding to cancel: the docked panel sits beside the view, under the filter row. */
+.project-page .side-panel--inline {
+  margin: 0;
 }
 
-.project-head__title {
-  margin: 0;
-  font-size: var(--fs-section);
-  line-height: var(--lh-section);
-}
-
-.project-head__meta {
+/* the project line: 44 px, one line; what does not fit is cut, never wrapped */
+.project-strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
+  align-items: center;
+  gap: 1.125rem;
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
   font-size: var(--fs-small);
-  color: var(--text-secondary);
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.project-strip > * {
+  flex: none;
+}
+
+.project-strip__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.project-strip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.project-strip__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.project-strip__track {
+  display: inline-block;
+  width: 96px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.project-strip__bar {
+  display: block;
+  height: 100%;
+  background: var(--status-approved);
+}
+
+.project-strip__overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-strip__overdue:hover,
+.project-strip__overdue[aria-pressed="true"] {
+  background: var(--danger-bg);
+}
+
+.project-strip__milestone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.project-strip__milestone .icon {
+  flex: none;
+}
+
+.project-strip__link {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--accent-text);
+}
+
+.project-strip__sep {
+  color: var(--text-tertiary);
+}
+
+.project-strip__spacer {
+  flex: 1 1 0;
+}
+
+.project-strip__revision {
+  color: var(--text-tertiary);
+}
+
+.project-strip__more-panel {
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 2 * var(--space-4)));
+}
+
+.project-strip__more-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: normal;
+}
+
+.project-strip__more-list .project-strip__overdue {
+  margin: 0 -6px;
+}
+
+.project-strip__more-list .project-strip__milestone {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+/* the work mode while writes are off: a visible line with a lock (never hidden) */
+.project-page__mode {
+  padding: var(--space-2) 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-page__mode .work-mode {
+  padding: var(--space-1) var(--space-3);
+}
+
+.project-page__views {
+  padding: var(--space-3) var(--space-4) 0;
 }
 
 .project-page__views .view-switch {
@@ -12685,36 +12837,116 @@ a.fact-item__title:hover {
   margin-right: 4px;
 }
 
+/* one row: the filters on the left, the view's controls on the right */
+.work-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: 3rem;
+  padding: var(--space-2) 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.work-toolbar > .work-message {
+  flex-basis: 100%;
+}
+
 .work-filters {
+  flex: 1 1 24rem;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .work-filters__search {
   position: relative;
   display: flex;
   align-items: center;
-  width: min(20rem, 100%);
+  width: 12.5rem;
 }
 
 .work-filters__search .icon {
   position: absolute;
-  left: 0.625rem;
+  left: 0.5625rem;
   color: var(--text-tertiary);
   pointer-events: none;
 }
 
 .work-filters__search input {
-  padding-left: 2rem;
+  width: 100%;
   min-height: var(--control-height-sm);
+  padding-left: 1.875rem;
+  font-size: var(--fs-small);
 }
 
-.work-filters__count {
+.work-filters__chip {
+  max-width: 18rem;
+}
+
+.work-toolbar__view {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
   margin-left: auto;
+}
+
+.work-toolbar__count {
   font-size: var(--fs-small);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.work-toolbar__zoom .segmented__option span {
+  padding: 0 0.625rem;
+}
+
+.project-page > .work-message {
+  margin: var(--space-2) 1.25rem 0;
+}
+
+@media (max-width: 719.98px) {
+  .page-toolbar__meta .project-page__key {
+    display: none;
+  }
+
+  .project-strip {
+    padding: 0 var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .work-toolbar {
+    padding: var(--space-2) var(--space-4);
+  }
+
+  /* the search on its own line, the menus and the view's controls below it (they wrap: a menu inside a scrolled
+     strip would be clipped by it) */
+  .work-filters {
+    flex-basis: 100%;
+  }
+
+  .work-filters__search {
+    width: 100%;
+  }
+
+  .work-toolbar__view {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .project-page > .work-message {
+    margin: var(--space-2) var(--space-4) 0;
+  }
+
+  .project-page__main {
+    padding: var(--space-3) var(--space-4) var(--space-6);
+  }
 }
 
 /* ── «Список»: the task tree as a table; card rows on a phone ── */
@@ -13964,15 +14196,6 @@ a.fact-item__title:hover {
   .task-dates__fields,
   .work-form__row {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .work-filters__search {
-    width: 100%;
-  }
-
-  .work-filters__count {
-    margin-left: 0;
-    width: 100%;
   }
 }
 

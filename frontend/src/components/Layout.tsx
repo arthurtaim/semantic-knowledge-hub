@@ -46,11 +46,12 @@ export function Layout({ children }: { children: ReactNode }) {
   const [lead, setLead] = useState<HTMLElement | null>(null);
   const [actions, setActions] = useState<HTMLElement | null>(null);
   const [pageToolbars, setPageToolbars] = useState(0);
+  const [demoNote, setDemoNote] = useState<string | null>(null);
   const register = useCallback(() => {
     setPageToolbars((n) => n + 1);
     return () => setPageToolbars((n) => n - 1);
   }, []);
-  const slots = useMemo<ToolbarSlots>(() => ({ lead, actions, register }), [lead, actions, register]);
+  const slots = useMemo<ToolbarSlots>(() => ({ lead, actions, register, setDemoNote }), [lead, actions, register]);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((value) => {
@@ -143,7 +144,7 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
             <div className="page-toolbar__end">
               <div className="page-toolbar__status">
-                <DemoPill />
+                <DemoPill note={demoNote} />
                 <AiModeChip />
               </div>
               <div className="page-toolbar__actions" ref={setActions} />

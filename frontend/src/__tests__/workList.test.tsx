@@ -171,10 +171,14 @@ describe("Task list", () => {
     expect(screen.getByText("Найдено: 1 из 9")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Сбросить фильтры" }));
     expect(screen.getByTestId("location")).toHaveTextContent("/projects/ARIS?view=list");
-    await user.click(screen.getByRole("button", { name: "Вехи" }));
+    // Planner v2: «Вехи» lives in «Ещё»; once chosen it is a chip with a remove button in the same row.
+    await user.click(screen.getByRole("button", { name: "Ещё" }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: "Вехи" }));
+    await user.keyboard("{Escape}");
     expect(screen.getByTestId("location")).toHaveTextContent("milestone=1");
     expect(document.querySelectorAll("tbody tr")).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "Вехи" }));
+    await user.click(screen.getByRole("button", { name: "Убрать фильтр «Вехи»" }));
+    expect(screen.getByTestId("location")).not.toHaveTextContent("milestone=1");
     await user.click(screen.getByRole("button", { name: "Исполнитель" }));
     // The menu shows the demo team's distribution: each person's role and how many tasks of the project they hold.
     const anna = screen.getByRole("menuitemradio", { name: /Анна Лебедева \(демо\)/ });

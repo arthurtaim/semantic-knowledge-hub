@@ -19,6 +19,8 @@ export interface ToolbarSlots {
   actions: HTMLElement | null;
   /** A page's toolbar is mounted: the default path steps aside. Returns the unregister function. */
   register: () => () => void;
+  /** A page's note for the «Демо-данные» badge (its tooltip and description), or null. */
+  setDemoNote?: (note: string | null) => void;
 }
 
 export const ToolbarSlotsContext = createContext<ToolbarSlots | undefined>(undefined);
@@ -61,14 +63,25 @@ interface PageToolbarProps {
   lead?: ReactNode;
   /** Several wide actions: on a phone they go to the top of the content instead of overflowing the 52 px bar. */
   actionsInContentOnPhone?: boolean;
+  /**
+   * A page's note attached to the shell's «Демо-данные» badge as its tooltip and `aria-describedby` (the M6 work
+   * mode «Локальная демонстрация — один оператор» while writes are allowed). Not shown without the shell.
+   */
+  demoNote?: string | null;
 }
 
 /** Phones (docs/ui-v2/specs/03_SCREENS.md §6). */
 const PHONE_QUERY = "(max-width: 599.98px)";
 
-export function PageToolbar({ crumbs, title, actions, meta, lead, actionsInContentOnPhone = false }: PageToolbarProps) {
+export function PageToolbar({ crumbs, title, actions, meta, lead, actionsInContentOnPhone = false, demoNote = null }: PageToolbarProps) {
   const slots = useContext(ToolbarSlotsContext);
   const register = slots?.register;
+  const setDemoNote = slots?.setDemoNote;
+  useLayoutEffect(() => {
+    if (!setDemoNote || !demoNote) return undefined;
+    setDemoNote(demoNote);
+    return () => setDemoNote(null);
+  }, [setDemoNote, demoNote]);
   const phone = useMediaQuery(PHONE_QUERY);
   const actionsInContent = actionsInContentOnPhone && phone;
   const named = crumbs ? <ToolbarPath crumbs={crumbs} /> : title ? <ToolbarPath crumbs={[{ label: title }]} /> : null;

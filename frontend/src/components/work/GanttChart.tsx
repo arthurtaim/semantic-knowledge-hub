@@ -1,4 +1,16 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type Ref,
+} from "react";
 import type { ScheduleOperation, ScheduleViolation, TaskDateChange, WorkDependency, WorkTask } from "../../api/types";
 import {
   addWorkdays,
@@ -8,8 +20,6 @@ import {
   formatDay,
   formatPlan,
   fromDay,
-  GANTT_ZOOM_LABEL,
-  GANTT_ZOOMS,
   lastWorkday,
   nextWorkday,
   pluralWorkdays,
@@ -20,9 +30,7 @@ import {
   type GanttZoom,
   type VisibleRow,
 } from "../../lib/work";
-import { Button } from "../ui/Button";
 import { Icon } from "../ui/Icon";
-import { SegmentedControl } from "../ui/SegmentedControl";
 
 /*
  * «Гант» (M6, docs/WORK_MANAGEMENT.md «UI»): an interactive projection of the server's plan, never its source.
@@ -58,7 +66,6 @@ export interface GanttChartProps {
   violations: ScheduleViolation[];
   range: GanttRange;
   zoom: GanttZoom;
-  onZoom: (zoom: GanttZoom) => void;
   today: string;
   canWrite: boolean;
   /** Phones: no dragging (the task panel's form changes dates). */
@@ -71,6 +78,12 @@ export interface GanttChartProps {
   onRequestSchedule: (task: WorkTask, change: TaskDateChange) => void;
   /** The pending preview's operations, drawn as dashed ghosts. */
   previewOps: ScheduleOperation[] | null;
+  /** «Сегодня» and the other view controls live in the page's filter row; they reach the chart through this handle. */
+  ref?: Ref<GanttHandle>;
+}
+
+export interface GanttHandle {
+  scrollToToday: () => void;
 }
 
 type Mode = "move" | "resize";
@@ -150,7 +163,7 @@ function barLabel(task: WorkTask, today: string): string {
 }
 
 export function GanttChart(props: GanttChartProps) {
-  const { rows, pool, dependencies, violations, range, zoom, onZoom, today, canWrite, compact, collapsed, onToggle, keyOf, onOpen, onRequestSchedule, previewOps } = props;
+  const { rows, pool, dependencies, violations, range, zoom, today, canWrite, compact, collapsed, onToggle, keyOf, onOpen, onRequestSchedule, previewOps, ref } = props;
   const dayWidth = DAY_WIDTH[zoom];
   const namesWidth = compact ? 132 : 300;
   const width = (range.end - range.start) * dayWidth;
@@ -211,6 +224,8 @@ export function GanttChart(props: GanttChartProps) {
     const visible = Math.max(el.clientWidth - namesWidth, 0);
     el.scrollLeft = Math.max(0, (toDay(today) - range.start) * dayWidth - visible / 4);
   }
+
+  useImperativeHandle(ref, () => ({ scrollToToday }));
 
   // --- painting a pending change directly in the DOM ------------------------------------------------------------
   function paint(p: Pending) {
@@ -424,24 +439,14 @@ export function GanttChart(props: GanttChartProps) {
 
   return (
     <div className="gantt" style={{ ["--gantt-names" as string]: `${namesWidth}px` }}>
-      <div className="gantt__toolbar">
-        <SegmentedControl
-          label="Масштаб"
-          options={GANTT_ZOOMS.map((value) => ({ value, label: GANTT_ZOOM_LABEL[value] }))}
-          value={zoom}
-          onChange={onZoom}
-        />
-        <Button size="sm" icon="clock" onClick={scrollToToday}>
-          Сегодня
-        </Button>
-        <p className="gantt__hint muted" id={hintId}>
-          {canDrag
-            ? "Перетащите полосу — сдвиг, правый край — длительность. С клавиатуры: ← / → — сдвиг, Shift + ← / → — длительность, Enter — показать последствия, Esc — отмена."
-            : canWrite
-              ? "Сроки меняются в карточке задачи (кнопка на полосе открывает её); последствия показываются до применения."
-              : "Только просмотр."}
-        </p>
-      </div>
+      {/* What can be done with the bars: the description of the bars' group; visible on a phone (no dragging there). */}
+      <p className={compact ? "gantt__hint muted" : "visually-hidden"} id={hintId}>
+        {canDrag
+          ? "Перетащите полосу — сдвиг, правый край — длительность. С клавиатуры: ← / → — сдвиг, Shift + ← / → — длительность, Enter — показать последствия, Esc — отмена."
+          : canWrite
+            ? "Сроки меняются в карточке задачи (кнопка на полосе открывает её); последствия показываются до применения."
+            : "Только просмотр."}
+      </p>
       <div className="gantt__scroller" ref={scrollerRef} onScroll={onScroll} tabIndex={0} aria-label="Диаграмма Ганта: прокрутка">
         <div className="gantt__content" style={{ width: namesWidth + width, height: HEADER_HEIGHT + height }}>
           <div className="gantt__header" style={{ width: namesWidth + width }}>

@@ -117,18 +117,18 @@ function routes(extra: MockRoute[] = [], caps = AI_ON): MockRoute[] {
   ];
 }
 
-describe("«AI план»", () => {
+describe("«План с ассистентом» (was «AI план»)", () => {
   it("is absent without a planning-capable AI provider and in read-only mode", async () => {
     mockApi(routes([], capabilities({ features: { ...FEATURES, ai_proposals: false } })));
     const { unmount } = renderRoutes("/projects/ARIS?view=list", ROUTES);
     expect(await screen.findByRole("button", { name: "Задача" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "AI план" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "План с ассистентом" })).not.toBeInTheDocument();
     unmount();
     vi.restoreAllMocks();
     mockApi(routes([], { ...READ_ONLY, features: FEATURES }));
     renderRoutes("/projects/ARIS?view=list", ROUTES);
     await screen.findByText(/Только просмотр/);
-    expect(screen.queryByRole("button", { name: "AI план" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "План с ассистентом" })).not.toBeInTheDocument();
   });
 
   it("sends the request with the chosen documents and start, then opens the review in the URL", async () => {
@@ -141,8 +141,8 @@ describe("«AI план»", () => {
       ]),
     );
     renderRoutes("/projects/ARIS?view=list", ROUTES);
-    await user.click(await screen.findByRole("button", { name: "AI план" }));
-    const sheet = screen.getByRole("dialog", { name: "AI план" });
+    await user.click(await screen.findByRole("button", { name: "План с ассистентом" }));
+    const sheet = screen.getByRole("dialog", { name: "План с ассистентом" });
     await user.type(within(sheet).getByLabelText(/Что нужно сделать/), "Подготовь задачи по маппингу");
     await user.type(within(sheet).getByLabelText("Документы-источники"), "DEMO");
     await user.click(await within(sheet).findByRole("button", { name: /DEMO-INT-002 ARIS → Catalog/ }));
@@ -231,8 +231,8 @@ describe("«AI план»", () => {
       ]),
     );
     renderRoutes("/projects/ARIS?view=list", ROUTES);
-    await user.click(await screen.findByRole("button", { name: "AI план" }));
-    const sheet = screen.getByRole("dialog", { name: "AI план" });
+    await user.click(await screen.findByRole("button", { name: "План с ассистентом" }));
+    const sheet = screen.getByRole("dialog", { name: "План с ассистентом" });
     await user.type(within(sheet).getByLabelText(/Что нужно сделать/), "Сделай цикл");
     await user.click(within(sheet).getByRole("button", { name: "Подготовить предложение" }));
     expect(await within(sheet).findByText(/Сервер отклонил план модели/)).toBeInTheDocument();

@@ -7,6 +7,23 @@ import { Icon } from "../ui/Icon";
  * (docs/ui-v2/specs/01_VISUAL_SYSTEM.md): a status is a hollow ring / half / dot / tick, a priority a bar count.
  */
 
+/**
+ * The work mode in one sentence (the tooltip of «Демо-данные» on a project page while writes are allowed): the
+ * server's label, who the operator is on a shared login, and that the «(демо)» assignees are fictional.
+ */
+export function workModeText(capabilities: WorkCapabilities | null): string | null {
+  if (!capabilities) return null;
+  const parts = [`${capabilities.label}.`];
+  if (!capabilities.can_write && capabilities.read_only_reason) parts.push(capabilities.read_only_reason);
+  if (capabilities.mode === "shared_login") {
+    parts.push("Все, кто входит по логину стенда, работают от имени одного пользователя: история не различает людей.");
+  }
+  if (!capabilities.team_ready && (capabilities.mode === "local_operator" || capabilities.mode === "shared_login")) {
+    parts.push("Исполнители «(демо)» — вымышленная команда для примера, не учётные записи.");
+  }
+  return parts.join(" ");
+}
+
 /** The work mode as the server reports it: «Локальная демонстрация — один оператор», read-only and why. */
 export function WorkModeNote({ capabilities }: { capabilities: WorkCapabilities | null }) {
   if (!capabilities) return null;
