@@ -511,6 +511,16 @@ def mark_preview_applied(conn: sqlite3.Connection, preview_id: str, at: str, pla
     return cursor.rowcount == 1
 
 
+def purge_retained(conn: sqlite3.Connection, older_than: str) -> int:
+    """Technical records past their retention window (audit CODE-014): idempotency replays created before
+    `older_than` and previews applied before it. The history of what happened is the audit, which is never deleted."""
+    replays = conn.execute("DELETE FROM work_idempotency WHERE created_at < ?", (older_than,)).rowcount
+    applied = conn.execute(
+        "DELETE FROM work_schedule_previews WHERE applied_at IS NOT NULL AND applied_at < ?", (older_than,)
+    ).rowcount
+    return int(replays) + int(applied)
+
+
 def purge_previews(conn: sqlite3.Connection, older_than: str) -> int:
     """Drop unapplied previews that expired before `older_than` (applied ones stay as the apply record)."""
     return conn.execute(

@@ -102,6 +102,9 @@ from app.work.permissions import LABELS, WorkAccessGate, WorkAccessMode, WorkPri
 
 logger = logging.getLogger("skh.work")
 
+# How long replay records (client_request_id) and applied schedule previews are kept (audit CODE-014). A client
+# retries within seconds; a week is a generous window, and the audit keeps the history for good.
+RETENTION_DAYS = 7
 TASK_KEY_RE = re.compile(r"^([A-Z][A-Z0-9]{1,9})-(\d{1,9})$")
 PROJECT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
 STATUS_ORDER = {s.value: i for i, s in enumerate(TaskStatus)}
@@ -411,6 +414,13 @@ class WorkService:
             return store.get_task_by_number(conn, project["id"], int(match.group(2))) if project else None
         return store.get_task(conn, ref)
 
+    @classmethod
+    def _task_id_of(cls, conn: sqlite3.Connection, ref: str) -> str:
+        """A task named by key (PKY-1) or id → its stable id; an unknown ref is returned as is (the caller refuses
+        it with its own error). Audit CODE-012: a parent may be named the way every path names a task."""
+        row = cls._lookup_task(conn, ref)
+        return str(row["id"]) if row is not None else ref
+
     def _project_for(
         self, conn: sqlite3.Connection, principal: WorkPrincipal, ref: str, action: Action
     ) -> tuple[sqlite3.Row, ProjectRole | None]:
@@ -638,6 +648,7 @@ class WorkService:
     ) -> None:
         if key is None:
             return
+        store.purge_retained(conn, store.now_iso(self.now() - timedelta(days=RETENTION_DAYS)))
         store.put_idempotent(
             conn,
             scope=scope,
@@ -1057,8 +1068,9 @@ class WorkService:
                     409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
                 )
             ctx = self._ctx(conn, project, principal)
-            if body.parent_task_id is not None:
-                self._validate_parent(conn, ctx, body.parent_task_id)
+            parent_id = None if body.parent_task_id is None else self._task_id_of(conn, body.parent_task_id)
+            if parent_id is not None:
+                self._validate_parent(conn, ctx, parent_id)
             self._check_assignee(conn, project["id"], body.assignee_id)
             _check_year(body.due_date, "due_date")
             start = end = None
@@ -1083,7 +1095,7 @@ class WorkService:
                 "id": task_id,
                 "project_id": project["id"],
                 "number": number,
-                "parent_task_id": body.parent_task_id,
+                "parent_task_id": parent_id,
                 "title": body.title,
                 "description": body.description,
                 "status": body.status.value,
@@ -1156,10 +1168,14 @@ class WorkService:
             if "due_date" in given:
                 _check_year(body.due_date, "due_date")
                 fields["due_date"] = _iso(body.due_date)
-            if "parent_task_id" in given and body.parent_task_id != task["parent_task_id"]:
-                if body.parent_task_id is not None:
-                    self._validate_parent(conn, ctx, body.parent_task_id, moving=task["id"])
-                fields["parent_task_id"] = body.parent_task_id
+            if "parent_task_id" in given:
+                new_parent = (
+                    None if body.parent_task_id is None else self._task_id_of(conn, body.parent_task_id)
+                )
+                if new_parent != task["parent_task_id"]:
+                    if new_parent is not None:
+                        self._validate_parent(conn, ctx, new_parent, moving=task["id"])
+                    fields["parent_task_id"] = new_parent
 
             was_milestone = bool(task["is_milestone"])
             milestone = (
@@ -1954,7 +1970,10 @@ class WorkService:
                 )
                 if self._after_schedule_write is not None:
                     self._after_schedule_write(op.task_id)
-            revision, project = self._bump_and_read(conn, project["id"])
+            if result.operations or normalized:
+                revision, project = self._bump_and_read(conn, project["id"])
+            else:  # nothing changes: the plan revision stays, so no one else's preview goes stale (audit SYS-003)
+                revision = int(project["plan_revision"])
             if not store.mark_preview_applied(conn, body.preview_id, at, revision):
                 raise _stale_schedule("already_applied", "Этот предпросмотр уже применён — сделайте новый.")
             ctx = self._ctx(conn, project, principal)

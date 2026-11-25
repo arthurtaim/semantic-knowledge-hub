@@ -37,7 +37,7 @@ Node ids are namespaced: `doc:<document id>`, `template:<template id>`, external
 |---|---|---|
 | Global | `GET /api/graph/overview?limit=&kind=&relation=&status=&type=&q=` | ≤ 200 nodes (default 150), most connected first |
 | Local | `GET /api/graph/nodes/{id}/neighbors?depth=&relation=&limit=&cursor=` | depth ≤ 2, ≤ 200 per page, cursor paging |
-| Path | `GET /api/graph/path?source=&target=&max_depth=&directed=` | ≤ 6 hops |
+| Path | `GET /api/graph/path?source=&target=&max_depth=&directed=` | ≤ 6 hops; ids as in /neighbors (`kind:id`, else `422`); an unknown or not visible node → `404 graph_node_not_found`, so `found: false` always means «both nodes exist, no path» |
 | Query | `GET /api/graph/query/{trace_id}` | the sources of one answer; expires with the trace |
 | Legend | `GET /api/graph/legend` | node kinds, relation and origin labels, limits |
 

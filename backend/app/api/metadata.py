@@ -18,7 +18,14 @@ from app.domain.proposals import (
     ProposalDetail,
 )
 from app.domain.schema import split_frontmatter
-from app.services.metadata import DocumentTypeInfo, ImportPreview, ImportPreviewRequest, StagingItem
+from app.errors import ApiError
+from app.services.metadata import (
+    DocumentTypeInfo,
+    ImportPreview,
+    ImportPreviewRequest,
+    StagingItem,
+    document_too_large,
+)
 
 router = APIRouter(prefix="/api", tags=["metadata"])
 
@@ -73,6 +80,9 @@ async def import_document(
 ) -> ProposalDetail:
     """A draft proposal (origin `import`). Approved only through the usual review and merge."""
     content = payload.content.replace("\r\n", "\n").replace("\r", "\n")
+    too_large = document_too_large(content, container.authoring.max_document_bytes)
+    if too_large:  # refused before a draft is stored (audit SYS-005)
+        raise ApiError(422, "document_too_large", too_large)
     if payload.keep_original_metadata:
         return await container.proposals.create_imported(
             user, content, reason=payload.reason, client_request_id=payload.client_request_id
@@ -84,8 +94,6 @@ async def import_document(
         except ValueError:
             body = content.split("---", 2)[-1] if content.count("---") >= 2 else content
     if payload.metadata is None:
-        from app.errors import ApiError
-
         raise ApiError(
             422, "validation_failed", "Без исходного YAML нужны metadata (и template_id для шаблона)."
         )

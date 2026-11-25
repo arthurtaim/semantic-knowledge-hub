@@ -148,6 +148,8 @@ Use structured errors `{code, message, request_id}` and appropriate HTTP status 
 longer than its `busy_timeout` (SQLITE_BUSY / SQLITE_LOCKED only). Body `details: {retryable: true}`, header
 `Retry-After: 2`. The unit of work was rolled back — nothing was written — so the client may repeat the request; a
 write with a `client_request_id` runs exactly once. Every other SQLite error stays a `500 internal_error`.
+`document_too_large` (import, post-M6 remediation SYS-005): the limit `MAX_DOCUMENT_BYTES` is in UTF-8 bytes; the
+import preview reports it as an error issue, `POST /api/documents/import` refuses with `422` before a draft is stored.
 `502 ai_invalid_response`: the model's reply had an unusable shape (not JSON, a container of the wrong type, an id
 outside the editable form); nothing stored, the message says to retry.
 

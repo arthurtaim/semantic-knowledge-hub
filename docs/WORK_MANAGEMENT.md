@@ -33,7 +33,7 @@ container.tasks = NativeTaskSystem (статус модуля в /api/integratio
 | Dependency (`work_dependencies`) | `predecessor_id`, `successor_id`, `kind = FS`, `lag_workdays = 0`; уникальная пара, без self-loop (CHECK), без циклов, в одном проекте |
 | TaskDocumentLink (`work_task_links`) | `task_id`, `target_type`, `source_system` (P0 пишет только `skh`), `document_id` (канонический id из снимка), `relation` `implements\|requires\|documents\|verifies\|blocks`, `revision_at_link` (ревизия, которую сервер видел при связывании), `status` `active\|removed` (удалённая связь остаётся строкой истории). Заголовок, статус, версия и доступ документа НЕ копируются — читаются из текущего снимка знаний читателя (§10). v2: индекс по проекту и частичный уникальный индекс — одна активная связь на (задача, документ, связь) |
 | TaskAuditEvent (`work_audit_events`) | append-only (триггеры запрещают UPDATE/DELETE): `at` (UTC), `actor_id` (только сервер), `operation`, `entity_type/id`, `project_id`, `task_id`, `related_task_id`, `correlation_id`, `changes_json` (before/after; текст описания не хранится — только `{changed: true}`) |
-| Idempotency (`work_idempotency`) | `(scope, actor_id, key)` → хэш запроса и ответ; повтор с другим телом → `409 conflict` `idempotency_key_reused` |
+| Idempotency (`work_idempotency`) | `(scope, actor_id, key)` → хэш запроса и ответ; повтор с другим телом → `409 conflict` `idempotency_key_reused`. Хранится 7 дней (`RETENTION_DAYS`), как и применённые предпросмотры; история остаётся в аудите, который не удаляется |
 | SchedulePreview (`work_schedule_previews`) | сохранённый предпросмотр: базовая `plan_revision`, `input_hash`, `result_hash`, нормализованный запрос, TTL (`WORK_PREVIEW_TTL_SECONDS`, 900 с), отметка применения |
 | AIWorkProposal (`work_ai_proposals`, v3) | предложение плана задач (§11): `project_id`, `actor_id` (личное), `kind = task_plan`, `schema_version`, `status` `suggested\|applied\|rejected` (`stale` вычисляется при чтении), `provider`, текст запроса, нормализованный план с локальными id, источники (id + ревизия + проверенная цитата ≤ 300 символов), замечания проверки, допущения, `base_plan_revision`, `expires_at`, решение и результат. Промпт и тексты документов не хранятся |
 
@@ -113,8 +113,9 @@ false` — ложный критический путь не показывае�
 в одной транзакции `BEGIN IMMEDIATE`: идемпотентный повтор (тот же ключ → прежний ответ, `replayed: true`, без
 второго аудита) → предпросмотр свой, не истёк, не применён → `plan_revision` проекта совпадает → расчёт заново по
 текущему состоянию, хэши входа и результата совпадают → нет конфликтов, предупреждения приняты → запись дат с CAS
-по версии каждой задачи, аудит `schedule_applied` (correlation = preview id), `plan_revision + 1`, отметка
-применения, запись idempotency. Любая ошибка откатывает всё (тест M6-18 с отказом после второй записи). Ответы:
+по версии каждой задачи, аудит `schedule_applied` (correlation = preview id), `plan_revision + 1` (только если
+что-то меняется: пустой предпросмотр применяется без новой ревизии — чужие предпросмотры не устаревают «молча»),
+отметка применения, запись idempotency. Родителя задачи можно указать ключом (`PKY-1`) или id; хранится id. Любая ошибка откатывает всё (тест M6-18 с отказом после второй записи). Ответы:
 `409 stale_schedule` (`plan_revision`, `snapshot_changed`, `expired`, `already_applied`, `task_changed`) — UI просит
 повторить предпросмотр; `422 schedule_conflict` (`conflicts`, `warnings_not_accepted`).
 

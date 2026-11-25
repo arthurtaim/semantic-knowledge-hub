@@ -190,6 +190,31 @@ def test_required_chain_is_a_path(graph_client: TestClient) -> None:
     assert data["nodes"][-1]["document_id"] == "DEMO-SEM-002" and len(data["nodes"]) <= 4
 
 
+@pytest.mark.parametrize(
+    "source,target,status,code",
+    [
+        ("doc:NOPE-1", "doc:DEMO-SEM-002", 404, "graph_node_not_found"),  # unknown (= not visible) source
+        ("doc:DEMO-SRC-002", "doc:NOPE-1", 404, "graph_node_not_found"),  # unknown target
+        ("DEMO-SRC-002", "doc:DEMO-SEM-002", 422, "invalid_request"),  # no «kind:» prefix
+        ("doc:DEMO SRC", "doc:DEMO-SEM-002", 422, "invalid_request"),
+    ],
+)
+def test_a_path_between_unknown_or_malformed_nodes_is_an_error_not_no_path(
+    graph_client: TestClient, source: str, target: str, status: int, code: str
+) -> None:
+    """Audit SYS-001: «no such node» must not look like «no path» (200 found:false), the same answers as /neighbors."""
+    response = graph_client.get("/api/graph/path", params={"source": source, "target": target})
+    assert response.status_code == status, response.text
+    assert response.json()["code"] == code
+
+
+def test_a_path_from_a_known_node_to_itself(graph_client: TestClient) -> None:
+    same = graph_client.get(
+        "/api/graph/path", params={"source": "doc:DEMO-SRC-002", "target": "doc:DEMO-SRC-002"}
+    )
+    assert same.status_code == 200 and same.json()["found"] is True and len(same.json()["nodes"]) == 1
+
+
 def test_graph_follows_sync_and_reports_dangling_links(
     full_workspace: Path, client_factory: Callable[..., TestClient]
 ) -> None:

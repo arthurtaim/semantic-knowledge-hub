@@ -141,6 +141,7 @@ class AuthoringService:
         self._ai = ai
         self._prefix = knowledge_prefix.strip("/")
         self._max_bytes = max_document_bytes
+        self.max_document_bytes = max_document_bytes  # one limit for authoring, import preview and import
 
     @property
     def knowledge_prefix(self) -> str:

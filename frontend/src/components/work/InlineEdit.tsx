@@ -142,7 +142,7 @@ export function InlineDate({ value, display, label, onCommit, allowClear = false
       ref={buttonRef}
       type="button"
       className="inline-date inline-date--button"
-      aria-label={`${label}: ${display}. Изменить`}
+      aria-label={`${label}: ${display}${display.endsWith(".") ? "" : "."} Изменить`}
       onClick={() => {
         setDraft(value ?? "");
         done.current = false;
