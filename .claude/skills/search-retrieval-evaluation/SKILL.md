@@ -36,7 +36,9 @@ cd backend && ../.venv/bin/python -m pytest tests/test_knowledge_base.py -q
 
 ## Expected outputs
 `reports/knowledge-eval/{baseline,after}.json`, `metrics.csv`, `failures.md`, `comparison.md`; zero
-leaks; holdout results reported separately.
+leaks; holdout results reported separately. The command exits non-zero while any case fails (the reports
+are still written). A red baseline is normal input for a comparison. Never mask the exit code or weaken a
+case to turn it green; the known failures and their causes are in `reports/knowledge-eval/failures.md`.
 
 ## Constraints
 Deterministic eval (mock AI, no network) is the acceptance basis. Live eval

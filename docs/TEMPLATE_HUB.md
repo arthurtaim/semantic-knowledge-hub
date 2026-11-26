@@ -171,7 +171,11 @@ or «Оставить мои правки и сохранить поверх» (
 
 `template_id` (pattern, unique, reserved, never changes), title, document type (existing types), `id_prefix`
 (pattern; not `SEM-DOC` — blank documents; not used by another ACTIVE template or a new-template draft, because IDs
-are allocated per prefix — a new studio rule, shipped files are not checked), labels and tags, sections (at least
+are allocated per prefix — a new studio rule, shipped files are not checked; ownership: an active template — shipped,
+adopted or studio — owns its prefix, so its own draft never conflicts with it and a foreign draft can never block its
+activation; a draft of a never-activated template reserves only a prefix no active template owns, the earliest such
+draft wins; a foreign draft naming an owned prefix gets `id_prefix_taken` when it is created or checked and cannot be
+activated — post-M6 remediation SYS-002), labels and tags, sections (at least
 one, at least one required, non-empty unique titles case-insensitively, one line, no `#`/`##` lines inside content),
 metadata only from `METADATA_FIELDS`, `title` required, no field both required and optional, rules non-empty and
 unique, a breaking version needs migration text, sizes (header ≤ 16 KB, template ≤ 32 KB), and finally the file

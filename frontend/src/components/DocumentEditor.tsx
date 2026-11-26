@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type {
@@ -40,6 +40,7 @@ import { SECTION_HINT, SectionSelect } from "./SectionSelect";
 import { buttonClass } from "./ui/Button";
 import { StatusStamp } from "./StatusStamp";
 import { TemplateVersionNotice } from "./TemplateVersionNotice";
+import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
 import { WikiLinkTextarea } from "./WikiLinkTextarea";
 
 /** Debounce of the live ID / validation check after an edit (exported for the tests' waits). */
@@ -256,7 +257,6 @@ export function DocumentEditor({
   const [locked, setLocked] = useState<{ id: string; message: string } | null>(null);
   const [previousBody, setPreviousBody] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmLeave, setConfirmLeave] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(initial.pathEdited);
   const [view, setView] = useState<"source" | "preview">("source");
   const [applyOpen, setApplyOpen] = useState(false);
@@ -329,16 +329,6 @@ export function DocumentEditor({
     const handle = window.setTimeout(() => void runCheck(), delay);
     return () => window.clearTimeout(handle);
   }, [checkKey, runCheck]);
-
-  useEffect(() => {
-    if (!dirty) return;
-    const onBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
 
   const fresh = check !== null && check.key === checkKey;
   const issues = check?.result.validation ?? [];
@@ -566,12 +556,6 @@ export function DocumentEditor({
     }
   }
 
-  const onCancel = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!dirty) return;
-    event.preventDefault();
-    setConfirmLeave(true);
-  };
-
   const cancelHref = saved ? `/proposals/${encodeURIComponent(saved.id)}` : "/documents";
 
   // --- messages ---
@@ -659,6 +643,11 @@ export function DocumentEditor({
 
   return (
     <div className="authoring__editor">
+      {/* «Отмена», the sidebar, any in-app link, Back / Forward, reload: one question before the edits are lost. */}
+      <UnsavedChangesGuard
+        when={dirty}
+        description="Если выйти сейчас, правки будут потеряны. Чтобы их сохранить, нажмите «Остаться», затем «Сохранить черновик»."
+      />
       <AuthoringRoute states={routeStates} />
 
       {notice}
@@ -1140,7 +1129,7 @@ export function DocumentEditor({
               Удалить черновик
             </button>
           ) : null}
-          <Link to={cancelHref} className="button button--ghost" onClick={onCancel}>
+          <Link to={cancelHref} className="button button--ghost">
             Отмена
           </Link>
         </div>
@@ -1160,21 +1149,6 @@ export function DocumentEditor({
               </button>
               <button type="button" className="button button--ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>
                 Не удалять
-              </button>
-            </div>
-          </div>
-        ) : null}
-        {confirmLeave ? (
-          <div className="reject-box" role="group" aria-labelledby="confirm-leave-text">
-            <p id="confirm-leave-text">
-              <strong>Есть несохранённые изменения.</strong> Если уйти сейчас, они будут потеряны.
-            </p>
-            <div className="button-row">
-              <button type="button" className="button button--danger" onClick={() => navigate(cancelHref)}>
-                Уйти без сохранения
-              </button>
-              <button type="button" className="button button--ghost" onClick={() => setConfirmLeave(false)}>
-                Остаться
               </button>
             </div>
           </div>

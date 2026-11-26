@@ -50,8 +50,12 @@ built-in safe policy was used — fix the file (see `docs/ASSISTANT_INSTRUCTIONS
 
 ```bash
 make mock-kb-validate     # structure of the synthetic base
-make knowledge-eval       # 160 deterministic cases → reports/knowledge-eval/after.json, failures.md
+make knowledge-eval       # 216 deterministic cases → reports/knowledge-eval/after.json, after_failures.md
 ```
+
+`make knowledge-eval` exits non-zero when any case does not pass (fail, error or unsupported). The reports are
+written first in either case. The current known failures and their causes are listed in
+`reports/knowledge-eval/failures.md`.
 
 The index is derived data — a "bad generation" is fixed by fixing its input, never by editing SQLite:
 

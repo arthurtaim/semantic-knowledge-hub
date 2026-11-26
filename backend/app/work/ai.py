@@ -48,7 +48,14 @@ from app.domain.models import DocStatus, DocumentRecord
 from app.errors import ApiError
 from app.services.assistant import prepare_passage_text, quote_is_verbatim
 from app.work import store
-from app.work.calendar import add_workdays, fs_earliest_start, last_workday, next_workday
+from app.work.calendar import (
+    MAX_YEAR,
+    add_workdays,
+    fs_earliest_start,
+    in_supported_range,
+    last_workday,
+    next_workday,
+)
 from app.work.links import DocumentScope, link_state
 from app.work.models import (
     MAX_DEPTH,
@@ -65,7 +72,7 @@ from app.work.models import (
     WorkProposalOut,
 )
 from app.work.permissions import WorkAccessMode, WorkPrincipal
-from app.work.service import PlannedTask, PlanToApply, WorkService
+from app.work.service import PlannedTask, PlanToApply, WorkService, check_work_date
 
 if TYPE_CHECKING:
     from app.services.knowledge import KnowledgeService
@@ -90,7 +97,10 @@ ISSUE_TEXT: dict[str, str] = {
     "predecessor_unscheduled": "Предшественник без дат — эта задача тоже без дат.",
     "no_sources": "Нет опоры в документах — это допущение модели, проверьте.",
     "truncated": "Модель предложила больше задач, чем допустимо: лишние отброшены.",
+    "dates_out_of_range": f"С этой даты начала задача закончилась бы после {MAX_YEAR} года — выберите более "
+    "раннее начало: применить такой план нельзя.",
 }
+BLOCKING_ISSUES = frozenset({"dates_out_of_range"})
 
 
 def _issue(
@@ -366,6 +376,7 @@ def materialize(
         deps = [d for d in deps if d not in dropped]
         if "start_date" in edits.model_fields_set:
             start = edits.start_date
+            check_work_date(start, "start_date")
     # an excluded task drops its dependencies; its subtasks move up to the nearest included ancestor
     for task in by_id.values():
         parent = task.parent
@@ -452,6 +463,14 @@ def plan_dates(
             dates[local] = (None, None)
         else:
             dates[local] = (earliest, add_workdays(earliest, task.estimate))
+        first, end = dates[local]
+        if (
+            first is not None
+            and end is not None
+            and not (in_supported_range(first) and in_supported_range(end))
+        ):
+            dates[local] = (None, None)  # its successors become «predecessor_unscheduled»
+            issues.append(_issue("dates_out_of_range", local))
         for nxt in succs[local]:
             indegree[nxt] -= 1
             if indegree[nxt] == 0:
@@ -501,6 +520,7 @@ class WorkAiService:
             self._work.planning_context, principal, body.project_id, body.parent_task_id
         )
         self._require_available()
+        check_work_date(body.start_date, "start_date")  # before the model: a refused input costs nothing
         try:
             snapshot = await self._knowledge.snapshot(principal.user)
         except RepositoryUnavailableError as exc:
@@ -712,7 +732,10 @@ class WorkAiService:
             sources=[self._source_ref(s, scope) for s in json.loads(row["sources_json"])],
             assumptions=json.loads(row["assumptions_json"]),
             issues=issues,
-            can_apply=state == "ready" and view.may_apply and any(t.included for t in built.tasks),
+            can_apply=state == "ready"
+            and view.may_apply
+            and any(t.included for t in built.tasks)
+            and not any(i.code in BLOCKING_ISSUES for i in built.issues),
             applied_task_keys=list((result.get("task_keys") or {}).values()),
         )
 
@@ -761,6 +784,13 @@ class WorkAiService:
             chosen = [t for t in built.tasks if t.included]
             if not chosen:
                 raise _invalid("nothing_to_apply", "Не выбрано ни одной задачи.")
+            if any(i.code in BLOCKING_ISSUES for i in built.issues):
+                raise ApiError(
+                    422,
+                    "invalid_date_range",
+                    f"С этой даты начала план заканчивается после {MAX_YEAR} года — выберите более раннюю дату.",
+                    {"reason": "plan_out_of_range", "field": "start_date"},
+                )
             return PlanToApply(
                 tasks=tuple(
                     PlannedTask(

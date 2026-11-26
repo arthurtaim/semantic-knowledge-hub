@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -25,6 +26,31 @@ def test_synthetic_base_is_valid_and_connected() -> None:
     assert report["not_synthetic"] == [] and report["secrets"] == [] and report["personal_data"] == []
     statuses = report["by_status"]
     assert statuses["approved"] > 0 and statuses["draft"] > 0 and statuses["deprecated"] > 0
+
+
+def test_strict_synthetic_requires_the_flag_on_every_document(tmp_path: Path) -> None:
+    """`--strict-synthetic` checks every document, not only DEMO-*: a core SEM-* fixture or any other id without
+    `synthetic: true` is an error (docs/MOCK_KNOWLEDGE_BASE.md §2)."""
+    root = tmp_path / "kb"
+    shutil.copytree(FIXTURES_DIR, root)
+    core = root / "SEM-ARCH-001.md"
+    text = core.read_text(encoding="utf-8")
+    assert "\nsynthetic: true\n" in text
+    core.write_text(text.replace("\nsynthetic: true\n", "\n", 1), encoding="utf-8")
+    (root / "TEAM-NOTE-001.md").write_text(
+        "---\nid: TEAM-NOTE-001\ntitle: Заметка без отметки\ntype: guide\nstatus: draft\nowner: demo-team\n"
+        "tags: [note]\nsynthetic: false\n---\n\n# Заметка\n\nТекст заметки достаточной длины для проверки.\n",
+        encoding="utf-8",
+    )
+
+    strict = validate(root, strict_synthetic=True)
+    assert strict["not_synthetic"] == ["SEM-ARCH-001", "TEAM-NOTE-001"]
+    assert not strict["ok"]
+    assert any("without `synthetic: true`" in e for e in strict["errors"]), strict["errors"]
+
+    lenient = validate(root, strict_synthetic=False)
+    assert lenient["not_synthetic"] == ["SEM-ARCH-001", "TEAM-NOTE-001"]  # reported, not an error
+    assert lenient["ok"], lenient["errors"]
 
 
 @pytest.fixture(scope="module")

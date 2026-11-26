@@ -4,6 +4,7 @@ title: Шаблон описания предметной области (дем
 type: domain
 status: in_review
 owner: demo-team
+synthetic: true
 tags: [domain, template, demo]
 related_ids: [SEM-STD-001]
 reviewed_at: null

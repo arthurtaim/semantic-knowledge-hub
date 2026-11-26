@@ -271,13 +271,28 @@ class TemplateStudioService:
         return StudioAi(available=True, mode=mode)
 
     def _prefixes(self, exclude: str | None = None) -> dict[str, str]:
-        """ID prefixes of the active templates and of the studio drafts of new templates (both allocate IDs soon)."""
-        result = {t.id_prefix.upper(): t.id for t in self._registry.active().values() if t.id != exclude}
+        """ID prefix → the template that owns it, as seen when checking the spec of `exclude` (audit SYS-002).
+
+        - An ACTIVE template (shipped, adopted or studio) owns its prefix — also when it is `exclude` itself, so a
+          foreign draft can never take the prefix away from the template being checked.
+        - A draft of a never-activated template reserves only a prefix no active template owns (it allocates IDs
+          once activated); among such drafts the earliest created wins, so two drafts never block each other.
+        """
+        active = {t.id_prefix.upper(): t.id for t in self._registry.active().values()}
+        result = {prefix: tid for prefix, tid in active.items() if tid != exclude}
+        claimed = set(active)
+        drafts: list[tuple[str, str, str]] = []
         for tid, record in self._registry.studio_records().items():
-            if tid != exclude and record.active_version is None and record.draft_json:
+            if record.active_version is None and record.draft_json:
                 prefix = TemplateSpec.model_validate_json(record.draft_json).id_prefix.strip().upper()
                 if prefix:
-                    result.setdefault(prefix, tid)
+                    drafts.append((record.created_at, tid, prefix))
+        for _created_at, tid, prefix in sorted(drafts):
+            if prefix in claimed:
+                continue
+            claimed.add(prefix)
+            if tid != exclude:
+                result[prefix] = tid
         return result
 
     def options(self, user: UserContext) -> StudioOptions:

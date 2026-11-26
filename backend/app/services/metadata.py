@@ -95,6 +95,17 @@ class StagingItem(BaseModel):
     readable: bool  # the backend can read it for a preview (local workspace); else paste the content
 
 
+def document_too_large(content: str, limit: int | None) -> str | None:
+    """The document limit is in BYTES (UTF-8): Cyrillic text takes two bytes a character (audit SYS-005)."""
+    size = len(content.encode("utf-8"))
+    if limit is None or size <= limit:
+        return None
+    return (
+        f"Документ занимает {size // 1024} КБ — больше допустимых {limit // 1024} КБ: сократите его или разделите "
+        "на несколько документов."
+    )
+
+
 def _issue(severity: str, code: str, message: str, field: str | None = None) -> ValidationIssue:
     return ValidationIssue(severity=severity, code=code, message=message, field=field)
 
@@ -219,6 +230,9 @@ class MetadataService:
         content = content.replace("\r\n", "\n").replace("\r", "\n")
         snapshot = await self._knowledge.snapshot(user)
         issues: list[ValidationIssue] = []
+        too_large = document_too_large(content, self._authoring.max_document_bytes)
+        if too_large:
+            issues.append(_issue("error", "document_too_large", too_large))
         has_frontmatter = content.lstrip("﻿").startswith("---")
         meta: dict[str, Any] = {}
         body = content

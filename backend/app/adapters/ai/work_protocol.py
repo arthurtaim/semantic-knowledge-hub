@@ -167,30 +167,77 @@ def _estimate(value: Any) -> int | None:
     return None
 
 
+def _invalid_reply(what: str) -> AIProviderError:
+    # Shown to the person as is (UI: the ai_* notice): what was wrong and what to do; nothing was stored.
+    return AIProviderError(
+        "ai_invalid_response",
+        f"Модель вернула план не в ожидаемом формате: {what}. Ничего не сохранено — повторите запрос "
+        "или уточните его.",
+    )
+
+
+def _list(value: Any, what: str) -> list[Any]:
+    """A list-valued field: absent/null is empty; any other type is a malformed reply, never a silent repair."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise _invalid_reply(what)
+    return value
+
+
+def _local_id(value: Any, what: str) -> str:
+    text = _text(value, 64)
+    if text and not LOCAL_ID_RE.fullmatch(text):
+        # The id must stay editable in the review (WorkProposalEdits.local_id): «т1» or «t 1» would be stored but
+        # could never be excluded or edited by the person (audit CODE-008).
+        raise _invalid_reply(f"{what} «{text[:32]}» не в формате t1, t2…")
+    return text
+
+
+LOCAL_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,32}")
+
+
 def parse_work_plan(text: str) -> WorkPlanReply:
     """Strict: a JSON object with a `tasks` list; types checked, sizes clipped, unknown keys ignored. Semantic checks
-    (ids, cycles, hierarchy, sources) are the backend's — this function never «repairs» a structure."""
+    (ids, cycles, hierarchy, sources) are the backend's — this function never «repairs» a structure: a container of
+    the wrong type or an id outside the editable form is `ai_invalid_response` (502), never a 500 (audit CODE-004)."""
+    try:
+        return _parse_work_plan(text)
+    except AIProviderError:
+        raise
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
+        # A shape this parser did not foresee: still the model's fault, still nothing stored.
+        raise _invalid_reply("структура ответа не распознана") from exc
+
+
+def _parse_work_plan(text: str) -> WorkPlanReply:
     try:
         data = _load(text)
-    except (json.JSONDecodeError, ValueError) as exc:
-        raise AIProviderError("ai_invalid_response", "Модель вернула план задач не в формате JSON.") from exc
+    except (json.JSONDecodeError, ValueError, RecursionError) as exc:
+        raise _invalid_reply("ответ не является JSON") from exc
     raw_tasks = data.get("tasks") if isinstance(data, dict) else None
     if not isinstance(raw_tasks, list) or not raw_tasks:
-        raise AIProviderError("ai_invalid_response", "В ответе модели нет списка задач.")
+        raise _invalid_reply("нет списка задач (tasks)")
     tasks: list[RawTask] = []
     for item in raw_tasks[:MAX_TASKS]:
         if not isinstance(item, dict):
             continue
-        local_id = _text(item.get("local_id"), 32)
+        local_id = _local_id(item.get("local_id"), "local_id")
         title = _text(item.get("title"), 200)
         if not local_id or not title:
             continue
         sources = [
             RawSource(document_id=_text(src.get("document_id"), 128), quote=_text(src.get("quote"), 300))
-            for src in (item.get("sources") or [])[:MAX_SOURCES_PER_TASK]
+            for src in _list(item.get("sources"), f"sources задачи {local_id} — не список")[
+                :MAX_SOURCES_PER_TASK
+            ]
             if isinstance(src, dict) and isinstance(src.get("document_id"), str)
         ]
         parent = item.get("parent_local_id")
+        if parent is not None and not isinstance(parent, str):
+            raise _invalid_reply(f"parent_local_id задачи {local_id} — не строка")
+        if isinstance(parent, str):
+            _local_id(parent, "parent_local_id")
         tasks.append(
             RawTask(
                 local_id=local_id,
@@ -209,17 +256,19 @@ def parse_work_plan(text: str) -> WorkPlanReply:
             )
         )
     if not tasks:
-        raise AIProviderError(
-            "ai_invalid_response", "Модель не предложила ни одной задачи с названием и local_id."
-        )
+        raise _invalid_reply("нет ни одной задачи с названием и local_id")
     dependencies: list[tuple[str, str]] = []
-    for dep in (data.get("dependencies") or [])[:MAX_DEPENDENCIES]:
-        if (
+    for dep in _list(data.get("dependencies"), "dependencies — не список")[:MAX_DEPENDENCIES]:
+        if not (
             isinstance(dep, dict)
             and isinstance(dep.get("predecessor"), str)
             and isinstance(dep.get("successor"), str)
         ):
-            dependencies.append((_text(dep["predecessor"], 32), _text(dep["successor"], 32)))
+            # A dropped edge would silently change the plan the person reviews.
+            raise _invalid_reply('зависимость не в виде {"predecessor": "t1", "successor": "t2"}')
+        dependencies.append(
+            (_local_id(dep["predecessor"], "predecessor"), _local_id(dep["successor"], "successor"))
+        )
 
     def strings(key: str) -> list[str]:
         values = data.get(key) or []

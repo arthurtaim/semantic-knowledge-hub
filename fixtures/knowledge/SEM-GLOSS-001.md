@@ -4,6 +4,7 @@ title: Глоссарий демо-базы знаний
 type: glossary
 status: approved
 owner: demo-team
+synthetic: true
 tags: [glossary, demo]
 related_ids: [SEM-OVERVIEW-001, SEM-STD-001]
 reviewed_at: 2026-11-18

@@ -22,7 +22,9 @@ from app.services.discovery import acl_scope_key
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
-NodeIdPath = Annotated[str, Path(min_length=3, max_length=200, pattern=r"^[A-Za-z_]+:[A-Za-z0-9_.:@-]+$")]
+NODE_ID_PATTERN = r"^[A-Za-z_]+:[A-Za-z0-9_.:@-]+$"
+NodeIdPath = Annotated[str, Path(min_length=3, max_length=200, pattern=NODE_ID_PATTERN)]
+NodeIdQuery = Annotated[str, Query(min_length=3, max_length=200, pattern=NODE_ID_PATTERN)]
 
 
 class GraphNodeOut(BaseModel):
@@ -204,13 +206,16 @@ async def neighbours(
 async def path(
     container: Annotated[Container, Depends(get_container)],
     user: Annotated[UserContext, Depends(require(Action.read_knowledge))],
-    source: Annotated[str, Query(min_length=3, max_length=200)],
-    target: Annotated[str, Query(min_length=3, max_length=200)],
+    source: NodeIdQuery,
+    target: NodeIdQuery,
     max_depth: Annotated[int, Query(ge=1, le=100)] = g.PATH_DEPTH_MAX,
     directed: bool = False,
     relation: Annotated[str | None, Query(max_length=300)] = None,
 ) -> PathOut:
     graph = await container.graph.graph(user)
+    if source not in graph.nodes or target not in graph.nodes:
+        # As /neighbors: a node that is unknown or not visible is an error, never «no path» (audit SYS-001).
+        raise ApiError(404, "graph_node_not_found", "Узел графа не найден.")
     flt = _filter(None, relation, None, None, "", True)
     chain = g.shortest_path(graph, source, target, max_depth=max_depth, directed=directed, flt=flt)
     if not chain:

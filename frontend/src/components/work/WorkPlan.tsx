@@ -16,7 +16,7 @@ import type {
 import { STATUS_LABEL } from "../../lib/labels";
 import { newRequestId } from "../../lib/requestId";
 import { toApiError } from "../../lib/useWorkspace";
-import { formatPlan, PRIORITY_LABEL, PRIORITY_ORDER, pluralWorkdays } from "../../lib/work";
+import { formatPlan, PRIORITY_LABEL, PRIORITY_ORDER, pluralWorkdays, WORK_DATE_MAX, WORK_DATE_MIN } from "../../lib/work";
 import { ErrorState, Notice } from "../Feedback";
 import { SidePanel, useSidePanelMode } from "../shell/SidePanel";
 import { StatusStamp } from "../StatusStamp";
@@ -189,7 +189,7 @@ function PlanRequest({ project, onProposal, onClose }: { project: WorkProject; o
       </div>
       <div className="field">
         <label htmlFor={`${id}-start`}>Плановое начало</label>
-        <input id={`${id}-start`} type="date" value={start} onChange={(e) => setStart(e.target.value)} aria-describedby={`${id}-start-hint`} />
+        <input id={`${id}-start`} type="date" min={WORK_DATE_MIN} max={WORK_DATE_MAX} value={start} onChange={(e) => setStart(e.target.value)} aria-describedby={`${id}-start-hint`} />
         <p className="field__hint" id={`${id}-start-hint`}>
           Даты рассчитает сервер по оценкам и зависимостям (Пн–Пт). Без начала задачи будут без дат.
         </p>
@@ -467,7 +467,7 @@ function ProposalReview({ project, proposalId, assignees, canWrite, onProposal, 
           <div className="work-plan__start">
             <div className="field">
               <label htmlFor={`${id}-start`}>Плановое начало</label>
-              <input id={`${id}-start`} type="date" value={start ?? ""} disabled={!canWrite || !ready} onChange={(e) => setStart(e.target.value || null)} />
+              <input id={`${id}-start`} type="date" min={WORK_DATE_MIN} max={WORK_DATE_MAX} value={start ?? ""} disabled={!canWrite || !ready} onChange={(e) => setStart(e.target.value || null)} />
             </div>
             <Button size="sm" onClick={() => void preview()} disabled={busy !== null || !ready}>
               {busy === "preview" ? "Считаем…" : "Пересчитать сроки"}

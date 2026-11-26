@@ -4,6 +4,7 @@ title: Draft review workflow — sample
 type: process
 status: approved
 owner: demo-team
+synthetic: true
 tags: [workflow, review, gitlab, demo]
 related_ids: []
 reviewed_at: 2026-11-20

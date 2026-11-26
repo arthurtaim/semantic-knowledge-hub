@@ -1,11 +1,31 @@
-# Failures (after, 160 cases)
+# Failures (after, 216 cases): classification
 
-- `KE-ADR-005` (synthesis, assistant, holdout=False): facts missing from the grounded answer: ['Черновик (draft) никогда не авторитетен']
-- `KE-INTA-012` (synthesis, assistant, holdout=False): not cited: ['DEMO-INT-002'] (cited ['DEMO-INT-001', 'DEMO-SRC-002', 'DEMO-INT-001', 'DEMO-SEM-002'], confidence partial)
-- `KE-SEM-011` (synthesis, assistant, holdout=False): facts missing from the grounded answer: ['mapping_state = retired']
-- `KE-SEM-012` (synthesis, assistant, holdout=True): facts missing from the grounded answer: ['ROLE-014', 'E-MAP-001']
-- `KE-SRC-004` (synonym, search, holdout=True): expected ['DEMO-SRC-008'] within top 3, got ['DEMO-SEM-003', 'DEMO-PROC-008', 'DEMO-GUIDE-001']
-- `KE-SRC-012` (synthesis, assistant, holdout=False): not cited: ['DEMO-SRC-004'] (cited ['DEMO-INT-006', 'DEMO-INT-006', 'DEMO-SRC-006'], confidence partial); facts missing from the grounded answer: ['mdm_golden_id', 'mdm_match_score']
-- `KE-SRC-013` (synthesis, assistant, holdout=False): facts missing from the grounded answer: ['DQ-COMP-001', '95 %', '24 ч']
-- `KE-ST-006` (status, assistant, holdout=False): not cited: ['DEMO-SEM-012'] (cited ['DEMO-SEM-003', 'DEMO-SEM-008', 'DEMO-SEM-008', 'DEMO-SEM-001'], confidence supported)
-- `KX-RAG-04` (external_rag, assistant, holdout=True): not cited: ['200104'] (cited ['DEMO-SRC-007', 'DEMO-PROC-003', 'DEMO-INT-004', 'DEMO-INT-001'], confidence partial); facts missing from the grounded answer: ['internal']
+Run: `make knowledge-eval` on 2026-11-25 (code `96f133c` + the exit-code change, KB hash `53968dee67abb249`,
+cases hash `395a00146d3c1d34`, mock AI, no network). The run after `synthetic: true` was added to the 9 SEM-*
+(KB `4cc6e409e5231bb3`, same cases) gives identical per-case results. Raw output: `after.json`, `after_failures.md`.
+**216 cases, 207 pass, 9 fail, 0 error, 0 unsupported**; the command now exits non-zero (module exit 1,
+`make` exit 2) while any of these remain.
+
+Evidence per case comes from the run itself and from the context the assistant hands to the provider
+(`context_ok` in `after.json`: were the expected documents and facts in those passages?). The same 9 cases fail
+in the 200-case run of `935eeb6` and the 160-case run of M5.6.2, so they are not an M6 regression.
+
+| Case | Category | Holdout | Expected | Actual | Classification | Fixed? |
+|---|---|---|---|---|---|---|
+| `KE-ADR-005` | synthesis | no | cite DEMO-GUIDE-004, DEMO-ADR-002; facts `revision_conflict`, `base_revision`, «Черновик (draft) никогда не авторитетен» | both cited; first two facts quoted; the third missing. `context_ok` true: the sentence is in the DEMO-ADR-002 passage | mock-provider limitation: the extractive mock quotes at most 4 sentences, ranked by overlap with the question's words, and picked §4 «Более новая дата reviewed_at…» of the same section | no: `adapters/ai/mock.py` is outside this task, and changing the generator to hit a gold string would be tuning to the oracle. The live generator passed this case (`comparison.md`, live run) |
+| `KE-SRC-013` | synthesis | no | cite DEMO-SRC-011; facts `DQ-COMP-001`, `95 %`, `24 ч`, `Average Daily Rows` | DEMO-SRC-011 cited; `95 %` and `Average Daily Rows` present; `DQ-COMP-001` and `24 ч` missing. `context_ok` true | mock-provider limitation: the entity-like term ADR weighs ×2, so the 4 quotes go to the ADR definitions (DEMO-SEM-001, DEMO-PROC-009) instead of the check list | no, same reason; passed live |
+| `KE-ST-006` | status | no | `include_drafts: true`; cite in_review DEMO-SEM-012 | cited DEMO-SEM-003, DEMO-SEM-008 ×2, DEMO-SEM-001 (approved). `context_ok` true: two DEMO-SEM-012 passages lead the context | mock-provider limitation: approved documents repeat the question's phrase «правила разрешения неоднозначных сущностей» verbatim, so their sentences outrank the in_review text. (The M5.6.2 note in `comparison.md` that the case "needs include_drafts" is outdated: it sets it, and the document is in the context.) | no, same reason; passed live |
+| `KE-SEM-011` | synthesis | no | cite DEMO-SEM-007; facts `PRC-000417`, `mapping_state = retired` | DEMO-SEM-007 cited, `PRC-000417` present; the retired rule missing. `context_ok` false | retrieval defect (passage selection): the fact is in DEMO-SEM-007 «Ограничения» item 3, but `RetrievalService.passages` gives each document only its 2 FTS-best sections (4 documents, 6 passages), here «Пример» and «Определение» | no: `services/retrieval.py` is outside this task (parallel work), and a ranking change needs its own before/after eval |
+| `KE-SEM-012` | synthesis | **yes** | cite DEMO-SEM-006; facts `owner_role_code`, `ROLE-014`, `E-MAP-001` | DEMO-SEM-006 cited, `owner_role_code` present; `ROLE-014` and `E-MAP-001` missing. `context_ok` false | retrieval defect (passage selection): both facts are in DEMO-SEM-006 («Ограничения» item 2, «Пример»); the passages chosen are the attribute table and «Связи» | no: holdout, never tuned (CLAUDE.md §6); same out-of-scope code |
+| `KE-INTA-012` | synthesis | no | cite DEMO-INT-001, DEMO-INT-002; facts `каждые 6 часов`, `500 записей`, `MAP_ARIS_PROCESS` | all 3 facts present; cited DEMO-INT-001, DEMO-SRC-002, DEMO-SEM-002; DEMO-INT-002 missing. `context_ok` false: DEMO-INT-002 is not among the 4 context documents | retrieval defect (document selection for the context). The id lookup is quoted from the DEMO-SRC-002 export table, an approved source of the same fact, so it is partly a legitimate semantic difference. But the canonical mapping specification is DEMO-INT-002, and the case notes record this as a known gap | no: the gold is not demonstrably wrong, so it was kept. Retrieval code is out of scope |
+| `KE-SRC-012` | synthesis | no | cite DEMO-SRC-004, DEMO-SRC-006; facts `до 15 минут`, `crm_card_id`, `mdm_golden_id`, `mdm_match_score` | cited DEMO-INT-006 ×2, DEMO-SRC-006; `mdm_golden_id` and `mdm_match_score` missing; DEMO-SRC-004 not cited. `context_ok` false | retrieval defect (passage selection): the two facts are in DEMO-SRC-006 «Сущности и идентификаторы» and «Выгружаемые метаданные», and only its «Назначение» reaches the context. Also a mock-provider limitation: DEMO-SRC-004 is in the context but not quoted | no: out-of-scope code |
+| `KE-SRC-004` | synonym | **yes** | DEMO-SRC-008 within top 3 for «Через какую шину приходят оповещения о том, что объект в источнике поменялся?» | rank 8; top 3 DEMO-SEM-003, DEMO-PROC-008, DEMO-GUIDE-001 | retrieval defect (dictionary gap): оповещения ↔ уведомления and поменялся ↔ изменения have no synonym group, and «шину» only partly meets the alias «шина событий» | no: adding the group would tune on a holdout case (CLAUDE.md §6); `search_dictionary/` is also out of scope |
+| `KX-RAG-04` | external_rag | **yes** | sources team + corporate: cite mock Confluence page 200104, fact `internal` | MCP not called; partial answer from 4 unrelated local documents. `context_ok` false | retrieval/orchestration defect: the LOCAL_SUFFICIENCY v1 gate (`local_insufficiency`, `services/assistant.py`) counts «чувствительности» as one ordinary unmatched term (below the 1/3 threshold) and one local passage covers ≥ 2/3 of the words. So local evidence is judged sufficient and page 200104 is never fetched | no: holdout; out-of-scope code |
+
+Summary: 3 mock-provider limitations, 6 retrieval defects (one of them also a mock limitation, one partly a
+legitimate semantic difference). There are **0 stale or wrong gold oracles** and **0 fixture errors**. Every
+expected document exists, and every required fact occurs verbatim (after stripping Markdown `` ` `` / `**`) in at
+least one expected document of its case, in `fixtures/knowledge` or `fixtures/confluence_mock/pages.yaml`. So no
+case was edited, removed or weakened. Nothing here was fixable inside this task's scope: the root causes are in
+`adapters/ai/mock.py`, `services/retrieval.py`, `services/assistant.py` or the dictionary, and 3 cases are
+holdout. `make knowledge-eval` therefore stays honestly red.

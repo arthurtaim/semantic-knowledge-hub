@@ -1,0 +1,25 @@
+  22198 __psynch_cvwait        _PyEval_EvalFrameDefault > pysqlite_cursor_iternext > PyEval_RestoreThread > take_gil
+  11886 __psynch_mutexwait     _PyEval_EvalFrameDefault > pysqlite_cursor_iternext > PyEval_RestoreThread > take_gil
+   6763 __psynch_cvwait        _PyEval_EvalFrameDefault
+   1672 __psynch_mutexwait     _PyEval_EvalFrameDefault > pysqlite_cursor_iternext > PyEval_SaveThread > drop_gil
+   1112 __psynch_mutexdrop     _PyEval_EvalFrameDefault > pysqlite_cursor_iternext > PyEval_SaveThread > drop_gil
+    766 __psynch_mutexdrop     _PyEval_EvalFrameDefault > pysqlite_cursor_iternext > PyEval_RestoreThread > take_gil
+    662 __psynch_cvwait        _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > PyEval_RestoreThread > take_gil
+    259 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > PyEval_RestoreThread > take_gil
+     22 __psynch_cvwait        _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > take_gil
+     19 __psynch_cvwait        _PyEval_EvalFrameDefault > PyEval_RestoreThread > take_gil
+     19 __psynch_cvwait        _PyEval_EvalFrameDefault > connection_close > PyEval_RestoreThread > take_gil
+     18 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > drop_gil
+     17 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > PyEval_SaveThread > drop_gil
+     11 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > drop_gil
+     10 __psynch_mutexdrop     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > PyEval_RestoreThread > take_gil
+      5 __psynch_mutexwait     _PyEval_EvalFrameDefault > PyEval_RestoreThread > take_gil
+      4 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > pysqlite_cursor_iternext > sqlite3_step
+      4 __psynch_cvwait        _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > drop_gil
+      4 __psynch_cvwait        _PyEval_EvalFrameDefault > pysqlite_connection_init > PyEval_RestoreThread > take_gil
+      3 __psynch_mutexdrop     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > PyEval_SaveThread > drop_gil
+      3 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > sqlite3_step
+      2 __psynch_mutexdrop     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault
+      2 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > sqlite3_exec
+      2 __psynch_mutexwait     _PyEval_EvalFrameDefault > pysqlite_connection_init > PyEval_RestoreThread > take_gil
+      1 __psynch_mutexwait     _PyEval_EvalFrameDefault > _PyEval_EvalFrameDefault > sqlite3_step > sqlite3_step

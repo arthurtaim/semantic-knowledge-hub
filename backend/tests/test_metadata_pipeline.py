@@ -167,3 +167,30 @@ def test_staged_files_without_metadata_are_listed_and_never_cited(
     ).json()
     assert all("regions" not in c.get("source_uri", "") for c in answer["citations"])
     assert (workspace / "inbox" / "regions.md").read_text(encoding="utf-8") == BARE  # never rewritten
+
+
+def test_an_oversized_import_is_reported_in_the_preview_and_never_stored(client: TestClient) -> None:
+    """Audit SYS-005: the limit is in bytes (max_document_bytes, 512 KB); 300 000 Cyrillic characters ≈ 600 KB fit the
+    schema's character limit but not the document limit — the preview says so, the import is refused, nothing stored."""
+    big = BARE + "\n" + "Ж" * 300_000 + "\n"
+    assert len(big) < 524_288 < len(big.encode("utf-8"))
+    preview = client.post("/api/documents/import/preview", json={"content": big})
+    assert preview.status_code == 200, preview.text
+    issues = {i["code"]: i for i in preview.json()["issues"]}
+    assert issues["document_too_large"]["severity"] == "error"
+    before = client.get("/api/drafts").json()
+
+    for body in (
+        {"content": big, "template_id": "integration", "metadata": {"title": "Большой", "tags": []}},
+        {"content": big, "keep_original_metadata": True},
+    ):
+        refused = client.post("/api/documents/import", json={**body, "reason": "Импорт большого файла"})
+        assert refused.status_code == 422, refused.text
+        assert refused.json()["code"] == "document_too_large"
+    assert client.get("/api/drafts").json() == before
+
+
+def test_an_import_just_under_the_limit_is_not_flagged(client: TestClient) -> None:
+    fits = BARE + "\n" + "Ж" * 200_000 + "\n"  # ≈ 400 KB
+    issues = client.post("/api/documents/import/preview", json={"content": fits}).json()["issues"]
+    assert "document_too_large" not in {i["code"] for i in issues}

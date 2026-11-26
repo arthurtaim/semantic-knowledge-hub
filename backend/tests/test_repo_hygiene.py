@@ -92,6 +92,38 @@ def test_fixtures_are_valid_and_marked_synthetic(path: Path) -> None:
     assert not find_personal_identifiers(text)
 
 
+FIXTURES_ROOT = PROJECT_ROOT / "fixtures"
+# Knowledge-document fixtures: the base and the sync snapshots. Every document there is synthetic and says so in
+# its metadata (AGENTS.md), core SEM-* included. A README is not a document.
+FIXTURE_DOCUMENT_ROOTS = (FIXTURES_ROOT / "knowledge", FIXTURES_ROOT / "knowledge_updates")
+# Front matter broken on purpose (a sync-rejection fixture): the loader rejects it, so it never becomes a document.
+UNPARSABLE_BY_DESIGN = {"knowledge_updates/invalid/broken.md"}
+
+
+def _fixture_documents() -> list[Path]:
+    return sorted(p for root in FIXTURE_DOCUMENT_ROOTS for p in root.rglob("*.md") if p.name != "README.md")
+
+
+@pytest.mark.parametrize("path", _fixture_documents(), ids=lambda p: p.relative_to(FIXTURES_ROOT).as_posix())
+def test_every_fixture_document_carries_synthetic_true(path: Path) -> None:
+    relative = path.relative_to(FIXTURES_ROOT).as_posix()
+    parsed = parse_document(path.read_text(encoding="utf-8"))
+    if relative in UNPARSABLE_BY_DESIGN:
+        # The exemption covers only a file the loader rejects; a parsable document here must be marked like any other.
+        assert parsed.metadata == {} and not parsed.is_valid, relative
+        return
+    assert parsed.metadata.get("synthetic") is True, (
+        f"{relative}: fixture documents must carry `synthetic: true`"
+    )
+
+
+def test_fixture_document_scan_covers_the_whole_base() -> None:
+    documents = _fixture_documents()
+    assert sum(1 for p in documents if p.is_relative_to(FIXTURES_ROOT / "knowledge")) == 83
+    assert any(p.name.startswith("SEM-") for p in documents)
+    assert any(p.is_relative_to(FIXTURES_ROOT / "knowledge_updates") for p in documents)
+
+
 def test_integration_template_has_no_secrets_or_hosts() -> None:
     template = PROJECT_ROOT / "deploy" / "integration" / "integration.env.example"
     for line in template.read_text(encoding="utf-8").splitlines():

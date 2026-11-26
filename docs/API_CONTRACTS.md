@@ -144,6 +144,15 @@ Conflict detection: creating/opening MR must fail with `409 Conflict` if current
 ## 5. Standard errors
 Use structured errors `{code, message, request_id}` and appropriate HTTP status (400 invalid, 401 unauthenticated, 403 forbidden, 404 unknown, 409 revision conflict, 422 invalid schema, 503 disabled integration). Do not leak credentials or raw internal API payloads.
 
+`503 storage_busy` (any route, post-M6 remediation SYS-006): a SQLite database stayed locked by another connection
+longer than its `busy_timeout` (SQLITE_BUSY / SQLITE_LOCKED only). Body `details: {retryable: true}`, header
+`Retry-After: 2`. The unit of work was rolled back — nothing was written — so the client may repeat the request; a
+write with a `client_request_id` runs exactly once. Every other SQLite error stays a `500 internal_error`.
+`document_too_large` (import, post-M6 remediation SYS-005): the limit `MAX_DOCUMENT_BYTES` is in UTF-8 bytes; the
+import preview reports it as an error issue, `POST /api/documents/import` refuses with `422` before a draft is stored.
+`502 ai_invalid_response`: the model's reply had an unusable shape (not JSON, a container of the wrong type, an id
+outside the editable form); nothing stored, the message says to retry.
+
 ## 6. Python provider protocols (example, not rigid code)
 
 ```python

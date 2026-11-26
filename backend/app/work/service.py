@@ -17,7 +17,7 @@ import logging
 import re
 import sqlite3
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -30,11 +30,14 @@ from app.work import scheduler as sched
 from app.work import store
 from app.work.calendar import (
     CALENDAR_ID,
+    MAX_YEAR,
+    MIN_YEAR,
     WORKDAY_NUMBERS,
     add_workdays,
     canonical_interval,
     count_workdays,
     fs_earliest_start,
+    in_supported_range,
     last_workday,
     next_workday,
 )
@@ -99,9 +102,11 @@ from app.work.permissions import LABELS, WorkAccessGate, WorkAccessMode, WorkPri
 
 logger = logging.getLogger("skh.work")
 
+# How long replay records (client_request_id) and applied schedule previews are kept (audit CODE-014). A client
+# retries within seconds; a week is a generous window, and the audit keeps the history for good.
+RETENTION_DAYS = 7
 TASK_KEY_RE = re.compile(r"^([A-Z][A-Z0-9]{1,9})-(\d{1,9})$")
 PROJECT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
-MIN_YEAR, MAX_YEAR = 2000, 2100
 STATUS_ORDER = {s.value: i for i, s in enumerate(TaskStatus)}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 # A database row or a plain mapping with the same column names.
@@ -149,9 +154,15 @@ def _stale_schedule(reason: str, message: str, **details: Any) -> ApiError:
     return ApiError(409, "stale_schedule", message, {"reason": reason, **details})
 
 
-def _check_year(value: date | None, name: str) -> None:
-    if value is not None and not (MIN_YEAR <= value.year <= MAX_YEAR):
-        raise _invalid_dates("out_of_range", f"{name}: дата должна быть между {MIN_YEAR} и {MAX_YEAR} годом.")
+def check_work_date(value: date | None, name: str) -> None:
+    """A person's or a derived work date outside the supported range → 422 `invalid_date_range` naming the field."""
+    if value is not None and not in_supported_range(value):
+        raise _invalid_dates(
+            "out_of_range", f"{name}: дата должна быть между {MIN_YEAR} и {MAX_YEAR} годом.", field=name
+        )
+
+
+_check_year = check_work_date
 
 
 def resolve_interval(
@@ -172,6 +183,7 @@ def resolve_interval(
         if duration < 1:
             raise _invalid_dates("duration_zero", "У задачи (не вехи) длительность не меньше 1 рабочего дня.")
         computed = (next_workday(start), add_workdays(start, duration))
+        _check_year(computed[1], "end_exclusive")  # a derived end obeys the same bound as an explicit one
         if end is not None and canonical_interval(start, end) != computed:
             raise _invalid_dates(
                 "duration_mismatch", "end_exclusive и duration_workdays противоречат друг другу (Пн–Пт)."
@@ -215,25 +227,31 @@ class _Ctx:
     """Derived facts of one project inside one snapshot (hierarchy, dependencies, link counts, today)."""
 
     project: sqlite3.Row
-    skeleton: dict[str, sqlite3.Row]
-    deps: list[sqlite3.Row]
+    skeleton: dict[str, RowLike]
+    deps: Sequence[RowLike]
     links: dict[str, list[str]]
     today: date
     members: frozenset[str] | None = None
     # The reader's knowledge snapshot (None: not known in this context — e.g. a scheduling computation that returns
     # no task to anyone). Document links are counted only against it.
     docs: DocumentScope | None = None
-    preds: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
-    succs: dict[str, list[sqlite3.Row]] = field(default_factory=dict)
+    preds: dict[str, list[RowLike]] = field(default_factory=dict)
+    succs: dict[str, list[RowLike]] = field(default_factory=dict)
     children: dict[str, int] = field(default_factory=dict)
+    # A per-task context (`WorkService._task_ctx`, B2) holds only the rows one task needs; its active child count is
+    # given here, because the skeleton then does not hold the children. None: counted from the whole skeleton.
+    child_counts: dict[str, int] | None = None
 
     def __post_init__(self) -> None:
-        preds: dict[str, list[sqlite3.Row]] = defaultdict(list)
-        succs: dict[str, list[sqlite3.Row]] = defaultdict(list)
+        preds: dict[str, list[RowLike]] = defaultdict(list)
+        succs: dict[str, list[RowLike]] = defaultdict(list)
         for dep in self.deps:
             preds[dep["successor_id"]].append(dep)
             succs[dep["predecessor_id"]].append(dep)
         self.preds, self.succs = dict(preds), dict(succs)
+        if self.child_counts is not None:
+            self.children = dict(self.child_counts)
+            return
         children: dict[str, int] = defaultdict(int)
         for row in self.skeleton.values():
             if row["parent_task_id"] and row["archived_at"] is None:
@@ -402,6 +420,13 @@ class WorkService:
             return store.get_task_by_number(conn, project["id"], int(match.group(2))) if project else None
         return store.get_task(conn, ref)
 
+    @classmethod
+    def _task_id_of(cls, conn: sqlite3.Connection, ref: str) -> str:
+        """A task named by key (PKY-1) or id → its stable id; an unknown ref is returned as is (the caller refuses
+        it with its own error). Audit CODE-012: a parent may be named the way every path names a task."""
+        row = cls._lookup_task(conn, ref)
+        return str(row["id"]) if row is not None else ref
+
     def _project_for(
         self, conn: sqlite3.Connection, principal: WorkPrincipal, ref: str, action: Action
     ) -> tuple[sqlite3.Row, ProjectRole | None]:
@@ -450,17 +475,64 @@ class WorkService:
     def _ctx(
         self, conn: sqlite3.Connection, project: sqlite3.Row, principal: WorkPrincipal | None = None
     ) -> _Ctx:
-        members = None
-        if self.gate.role_based():
-            members = frozenset(r["user_id"] for r in store.list_members(conn, project["id"]) if r["active"])
         return _Ctx(
             project=project,
             skeleton={r["id"]: r for r in store.task_skeleton(conn, project["id"])},
             deps=store.project_dependencies(conn, project["id"]),
             links=store.active_document_links(conn, project["id"]),
             today=self._today(project["timezone"]),
-            members=members,
+            members=self._members(conn, project),
             docs=principal.documents if principal is not None else None,
+        )
+
+    def _members(self, conn: sqlite3.Connection, project: sqlite3.Row) -> frozenset[str] | None:
+        if not self.gate.role_based():
+            return None
+        return frozenset(r["user_id"] for r in store.list_members(conn, project["id"]) if r["active"])
+
+    def _task_ctx(
+        self,
+        conn: sqlite3.Connection,
+        project: sqlite3.Row,
+        task_id: str,
+        principal: WorkPrincipal | None = None,
+    ) -> _Ctx:
+        """The context of ONE task (B2, audit CODE-015): its ancestors, its active dependency neighbours, its own
+        links and active child count — the same derived fields as `_ctx` for this task (and the neighbour facts a
+        date check needs), read without the whole project. Not for hierarchy moves: they need the full context."""
+        return _Ctx(
+            project=project,
+            skeleton={r["id"]: r for r in store.task_skeleton_around(conn, project["id"], task_id)},
+            deps=store.task_active_dependencies(conn, project["id"], task_id),
+            links=store.active_document_links(conn, project["id"], task_id),
+            today=self._today(project["timezone"]),
+            members=self._members(conn, project),
+            docs=principal.documents if principal is not None else None,
+            child_counts={task_id: store.count_active_children(conn, project["id"], task_id)},
+        )
+
+    def _project_stats(self, conn: sqlite3.Connection, project: sqlite3.Row) -> ProjectStats:
+        """Project counters as SQL aggregates over the active tasks (B2, audit CODE-015) — the same numbers as
+        counting the derived fields of every task, without building them."""
+        counts = store.project_stats(conn, project["id"], self._today(project["timezone"]).isoformat())
+        by_status = {s.value: counts["by_status"].get(s.value, 0) for s in TaskStatus}
+        milestone = counts["next_milestone"]
+        return ProjectStats(
+            total=counts["total"],
+            by_status=by_status,
+            open=counts["total"] - by_status[TaskStatus.done.value],
+            blocked=counts["blocked"],
+            overdue=counts["overdue"],
+            milestones=counts["milestones"],
+            unscheduled=counts["unscheduled"],
+            next_milestone=None
+            if milestone is None
+            else MilestoneRef(
+                task_id=milestone["id"],
+                key=f"{project['key']}-{milestone['number']}",
+                title=milestone["title"],
+                date=date.fromisoformat(milestone["start_date"]),
+            ),
         )
 
     def _task_out(self, row: RowLike, ctx: _Ctx) -> TaskOut:
@@ -471,7 +543,7 @@ class WorkService:
         done = row["status"] == TaskStatus.done.value
         active = row["archived_at"] is None
         due = _d(row["due_date"])
-        blocked = ctx.blocked_by(row["id"]) if active else []
+        blocked = _blocked_by(row, ctx)
         point = start if milestone else last_day
         documents = ctx.visible_documents(row["id"])
         return TaskOut(
@@ -507,37 +579,11 @@ class WorkService:
             archived_at=_dt(row["archived_at"]),
             blocked_by=blocked,
             is_blocked=bool(blocked) and not done,
-            overdue=active and not done and due is not None and due < ctx.today,
+            overdue=_overdue(row, ctx.today),
             late=active and not done and point is not None and point < ctx.today,
             child_count=ctx.children.get(row["id"], 0),
             link_count=None if documents is None else len(documents),
             document_ids=documents,
-        )
-
-    def _stats(self, ctx: _Ctx, tasks: list[TaskOut]) -> ProjectStats:
-        by_status = {s.value: 0 for s in TaskStatus}
-        for task in tasks:
-            by_status[task.status.value] += 1
-        upcoming = sorted(
-            (t for t in tasks if t.is_milestone and t.start_date and t.status != TaskStatus.done),
-            key=lambda t: (t.start_date, t.number),
-        )
-        next_milestone = None
-        if upcoming:
-            first = upcoming[0]
-            assert first.start_date is not None
-            next_milestone = MilestoneRef(
-                task_id=first.id, key=first.key, title=first.title, date=first.start_date
-            )
-        return ProjectStats(
-            total=len(tasks),
-            by_status=by_status,
-            open=sum(1 for t in tasks if t.status != TaskStatus.done),
-            blocked=sum(1 for t in tasks if t.is_blocked),
-            overdue=sum(1 for t in tasks if t.overdue),
-            milestones=sum(1 for t in tasks if t.is_milestone),
-            unscheduled=sum(1 for t in tasks if not t.scheduled),
-            next_milestone=next_milestone,
         )
 
     def _project_out(
@@ -629,6 +675,7 @@ class WorkService:
     ) -> None:
         if key is None:
             return
+        store.purge_retained(conn, store.now_iso(self.now() - timedelta(days=RETENTION_DAYS)))
         store.put_idempotent(
             conn,
             scope=scope,
@@ -722,17 +769,13 @@ class WorkService:
             items = []
             for row in rows:
                 role = self._role(conn, principal, row["id"])
-                ctx = self._ctx(conn, row, principal)
-                tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, row["id"])]
-                items.append(self._project_out(row, principal, role, self._stats(ctx, tasks)))
+                items.append(self._project_out(row, principal, role, self._project_stats(conn, row)))
         return ProjectList(items=items, total=len(items))
 
     def get_project(self, principal: WorkPrincipal, ref: str) -> ProjectOut:
         with self.db.read() as conn:
             project, role = self._project_for(conn, principal, ref, Action.view_projects)
-            ctx = self._ctx(conn, project, principal)
-            tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, project["id"])]
-            return self._project_out(project, principal, role, self._stats(ctx, tasks))
+            return self._project_out(project, principal, role, self._project_stats(conn, project))
 
     def members(self, principal: WorkPrincipal, ref: str) -> ProjectMembers:
         with self.db.read() as conn:
@@ -834,8 +877,7 @@ class WorkService:
             )
             created = store.get_project(conn, project_id)
             assert created is not None
-            ctx = self._ctx(conn, created, principal)
-            out = self._project_out(created, principal, role, self._stats(ctx, []))
+            out = self._project_out(created, principal, role, self._project_stats(conn, created))
             self._remember(
                 conn,
                 "project_create",
@@ -890,9 +932,7 @@ class WorkService:
                     self._now_iso() if fields["status"] == ProjectStatus.archived.value else None
                 )
             if not fields:
-                ctx = self._ctx(conn, project, principal)
-                tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, project["id"])]
-                return self._project_out(project, principal, role, self._stats(ctx, tasks))
+                return self._project_out(project, principal, role, self._project_stats(conn, project))
             at = self._now_iso()
             if not store.update_project(
                 conn, project["id"], body.expected_version, fields, principal.user.user_id, at
@@ -912,9 +952,7 @@ class WorkService:
             )
             updated = store.get_project(conn, project["id"])
             assert updated is not None
-            ctx = self._ctx(conn, updated, principal)
-            tasks = [self._task_out(r, ctx) for r in store.project_tasks(conn, updated["id"])]
-            return self._project_out(updated, principal, role, self._stats(ctx, tasks))
+            return self._project_out(updated, principal, role, self._project_stats(conn, updated))
 
     # --- tasks -------------------------------------------------------------------------------------------------
     def list_tasks(
@@ -953,28 +991,34 @@ class WorkService:
                 parent=parent,
                 milestone=milestone,
             )
-            tasks = [self._task_out(r, ctx) for r in rows]
             plan_revision = int(project["plan_revision"])
+        # B2 (audit CODE-015): filter and sort the ROWS by the same derived rules as TaskOut, then build TaskOut only
+        # for the page — not for every task of the project.
         if q:
             needle = q.casefold().strip()
-            tasks = [t for t in tasks if needle in t.title.casefold() or needle in t.key.casefold()]
+            rows = [
+                r
+                for r in rows
+                if needle in r["title"].casefold() or needle in f"{project['key']}-{r['number']}".casefold()
+            ]
         if scheduled is not None:
-            tasks = [t for t in tasks if t.scheduled == scheduled]
+            rows = [r for r in rows if (r["start_date"] is not None) == scheduled]
         if overdue is not None:
-            tasks = [t for t in tasks if t.overdue == overdue]
+            rows = [r for r in rows if _overdue(r, ctx.today) == overdue]
         if blocked is not None:
-            tasks = [t for t in tasks if t.is_blocked == blocked]
+            rows = [r for r in rows if _is_blocked(r, ctx) == blocked]
         if document is not None:
-            # `document_ids` hold only documents the reader can see: a hidden id matches nothing (no leak).
+            # Only documents the reader can see count: a hidden id matches nothing (no leak).
             wanted = document.casefold()
-            tasks = [t for t in tasks if any(d.casefold() == wanted for d in t.document_ids or [])]
-        tasks.sort(key=_sort_key(sort), reverse=order == "desc")
-        total = len(tasks)
+            rows = [
+                r for r in rows if any(d.casefold() == wanted for d in ctx.visible_documents(r["id"]) or [])
+            ]
+        rows.sort(key=_row_sort_key(sort), reverse=order == "desc")
         return TaskPage(
             project_id=project["id"],
             plan_revision=plan_revision,
-            items=tasks[offset : offset + limit],
-            total=total,
+            items=[self._task_out(r, ctx) for r in rows[offset : offset + limit]],
+            total=len(rows),
             limit=limit,
             offset=offset,
             today=ctx.today,
@@ -983,7 +1027,7 @@ class WorkService:
     def get_task(self, principal: WorkPrincipal, ref: str) -> TaskOut:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_tasks)
-            return self._task_out(task, self._ctx(conn, project, principal))
+            return self._task_out(task, self._task_ctx(conn, project, task["id"], principal))
 
     def _bump_and_read(self, conn: sqlite3.Connection, project_id: str) -> tuple[int, sqlite3.Row]:
         revision = store.bump_plan_revision(conn, project_id)
@@ -1047,9 +1091,9 @@ class WorkService:
                 raise ApiError(
                     409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
                 )
-            ctx = self._ctx(conn, project, principal)
-            if body.parent_task_id is not None:
-                self._validate_parent(conn, ctx, body.parent_task_id)
+            parent_id = None if body.parent_task_id is None else self._task_id_of(conn, body.parent_task_id)
+            if parent_id is not None:
+                self._validate_parent(conn, self._ctx(conn, project, principal), parent_id)
             self._check_assignee(conn, project["id"], body.assignee_id)
             _check_year(body.due_date, "due_date")
             start = end = None
@@ -1074,7 +1118,7 @@ class WorkService:
                 "id": task_id,
                 "project_id": project["id"],
                 "number": number,
-                "parent_task_id": body.parent_task_id,
+                "parent_task_id": parent_id,
                 "title": body.title,
                 "description": body.description,
                 "status": body.status.value,
@@ -1109,7 +1153,7 @@ class WorkService:
             )
             created = store.get_task(conn, task_id)
             assert created is not None
-            out = self._task_out(created, self._ctx(conn, project, principal))
+            out = self._task_out(created, self._task_ctx(conn, project, task_id, principal))
             self._remember(
                 conn, scope, principal, body.client_request_id, request_hash, out.model_dump(mode="json"), 201
             )
@@ -1134,7 +1178,12 @@ class WorkService:
                     409, "conflict", "Задача в архиве — сначала восстановите её.", {"reason": "task_archived"}
                 )
             given = body.model_fields_set - {"expected_version"}
-            ctx = self._ctx(conn, project, principal)
+            # A hierarchy move checks the whole tree; any other edit needs only this task's neighbourhood (B2).
+            ctx = (
+                self._ctx(conn, project, principal)
+                if "parent_task_id" in given
+                else self._task_ctx(conn, project, task["id"], principal)
+            )
             fields: dict[str, Any] = {}
 
             for name in ("title", "description", "status", "priority", "estimate_workdays", "sort_order"):
@@ -1147,10 +1196,14 @@ class WorkService:
             if "due_date" in given:
                 _check_year(body.due_date, "due_date")
                 fields["due_date"] = _iso(body.due_date)
-            if "parent_task_id" in given and body.parent_task_id != task["parent_task_id"]:
-                if body.parent_task_id is not None:
-                    self._validate_parent(conn, ctx, body.parent_task_id, moving=task["id"])
-                fields["parent_task_id"] = body.parent_task_id
+            if "parent_task_id" in given:
+                new_parent = (
+                    None if body.parent_task_id is None else self._task_id_of(conn, body.parent_task_id)
+                )
+                if new_parent != task["parent_task_id"]:
+                    if new_parent is not None:
+                        self._validate_parent(conn, ctx, new_parent, moving=task["id"])
+                    fields["parent_task_id"] = new_parent
 
             was_milestone = bool(task["is_milestone"])
             milestone = (
@@ -1211,7 +1264,7 @@ class WorkService:
             )
             updated = store.get_task(conn, task["id"])
             assert updated is not None
-            return self._task_out(updated, self._ctx(conn, project, principal))
+            return self._task_out(updated, self._task_ctx(conn, project, task["id"], principal))
 
     @staticmethod
     def _merge_schedule(
@@ -1362,6 +1415,54 @@ class WorkService:
                 archived=archived, removed_dependency_ids=removed, plan_revision=revision
             )
 
+    @staticmethod
+    def _check_restore_parent(
+        conn: sqlite3.Connection, project: RowLike, parent_id: str, height: int
+    ) -> None:
+        """The hierarchy invariants of create/move, re-checked for a restore (audit CODE-002, CODE-003).
+
+        While a task sat in the archive its parent stayed editable: it may have been archived, turned into a
+        milestone or moved deeper. A restore that would break «at most MAX_DEPTH levels» or «a milestone has no
+        subtasks» is refused as a conflict before anything is written; the person fixes the parent and retries.
+        """
+        parent = store.get_task(conn, parent_id)
+        if parent is None or parent["project_id"] != project["id"]:
+            raise ApiError(
+                409,
+                "conflict",
+                "Родительской задачи нет в этом проекте — восстановить задачу на прежнее место нельзя.",
+                {"reason": "parent_not_in_project"},
+            )
+        if parent["archived_at"] is not None:
+            raise ApiError(
+                409,
+                "conflict",
+                "Родительская задача в архиве — восстановите сначала её.",
+                {"reason": "parent_archived"},
+            )
+        if parent["is_milestone"]:
+            raise ApiError(
+                409,
+                "conflict",
+                "Родительская задача стала вехой, а у вехи не может быть подзадач. Снимите у неё признак вехи "
+                "и повторите восстановление.",
+                {"reason": "milestone_parent", "parent_task_id": parent_id},
+            )
+        parent_depth, seen = 1, {parent["id"]}
+        current: sqlite3.Row | None = parent
+        while current is not None and current["parent_task_id"] and current["parent_task_id"] not in seen:
+            seen.add(current["parent_task_id"])
+            parent_depth += 1
+            current = store.get_task(conn, current["parent_task_id"])
+        if parent_depth + height > MAX_DEPTH:
+            raise ApiError(
+                409,
+                "conflict",
+                f"После восстановления вложенность превысит {MAX_DEPTH} уровня: родительскую задачу перенесли "
+                "глубже. Перенесите её выше и повторите восстановление.",
+                {"reason": "too_deep", "max_depth": MAX_DEPTH, "depth": parent_depth + height},
+            )
+
     def restore_task(self, principal: WorkPrincipal, ref: str, expected_version: int) -> TaskOut:
         with self.db.write() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.edit_task)
@@ -1375,19 +1476,17 @@ class WorkService:
             self._require_open(project)
             if task["archived_at"] is None:
                 raise ApiError(409, "conflict", "Задача не в архиве.", {"reason": "task_active"})
+            # Restore the subtree archived by the same operation (an «undo» of a cascade), nothing else: a descendant
+            # returns only together with its parent, so nothing comes back under a task that stays archived.
+            returning = {task["id"]}
+            same_op: list[sqlite3.Row] = []
+            for row in store.descendants(conn, task["id"]):  # nearest first
+                if row["archived_at"] == task["archived_at"] and row["parent_task_id"] in returning:
+                    returning.add(row["id"])
+                    same_op.append(row)
             if task["parent_task_id"]:
-                parent = store.get_task(conn, task["parent_task_id"])
-                if parent is not None and parent["archived_at"] is not None:
-                    raise ApiError(
-                        409,
-                        "conflict",
-                        "Родительская задача в архиве — восстановите сначала её.",
-                        {"reason": "parent_archived"},
-                    )
-            # Restore the subtree archived by the same operation (an «undo» of a cascade), nothing else.
-            same_op = [
-                r for r in store.descendants(conn, task["id"]) if r["archived_at"] == task["archived_at"]
-            ]
+                height = 1 + max((int(r["rel_depth"]) for r in same_op), default=0)
+                self._check_restore_parent(conn, project, task["parent_task_id"], height)
             if store.count_active_tasks(conn, project["id"]) + 1 + len(same_op) > MAX_TASKS_PER_PROJECT:
                 raise ApiError(
                     409, "conflict", "Достигнут предел числа задач в проекте.", {"reason": "task_limit"}
@@ -1899,7 +1998,10 @@ class WorkService:
                 )
                 if self._after_schedule_write is not None:
                     self._after_schedule_write(op.task_id)
-            revision, project = self._bump_and_read(conn, project["id"])
+            if result.operations or normalized:
+                revision, project = self._bump_and_read(conn, project["id"])
+            else:  # nothing changes: the plan revision stays, so no one else's preview goes stale (audit SYS-003)
+                revision = int(project["plan_revision"])
             if not store.mark_preview_applied(conn, body.preview_id, at, revision):
                 raise _stale_schedule("already_applied", "Этот предпросмотр уже применён — сделайте новый.")
             ctx = self._ctx(conn, project, principal)
@@ -2256,6 +2358,9 @@ class WorkService:
                     {"reason": f"already_{row['status']}"},
                 )
             plan = prepare(row, project)
+            for planned in plan.tasks:  # the same bound as a direct create (audit CODE-005), before any write
+                check_work_date(planned.start, "start_date")
+                check_work_date(planned.end, "end_exclusive")
             ctx = self._ctx(conn, project)
             depth = ctx.depth(plan.anchor_id) if plan.anchor_id else 0
             if plan.anchor_id is not None:
@@ -2480,9 +2585,18 @@ class WorkService:
     ) -> ActivityPage:
         with self.db.read() as conn:
             task, project, _ = self._task_for(conn, principal, ref, Action.view_work_audit)
-            ctx = self._ctx(conn, project, principal)
             rows = store.audit_page(
                 conn, project_id=project["id"], task_id=task["id"], before_seq=before_seq, limit=limit
+            )
+            # B2: the page names its tasks by key — read only those tasks, not the whole project.
+            named = store.task_skeleton_of(conn, project["id"], (r["task_id"] for r in rows if r["task_id"]))
+            ctx = _Ctx(
+                project=project,
+                skeleton={r["id"]: r for r in named},
+                deps=[],
+                links={},
+                today=self._today(project["timezone"]),
+                docs=principal.documents,
             )
             return self._activity(conn, ctx, rows, limit)
 
@@ -2544,16 +2658,16 @@ def _full(ctx: _Ctx, task_id: str) -> RowLike:
     }
 
 
-def _hierarchy_order(rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
+def _hierarchy_order(rows: Sequence[RowLike]) -> list[RowLike]:
     """Depth-first: parents before their children, siblings by (sort_order, number) — the Gantt/tree order."""
-    by_parent: dict[str | None, list[sqlite3.Row]] = defaultdict(list)
+    by_parent: dict[str | None, list[RowLike]] = defaultdict(list)
     ids = {r["id"] for r in rows}
     for row in rows:
         parent = row["parent_task_id"] if row["parent_task_id"] in ids else None
         by_parent[parent].append(row)
     for siblings in by_parent.values():
         siblings.sort(key=lambda r: (int(r["sort_order"]), int(r["number"])))
-    ordered: list[sqlite3.Row] = []
+    ordered: list[RowLike] = []
     stack = list(reversed(by_parent[None]))
     seen: set[str] = set()
     while stack:
@@ -2566,25 +2680,45 @@ def _hierarchy_order(rows: list[sqlite3.Row]) -> list[sqlite3.Row]:
     return ordered
 
 
-def _sort_key(sort: str) -> Callable[[TaskOut], tuple[Any, ...]]:
+def _blocked_by(row: RowLike, ctx: _Ctx) -> list[str]:
+    """Unfinished active FS predecessors of an ACTIVE task (an archived task waits for nothing)."""
+    return ctx.blocked_by(row["id"]) if row["archived_at"] is None else []
+
+
+def _is_blocked(row: RowLike, ctx: _Ctx) -> bool:
+    return row["status"] != TaskStatus.done.value and bool(_blocked_by(row, ctx))
+
+
+def _overdue(row: RowLike, today: date) -> bool:
+    due = _d(row["due_date"])
+    return (
+        row["archived_at"] is None
+        and row["status"] != TaskStatus.done.value
+        and due is not None
+        and due < today
+    )
+
+
+def _row_sort_key(sort: str) -> Callable[[RowLike], tuple[Any, ...]]:
+    """The list order on stored rows — the same keys TaskOut has (dates and timestamps parsed, titles casefolded)."""
     far = date(9999, 12, 31)
     match sort:
         case "key":
-            return lambda t: (t.number,)
+            return lambda r: (int(r["number"]),)
         case "title":
-            return lambda t: (t.title.casefold(), t.number)
+            return lambda r: (r["title"].casefold(), int(r["number"]))
         case "status":
-            return lambda t: (STATUS_ORDER[t.status.value], t.number)
+            return lambda r: (STATUS_ORDER[r["status"]], int(r["number"]))
         case "priority":
-            return lambda t: (PRIORITY_ORDER[t.priority.value], t.number)
+            return lambda r: (PRIORITY_ORDER[r["priority"]], int(r["number"]))
         case "start_date":
-            return lambda t: (t.start_date or far, t.number)
+            return lambda r: (_d(r["start_date"]) or far, int(r["number"]))
         case "due_date":
-            return lambda t: (t.due_date or far, t.number)
+            return lambda r: (_d(r["due_date"]) or far, int(r["number"]))
         case "updated_at":
-            return lambda t: (t.updated_at, t.number)
+            return lambda r: (_dt(r["updated_at"]), int(r["number"]))
         case _:
-            return lambda t: (t.sort_order, t.number)
+            return lambda r: (int(r["sort_order"]), int(r["number"]))
 
 
 def _created_changes(row: Mapping[str, Any]) -> dict[str, Any]:

@@ -4,6 +4,7 @@ title: Устаревший порядок согласования правок
 type: process
 status: deprecated
 owner: unassigned
+synthetic: true
 tags: [process, deprecated, demo]
 related_ids: [SEM-PROC-001]
 reviewed_at: 2024-06-01

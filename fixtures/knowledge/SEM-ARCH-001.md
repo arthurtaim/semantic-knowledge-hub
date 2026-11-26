@@ -4,6 +4,7 @@ title: Semantic Layer — demonstration architecture
 type: architecture
 status: approved
 owner: demo-team
+synthetic: true
 tags: [semantic-layer, architecture, demo]
 related_ids: [SEM-INT-ARIS-001]
 reviewed_at: 2026-11-20

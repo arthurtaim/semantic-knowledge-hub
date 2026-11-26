@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { requestLeave } from "./UnsavedChangesGuard";
 import { api } from "../api/client";
 import type { DocumentSummary } from "../api/types";
 import { canAsk } from "../lib/aiMode";
@@ -113,7 +114,7 @@ export function QuickFind({ variant, inputId, autoFocus, scope = "team", renderE
     setOpen(false);
     setActive(-1);
     onNavigate?.();
-    navigate(href);
+    requestLeave(() => navigate(href)); // a page with unsaved edits asks first (SYS-007)
   }
 
   function activate(option: Option) {
