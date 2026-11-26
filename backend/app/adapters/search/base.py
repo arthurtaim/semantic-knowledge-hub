@@ -37,6 +37,7 @@ class ChunkHit:
     section_anchor: str
     text: str
     score: float
+    ordinal: int = 0  # position of the section in its document (deterministic tie-breaking)
 
 
 class SearchProvider(Protocol):
@@ -65,7 +66,16 @@ class SearchProvider(Protocol):
         """Best matching section + highlighted snippet for each document that has one (score 0)."""
         ...
 
-    def search_chunks(self, terms: list[QueryTerm], filters: SearchFilters, limit: int) -> list[ChunkHit]: ...
+    def search_chunks(
+        self,
+        terms: list[QueryTerm],
+        filters: SearchFilters,
+        limit: int,
+        *,
+        document_ids: list[str] | None = None,
+    ) -> list[ChunkHit]:
+        """Sections matching any term, best BM25 first; `document_ids` restricts them to those documents."""
+        ...
 
     def matching_document_ids(self, term: QueryTerm, filters: SearchFilters) -> set[str]:
         """Documents (within filters) that contain the term — used to detect unknown topics."""

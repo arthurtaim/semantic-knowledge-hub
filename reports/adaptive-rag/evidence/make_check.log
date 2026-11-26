@@ -1,0 +1,924 @@
+cd backend && ../.venv/bin/python -m ruff check app claude_worker tests && ../.venv/bin/python -m ruff format --check app claude_worker tests && ../.venv/bin/python -m mypy app claude_worker
+All checks passed!
+256 files already formatted
+Success: no issues found in 147 source files
+cd frontend && npx tsc --noEmit -p tsconfig.json && npx eslint .
+cd backend && ../.venv/bin/python -m pytest
+......ssssss............................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 20%]
+........................................................................ [ 25%]
+........................................................................ [ 30%]
+........................................................................ [ 35%]
+........................................................................ [ 40%]
+........................................................................ [ 45%]
+........................................................................ [ 50%]
+........................................................................ [ 55%]
+........................................................................ [ 60%]
+........................................................................ [ 65%]
+........................................................................ [ 70%]
+........................................................................ [ 75%]
+........................................................................ [ 80%]
+........................................................................ [ 85%]
+........................................................................ [ 90%]
+........................................................................ [ 95%]
+.......................................................................  [100%]
+1433 passed, 6 skipped in 85.33s (0:01:25)
+cd frontend && npx vitest run
+
+ RUN  v3.2.7 <repo>/frontend
+
+(node:53040) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53033) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53038) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53039) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53034) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+stderr | src/__tests__/ask.test.tsx > Ask the knowledge base > prefills the question from the home page search
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+(node:53041) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/composer.test.tsx (22 tests) 2158ms
+ ✓ src/__tests__/systemFacts.test.tsx (20 tests) 2259ms
+(node:53090) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53092) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+stderr | src/__tests__/docsTable.test.tsx > Таблица: grouping, columns, keyboard > one tab stop for the rows; ↑↓ Home End move between rows; Enter opens the document
+An update to DocsTable inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/workBoardWindow.test.tsx (7 tests) 3391ms
+   ✓ Board window (B2) > a long column renders its first cards; the count is the whole column; list positions are announced  628ms
+   ✓ Board window (B2) > «Показать ещё» adds the next cards and moves focus to the first new one  461ms
+   ✓ Board window (B2) > Alt + → into a column whose window ends earlier still shows the card there, and focus follows it  473ms
+   ✓ Board window (B2) > the card menu moves a card that is beyond the first window once it is shown  1359ms
+ ✓ src/__tests__/workGantt.test.tsx (30 tests) 3408ms
+ ✓ src/__tests__/docsTable.test.tsx (25 tests) 3630ms
+   ✓ Таблица: columns and rows > shows every document with Название + ID, Раздел, Состояние, Владелец, Системы, Проверен, Связи; «Проверен ↑» by default  474ms
+   ✓ Таблица: columns and rows > sorts by a header click (`aria-sort`, the URL); a second click turns it around  604ms
+   ✓ Таблица: filters > filters through menu buttons with several choices (the menu stays open); «Показать все» clears one filter  305ms
+stderr | src/__tests__/documentAssistant.test.tsx > Selection bar > opening the panel with ⌘J takes a selection in the text as context
+An update to PendingProposals inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/authoring.test.tsx (31 tests) 4095ms
+   ✓ Creating a document: type and mode > keeps the path following the ID and the heading following the title  779ms
+   ✓ Creating a document: manual flow > saves with POST, switches the URL to the draft and saves again with PUT and the last version  908ms
+   ✓ Creating a document: manual flow > keeps the text and shows the error on the ID field when the ID is taken (409)  346ms
+(node:53110) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53114) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/documentAssistant.test.tsx (25 tests) 4348ms
+   ✓ Document assistant panel > M5.7: shows system facts compact under the panel's answer and sends their referent with a follow-up  367ms
+   ✓ Selection bar > appears over a mouse selection in the text, not during the drag  340ms
+   ✓ Selection bar > appears for a keyboard selection, and not for blanks or a selection outside the text  482ms
+   ✓ Selection bar > is reached with Alt+F10, moves with the arrow keys, and Esc closes it and returns focus  395ms
+   ✓ Selection bar > counts lines across list items and takes the intro's anchor from the hidden title heading  325ms
+ ✓ src/__tests__/ask.test.tsx (30 tests) 4716ms
+   ✓ Streaming answers > sends the previous validated answers as history; failed turns are excluded and answers truncated  368ms
+   ✓ Streaming answers > keeps at most the last 6 completed turns as history  949ms
+ ✓ src/__tests__/answer.test.tsx (14 tests) 2151ms
+ ✓ src/__tests__/workList.test.tsx (15 tests) 4739ms
+   ✓ Task list > shows the hierarchy (subtasks 3 levels deep) with expand / collapse, marks and the plan revision  480ms
+   ✓ Task list > M6-02 (list part): changes a status inline with the expected version, without a reload  410ms
+   ✓ Task list > M6-17: a stale version (409) rolls back, re-reads the snapshot and says what happened  403ms
+   ✓ Task list > filters by status, assignee, overdue and milestone through the URL (one model for every view)  613ms
+   ✓ Task list > M6-01: creates a subtask from a row with the parent preset and opens it  516ms
+   ✓ Task list > groups by status (in the URL and remembered): flat rows under headings, subtasks marked ↳  653ms
+ ✓ src/__tests__/workPlan.test.tsx (6 tests) 2173ms
+   ✓ «План с ассистентом» (was «AI план») > is absent without a planning-capable AI provider and in read-only mode  366ms
+   ✓ «План с ассистентом» (was «AI план») > sends the request with the chosen documents and start, then opens the review in the URL  778ms
+   ✓ «План с ассистентом» (was «AI план») > shows sources, issues and server dates; edits, drops and applies exactly what the person reviewed  381ms
+(node:53126) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53128) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53138) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/workFrame.test.tsx (7 tests) 1520ms
+   ✓ the project line > shows status, dates, «Готово N из M», overdue, the next milestone and the plan revision from the loaded project  371ms
+   ✓ the project line > below 1100 px keeps status, dates and progress; the rest is behind «⋯»; a phone keeps status and progress  324ms
+   ✓ the work mode > «Демо-данные» shows the note as its tooltip and description  362ms
+ ✓ src/__tests__/docsList.test.tsx (20 tests) 1661ms
+ ✓ src/__tests__/workTask.test.tsx (8 tests) 1728ms
+   ✓ Task detail > changes dates through the form and the inline preview (the keyboard alternative to dragging)  328ms
+stderr | src/__tests__/palette.test.tsx > «Спросить или найти»: the ⌘K palette from the sidebar > keeps the dialog's Tab order inside it
+An update to QuickFind inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/templateStudio.test.tsx (17 tests) 1460ms
+   ✓ Template Studio editor > creates a new template as a draft and opens it in the editor  300ms
+ ✓ src/__tests__/answerProvenance.test.tsx (19 tests) 1363ms
+ ✓ src/__tests__/palette.test.tsx (8 tests) 1367ms
+   ✓ «Спросить или найти»: the ⌘K palette from the sidebar > asks the AI on Enter (team scope by default) and searches after Tab switches the mode  361ms
+ ✓ src/__tests__/leaveGuard.test.tsx (6 tests) 1291ms
+ ✓ src/__tests__/workLinks.test.tsx (9 tests) 1479ms
+   ✓ Task documents > shows every link as the current snapshot has it — changed, deprecated, unavailable without details  305ms
+   ✓ Task documents > «Проверено» acknowledges the new revision and «Убрать» removes a link; both re-read the plan  333ms
+   ✓ Task documents > links a document found by ID or title, with the chosen relation and one request id  521ms
+ ✓ src/__tests__/blankDocument.test.tsx (9 tests) 1506ms
+   ✓ «Пустой документ» on the create page > comes first, next to «По шаблону», and opens the editor with a title and a section only  381ms
+   ✓ Editor of a draft without a template > opens a stored blank draft (also an import) in the editor with WikiLinks, preview and AI actions  366ms
+(node:53167) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/chatHistory.test.tsx (11 tests) 1048ms
+ ✓ src/__tests__/proposal.test.tsx (17 tests) 1177ms
+stderr | src/__tests__/sidebar.test.tsx > Sidebar > shows a rail item's name as a tooltip on focus
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > restores the skill, a live file and a grey expired one in the same dialog; Enter sends only the live file
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AskDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > opens a skill run without a question: the skill chip and an empty field (older entry: the skill by name)
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+(node:53174) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > puts a plain question back into the field of its dialog and waits — never asks it again by itself
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AskDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/explorer.test.tsx (21 tests) 1533ms
+stderr | src/__tests__/aiModes.test.tsx > Four AI modes: no dead controls > disabled: the main navigation has no «Ассистент»; other modes keep it
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/sidebar.test.tsx > Sidebar > marks «Ревью» for the review filter and «Публикации» for a publication job
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > greys a file out when the server answers attachment_not_found, and does not send it again
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AskDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > «Новый диалог» keeps the files of a dialog the history keeps; a dialog never asked loses its files
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+(node:53184) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+stderr | src/__tests__/documentsView.test.tsx > Документы: the views > opens a link with table filters in «Таблица» and keeps an explicit view over the remembered one
+An update to ExplorerPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/documentsView.test.tsx > Документы: the views > opens a link with table filters in «Таблица» and keeps an explicit view over the remembered one
+An update to ExplorerPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ExplorerPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to ExplorerPage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > «Новый диалог» deletes the files of a dialog that was never asked anything (nothing keeps them)
+An update to AskDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/aiModes.test.tsx (8 tests) 856ms
+   ✓ «Недостаточно данных» card > says what and where was searched, lists the closest documents (not as evidence) and three steps  330ms
+stderr | src/__tests__/sidebar.test.tsx > Drawer below 960 px > stays wide at 960 px and more
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/sidebar.test.tsx > Page toolbar > shows the route's default title, the demo badge and the AI-mode chip on every page
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/sidebar.test.tsx > Page toolbar > takes a page's own path and actions instead of the default
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/sidebar.test.tsx (17 tests) 883ms
+stderr | src/__tests__/recentDialogs.test.tsx > Reopening a recent dialog > remembers the dialog id, the skill's id and the attached file's details when a message is sent
+An update to DialogView inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AskDialog inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/recentDialogs.test.tsx (7 tests) 856ms
+(node:53186) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/graphMap.test.tsx (9 tests) 1189ms
+   ✓ Knowledge map: manual positions > keeps a dragged node through «Вписать», more neighbours and a filter change  362ms
+stderr | src/__tests__/home.test.tsx > Home page: the assistant > asks «Что нужно найти или подготовить?» with the field and «Новый диалог» in the toolbar
+An update to HomeIndexStatus inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AwaitingDecision inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AwaitingDecision inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to HomePage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to RecentDialogs inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to HomeIndexStatus inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AwaitingDecision inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to AwaitingDecision inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+(node:53188) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/documentsView.test.tsx (7 tests) 901ms
+   ✓ Документы: the views > types into the search: the URL follows after a pause, with the older `query` replaced by `q`  396ms
+(node:53198) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/graph.test.tsx (11 tests) 1000ms
+ ✓ src/__tests__/workBoard.test.tsx (7 tests) 1011ms
+ ✓ src/__tests__/home.test.tsx (13 tests) 960ms
+(node:53216) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/publication.test.tsx (18 tests) 808ms
+ ✓ src/__tests__/docTree.test.tsx (13 tests) 827ms
+ ✓ src/__tests__/document.test.tsx (17 tests) 921ms
+ ✓ src/__tests__/docsOverview.test.tsx (12 tests) 829ms
+(node:53218) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/graphLayout.test.ts (14 tests) 1037ms
+   ✓ Knowledge map layout > lays out 200 nodes and 600 edges in well under 300 ms, without overlaps  382ms
+ ✓ src/__tests__/notFound.test.tsx (2 tests) 673ms
+   ✓ «Не найдено в документах» > names the missing words the server reports under the new label  410ms
+(node:53221) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/pages.test.tsx (12 tests) 679ms
+ ✓ src/__tests__/m563.test.tsx (4 tests) 550ms
+ ✓ src/__tests__/excerptTable.test.tsx (4 tests) 529ms
+   ✓ Excerpts from Markdown tables > shows the touched rows as a mini table under «Источники», the prose in quotes, never glued cells  348ms
+(node:53232) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:53234) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/shell.test.tsx (6 tests) 473ms
+ ✓ src/__tests__/answerMarkdown.test.tsx (15 tests) 503ms
+ ✓ src/__tests__/ui.test.tsx (21 tests) 472ms
+ ✓ src/__tests__/workProjects.test.tsx (5 tests) 323ms
+ ✓ src/__tests__/publications.test.tsx (10 tests) 327ms
+ ✓ src/__tests__/graphCanvas.test.tsx (16 tests) 442ms
+(node:53253) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+stderr | src/__tests__/header.test.tsx > Header: AI mode chip and demo tag > names the AI mode mock on every page
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/header.test.tsx > Header: AI mode chip and demo tag > names the AI mode internal_api on every page
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/header.test.tsx > Header: AI mode chip and demo tag > names the AI mode claude_cli on every page
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/__tests__/header.test.tsx > Header: AI mode chip and demo tag > names the AI mode disabled on every page
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+An update to Layout inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/__tests__/integrations.test.tsx (5 tests) 280ms
+(node:53252) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/header.test.tsx (8 tests) 391ms
+ ✓ src/__tests__/a11y.test.tsx (5 tests) 340ms
+ ✓ src/__tests__/documentDetails.test.tsx (2 tests) 43ms
+ ✓ src/__tests__/leaveGuardProgrammatic.test.tsx (3 tests) 79ms
+ ✓ src/__tests__/inlineDateLabel.test.tsx (2 tests) 58ms
+ ✓ src/__tests__/when.test.tsx (6 tests) 174ms
+ ✓ src/__tests__/ganttLib.test.ts (28 tests) 27ms
+(node:53276) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ src/__tests__/assistantApi.test.ts (5 tests) 17ms
+ ✓ src/__tests__/workLib.test.ts (13 tests) 6ms
+ ✓ src/__tests__/recentQuestions.test.ts (11 tests) 6ms
+ ✓ src/__tests__/workApi.test.ts (4 tests) 6ms
+ ✓ src/__tests__/rowFit.test.ts (4 tests) 2ms
+ ✓ src/__tests__/frontMatter.test.ts (8 tests) 3ms
+ ✓ src/__tests__/tokens.test.ts (5 tests) 3ms
+
+ Test Files  61 passed (61)
+      Tests  734 passed (734)
+   Start at  12:38:09
+   Duration  14.31s (transform 2.00s, setup 18.86s, collect 6.71s, tests 72.69s, environment 15.27s, prepare 2.77s)
+
+make check exit=0

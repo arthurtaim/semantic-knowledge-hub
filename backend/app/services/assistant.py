@@ -35,8 +35,10 @@ from app.domain.models import (
     AskResponse,
     Citation,
     DocStatus,
+    EvidenceGateSummary,
     ExcerptPart,
     ExcludedSource,
+    QueryRewriteSummary,
     ScopeStatus,
     SkillRef,
     SystemFact,
@@ -51,8 +53,13 @@ from app.domain.text import QueryTerm, reportable_terms, term_matches_text, toke
 from app.services.assistant_tools import ToolContext
 from app.services.attachments import Unit, format_locator
 from app.services.discovery import DiscoveryStore, SourceLink, acl_scope_key
+from app.services.evidence_gate import LOCAL_SUFFICIENCY as LOCAL_SUFFICIENCY
+from app.services.evidence_gate import SPECIFIC_TERM_SHARE as SPECIFIC_TERM_SHARE
+from app.services.evidence_gate import EvidenceGate, GateDecision, GateInput, forced
+from app.services.evidence_gate import local_insufficiency as local_insufficiency
 from app.services.external import ExternalEvidenceService, ExternalRetrieval
 from app.services.knowledge import KnowledgeService
+from app.services.query_rewrite import QueryRewriter, RewriteResult
 from app.services.search import corporate_scope
 
 if TYPE_CHECKING:
@@ -193,30 +200,18 @@ class _Prepared:
     index_generation: str = ""
     # cid → (Markdown body, section anchor) of a team passage: display of table excerpts only.
     sources: dict[str, tuple[str, str | None]] = field(default_factory=dict)
-
-
-def local_insufficiency(
-    passages: list[ContextPassage], terms: list[QueryTerm], matched: set[str]
-) -> str | None:
-    """Why the team documents alone do not look sufficient (policy LOCAL_SUFFICIENCY v1), or None.
-    Deterministic and explainable: it decides whether the external source is consulted at all."""
-    if not terms:
-        return None
-    if not passages:
-        return "no_local_passages"
-    unmatched = [t for t in terms if t.stem not in matched]
-    if any(t.is_entity_like for t in unmatched):
-        return "unmatched_entities"
-    if len(unmatched) * 3 > len(terms):
-        return "low_term_coverage"
-    # Words scattered over several documents are not an answer: one passage must cover ≥ 2/3 of the question.
-    best = max(
-        sum(1 for t in terms if term_matches_text(t, tokenize(f"{p.title} {p.section or ''} {p.text}")))
-        for p in passages
+    gate: GateDecision | None = None  # the local-first decision about the external source (Adaptive RAG)
+    rewrite: RewriteResult | None = (
+        None  # the model's phrasings of the question for the team search (Adaptive RAG)
     )
-    if best * 3 < len(terms) * 2:
-        return "no_single_local_passage"
-    return None
+
+
+def _interleave_all(lists: list[list[Any]]) -> list[Any]:
+    """Round-robin merge of several ranked lists (duplicates are dropped later, by document and section)."""
+    merged: list[Any] = []
+    for index in range(max((len(items) for items in lists), default=0)):
+        merged += [items[index] for items in lists if index < len(items)]
+    return merged
 
 
 def _interleave(first: list[Any], second: list[Any]) -> list[Any]:
@@ -247,6 +242,8 @@ class AssistantService:
         external: ExternalEvidenceService | None = None,
         discovery: DiscoveryStore | None = None,
         instructions_version: Callable[[], str] = lambda: "-",
+        gate: EvidenceGate | None = None,
+        rewriter: QueryRewriter | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._connector = connector
@@ -255,6 +252,11 @@ class AssistantService:
         self._external = external
         self._discovery = discovery
         self._instructions_version = instructions_version
+        # Adaptive RAG: decides whether Confluence is consulted for «Оба» (docs/ADAPTIVE_RAG.md). One instance per
+        # app: it holds the per-scope rate budget of external searches.
+        self._gate = gate or EvidenceGate()
+        # Adaptive RAG: the model's phrasings of a question asked in other words than the documents (§Query rewrite).
+        self._rewriter = rewriter or QueryRewriter()
         self._tool_loop: ToolLoop | None = None
         self._can_propose: Callable[[UserContext], bool] = lambda user: False
 
@@ -265,6 +267,10 @@ class AssistantService:
     @property
     def instructions_version(self) -> str:
         return self._instructions_version()
+
+    @property
+    def gate(self) -> EvidenceGate:
+        return self._gate
 
     def attach_tools(self, loop: ToolLoop, can_propose: Callable[[UserContext], bool]) -> None:
         """M5.7: enable the bounded tool loop (wired by the container; the workflows depend on this service)."""
@@ -305,7 +311,14 @@ class AssistantService:
         Provider errors become an `error` event. Closing the iterator cancels the generation."""
         yield {"type": "status", "stage": "retrieving"}
         try:
-            prepared = await self._prepare(user, req, extras)
+            prepared: _Prepared | None = None
+            async with contextlib.aclosing(self._prepare_events(user, req, extras)) as preparing:
+                async for step in preparing:
+                    if isinstance(step, dict):
+                        yield step  # «проверяю полноту» / «ищу недостающее во внешнем источнике»
+                    else:
+                        prepared = step
+            assert prepared is not None
             if self.tool_mode(extras):
                 outcome: LoopOutcome | None = None
                 async with contextlib.aclosing(self._tool_events(user, req, prepared)) as loop_events:
@@ -397,6 +410,7 @@ class AssistantService:
                 history=prepared.options.history,
                 context_note=await self._context_note(user, req),
                 mode=self._provider.mode,
+                evidence_gap=prepared.options.evidence_gap,
             )
         ) as events:
             async for event in events:
@@ -566,6 +580,19 @@ class AssistantService:
         )
 
     async def _prepare(self, user: UserContext, req: AskRequest, extras: AskExtras = NO_EXTRAS) -> _Prepared:
+        prepared: _Prepared | None = None
+        async with contextlib.aclosing(self._prepare_events(user, req, extras)) as preparing:
+            async for step in preparing:
+                if not isinstance(step, dict):
+                    prepared = step
+        assert prepared is not None  # the preparation always ends with its result or raises
+        return prepared
+
+    async def _prepare_events(
+        self, user: UserContext, req: AskRequest, extras: AskExtras = NO_EXTRAS
+    ) -> AsyncGenerator[dict[str, Any] | _Prepared, None]:
+        """ONE preparation for /ask, /ask/stream and the tool loop (the same decisions, external calls and context):
+        progress events for the stream, then the `_Prepared` result last."""
         if self._provider.mode == "disabled":
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
@@ -585,10 +612,13 @@ class AssistantService:
         passages: list[ContextPassage] = []
         excluded: list[ExcludedSource] = []
         matched_terms: set[str] = set()
+        frequency: list[int] = []  # per term: eligible team documents that contain it (LOCAL_SUFFICIENCY v2)
+        eligible = 0
         # Attachments have their own (already bounded) budget: they never crowd out the team documents.
         budget = self._max_context_chars - sum(len(p.text) for p in extras.attachments)
         seen: set[tuple[str, str]] = set()
         snapshot: KnowledgeSnapshot | None = None
+        rewrite: RewriteResult | None = None
 
         def next_cid() -> str:
             return f"C{len(passages) + 1}"
@@ -605,7 +635,14 @@ class AssistantService:
             snapshot = await self._knowledge.snapshot(user)
             search = self._knowledge.search_provider
             team_filters = SearchFilters(statuses=frozenset(s.value for s in allowed))
-            selected, _ranked = self._knowledge.retrieval.passages(
+            for (
+                term
+            ) in terms:  # first: which words occur in no eligible document (the rewrite trigger, v2 rule)
+                containing = search.matching_document_ids(term, team_filters)
+                frequency.append(len(containing))
+                if containing:
+                    matched_terms.add(term.stem)
+            selected, ranked = self._knowledge.retrieval.passages(
                 snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
             )
             if own is not analysis:
@@ -613,6 +650,41 @@ class AssistantService:
                     snapshot, own, team_filters, max_passages=MAX_PASSAGES
                 )
                 selected = _interleave(own_selected, selected)
+            original_keys = {(p.document.id, p.section_anchor or "") for p in selected}
+            if self._rewriter.enabled_for(self._provider):
+                trigger = self._rewriter.trigger(
+                    own_terms=own.terms, matched=matched_terms, has_passages=bool(selected)
+                )
+                rewrite = RewriteResult(mode=self._rewriter.settings.mode, trigger=None)
+                if trigger is not None:
+                    yield {"type": "status", "stage": "retrieving", "step": "rewriting"}
+                    vocabulary = tuple(
+                        dict.fromkeys(
+                            d.title for h in ranked if (d := snapshot.get(h.document_id)) is not None
+                        )
+                    )
+                    rewrite = await self._rewriter.rewrite(
+                        self._provider,
+                        question=req.question,
+                        referent=req.history[-1].question if req.history else "",
+                        own_terms=own.terms,
+                        matched=set(matched_terms),
+                        vocabulary=vocabulary,
+                        trigger=trigger,
+                    )
+                    # The SAME authorized search (statuses, the reader's snapshot) with each phrasing; the original
+                    # question's passages keep the first places of the merged, bounded selection.
+                    found = [
+                        self._knowledge.retrieval.passages(
+                            snapshot,
+                            self._knowledge.retrieval.analyze(query),
+                            team_filters,
+                            max_passages=MAX_PASSAGES,
+                        )[0]
+                        for query in rewrite.queries
+                    ]
+                    if found:
+                        selected = _interleave_all([selected, *found])
             team_count = 0
             for passage in selected:
                 doc = passage.document
@@ -641,9 +713,9 @@ class AssistantService:
                         suspicious=suspicious,
                     )
                 )
-            for term in terms:
-                if search.matching_document_ids(term, team_filters):
-                    matched_terms.add(term.stem)
+                if rewrite is not None and key not in original_keys:
+                    rewrite.added_passages += 1
+            eligible = sum(1 for d in snapshot.documents.values() if d.status in allowed)
             excluded = self._excluded_sources(snapshot_docs=snapshot, terms=terms, statuses=excluded_statuses)
             scopes.append(
                 ScopeStatus(
@@ -653,30 +725,76 @@ class AssistantService:
 
         mode = "local_only"
         external_result: ExternalRetrieval | None = None
+        gate: GateDecision | None = None
         if "corporate" in req.sources and self._external is not None and self._external.enabled:
             connector_status = await self._connector.status()
             mode = "external" if "team" not in req.sources else "local_then_external"
-            reason = (
-                "external_scope_selected"
-                if mode == "external"
-                else "explicit_request"
-                if req.search_external
-                else local_insufficiency(passages, terms, matched_terms)
-            )
-            if reason is None:
+            # Who decides (docs/ADAPTIVE_RAG.md): the user's choice is a hard server policy; otherwise the local-first
+            # gate — one small model decision, or LOCAL_SUFFICIENCY v2 for providers without the capability.
+            if mode == "external":
+                gate = forced("external_scope_selected", self._gate.policy_label)
+            elif req.search_external:
+                gate = forced("explicit_request", self._gate.policy_label)
+            else:
+                if self._gate.will_call_model(self._provider, passages):
+                    yield {"type": "status", "stage": "retrieving", "step": "assessing"}
+                gate = await self._gate.decide(
+                    self._provider,
+                    user,
+                    GateInput(
+                        question=req.question,
+                        referent=req.history[-1].question if req.history else "",
+                        passages=list(passages),
+                        terms=terms,
+                        own_terms=own.terms,
+                        matched=set(matched_terms),
+                        frequency=frequency,
+                        eligible=eligible,
+                    ),
+                )
+                warnings.extend(gate.warnings)
+            if not gate.search:
                 scopes.append(
                     ScopeStatus(
                         scope="corporate",
                         state=connector_status.state,
-                        message="Не понадобились: в документах команды найдено достаточно подтверждений.",
+                        message=(
+                            "Не запрашивались: исчерпан лимит обращений к внешнему источнику."
+                            if gate.reason == "external_budget_exhausted"
+                            else "Не понадобились: в документах команды найдено достаточно подтверждений."
+                            if gate.decision == "sufficient"
+                            else "Не запрашивались: полноту документов команды проверить не удалось."
+                        ),
                     )
                 )
             else:
+                yield {"type": "status", "stage": "retrieving", "step": "external"}
                 snapshot_for_dedup = await self._knowledge.snapshot(user)
+                # Focused queries (the gap, not the whole prompt) also decide which candidates and fragments are
+                # relevant; the question's own terms stay the intent of the discovery memory.
+                focus = [self._knowledge.retrieval.analyze(q).terms for q in gate.queries] or None
                 external_result = await self._external.retrieve(
-                    user, req.question, terms, snapshot_for_dedup, trigger=reason
+                    user,
+                    req.question,
+                    terms,
+                    snapshot_for_dedup,
+                    trigger=gate.reason,
+                    queries=gate.queries,
+                    focus=focus,
                 )
                 warnings.extend(external_result.warnings)
+                if external_result.outcome in ("no_match", "insufficient_evidence", "denied"):
+                    # A bounded search of a partial view: never «it is not in Confluence».
+                    looked = external_result.fetched + external_result.cache_hits
+                    warnings.append(
+                        "Во внешнем источнике не удалось подтвердить недостающие сведения"
+                        + (
+                            f" (просмотрено страниц: {looked})"
+                            if looked
+                            else ": подходящих доступных страниц нет"
+                        )
+                        + "; это не значит, что их там нет."
+                    )
                 scopes.append(
                     ScopeStatus(
                         scope="corporate",
@@ -774,7 +892,10 @@ class AssistantService:
         own_stems = {t.stem for t in own.terms}
         unmatched = [t for t in terms if t.stem not in matched_terms and t.stem in own_stems]
         history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
-        return _Prepared(
+        # The gap the check found is DATA for the answering model (never evidence, never shown as a fact): it must say
+        # «не подтверждено» instead of filling the gap. Only when it led to an external search.
+        gap = gate.missing if gate is not None and gate.search else ()
+        yield _Prepared(
             terms=terms,
             unmatched=unmatched,
             passages=passages,
@@ -787,12 +908,15 @@ class AssistantService:
                 history=history,
                 compare_terms=extras.compare_terms,
                 context_terms=[t for t in terms if t.stem not in own_stems],
+                evidence_gap=tuple(neutralize_citation_markers(m) for m in gap),
             ),
             normalized_query=analysis.normalized,
             mode=mode,
             external=external_result,
             index_generation=f"g{self._knowledge.generation}",
             sources=sources,
+            gate=gate,
+            rewrite=rewrite,
         )
 
     def _record(
@@ -810,6 +934,12 @@ class AssistantService:
         response.index_generation = prepared.index_generation
         response.instructions_version = self._instructions_version()
         response.external = prepared.external.summary() if prepared.external else None
+        if prepared.rewrite is not None:
+            response.query_rewrite = QueryRewriteSummary.model_validate(prepared.rewrite.summary())
+        if prepared.gate is not None:
+            response.evidence_gate = EvidenceGateSummary.model_validate(prepared.gate.summary())
+            if prepared.gate.incomplete and response.confidence == "supported":
+                response.confidence = "partial"  # completeness of a local-only answer was not checked
         response.skill = extras.skill
         if self._discovery is None:
             return response

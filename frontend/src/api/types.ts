@@ -581,8 +581,17 @@ export type ExternalTrigger =
   | "no_local_passages"
   | "unmatched_entities"
   | "low_term_coverage"
+  | "no_single_local_source"
+  | "specific_terms_not_covered"
   | "external_scope_selected"
-  | "explicit_request";
+  | "explicit_request"
+  // Adaptive RAG (docs/ADAPTIVE_RAG.md): the local-first evidence gate.
+  | "evidence_gap"
+  | "model_uncertain"
+  | "decision_invalid";
+
+/** What can honestly be said about the external source for one answer (never «it is not there»). */
+export type ExternalOutcome = "found" | "no_match" | "insufficient_evidence" | "denied" | "source_unavailable";
 
 /** How the external source (Confluence through MCP) took part in one answer. */
 export interface ExternalRetrievalSummary {
@@ -597,6 +606,46 @@ export interface ExternalRetrievalSummary {
   degraded: boolean;
   elapsed_ms: number;
   policy_version: string;
+  /** Adaptive RAG (additive): outcome, MCP searches and whether the gate's focused queries were used. */
+  outcome?: ExternalOutcome | null;
+  searches?: number;
+  focused?: boolean;
+}
+
+/** Adaptive RAG, query rewrite: the model's phrasings of a question asked in other words than the documents. */
+export interface QueryRewriteSummary {
+  mode: string;
+  trigger: string | null;
+  called: boolean;
+  model_calls: number;
+  repaired: boolean;
+  error: string | null;
+  queries: number;
+  rejected: number;
+  added_passages: number;
+  elapsed_ms: number;
+}
+
+/** Adaptive RAG: how the answer decided whether to consult the external source (codes and counts only). */
+export interface EvidenceGateSummary {
+  policy: string;
+  decision: "sufficient" | "need_external" | "uncertain" | "invalid" | "not_assessed";
+  reason: string;
+  external_called: boolean;
+  model_calls: number;
+  repaired: boolean;
+  error: string | null;
+  fallback: string | null;
+  lexical: string | null;
+  cards: number;
+  evidence: number;
+  missing: number;
+  queries: number;
+  queries_rejected: number;
+  incomplete: boolean;
+  /** What the server normalized in the model's reply (e.g. known_truncated): codes only, never content. */
+  normalized?: string[];
+  elapsed_ms: number;
 }
 
 export interface AskResponse {
@@ -613,6 +662,9 @@ export interface AskResponse {
   index_generation?: string | null;
   instructions_version?: string | null;
   external?: ExternalRetrievalSummary | null;
+  evidence_gate?: EvidenceGateSummary | null;
+  /** Adaptive RAG: whether the model rephrased the question for the team search (codes and counts only). */
+  query_rewrite?: QueryRewriteSummary | null;
   /** UI v2: the skill used (null for a plain question). */
   skill?: AskSkillRef | null;
   /** UI v2: the proposal a workflow skill created — show it as a card with a link. M5.7: also a drafts_propose step. */
@@ -689,7 +741,11 @@ export interface AskStreamStatusEvent {
   passages?: number;
   provider?: AiMode;
   round?: number;
+  /** Adaptive RAG: what `retrieving` is doing now — checking the team documents' completeness, searching Confluence. */
+  step?: AskStreamRetrievalStep;
 }
+
+export type AskStreamRetrievalStep = "rewriting" | "assessing" | "external";
 
 /** M5.7: the backend is about to execute an allowlisted tool the model asked for. */
 export interface AskStreamToolCallEvent {

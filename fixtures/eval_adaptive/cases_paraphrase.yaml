@@ -1,0 +1,263 @@
+version: 1
+synthetic: true
+description: "Independent paraphrase questions: the question uses different words than the source (written from the corpus only)."
+cases:
+  # --- paraphrase_local: the answer is in an approved team document -------------------------
+  - id: AP-001
+    split: holdout
+    category: paraphrase_local
+    question: "Какой потолок по весу у одного события в нашей шине?"
+    expected: sufficient
+    facts:
+      - text: "не более 256 КБ"
+        source: DEMO-SRC-008
+    note: "«размер» → «потолок по весу», «Event Hub / транспорт событий» → «шина»; shared stem: «событ» (событие)"
+
+  - id: AP-002
+    split: holdout
+    category: paraphrase_local
+    question: "Сколько баллов совпадения нужно, чтобы в мастер-данных две позиции склеились в одну без ручного разбора?"
+    expected: sufficient
+    facts:
+      - text: "При 90 и выше карточки автоматически привязываются"
+        source: DEMO-SRC-006
+    note: "«mdm_match_score / сходство» → «баллы совпадения», «карточки автоматически привязываются к одной мастер-записи» → «позиции склеились в одну», «задача стюарду» → «без ручного разбора»; shared stem: «мастер»"
+
+  - id: AP-003
+    split: holdout
+    category: paraphrase_local
+    question: "Сколько этажей разрешено в дереве ARIS?"
+    expected: sufficient
+    facts:
+      - text: "не больше 7 уровней"
+        source: DEMO-SRC-002
+    note: "«глубина / уровни» → «этажи», «иерархия моделей / путь модели» → «дерево»; shared stem: «aris»"
+
+  - id: AP-004
+    split: holdout
+    category: paraphrase_local
+    question: "Как узнать, что столбец в ERP стёрли?"
+    expected: sufficient
+    facts:
+      - text: "просто отсутствует в следующем полном снимке"
+        source: DEMO-SRC-005
+    note: "«колонка» → «столбец», «удалённая / признак удаления» → «стёрли / как узнать»; shared stem: «erp»"
+
+  - id: AP-005
+    split: holdout
+    category: paraphrase_local
+    question: "Сколько суток помнится, что запись уже накатили, чтобы её копию выкинуть?"
+    expected: sufficient
+    facts:
+      - text: "зафиксирован не более 72 ч назад"
+        source: DEMO-INT-012
+    note: "«ключ идемпотентности в реестре» → «помнится», «72 ч» → «сутки», «применение» → «накатили», «дубликат отбрасывается» → «копию выкинуть»; shared stem: «запис» (запись)"
+
+  - id: AP-006
+    split: holdout
+    category: paraphrase_local
+    question: "Сколько выпусков должно пройти, прежде чем колонку, объявленную к выводу, можно выпилить совсем?"
+    expected: sufficient
+    facts:
+      - text: "не раньше релиза N+2"
+        source: DEMO-INT-016
+    note: "«окно устаревания 2 релиза» → «сколько выпусков», «поле помечено устаревшим (deprecated)» → «колонка, объявленная к выводу», «удалено» → «выпилить»; shared stem: «выпус» (doc: «выпускается»)"
+
+  - id: AP-007
+    split: holdout
+    category: paraphrase_local
+    question: "Какая перекачка должна отработать до того, как стартует CATIA?"
+    expected: sufficient
+    facts:
+      - text: "должен завершиться до запуска CATIA"
+        source: DEMO-INT-013
+    note: "«поток ERP → Semantic Layer / полная перезагрузка» → «перекачка», «завершиться» → «отработать», «запуск» → «стартует»; shared stem: «catia»"
+
+  - id: AP-008
+    split: holdout
+    category: paraphrase_local
+    question: "Сколько лет у нас живут ежемесячные бэкапы, прежде чем их подчистят?"
+    expected: sufficient
+    facts:
+      - text: "кандидатом на удаление через 36 месяцев"
+        source: DEMO-GOV-008
+    note: "«снимки Archive Store» → «бэкапы», «срок хранения 36 месяцев» → «сколько лет живут», «удаление» → «подчистят»; shared stem: «ежеме» (ежемесячный)"
+
+  - id: AP-009
+    split: holdout
+    category: paraphrase_local
+    question: "Как быстро должна быть улажена нестыковка между двумя официальными инструкциями?"
+    expected: sufficient
+    facts:
+      - text: "Срок разбора эскалации — 10 рабочих дней"
+        source: DEMO-GOV-007
+    note: "«противоречие / конфликт требований» → «нестыковка», «утверждённые документы» → «официальные инструкции», «срок разбора эскалации» → «как быстро улажена»; no shared stem"
+
+  - id: AP-010
+    split: holdout
+    category: paraphrase_local
+    question: "При подсчёте полноты идёт ли в зачёт ячейка, где стоит прочерк?"
+    expected: sufficient
+    facts:
+      - text: "считаются незаполненными"
+        source: DEMO-GOV-003
+    note: "«заглушки N/A, -, unknown» → «прочерк», «считаются незаполненными» → «идёт ли в зачёт», «атрибут / значение» → «ячейка»; shared stem: «полно» (полнота)"
+
+  - id: AP-011
+    split: holdout
+    category: paraphrase_local
+    question: "Можно ли приписывать к названию файла день выхода свежей редакции?"
+    expected: sufficient
+    facts:
+      - text: "в имени файла запрещены"
+        source: DEMO-GOV-009
+    note: "«дата» → «день выхода», «имя файла» → «название файла», «версия» → «редакция», «запрещены» → «можно ли приписывать»; shared stem: «файл»; the deprecated DEMO-GOV-013 states the opposite rule"
+
+  - id: AP-012
+    split: holdout
+    category: paraphrase_local
+    question: "Что произойдёт, если кто-то подредактирует копию в вики вручную?"
+    expected: sufficient
+    facts:
+      - text: "при следующей публикации перезаписываются"
+        source: DEMO-PROC-005
+    note: "«правки, сделанные прямо в Confluence» → «подредактирует копию в вики вручную», «обратно не синхронизируются и перезаписываются» → «что произойдёт»; no shared stem"
+
+  - id: AP-013
+    split: holdout
+    category: paraphrase_local
+    question: "Сколько длится перерасчёт сводки по процессам после очередной подгрузки?"
+    expected: sufficient
+    facts:
+      - text: "Пересборка занимает до 30 мин"
+        source: DEMO-SEM-009
+    note: "«датасет Process Overview» → «сводка по процессам», «инкрементальная пересборка» → «перерасчёт», «после каждого запуска потока ARIS → Catalog» → «после очередной подгрузки»; shared stem: «проце» (процесс)"
+
+  - id: AP-014
+    split: holdout
+    category: paraphrase_local
+    question: "Обрубается ли слишком развёрнутое наименование, когда его причёсывают?"
+    expected: sufficient
+    facts:
+      - text: "после нормализации не обрезается"
+        source: DEMO-SEM-008
+    note: "«название длиннее 255 символов» → «слишком развёрнутое наименование», «нормализация» → «причёсывают», «обрезается» → «обрубается»; no shared stem"
+
+  - id: AP-015
+    split: holdout
+    category: paraphrase_local
+    question: "How many times do we retry when the upstream is down before giving up?"
+    expected: sufficient
+    facts:
+      - text: "не более 5 повторных попыток"
+        source: DEMO-INT-011
+    note: "English question, Russian source: «источник недоступен (E-SRC-003)» → «upstream is down», «повторные попытки» → «retry», «уходит в dlq.metadata.v1» → «giving up»; shared stem: «retry» (doc: «(retry)»)"
+
+  - id: AP-016
+    split: holdout
+    category: paraphrase_local
+    question: "What naming style should a new entity follow in the conceptual layer — camel, snake?"
+    expected: sufficient
+    facts:
+      - text: "на английском в PascalCase и в единственном числе"
+        source: DEMO-PROC-004
+    note: "English question, Russian source: «сущность логической модели» → «entity in the conceptual layer», «имена сущностей (ЛМ-1)» → «naming style»; no shared stem"
+
+  - id: AP-017
+    split: holdout
+    category: paraphrase_local
+    question: "What does ADR stand for on the pipeline-health dashboards?"
+    expected: sufficient
+    facts:
+      - text: "Average Daily Rows"
+        source: DEMO-SRC-011
+    note: "English question: «Data Quality Monitor и его отчёты» → «pipeline-health dashboards»; trap: elsewhere ADR = Architecture Decision Record; shared stem: «adr»"
+
+  - id: AP-018
+    split: holdout
+    category: paraphrase_local
+    question: "Which process number is held back for QA and never handed out?"
+    expected: sufficient
+    facts:
+      - text: "зарезервирован для тестов и никогда не выдаётся"
+        source: DEMO-SEM-007
+    note: "English question, Russian source: «Process ID PRC-000000» → «process number», «зарезервирован для тестов» → «held back for QA», «не выдаётся» → «never handed out»; shared stem: «process» (doc: «Process ID»)"
+
+  # --- paraphrase_external: the fact is only on a visible wiki page --------------------------
+  - id: AP-019
+    split: holdout
+    category: paraphrase_external
+    question: "Когда у нас мораторий на правки настроек потоков?"
+    expected: need_external
+    facts:
+      - text: "последние 2 рабочих дня каждого календарного месяца"
+        source: "confluence:200101"
+    missing: ["даты окна заморозки изменений метаданных"]
+    queries: ["окно заморозки изменений метаданных"]
+    external_page: "200101"
+    note: "«окно заморозки (change freeze)» → «мораторий», «изменение таблиц соответствия, порогов, расписаний» → «правки настроек»; shared stem: «поток»"
+
+  - id: AP-020
+    split: holdout
+    category: paraphrase_external
+    question: "Как скоро тревога по интеграциям переходит к подменяющему, если главный не откликнулся?"
+    expected: need_external
+    facts:
+      - text: "через 30 минут выполняется эскалация на резервного дежурного"
+        source: "confluence:200102"
+    missing: ["через сколько минут эскалация на резервного дежурного"]
+    queries: ["эскалация на резервного дежурного", "ротация дежурных ролей по интеграциям"]
+    external_page: "200102"
+    note: "«сигнал» → «тревога», «эскалация на резервного дежурного» → «переходит к подменяющему», «основной дежурный не подтвердил сигнал» → «главный не откликнулся»; shared stem: «интег»"
+
+  - id: AP-021
+    split: holdout
+    category: paraphrase_external
+    question: "На какой максимальный период внешнему приложению открывают чтение через API?"
+    expected: need_external
+    facts:
+      - text: "не более чем на 12 месяцев"
+        source: "confluence:200103"
+    missing: ["максимальный срок доступа системы-потребителя к Consumer API"]
+    queries: ["срок доступа к Consumer API", "заявка на доступ Consumer API"]
+    external_page: "200103"
+    note: "«доступ выдаётся системе-потребителю» → «внешнему приложению открывают чтение», «не более чем на 12 месяцев» → «максимальный период»; shared stem: «api»"
+
+  - id: AP-022
+    split: holdout
+    category: paraphrase_external
+    question: "Какой гриф доступа достаётся только что заведённой позиции в реестре метаданных, если не выставить вручную?"
+    expected: need_external
+    facts:
+      - text: "класс по умолчанию — internal"
+        source: "confluence:200104"
+    missing: ["класс чувствительности новой записи каталога по умолчанию"]
+    queries: ["классы чувствительности метаданных", "sensitivity_class по умолчанию"]
+    external_page: "200104"
+    note: "«класс чувствительности» → «гриф доступа», «новая запись каталога» → «только что заведённая позиция в реестре», «по умолчанию» → «если не выставить вручную»; shared stem: «метад» (метаданные)"
+
+  - id: AP-023
+    split: holdout
+    category: paraphrase_external
+    question: "Сколько строк минимум должно пройти через стенд при сверке соответствий, прежде чем выкатывать связку в прод?"
+    expected: need_external
+    facts:
+      - text: "на тестовом пакете не менее 200 записей"
+        source: "confluence:200105"
+    missing: ["минимальный размер тестового пакета перед вводом интеграции в эксплуатацию"]
+    queries: ["чек-лист ввода новой интеграции в эксплуатацию", "пробный прогон маппинга тестовый пакет"]
+    external_page: "200105"
+    note: "«маппинг проверен пробным прогоном на тестовом пакете» → «пройти через стенд при сверке соответствий», «записи» → «строки», «ввод в эксплуатацию (go-live) нового потока» → «выкатывать связку в прод»; no shared stem"
+
+  - id: AP-024
+    split: holdout
+    category: paraphrase_external
+    question: "Как скоро после починки аварии с качеством данных должна пройти ретроспектива?"
+    expected: need_external
+    facts:
+      - text: "не позднее 5 рабочих дней после закрытия инцидента"
+        source: "confluence:200107"
+    missing: ["срок разбора инцидента качества данных после закрытия"]
+    queries: ["разбор инцидентов качества данных", "post-incident review срок"]
+    external_page: "200107"
+    note: "«разбор инцидента (post-incident review)» → «ретроспектива», «закрытие инцидента» → «починка аварии»; shared stem: «качес» (качество)"

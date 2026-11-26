@@ -1,6 +1,14 @@
 import { useSyncExternalStore } from "react";
 import { ApiError, api, isCancelled } from "../api/client";
-import type { AskRequest, AskResponse, AskStreamEvent, StoredConversation, StoredTurn, StoredTurnRequest } from "../api/types";
+import type {
+  AskRequest,
+  AskResponse,
+  AskStreamEvent,
+  AskStreamRetrievalStep,
+  StoredConversation,
+  StoredTurn,
+  StoredTurnRequest,
+} from "../api/types";
 import type { Turn, TurnDisplay } from "../components/AssistantTurn";
 import { pluralRu } from "./labels";
 import { toolActivity } from "./systemFacts";
@@ -227,6 +235,13 @@ export function toApiError(err: unknown): ApiError {
   return err instanceof ApiError ? err : new ApiError(0, "client_error", String(err), null);
 }
 
+/** Adaptive RAG: one short line of what the retrieval is doing (no model output, no queries). */
+export const RETRIEVAL_ACTIVITY: Record<AskStreamRetrievalStep, string> = {
+  rewriting: "Ищу в документах команды другими словами…",
+  assessing: "Проверяю, хватает ли сведений в документах команды…",
+  external: "Ищу недостающее во внешнем источнике (Confluence)…",
+};
+
 function onStreamEvent(id: string, turnId: number, event: AskStreamEvent): void {
   if (event.type === "status") {
     patchTurn(id, turnId, (turn) =>
@@ -239,7 +254,7 @@ function onStreamEvent(id: string, turnId: number, event: AskStreamEvent): void 
             // M5.7: every model round after the first starts a NEW preliminary text — never glue rounds together.
             preliminary: (event.round ?? 1) > 1 ? "" : turn.preliminary,
           }
-        : { phase: event.stage, activity: null },
+        : { phase: event.stage, activity: event.stage === "retrieving" && event.step ? RETRIEVAL_ACTIVITY[event.step] : null },
     );
   } else if (event.type === "delta") {
     patchTurn(id, turnId, (turn) => ({ preliminary: turn.preliminary + event.text }));

@@ -76,7 +76,8 @@ def test_external_only_page_is_cited_without_importing_it(ext_client: TestClient
         "no_local_passages",
         "unmatched_entities",
         "low_term_coverage",
-        "no_single_local_passage",
+        "no_single_local_source",  # LOCAL_SUFFICIENCY v2 (v1: no_single_local_passage)
+        "specific_terms_not_covered",
     )
     assert answer["retrieval_trace_id"].startswith("TRACE-")
     # the curated knowledge base is untouched
@@ -329,3 +330,32 @@ def test_mock_corpus_is_separate_from_the_curated_base() -> None:
     seen = asyncio.run(visible())
     assert "200119" not in seen  # SEC space is not allowlisted
     assert "200118" not in seen  # restricted to another user
+
+
+# --- LOCAL_SUFFICIENCY v2 (reports/retrieval-quality/) ---------------------------------------------------------
+LIMIT_QUESTION = "Какой лимит размера пакета выгрузки CATIA?"
+
+
+def test_topical_local_documents_without_the_asked_value_consult_the_external_source(
+    ext_client: TestClient,
+) -> None:
+    """v1 failed: the CATIA flow documents cover «размер», «пакет», «выгрузка», «CATIA», so v1 judged them sufficient
+    although no team document states a LIMIT; the mock page with the limit was never consulted."""
+    answer = ask(ext_client, LIMIT_QUESTION)
+    assert answer["external"]["called"] and answer["external"]["trigger"] == "specific_terms_not_covered"
+    cited = external_citations(answer)
+    assert "200115" in {c["document_id"] for c in cited}
+    assert "строк" in " ".join(c["excerpt"] for c in cited)  # the limit itself comes from the page
+
+
+def test_local_only_never_calls_the_external_source(ext_client: TestClient) -> None:
+    answer = ask(ext_client, LIMIT_QUESTION, sources=["team"])
+    assert answer["external"] is None
+    assert all(c["source_kind"] != "confluence_mcp" for c in answer["citations"])
+
+
+def test_sufficient_local_evidence_makes_no_external_call(ext_client: TestClient) -> None:
+    answer = ask(ext_client, "Сколько месяцев хранится снимок Archive Store?")
+    assert answer["external"] is None
+    assert "DEMO-GOV-008" in {c["document_id"] for c in answer["citations"]}
+    assert "36 месяцев" in " ".join(c["excerpt"] for c in answer["citations"])

@@ -53,6 +53,12 @@ verbatim quote, an implementation task with a subtask, a check and a milestone (
 cycle; «неизвестн» — a dependency on an unknown local id; «галлюцин» — an assignee, dates, an invented source and a
 non-verbatim quote; «сломанный формат» — not JSON; «упади» — the model fails.
 
+Adaptive RAG query rewrite (app/adapters/ai/rewrite_protocol.py): no phrasing, unless the question says «другими
+словами» (then one phrasing from the first offered document title).
+
+Adaptive RAG evidence-gap check (app/adapters/ai/gap_protocol.py), keyed by the QUESTION: «сломанный формат» — prose,
+then valid after the repair note; «требован» / «лимит» — need_external with a short query; otherwise sufficient (E1).
+
 Template Studio «Создать с помощью AI» (app/adapters/ai/template_protocol.py), keyed by the REQUEST text:
 
 | request contains | reply |
@@ -821,8 +827,69 @@ def work_plan_script(prompt: str) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+GAP_STOPWORDS = {
+    "какие",
+    "какой",
+    "какая",
+    "каких",
+    "чего",
+    "как",
+    "что",
+    "для",
+    "при",
+    "через",
+    "или",
+    "есть",
+    "все",
+}
+
+
+def gap_script(prompt: str) -> str:
+    """Adaptive RAG evidence-gap check (app/adapters/ai/gap_protocol.py), keyed by the QUESTION text:
+    «сломанный формат» — prose first, valid JSON after the server's repair note; «требован» / «лимит» — need_external
+    with a short query of the question's content words (identifiers kept by the server); otherwise «sufficient»
+    citing E1 (or «uncertain» without cards)."""
+    match = re.search(r"<<<QUESTION>>>\n(.*?)\n<<<END QUESTION>>>", prompt, re.S)
+    question = match.group(1) if match else ""
+    folded = question.casefold()
+    if "сломанный формат" in folded and "предыдущий ответ отклонён" not in prompt:
+        return "Да, документов достаточно."
+    if "требован" in folded or "лимит" in folded:
+        words = [
+            w for w in re.findall(r"[\w-]+", question) if len(w) > 2 and w.casefold() not in GAP_STOPWORDS
+        ]
+        return json.dumps(
+            {
+                "decision": "need_external",
+                "missing": ["сведения, о которых спрашивают, в документах команды не указаны"],
+                "search_queries": [" ".join(words[:6])],
+                "evidence_ids": ["E1"] if "<<<E1>>>" in prompt else [],
+            },
+            ensure_ascii=False,
+        )
+    if "<<<E1>>>" in prompt:
+        return json.dumps({"decision": "sufficient", "evidence_ids": ["E1"]})
+    return json.dumps({"decision": "uncertain"})
+
+
+def rewrite_script(prompt: str) -> str:
+    """Adaptive RAG query rewrite (app/adapters/ai/rewrite_protocol.py): no phrasing by default (the search runs as
+    before); «другими словами» in the question → one phrasing made of the document titles the server offered."""
+    question = re.search(r"<<<QUESTION>>>\n(.*?)\n<<<END QUESTION>>>", prompt, re.S)
+    if question and "другими словами" in question.group(1).casefold():
+        titles = re.findall(r"^- (.+)$", prompt, re.M)
+        return json.dumps(
+            {"queries": [" ".join(titles[0].split()[:6])] if titles else []}, ensure_ascii=False
+        )
+    return json.dumps({"queries": []})
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
+    if "Режим оценки полноты SKH" in system:
+        return gap_script(prompt)
+    if "Режим переформулировки запроса SKH" in system:
+        return rewrite_script(prompt)
     if "Режим системных инструментов SKH" in system:
         return tool_script(parse_round(system, prompt))
     if "Режим проектирования шаблона SKH" in system:
@@ -838,11 +905,17 @@ class Recorder:
     """What the backend sent (system prompts and user messages), for assertions."""
 
     calls: list[tuple[str, str]] = field(default_factory=list)
+    # Adaptive RAG auxiliary calls (query rewrite, evidence gap): recorded apart from the answer / tool-loop calls.
+    aux: list[tuple[str, str]] = field(default_factory=list)
+
+    def record(self, system: str, prompt: str) -> None:
+        auxiliary = system.startswith(("Режим переформулировки запроса SKH.", "Режим оценки полноты SKH."))
+        (self.aux if auxiliary else self.calls).append((system, prompt))
 
 
 def _openai_response(system: str, prompt: str, recorder: Recorder | None) -> tuple[int, dict[str, Any]]:
     if recorder is not None:
-        recorder.calls.append((system, prompt))
+        recorder.record(system, prompt)
     try:
         text = reply(system, prompt, "openai")
     except ScriptedFailure:
@@ -852,7 +925,7 @@ def _openai_response(system: str, prompt: str, recorder: Recorder | None) -> tup
 
 def _claude_events(system: str, prompt: str, recorder: Recorder | None) -> list[dict[str, Any]]:
     if recorder is not None:
-        recorder.calls.append((system, prompt))
+        recorder.record(system, prompt)
     try:
         text = reply(system, prompt, "claude")
     except ScriptedFailure:

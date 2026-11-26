@@ -1,0 +1,171 @@
+{
+ "need_external": {
+  "question (synthetic)": "Какой лимит размера пакета выгрузки CATIA в каталог?",
+  "confidence": "supported",
+  "evidence_gate": {
+   "policy": "semantic-v1",
+   "decision": "need_external",
+   "reason": "evidence_gap",
+   "external_called": true,
+   "model_calls": 1,
+   "repaired": false,
+   "error": null,
+   "fallback": null,
+   "lexical": "specific_terms_not_covered",
+   "cards": 4,
+   "evidence": 2,
+   "missing": 1,
+   "queries": 1,
+   "queries_rejected": 0,
+   "incomplete": false,
+   "elapsed_ms": 5.79
+  },
+  "external": {
+   "called": true,
+   "trigger": "evidence_gap",
+   "outcome": "found",
+   "searches": 1,
+   "focused": true,
+   "candidates": 10,
+   "fetched": 0,
+   "cache_hits": 2,
+   "mcp_calls": 1,
+   "fragments": 3,
+   "rejected": [
+    {
+     "page_id": "200112",
+     "version": "2",
+     "reason": "duplicate_of:DEMO-INT-013"
+    },
+    {
+     "page_id": "200109",
+     "version": "1",
+     "reason": "irrelevant_text"
+    }
+   ],
+   "degraded": false,
+   "elapsed_ms": 3.91,
+   "policy_version": "ext-v1"
+  },
+  "citations": [
+   {
+    "ref": 1,
+    "source_kind": "local_markdown",
+    "document_id": "DEMO-INT-004",
+    "title": "CATIA → Catalog: обзор потока (демо)",
+    "revision": "sha256:28210a6bedc1889b",
+    "status": "approved",
+    "external_status": null,
+    "source_id": "local:DEMO-INT-004"
+   }
+  ],
+  "warnings": [],
+  "scopes": [
+   {
+    "scope": "team",
+    "state": "connected",
+    "message": "Локальный workspace с демо-документами."
+   },
+   {
+    "scope": "corporate",
+    "state": "mock",
+    "message": "Mock-коннектор: синтетические страницы, не настоящий Confluence."
+   }
+  ]
+ },
+ "sufficient": {
+  "question (synthetic)": "Как часто метаданные ARIS обновляются в каталоге?",
+  "confidence": "supported",
+  "evidence_gate": {
+   "policy": "semantic-v1",
+   "decision": "sufficient",
+   "reason": "local_sufficient",
+   "external_called": false,
+   "model_calls": 1,
+   "repaired": false,
+   "error": null,
+   "fallback": null,
+   "lexical": null,
+   "cards": 4,
+   "evidence": 3,
+   "missing": 0,
+   "queries": 0,
+   "queries_rejected": 0,
+   "incomplete": false,
+   "elapsed_ms": 4.53
+  },
+  "external": null,
+  "citations": [
+   {
+    "ref": 1,
+    "source_kind": "local_markdown",
+    "document_id": "DEMO-INT-013",
+    "title": "Расписание обновления метаданных",
+    "revision": "sha256:0ad81795ec256259",
+    "status": "approved",
+    "external_status": null,
+    "source_id": "local:DEMO-INT-013"
+   }
+  ],
+  "warnings": [],
+  "scopes": [
+   {
+    "scope": "team",
+    "state": "connected",
+    "message": "Локальный workspace с демо-документами."
+   },
+   {
+    "scope": "corporate",
+    "state": "mock",
+    "message": "Не понадобились: в документах команды найдено достаточно подтверждений."
+   }
+  ]
+ },
+ "stream_need_external": {
+  "status_events": [
+   {
+    "type": "status",
+    "stage": "retrieving"
+   },
+   {
+    "type": "status",
+    "stage": "retrieving",
+    "step": "assessing"
+   },
+   {
+    "type": "status",
+    "stage": "retrieving",
+    "step": "external"
+   },
+   {
+    "type": "status",
+    "stage": "generating",
+    "round": 1,
+    "passages": 9,
+    "provider": "internal_api"
+   },
+   {
+    "type": "status",
+    "stage": "validating"
+   }
+  ],
+  "final_evidence_gate": {
+   "policy": "semantic-v1",
+   "decision": "need_external",
+   "reason": "evidence_gap",
+   "external_called": true,
+   "model_calls": 1,
+   "repaired": false,
+   "error": null,
+   "fallback": null,
+   "lexical": "specific_terms_not_covered",
+   "cards": 4,
+   "evidence": 2,
+   "missing": 1,
+   "queries": 1,
+   "queries_rejected": 0,
+   "incomplete": false,
+   "elapsed_ms": 5.23
+  }
+ }
+}

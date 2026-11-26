@@ -236,7 +236,10 @@ by the REQUEST text (`e2e/workAi.spec.ts`).
 - No live model was evaluated here; tool choice by a real model is opt-in (`make knowledge-eval-live`, personal stack).
 - No native function calling; no deterministic fast path (not needed: the loop adds ~10–20 ms of backend work per
   count on the demo base; model latency dominates and roughly doubles for a count, which needs two rounds).
-- Confluence has no count tool on purpose (only partial search results exist). Tasks (M6) are read through
+- Confluence has no tool in the loop at all: whether an answer consults Confluence is decided ONCE before the loop by
+  the local-first evidence gate (`docs/ADAPTIVE_RAG.md`), so the stream, `/ask` and the loop never search twice; the
+  loop receives the external fragments as passages and the gap as data. No count tool either (only partial search
+  results exist). Tasks (M6) are read through
   `work_inspect` only; there is no task WRITE tool — an AI task plan is a typed proposal created and applied from the
   project UI (`docs/WORK_MANAGEMENT.md` §11).
 - The FTS index is shared by readers of one deployment; tools always intersect hits with the reader's snapshot.

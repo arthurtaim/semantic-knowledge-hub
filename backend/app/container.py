@@ -42,6 +42,7 @@ from app.services.attachments import AttachmentService, AttachmentStore
 from app.services.authoring import AuthoringService
 from app.services.conversations import ConversationLimits, ConversationService, ConversationStore
 from app.services.discovery import DiscoveryStore
+from app.services.evidence_gate import EvidenceGate, GateSettings
 from app.services.external import ExternalEvidenceService, ExternalLimits
 from app.services.graph import GraphService
 from app.services.integrations import IntegrationService
@@ -50,6 +51,7 @@ from app.services.links import LinkService
 from app.services.metadata import MetadataService
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
+from app.services.query_rewrite import QueryRewriter, RewriteSettings
 from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
@@ -438,6 +440,29 @@ def build_container(settings: Settings) -> Container:
         external=external,
         discovery=discovery,
         instructions_version=lambda: instructions.version,
+        gate=EvidenceGate(
+            GateSettings(
+                policy=settings.external_gate,
+                timeout_seconds=settings.external_gate_timeout_seconds,
+                cards=settings.external_gate_cards,
+                card_chars=settings.external_gate_card_chars,
+                context_chars=settings.external_gate_context_chars,
+                repair=settings.external_gate_repair,
+                invalid_fallback=settings.external_gate_invalid_fallback,
+                max_searches=settings.external_gate_max_searches,
+                rate_limit=settings.external_gate_rate_limit,
+                rate_window_seconds=settings.external_gate_rate_window_seconds,
+                ask_known=settings.external_gate_request_known,
+            )
+        ),
+        rewriter=QueryRewriter(
+            RewriteSettings(
+                mode=settings.query_rewrite,
+                timeout_seconds=settings.query_rewrite_timeout_seconds,
+                max_queries=settings.query_rewrite_max_queries,
+                vocabulary=settings.query_rewrite_vocabulary,
+            )
+        ),
     )
     proposal_service = ProposalService(
         store,

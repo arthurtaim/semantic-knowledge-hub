@@ -1,0 +1,416 @@
+{
+ "label": "claude_rw_adaptive_off",
+ "variant": "configured",
+ "split": "all",
+ "noise": 0,
+ "seed": null,
+ "settings": {
+  "ai_provider": "claude_cli",
+  "external_gate": "semantic",
+  "query_rewrite": "off"
+ },
+ "cases_file": "cases_adaptive.yaml",
+ "generated_at": "2026-11-26T15:11:20+00:00",
+ "aggregate": {
+  "cases": 40,
+  "errors": 40,
+  "decision_accuracy": null,
+  "decision_accuracy_given_context": null,
+  "false_external": 0,
+  "missed_external": 0,
+  "sufficient_cases": 0,
+  "need_external_cases": 0,
+  "confusion": {},
+  "context_ok": null,
+  "context_ok_n": "0/0",
+  "fact_coverage": 0.0,
+  "answer_fact_coverage": 0.0,
+  "external_page_recall": "0/0",
+  "invalid_citations": 0,
+  "leaks": 0,
+  "model_calls": 0,
+  "repairs": 0,
+  "invalid_decisions": 0,
+  "normalized_replies": 0,
+  "rewrite_calls": 0,
+  "rewrite_questions": 0,
+  "rewrite_with_added_passages": 0,
+  "rewrite_errors": 0,
+  "rewrite_ms_p50": null,
+  "rewrite_ms_p95": null,
+  "queries_rejected": 0,
+  "mcp_search": 0,
+  "mcp_get": 0,
+  "fetched": 0,
+  "gap_prompt_chars_mean": 0,
+  "gate_ms_p50": null,
+  "gate_ms_p95": null,
+  "latency_local_p50": null,
+  "latency_local_p95": null,
+  "latency_external_p50": null,
+  "latency_external_p95": null,
+  "unconfirmed_warning_when_nothing_found": "0/0"
+ },
+ "rows": [
+  {
+   "id": "AG-001",
+   "split": "dev",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2366.8,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"0f81a58694d54662abe9a399cd8553c8\"}"
+  },
+  {
+   "id": "AG-002",
+   "split": "holdout",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1704.74,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"2e05ea318ab84977bc6ba53695495d18\"}"
+  },
+  {
+   "id": "AG-003",
+   "split": "dev",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1840.43,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"6bc7c2aea8374dd287dec617864ac515\"}"
+  },
+  {
+   "id": "AG-004",
+   "split": "holdout",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2081.71,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"fcc109392dab44a5a724f2d0b960d50a\"}"
+  },
+  {
+   "id": "AG-005",
+   "split": "dev",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1860.06,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"cecb67377c054a71bc58fb2e5579116f\"}"
+  },
+  {
+   "id": "AG-006",
+   "split": "holdout",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2059.0,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"baa00f0743be4ee2b038516ac4e08b32\"}"
+  },
+  {
+   "id": "AG-007",
+   "split": "dev",
+   "category": "local_single",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1938.3,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"9c27b207ce354b02b5ba557a44151f4d\"}"
+  },
+  {
+   "id": "AG-008",
+   "split": "holdout",
+   "category": "local_multi",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1943.75,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"1fe23d558b534b12a6c3ea149b38f91c\"}"
+  },
+  {
+   "id": "AG-009",
+   "split": "dev",
+   "category": "local_multi",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2191.83,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"0d9f3d3ab7ff4c5ebe0ec0315cbae593\"}"
+  },
+  {
+   "id": "AG-010",
+   "split": "holdout",
+   "category": "local_multi",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2200.75,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"e7b062f84a86497db83d86ecf2d6af7c\"}"
+  },
+  {
+   "id": "AG-011",
+   "split": "dev",
+   "category": "local_multi",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1977.96,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"59a2c408df8b48658b274029fbe91705\"}"
+  },
+  {
+   "id": "AG-012",
+   "split": "holdout",
+   "category": "local_multi",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1939.1,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"c998ce12bb54460c9f2d3bdb4774e61e\"}"
+  },
+  {
+   "id": "AG-013",
+   "split": "holdout",
+   "category": "paraphrase",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2021.94,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"6487fb9f0dda4852bcecdfc675d48232\"}"
+  },
+  {
+   "id": "AG-014",
+   "split": "dev",
+   "category": "paraphrase",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2285.23,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"f8ec15f71d5b459aba494f24386e66d0\"}"
+  },
+  {
+   "id": "AG-015",
+   "split": "holdout",
+   "category": "paraphrase",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 1805.9,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"e0d31f7b75d943dfaa1577ef93b7f67f\"}"
+  },
+  {
+   "id": "AG-016",
+   "split": "dev",
+   "category": "paraphrase",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2150.17,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"ca5d16ad88ed4920a6a3cfdf1bfb5f3b\"}"
+  },
+  {
+   "id": "AG-017",
+   "split": "holdout",
+   "category": "paraphrase",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 2246.43,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"7de0356ad116432ba48dd7a9068876df\"}"
+  },
+  {
+   "id": "AG-018",
+   "split": "dev",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1924.8,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"9a42be29272842aba5ef8b31af75888d\"}"
+  },
+  {
+   "id": "AG-019",
+   "split": "holdout",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 2060.98,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"00e0c6efd1f146f09ff08a740b226802\"}"
+  },
+  {
+   "id": "AG-020",
+   "split": "dev",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1766.23,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"878977921435488e857233c39f1ee610\"}"
+  },
+  {
+   "id": "AG-021",
+   "split": "holdout",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1797.09,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"9ef41b14d30b46e7b59d06ecacfe8e8d\"}"
+  },
+  {
+   "id": "AG-022",
+   "split": "dev",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1743.49,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"87bb23dbade54fb9998f7baf2f852718\"}"
+  },
+  {
+   "id": "AG-023",
+   "split": "holdout",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1744.92,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"55fa5f3c06d94982a8581399471987a9\"}"
+  },
+  {
+   "id": "AG-024",
+   "split": "dev",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1831.83,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"cfb8455ab8124ea5a154490689ccdabc\"}"
+  },
+  {
+   "id": "AG-025",
+   "split": "holdout",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1832.3,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"8018530891ea41ffa1deccb237bd2870\"}"
+  },
+  {
+   "id": "AG-026",
+   "split": "dev",
+   "category": "gap",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1760.0,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"041090cfe67b4d7a96ef7131544fb01a\"}"
+  },
+  {
+   "id": "AG-027",
+   "split": "dev",
+   "category": "external_only",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1854.94,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"7845b78c35c5435893ccc529a0f92312\"}"
+  },
+  {
+   "id": "AG-028",
+   "split": "holdout",
+   "category": "external_only",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1942.44,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"10a38cba3dc340248875095e3e7ba289\"}"
+  },
+  {
+   "id": "AG-029",
+   "split": "dev",
+   "category": "external_only",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1913.02,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"a39b54808717470691c76fe77e76d2de\"}"
+  },
+  {
+   "id": "AG-030",
+   "split": "holdout",
+   "category": "external_only",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1876.86,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"0e702d9f8c2b400ab05502b0aa420952\"}"
+  },
+  {
+   "id": "AG-031",
+   "split": "dev",
+   "category": "external_only",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1810.01,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"387b56098a984eee8caa04e2707e539e\"}"
+  },
+  {
+   "id": "AG-032",
+   "split": "dev",
+   "category": "nowhere",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1758.78,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"1a58fdc6feb54656a959c1515560e3bb\"}"
+  },
+  {
+   "id": "AG-033",
+   "split": "holdout",
+   "category": "nowhere",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1728.14,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"1ddf500e8838469ea9c0796113d2d4ba\"}"
+  },
+  {
+   "id": "AG-034",
+   "split": "dev",
+   "category": "nowhere",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1752.23,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"349b5743651246a08bc48b09ca48c3e4\"}"
+  },
+  {
+   "id": "AG-035",
+   "split": "holdout",
+   "category": "nowhere",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1725.52,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"7796a17628554b6faf13a80cb7ba8f5a\"}"
+  },
+  {
+   "id": "AG-036",
+   "split": "dev",
+   "category": "restricted",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1738.88,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"1ebc4e5c068942d0a6213c88534fd43b\"}"
+  },
+  {
+   "id": "AG-037",
+   "split": "holdout",
+   "category": "restricted",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 1765.8,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"62f893831112430ea98297fe4e515ebc\"}"
+  },
+  {
+   "id": "AG-038",
+   "split": "holdout",
+   "category": "id_specific",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 888.32,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"dcda3439918e48298af7f20ae2c27341\"}"
+  },
+  {
+   "id": "AG-039",
+   "split": "dev",
+   "category": "id_specific",
+   "expected": "need_external",
+   "status": 503,
+   "latency_ms": 934.91,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"8ff16651b5d74e1e9139f666b2881356\"}"
+  },
+  {
+   "id": "AG-040",
+   "split": "holdout",
+   "category": "id_specific",
+   "expected": "sufficient",
+   "status": 503,
+   "latency_ms": 941.06,
+   "error": "{\"code\":\"ai_rate_limited\",\"message\":\"Лимит запросов подписки Claude исчерпан. Повторите позже.\",\"request_id\":\"ff445ae78c8b4c5d811ce6001c2dc411\"}"
+  }
+ ]
+}

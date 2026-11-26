@@ -401,19 +401,35 @@ class SqliteFtsSearchProvider:
             )
         return found
 
-    def search_chunks(self, terms: list[QueryTerm], filters: SearchFilters, limit: int) -> list[ChunkHit]:
-        if not terms:
+    def search_chunks(
+        self,
+        terms: list[QueryTerm],
+        filters: SearchFilters,
+        limit: int,
+        *,
+        document_ids: list[str] | None = None,
+    ) -> list[ChunkHit]:
+        if not terms or (document_ids is not None and not document_ids):
             return []
         where, params = self._filter_sql(filters, "chunks")
+        if document_ids is not None:
+            where += f" AND chunks.doc_id IN ({', '.join('?' for _ in document_ids)})"
+            params = [*params, *document_ids]
         sql = (
-            f"SELECT doc_id, section, anchor, text, bm25(chunks, {_CHUNK_WEIGHTS}) AS score FROM chunks "
+            f"SELECT doc_id, section, anchor, text, bm25(chunks, {_CHUNK_WEIGHTS}) AS score, "
+            f"CAST(ordinal AS INTEGER) FROM chunks "
             f"WHERE chunks MATCH ?{where} ORDER BY score, doc_id, CAST(ordinal AS INTEGER) LIMIT ?"
         )
         with self._lock:
             rows = self._conn.execute(sql, [fts_query(terms, mode="or"), *params, limit]).fetchall()
         return [
             ChunkHit(
-                document_id=r[0], section=r[1], section_anchor=r[2], text=r[3], score=round(-float(r[4]), 4)
+                document_id=r[0],
+                section=r[1],
+                section_anchor=r[2],
+                text=r[3],
+                score=round(-float(r[4]), 4),
+                ordinal=int(r[5]),
             )
             for r in rows
         ]

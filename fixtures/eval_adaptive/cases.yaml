@@ -1,0 +1,507 @@
+version: 1
+synthetic: true
+description: "Independent labelled questions for the local-first external-search decision (written from the corpus only)."
+# Labels were written from fixtures/knowledge/**/*.md (approved documents only) and
+# fixtures/confluence_mock/pages.yaml (visible spaces DEMO, ARCH, OPS without allowed_users).
+# Versioned (200115, 200117 numbers), deleted (200116) and revocable (200121) pages are not used
+# as the answer to a fact that could change; 200115 is avoided because DEMO-INT-004 / DEMO-SRC-003
+# state that CATIA has no separate batch size.
+cases:
+  # ------------------------------------------------------------------ local_single (7)
+  - id: AG-001
+    split: dev
+    category: local_single
+    question: "Во сколько раньше шла ночная полная выгрузка ARIS, которую потом заменили инкрементальным потоком?"
+    expected: sufficient
+    facts:
+      - text: "ночную полную выгрузку ARIS в 03:00"
+        source: DEMO-INT-001
+    note: "DEMO-INT-001 (approved) names the replaced nightly full export and its time; DEMO-INT-018 is deprecated and not needed."
+
+  - id: AG-002
+    split: holdout
+    category: local_single
+    question: "What is the maximum size of a single event published to Event Hub?"
+    expected: sufficient
+    facts:
+      - text: "не более 256 КБ"
+        source: DEMO-SRC-008
+    note: "DEMO-SRC-008 Constraints: one event is at most 256 KB; English question over a Russian document."
+
+  - id: AG-003
+    split: dev
+    category: local_single
+    question: "Может ли одна деталь CATIA в Dependency Graph числиться сразу в двух сборках?"
+    expected: sufficient
+    facts:
+      - text: "у узла не бывает двух родительских сборок одновременно"
+        source: DEMO-INT-005
+    note: "DEMO-INT-005 rule 4: a changed assembly replaces the previous edge, a node never has two parent assemblies."
+
+  - id: AG-004
+    split: holdout
+    category: local_single
+    question: "Сколько записей Consumer API отдаёт на одной странице и можно ли запросить страницу побольше?"
+    expected: sufficient
+    facts:
+      - text: "размер страницы фиксирован: 100 записей"
+        source: DEMO-INT-015
+      - text: "запросить больше нельзя"
+        source: DEMO-INT-015
+    note: "DEMO-INT-015 Constraints state the fixed page size and that a larger page cannot be requested."
+
+  - id: AG-005
+    split: dev
+    category: local_single
+    question: "Может ли участник с ролью demo-approver сам финально одобрить своё же предложение правки?"
+    expected: sufficient
+    facts:
+      - text: "не может финально одобрить собственное предложение"
+        source: DEMO-GOV-010
+    note: "DEMO-GOV-010 rule 2 answers it directly."
+
+  - id: AG-006
+    split: holdout
+    category: local_single
+    question: "Сколько времени отводится на разбор эскалации, когда два утверждённых документа противоречат друг другу?"
+    expected: sufficient
+    facts:
+      - text: "срок разбора эскалации — 10 рабочих дней"
+        source: DEMO-GOV-007
+    note: "DEMO-GOV-007 rule 9 gives the escalation deadline for a real conflict between approved documents."
+
+  - id: AG-007
+    split: dev
+    category: local_single
+    question: "Когда Data Quality Monitor формирует ежедневный сводный отчёт и за какой период в нём показан тренд полноты?"
+    expected: sufficient
+    facts:
+      - text: "формируется ежедневно в 07:00"
+        source: DEMO-SRC-011
+      - text: "с трендом полноты за 30 дней"
+        source: DEMO-SRC-011
+    note: "DEMO-SRC-011 Outputs: the daily summary report time and the 30-day completeness trend."
+
+  # ------------------------------------------------------------------ local_multi (5)
+  - id: AG-008
+    split: holdout
+    category: local_multi
+    question: "Сколько хранится история измерений датасета Source Coverage и сколько — ежемесячные снимки Archive Store?"
+    expected: sufficient
+    facts:
+      - text: "история хранится 90 дней"
+        source: DEMO-SEM-011
+      - text: "36 месяцев"
+        source: DEMO-GOV-008
+    note: "90 days only in DEMO-SEM-011 (Refresh Policy); 36 months only in DEMO-GOV-008 rule 8 (DEMO-SRC-010 repeats it but is in_review)."
+
+  - id: AG-009
+    split: dev
+    category: local_multi
+    question: "Сколько повторных попыток делает поток при недоступности источника и как долго реестр помнит уже обработанный ключ идемпотентности?"
+    expected: sufficient
+    facts:
+      - text: "не более 5 повторных попыток"
+        source: DEMO-INT-011
+      - text: "через 72 ч запись о ключе удаляется"
+        source: DEMO-INT-012
+    note: "Retry count in DEMO-INT-011 (no 72 h there); 72 h key retention in DEMO-INT-012 (no retry count there)."
+
+  - id: AG-010
+    split: holdout
+    category: local_multi
+    question: "Сколько примерно процессных объектов в репозитории ARIS и сколько записей максимум может забрать один запуск инкремента?"
+    expected: sufficient
+    facts:
+      - text: "около 12 000 процессных объектов"
+        source: DEMO-SRC-002
+      - text: "не более 40 пакетов (20 000 записей)"
+        source: DEMO-INT-001
+    note: "Repository size in DEMO-SRC-002 (not in DEMO-INT-001); the 40-batch / 20 000-record cap per run only in DEMO-INT-001."
+
+  - id: AG-011
+    split: dev
+    category: local_multi
+    question: "Если ночью после загрузки CATIA потерялось событие catalog_load_completed, когда связи активов с датасетами всё-таки догонятся? И во сколько стартует сама загрузка CATIA?"
+    expected: sufficient
+    facts:
+      - text: "ежедневная сверка в 03:45"
+        source: DEMO-INT-008
+      - text: "ежедневно в 02:30"
+        source: DEMO-INT-004
+    note: "Catch-up reconciliation at 03:45 only in DEMO-INT-008 (no 02:30 there); CATIA run time in DEMO-INT-004 (no 03:45 there)."
+
+  - id: AG-012
+    split: holdout
+    category: local_multi
+    question: "Какой формат должен быть у кода новой системы-источника и у идентификатора процесса process_id?"
+    expected: sufficient
+    facts:
+      - text: "от 2 до 8 заглавных латинских букв"
+        source: DEMO-PROC-003
+      - text: "ровно 6 цифр"
+        source: DEMO-SEM-007
+    note: "SYS- code format only in DEMO-PROC-003 (no PRC there); PRC- + 6 digits in DEMO-SEM-007 (no SYS- format there)."
+
+  # ------------------------------------------------------------------ paraphrase (5)
+  - id: AG-013
+    split: holdout
+    category: paraphrase
+    question: "Если система-источник не отвечает, сколько в сумме длятся паузы между повторами, прежде чем сообщение отправят в отстойник для недоставленных?"
+    expected: sufficient
+    facts:
+      - text: "полного цикла — 15 мин 30 с"
+        source: DEMO-INT-011
+    note: "Paraphrase: «не отвечает/паузы/отстойник» vs «недоступен/задержка/DLQ»; DEMO-INT-011 rule 3 states the total wait."
+
+  - id: AG-014
+    split: dev
+    category: paraphrase
+    question: "Насколько «несвежими» могут быть данные в витрине процессов, которую видят потребители?"
+    expected: sufficient
+    facts:
+      - text: "Process Overview — не старше 12 ч"
+        source: DEMO-GOV-005
+    note: "Paraphrase: «несвежие/витрина процессов» vs «актуальность/Process Overview»; DEMO-GOV-005 (also DEMO-SEM-009) states 12 h."
+
+  - id: AG-015
+    split: holdout
+    category: paraphrase
+    question: "Сколько записей из пачки ARIS должны оказаться годными, чтобы пачку не забраковали целиком?"
+    expected: sufficient
+    facts:
+      - text: "не менее 95 %"
+        source: DEMO-INT-003
+    note: "Paraphrase: «пачка/годные/забраковали» vs «пакет/прошли проверки/карантин»; DEMO-INT-003 rule 4."
+
+  - id: AG-016
+    split: dev
+    category: paraphrase
+    question: "Может ли номер процесса, освободившийся после вывода процесса из оборота, достаться какому-нибудь новому процессу?"
+    expected: sufficient
+    facts:
+      - text: "номер больше никогда не выдаётся"
+        source: DEMO-SEM-007
+    note: "Paraphrase of «без повторного использования» (DEMO-SEM-007 constraint 3: retired row, number never reissued)."
+
+  - id: AG-017
+    split: holdout
+    category: paraphrase
+    question: "Как MDM решает, склеивать ли две почти одинаковые карточки каналов из CRM самостоятельно или отдавать решение человеку?"
+    expected: sufficient
+    facts:
+      - text: "90 и выше — автоматическая привязка"
+        source: DEMO-INT-006
+      - text: "от 70 до 89 — задача стюарду"
+        source: DEMO-INT-006
+    note: "Paraphrase: «склеивать/человек» vs «сводит по mdm_match_score/стюард»; DEMO-INT-006 rule 3."
+
+  # ------------------------------------------------------------------ gap (9)
+  - id: AG-018
+    split: dev
+    category: gap
+    question: "Хотим поменять время запусков ARIS → Catalog в последний рабочий день месяца — как оформляется смена расписания и нет ли запрета на такие изменения в конце месяца?"
+    expected: need_external
+    facts:
+      - text: "только новой утверждённой версией этого документа"
+        source: DEMO-INT-013
+      - text: "последние 2 рабочих дня каждого календарного месяца"
+        source: confluence:200101
+    missing: ["окно заморозки изменений метаданных в конце месяца"]
+    queries: ["окно заморозки изменений метаданных", "change freeze расписание потоков конец месяца"]
+    external_page: "200101"
+    note: "DEMO-INT-013 states how a schedule changes; no approved doc mentions a freeze (grep заморозк|freeze|календарн: 0 hits). 200101 has status unknown."
+
+  - id: AG-019
+    split: holdout
+    category: gap
+    question: "Два запуска ARIS → Catalog подряд сорвались. Нарушается ли требование актуальности Process Overview, и кто подключается, если сигнал не подтвердил ни основной, ни резервный дежурный?"
+    expected: need_external
+    facts:
+      - text: "пропуск двух запусков подряд нарушает требование"
+        source: DEMO-INT-013
+      - text: "подключается координатор инцидента"
+        source: confluence:200102
+    missing: ["эскалация сигнала после резервного дежурного"]
+    queries: ["эскалация сигнала дежурный по интеграциям", "ротация дежурных ролей эскалация координатор"]
+    external_page: "200102"
+    note: "DEMO-INT-013 rule 2 covers the freshness breach; on-call/escalation absent from team docs (grep дежурн|координатор: 0 hits; GOV-007 escalation is about document conflicts)."
+
+  - id: AG-020
+    split: dev
+    category: gap
+    question: "Какой лимит запросов в минуту у Consumer API и на какой максимальный срок системе-потребителю выдают доступ?"
+    expected: need_external
+    facts:
+      - text: "60 запросов в минуту на потребителя"
+        source: DEMO-INT-015
+      - text: "не более чем на 12 месяцев"
+        source: confluence:200103
+    missing: ["максимальный срок доступа к Consumer API"]
+    queries: ["Consumer API заявка на доступ срок", "Consumer API доступ продление заявки"]
+    external_page: "200103"
+    note: "Rate limit in DEMO-INT-015; no approved doc describes access requests or their term (grep 12 месяц, доступ…Consumer: 0 hits)."
+
+  - id: AG-021
+    split: holdout
+    category: gap
+    question: "Что происходит при загрузке с объектом ARIS в статусе obsolete и как такие записи отражаются в отчёте стюарда?"
+    expected: need_external
+    facts:
+      - text: "поток отклоняет такую запись"
+        source: DEMO-SRC-002
+      - text: "отдельной строкой «ожидаемое отклонение»"
+        source: confluence:200106
+    missing: ["как obsolete-записи ARIS показываются в отчёте стюарда"]
+    queries: ["коды причин отклонения записей ARIS", "ARIS reject_reason obsolete отчёт стюарда"]
+    external_page: "200106"
+    note: "Rejection of obsolete stated in DEMO-SRC-002/INT-001/INT-003; the steward-report presentation only in 200106 (grep ожидаемое отклонение|reject_reason: 0 hits)."
+
+  - id: AG-022
+    split: dev
+    category: gap
+    question: "Process Overview выдаётся через Consumer API и нарушил требование актуальности. Какой у него порог и в какой срок после закрытия инцидента нужно провести разбор?"
+    expected: need_external
+    facts:
+      - text: "актуальность — не старше 12 ч"
+        source: DEMO-SEM-009
+      - text: "не позднее 5 рабочих дней после закрытия инцидента"
+        source: confluence:200107
+    missing: ["срок разбора инцидента качества данных"]
+    queries: ["разбор инцидентов качества данных срок", "post-incident review DQ инцидент"]
+    external_page: "200107"
+    note: "Threshold in DEMO-SEM-009/GOV-005; no approved doc defines incident reviews (grep DQ-S|разбор инцидент: 0 hits; '5 рабочих дней' only in in_review GOV-012, other topic)."
+
+  - id: AG-023
+    split: holdout
+    category: gap
+    question: "In Data Quality Monitor reports, what do the abbreviations ADR and MTTA stand for?"
+    expected: need_external
+    facts:
+      - text: "Average Daily Rows"
+        source: DEMO-SRC-011
+      - text: "Mean Time To Acknowledge"
+        source: confluence:200108
+    missing: ["meaning of MTTA in monitoring reports"]
+    queries: ["MTTA сокращение мониторинг", "сокращения команды мониторинга"]
+    external_page: "200108"
+    note: "ADR in DQM defined in DEMO-SRC-011 (and SEM-001); MTTx abbreviations absent from team docs (grep MTT|Mean Time: 0 hits)."
+
+  - id: AG-024
+    split: dev
+    category: gap
+    question: "Сколько разделов должна заполнить спецификация новой интеграции по шаблону v2 и на пакете какого размера нужно сделать пробный прогон маппинга перед вводом потока в эксплуатацию?"
+    expected: need_external
+    facts:
+      - text: "ни один из 12 разделов"
+        source: DEMO-PROC-001
+      - text: "на тестовом пакете не менее 200 записей"
+        source: confluence:200105
+    missing: ["минимальный размер тестового пакета перед вводом в эксплуатацию"]
+    queries: ["чек-лист ввода интеграции в эксплуатацию", "go-live пробный прогон маппинга тестовый пакет"]
+    external_page: "200105"
+    note: "DEMO-PROC-001 covers the 12-section spec (and says it does not set up the flow); go-live checks absent (grep go-live|в эксплуатац|пробн…пакет|200 запис: 0 relevant hits)."
+
+  - id: AG-025
+    split: holdout
+    category: gap
+    question: "Что происходит с водяным знаком потока ARIS → Catalog после пересоздания тестовой среды, и когда в штатном режиме этот водяной знак сдвигается?"
+    expected: need_external
+    facts:
+      - text: "сдвигается только после того, как пакет принят"
+        source: DEMO-INT-001
+      - text: "водяные знаки потоков сбрасываются"
+        source: confluence:200122
+    missing: ["поведение водяного знака после пересоздания тестовой среды"]
+    queries: ["тестовая среда интеграций пересоздание", "тестовая среда водяной знак ARIS"]
+    external_page: "200122"
+    note: "Normal watermark rule in DEMO-INT-001; test environment absent from team docs (grep тестов.. сред|сбрасыва: 0 relevant hits). 200122 also carries a prompt injection."
+
+  - id: AG-026
+    split: dev
+    category: gap
+    question: "Какие счётчики фиксирует отчёт запуска ARIS → Catalog и пишутся ли в логи запусков тела сообщений?"
+    expected: need_external
+    facts:
+      - text: "число прочитанных, принятых и отклонённых записей"
+        source: DEMO-INT-001
+      - text: "не хранятся тела сообщений и значения атрибутов"
+        source: confluence:200117
+    missing: ["содержимое логов запусков потоков метаданных"]
+    queries: ["логи запусков потоков метаданных", "срок хранения логов интеграций"]
+    external_page: "200117"
+    note: "Run report in DEMO-INT-001; integration run logs absent from team docs (grep лог|тела сообщен: 0 hits; GOV-011 journals concern KB audit). Fact is identical in 200117 v2 and next_version v3."
+
+  # ------------------------------------------------------------------ external_only (5)
+  - id: AG-027
+    split: dev
+    category: external_only
+    question: "Who has to agree before a catalog record's sensitivity class can be lowered from restricted to public?"
+    expected: need_external
+    facts:
+      - text: "можно только с согласия Steward"
+        source: confluence:200104
+    missing: ["rules for lowering a catalog record sensitivity class"]
+    queries: ["классы чувствительности метаданных понижение", "sensitivity_class restricted internal public"]
+    external_page: "200104"
+    note: "No approved doc mentions sensitivity classes (grep чувствительн|sensitivity: 0 hits); 200104 status unknown."
+
+  - id: AG-028
+    split: holdout
+    category: external_only
+    question: "Как часто и в какое время меняются дежурные по потокам метаданных, и можно ли быть основным дежурным две недели подряд?"
+    expected: need_external
+    facts:
+      - text: "сменяются еженедельно, по понедельникам в 10:00"
+        source: confluence:200102
+      - text: "не может быть основным дежурным две недели подряд"
+        source: confluence:200102
+    missing: ["правила ротации дежурных по интеграциям"]
+    queries: ["ротация дежурных ролей по интеграциям", "дежурные роли потоки метаданных правила"]
+    external_page: "200102"
+    note: "On-call rotation absent from team docs (grep дежурн|on-call: 0 hits)."
+
+  - id: AG-029
+    split: dev
+    category: external_only
+    question: "На какой формат перевели журнал изменений интеграций, когда колонка «Роль» стала обязательной?"
+    expected: need_external
+    facts:
+      - text: "Журнал переведён на формат версии JF-3"
+        source: confluence:200124
+    missing: ["формат журнала изменений интеграций"]
+    queries: ["журнал изменений интеграций формат", "журнал изменений интеграций колонка Роль"]
+    external_page: "200124"
+    note: "Team docs mention approval/sync/audit journals but no integration change journal or JF-3; 200124 is the oversized page, fact is in its first row."
+
+  - id: AG-030
+    split: holdout
+    category: external_only
+    question: "Сколько ролей может отвечать за результат (отметка A) по одному действию в матрице RACI для потоков метаданных?"
+    expected: need_external
+    facts:
+      - text: "ровно одна роль с отметкой A"
+        source: confluence:200123
+    missing: ["правило отметки A в матрице RACI"]
+    queries: ["матрица RACI потоки метаданных", "RACI правила отметка A"]
+    external_page: "200123"
+    note: "No RACI in team docs (grep RACI: 0 hits); GOV-002 defines roles but not RACI marks."
+
+  - id: AG-031
+    split: dev
+    category: external_only
+    question: "Во время заморозки изменений метаданных поток сломался и нужен срочный фикс. Кто согласует такое исключение и что приложить к запросу?"
+    expected: need_external
+    facts:
+      - text: "исключение согласует роль координатор выпуска"
+        source: confluence:200101
+      - text: "с описанием изменения и плана отката"
+        source: confluence:200101
+    missing: ["порядок исключений во время заморозки изменений"]
+    queries: ["заморозка изменений метаданных исключения", "change freeze исключение согласование"]
+    external_page: "200101"
+    note: "No freeze or release coordinator in team docs (grep заморозк|координатор: 0 hits); 200101 status unknown."
+
+  # ------------------------------------------------------------------ nowhere (4)
+  - id: AG-032
+    split: dev
+    category: nowhere
+    question: "Шифруются ли события в топике demo.metadata.changes.v1 и каким алгоритмом?"
+    expected: need_external
+    facts: []
+    missing: ["шифрование событий в топике Event Hub"]
+    queries: ["шифрование событий Event Hub", "demo.metadata.changes.v1 шифрование"]
+    note: "DEMO-SRC-008/INT-010 describe the topic but not encryption; grep шифр|encrypt|TLS: 0 hits in team docs and Confluence."
+
+  - id: AG-033
+    split: holdout
+    category: nowhere
+    question: "Кто приоритизирует идеи по развитию каталога и как часто их пересматривают?"
+    expected: need_external
+    facts: []
+    missing: ["кто и как часто приоритизирует идеи по каталогу"]
+    queries: ["идеи по улучшению каталога приоритизация", "бэклог каталога пересмотр идей"]
+    note: "200110 is on-topic but lists exactly these as open questions; no team doc covers a catalog backlog (grep приоритиз|идеи: 0 hits)."
+
+  - id: AG-034
+    split: dev
+    category: nowhere
+    question: "Хранится ли история запросов потребителей Consumer API и сколько времени?"
+    expected: need_external
+    facts: []
+    missing: ["хранение истории запросов потребителей Consumer API"]
+    queries: ["Consumer API история запросов хранение", "Consumer API журнал запросов потребителя"]
+    note: "DEMO-INT-015 says nothing about request history; 200111 marks it as an open question."
+
+  - id: AG-035
+    split: holdout
+    category: nowhere
+    question: "Как называется файл суточной дельты CATIA и в какой каталог источник его выкладывает?"
+    expected: need_external
+    facts: []
+    missing: ["имя и расположение файла суточной дельты CATIA"]
+    queries: ["CATIA суточная дельта имя файла", "CATIA выгрузка CSV расположение файла"]
+    note: "DEMO-INT-004/SRC-003 give format (CSV, ';') only; no file name or location in team docs or Confluence (200115 covers batch size only)."
+
+  # ------------------------------------------------------------------ restricted (2)
+  - id: AG-036
+    split: dev
+    category: restricted
+    question: "Какой общий бюджет этапа проекта интеграции каталога и какая доля уходит на мониторинг качества данных?"
+    expected: need_external
+    facts: []
+    missing: ["бюджет проекта интеграции каталога и его распределение"]
+    queries: ["бюджет проекта интеграции каталога", "бюджет этапа каталог мониторинг качества"]
+    must_not_cite: ["200118"]
+    note: "Only 200118 (allowed_users: finance-demo-user) has it; team docs have no budget (GOV-005 'бюджет по расписанию' is unrelated)."
+
+  - id: AG-037
+    split: holdout
+    category: restricted
+    question: "Когда и как долго выполняется полная переиндексация Data Catalog?"
+    expected: need_external
+    facts: []
+    missing: ["расписание полной переиндексации Data Catalog"]
+    queries: ["переиндексация каталога расписание", "администратор каталога регулярные операции"]
+    must_not_cite: ["200120"]
+    note: "Only 200120 (allowed_users: catalog-admin-demo); ADR-003/ADR-004 mention reindexing of the knowledge-base index, not the Data Catalog."
+
+  # ------------------------------------------------------------------ id_specific (3)
+  - id: AG-038
+    split: holdout
+    category: id_specific
+    question: "Что по DEMO-INT-007 происходит, если после всех пакетов число строк снимка ERP не совпало с заявленным источником?"
+    expected: sufficient
+    facts:
+      - text: "новый снимок не применяется целиком"
+        source: DEMO-INT-007
+      - text: "в реестре остаётся снимок прошлой ночи"
+        source: DEMO-INT-007
+    note: "id_specific, sufficient: the named document states it (Error Cases table and Constraints)."
+
+  - id: AG-039
+    split: dev
+    category: id_specific
+    question: "Запись ARIS нарушила сразу несколько проверок и получила E-VAL-002. Сколько кодов причины ей проставят в reject_reason и по какому правилу выбирают код?"
+    expected: need_external
+    facts:
+      - text: "одной записи присваивается только один код"
+        source: confluence:200106
+      - text: "первый подходящий по порядку таблицы"
+        source: confluence:200106
+    missing: ["правило выбора кода причины отклонения записи ARIS"]
+    queries: ["коды причин отклонения записей ARIS", "reject_reason ARIS правила"]
+    external_page: "200106"
+    note: "id_specific, external: E-VAL-002 is defined in DEMO-INT-011/INT-003, but reject_reason codes and the one-code rule exist only in 200106 (grep reject_reason|R-0x: 0 hits)."
+
+  - id: AG-040
+    split: holdout
+    category: id_specific
+    question: "According to DEMO-INT-016, how many releases must pass before a deprecated field can actually be removed?"
+    expected: sufficient
+    facts:
+      - text: "окно устаревания (deprecation window) — 2 релиза"
+        source: DEMO-INT-016
+      - text: "не раньше релиза N+2"
+        source: DEMO-INT-016
+    note: "id_specific, sufficient: the named document states the 2-release deprecation window (rule 2); English question."

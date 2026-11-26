@@ -460,6 +460,29 @@ selected text is not verbatim in the document / section, or the anchor does not 
 invalid_request` (validation). Provider failures keep the v0.3 behaviour (HTTP error on `/ask`, `error` event on
 the stream).
 
+**Adaptive RAG (additive, `docs/ADAPTIVE_RAG.md`).** `AskResponse.evidence_gate` — `null` unless the external
+source was in scope (`corporate` in `sources` and the connector enabled):
+
+```text
+EvidenceGateSummary { policy: "semantic-v1" | "lexical-v2",
+  decision: sufficient | need_external | uncertain | invalid | not_assessed,
+  reason: local_sufficient | evidence_gap | model_uncertain | decision_invalid | no_local_passages | explicit_request |
+          external_scope_selected | external_budget_exhausted | <LOCAL_SUFFICIENCY v2 code>,
+  external_called: bool, model_calls: int, repaired: bool, error: string|null, fallback: string|null,
+  lexical: string|null, cards, evidence, missing, queries, queries_rejected: int, incomplete: bool,
+  normalized: string[] (e.g. known_truncated), elapsed_ms }
+GET /api/discovery/stats += { evidence_gate: { policy, ask_known, replies, normalized_replies, normalized: {code: n} } }
+external += { outcome: found | no_match | insufficient_evidence | denied | source_unavailable | null,
+              searches: int, focused: bool }
+/ask/stream status += { stage: "retrieving", step: "rewriting" | "assessing" | "external" }   (unknown steps: ignore)
+QueryRewriteSummary { mode: off|absent_terms|always, trigger: absent_terms|no_local_passages|always|null, called,
+  model_calls, repaired, error, queries, rejected, added_passages, elapsed_ms }   (AskResponse.query_rewrite; null when
+  the provider cannot rewrite or the team scope is not asked)
+```
+
+Codes and counts only — never the question, the gap text or the queries. `incomplete: true` caps the confidence at
+`partial`. `/ask` and `/ask/stream` share one preparation (same decision, MCP calls and sources).
+
 **Evidence rules.** Chosen documents (best sections for the question) and the verified selection are handed to the
 provider first, marked `chosen`, and quoted first when they contain a question term; a chosen document that is a
 draft keeps its status in the citation and the usual warning. Attachment fragments are a separate group (header line

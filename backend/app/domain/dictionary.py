@@ -68,7 +68,9 @@ class SearchDictionary:
             if group is None:
                 result.append(term)
                 continue
-            alternatives = tuple(m for m in self.groups[group] if m != own)[:MAX_ALTERNATIVES]
+            # Morphological alternatives of the word itself (text.fleeting_vowel_stem) come first and are kept.
+            synonyms = tuple(m for m in self.groups[group] if m != own)
+            alternatives = tuple(dict.fromkeys((*term.alternatives, *synonyms)))[:MAX_ALTERNATIVES]
             result.append(replace(term, alternatives=alternatives, expansion=f"synonym:{group}"))
         return result, notes
 

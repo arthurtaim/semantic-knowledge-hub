@@ -591,6 +591,49 @@ class AnswerProvenance(BaseModel):
     by_kind: dict[str, int] = Field(default_factory=dict)  # "team" | "corporate" | "attachment" → sources
 
 
+class EvidenceGateSummary(BaseModel):
+    """Adaptive RAG (docs/ADAPTIVE_RAG.md): how the answer decided whether to consult the external source — codes
+    and counts only (never the question, the gap the model described or the search queries)."""
+
+    policy: str  # semantic-v1 | lexical-v2
+    decision: Literal["sufficient", "need_external", "uncertain", "invalid", "not_assessed"]
+    # local_sufficient | evidence_gap | model_uncertain | decision_invalid | no_local_passages | explicit_request |
+    # external_scope_selected | external_budget_exhausted | a LOCAL_SUFFICIENCY v2 code (lexical policy)
+    reason: str
+    external_called: bool
+    model_calls: int = 0
+    repaired: bool = False
+    error: str | None = None  # why a model decision was not used (timeout, not_json, unknown_evidence_id, …)
+    fallback: str | None = None  # lexical:<code> | lexical:sufficient | local
+    lexical: str | None = (
+        None  # what LOCAL_SUFFICIENCY v2 says for the same evidence (A/B), None = sufficient
+    )
+    cards: int = 0
+    evidence: int = 0
+    missing: int = 0
+    queries: int = 0
+    queries_rejected: int = 0
+    incomplete: bool = False
+    normalized: list[str] = Field(default_factory=list)  # e.g. known_truncated — codes only, never content
+    elapsed_ms: float = 0.0
+
+
+class QueryRewriteSummary(BaseModel):
+    """Adaptive RAG, query rewrite: whether the model rephrased the question for the team search — codes and counts
+    only (never the question or the phrasings). Null when the provider cannot rewrite or the team scope is off."""
+
+    mode: str  # off | absent_terms | always
+    trigger: str | None = None  # absent_terms | no_local_passages | always | null (not needed)
+    called: bool = False
+    model_calls: int = 0
+    repaired: bool = False
+    error: str | None = None
+    queries: int = 0
+    rejected: int = 0
+    added_passages: int = 0  # passages in the context that only the phrasings found
+    elapsed_ms: float = 0.0
+
+
 class AskResponse(BaseModel):
     answer: str
     mode: Literal["mock", "internal_api", "claude_cli", "disabled"]
@@ -605,6 +648,9 @@ class AskResponse(BaseModel):
     index_generation: str | None = None
     instructions_version: str | None = None
     external: dict[str, Any] | None = None  # external retrieval summary (called, trigger, calls, cache…)
+    # Adaptive RAG (additive): the local-first decision about the external source; null when it was not in scope.
+    evidence_gate: EvidenceGateSummary | None = None
+    query_rewrite: QueryRewriteSummary | None = None
     # UI v2: the skill used (null for a plain question) and, for skills built on the AI workflows, the stored
     # proposal the dialog shows as a card with a link (null otherwise). Nothing is ever applied by /ask.
     skill: SkillRef | None = None

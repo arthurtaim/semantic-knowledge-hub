@@ -28,9 +28,14 @@ rolls back and the previous generation keeps serving.
 
 `app/services/retrieval.py`, used by catalog search, `/api/search` and the assistant:
 
-1. **Query analysis** (`app/domain/text.py`): normalisation, RU stemming, stopwords; identifiers
+1. **Query analysis** (`app/domain/text.py`): normalisation, RU stemming; identifiers
    (`DEMO_VALIDATION_LIMIT`, `owner_role_code`) are kept as exact phrases; stems of ≤3 characters match
-   whole tokens only.
+   whole tokens only. Retrieval v2 (2026-11-26, `reports/retrieval-quality/`): **function words** (stop words,
+   prepositions, conjunctions, particles, pronouns such as «какими», «откуда», «который», auxiliary verbs —
+   `FUNCTION_WORDS`) never become search terms, an acronym in capitals is kept; up to **16** content words per
+   question (`MAX_QUERY_TERMS`; 12 cut the second part of long compound questions); a word with a **fleeting
+   vowel** before its final consonant gets the stem of its other forms as an alternative spelling («попыток» →
+   «попытк», «карточек» → «карточк», «недоступен» → «недоступн»; `fleeting_vowel_stem`, words of ≥ 6 letters).
 2. **Dictionary** (`app/search_dictionary/dictionary.yaml`, label `v1:<sha>`): synonym groups
    (линейдж ↔ lineage ↔ происхождение данных), abbreviations; ambiguous ones (ADR, MDM) add a note
    instead of guessing.
@@ -46,13 +51,27 @@ rolls back and the previous generation keeps serving.
 
 Embeddings, a vector DB or an LLM re-ranker are not used.
 
-**Assistant passages** (`RetrievalService.passages`, also `knowledge_search`): the best sections of the best eligible
-documents, one per document first. A section whose every line is corpus-wide boilerplate — a body line repeated in
-≥ 5 documents and > 5 % of the reader's snapshot (`RetrievalService.boilerplate`, cached per snapshot; e.g. the banner
-every synthetic document opens with) — is skipped for the next section of the same document: it matched many words
-and, being short, outranked content, so the model received disclaimers instead of evidence. Document ranking and the
-FTS index are unchanged. A follow-up question is pre-retrieved by its own words and together with the previous
-question, merged round-robin (`AssistantService._prepare`).
+**Assistant passages** (`RetrievalService.passages`, also `knowledge_search`) — **passage packing v2**. The context
+documents are the ≤ 4 best eligible documents (ranking unchanged). Candidates are EVERY section of those documents that
+contains a question word (v1: the 60 BM25-best sections of the whole corpus, so a relevant section of a context
+document could be cut off by word-dense sections of other documents). A document the question names by its exact id
+is the subject: its sections are packed first (both steps below), the other documents only take the slots left. Then:
+
+1. one section per document, in document order: its BM25-best section (diversity);
+2. the remaining slots (≤ 6 passages in all), one at a time: the section with the largest **gain** — the question
+   words it adds to its OWN document's passages, each weighted by rarity in the eligible snapshot
+   (`log((N+1)/(df+1)) + 1`); a word already shown from another document counts 0.5, one the document already shows
+   counts 0.25 (corroboration); the sum is divided by (1 + document rank). Ties: the document with fewer passages,
+   then rank, then BM25.
+
+So a question whose parts are answered in different sections of the best document gets those sections (v1 always took
+its two BM25-best — often short, word-dense «Пример» / «Назначение»). A section whose every line is corpus-wide
+boilerplate — a body line repeated in ≥ 5 documents and > 5 % of the reader's snapshot (`RetrievalService.boilerplate`,
+cached per snapshot; e.g. the banner every synthetic document opens with) — is never a candidate. Passages are
+verbatim sections with their document id, anchor and revision; the order is deterministic. A follow-up question is
+pre-retrieved by its own words and together with the previous question, merged round-robin
+(`AssistantService._prepare`). Measured before/after and per-case flips: `reports/retrieval-quality/03_BEFORE_AFTER.md`;
+a developer trace of one case through every stage: `python -m app.evaluation.retrieval_trace` (refuses holdout cases).
 
 Eval case fields for the assistant (`app/evaluation/knowledge_eval.py`): `history` (earlier questions of a
 follow-up), `expect_provenance` (`AskResponse.provenance.overall`), `max_warnings`, `unmatched_only_current`,

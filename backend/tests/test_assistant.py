@@ -21,6 +21,7 @@ from app.domain.safety import neutralize_citation_markers
 from app.domain.text import analyze_query
 from app.services.assistant import quote_is_verbatim
 from tests.conftest import make_doc, write_doc
+from tests.support.aux_model import aux_reply
 
 
 def ask(client: TestClient, question: str, **kwargs: Any) -> dict[str, Any]:
@@ -351,7 +352,11 @@ def use_model(client: TestClient, content: str) -> list[dict[str, Any]]:
     sent: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
+        body = json.loads(request.content)
+        neutral = aux_reply(body["messages"][0]["content"])  # Adaptive RAG rewrite / gap: not the answer
+        if neutral is not None:
+            return chat_response(neutral)
+        sent.append(body)
         return chat_response(content)
 
     client.app.state.container.assistant._provider = provider(handler)  # type: ignore[attr-defined]

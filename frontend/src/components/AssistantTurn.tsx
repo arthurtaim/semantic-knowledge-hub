@@ -98,6 +98,7 @@ function statusText(turn: Turn): string {
     return `${action} (${pluralRu(n, "найден", "найдено", "найдено")} ${n} ${pluralRu(n, "фрагмент", "фрагмента", "фрагментов")})`;
   }
   if (turn.phase === "validating") return "Проверяю цитаты…";
+  if (turn.phase === "retrieving" && turn.activity) return turn.activity;
   return "Ищу источники…";
 }
 
@@ -134,8 +135,20 @@ const TRIGGER_LABEL: Record<string, string> = {
   no_local_passages: "в документах команды ничего не найдено",
   unmatched_entities: "в документах команды не найдены упомянутые термины",
   low_term_coverage: "недостаточно данных в документах команды",
+  no_single_local_source: "ни один документ команды не отвечает на вопрос целиком",
+  specific_terms_not_covered: "в документах команды нет ключевого слова вопроса",
   external_scope_selected: "выбран поиск по корпоративным источникам",
   explicit_request: "запрошено явно",
+  evidence_gap: "в документах команды не хватает части сведений",
+  model_uncertain: "полнота документов команды не ясна",
+  decision_invalid: "проверить полноту не удалось, решило резервное правило",
+};
+
+/** What the external search could honestly establish (AskResponse.external.outcome). */
+const OUTCOME_LABEL: Record<string, string> = {
+  no_match: "подходящих доступных страниц не найдено",
+  insufficient_evidence: "недостающее не подтверждено",
+  denied: "найденные страницы недоступны",
 };
 
 function externalSummary(ext: ExternalRetrievalSummary): string {
@@ -146,6 +159,8 @@ function externalSummary(ext: ExternalRetrievalSummary): string {
     `из кэша ${ext.cache_hits}`,
   ];
   if (ext.rejected.length > 0) parts.push(`отклонено ${ext.rejected.length}`);
+  const outcome = ext.outcome ? OUTCOME_LABEL[ext.outcome] : undefined;
+  if (outcome) parts.push(outcome);
   return parts.join(", ") + (ext.degraded ? " — внешний источник ответил не полностью" : "");
 }
 

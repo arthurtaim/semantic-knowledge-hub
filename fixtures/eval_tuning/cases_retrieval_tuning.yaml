@@ -1,0 +1,196 @@
+# Independent TUNING probes for the retrieval-quality work (2026-11-26). Synthetic, written from the documents'
+# own content BEFORE any retrieval change and run on the unchanged baseline first. They test general patterns
+# (a fact in a later section, facts in two documents, the canonical source vs an overview, a colloquial
+# paraphrase, local-vs-external sufficiency) on documents and Confluence mock pages that are NOT the subject of
+# the 216-case gold suite's holdout cases. Not part of fixtures/eval: the 216-case suite stays comparable.
+#
+#   cd backend && ../.venv/bin/python -m app.evaluation.knowledge_eval --kb ../fixtures/knowledge \
+#       --cases ../fixtures/eval_tuning --label tuning_probes --out <dir>
+
+# --- a fact in a later (not top-2 by BM25) section of one document --------------------------------------------
+- case_id: RQ-MS-01
+  category: rq_multisection
+  question: Что делают с архивным снимком, у которого повреждён манифест, и кто проверяет, что у каждого удаления снимка есть запись в журнале?
+  method: assistant
+  expected_doc_ids: [DEMO-GOV-008]
+  facts_required: ["-r1", "Steward ежемесячно проверяет"]
+  holdout: false
+  notes: Exception section (corrected snapshot -r1) + control section (monthly steward check) of the same standard.
+- case_id: RQ-MS-02
+  category: rq_multisection
+  question: Какие ошибки потока повторяются автоматически, сколько длится полный цикл повторов и куда уходит пакет ARIS, не прошедший валидацию?
+  method: assistant
+  expected_doc_ids: [DEMO-INT-011]
+  facts_required: ["E-SRC-003", "15 мин 30 с", "q_aris_rejected"]
+  holdout: false
+  notes: Error codes table, transformation rules (full cycle) and error cases of the retry policy.
+- case_id: RQ-MS-03
+  category: rq_multisection
+  question: Как ERP сообщает, что позиция справочника удалена, какого размера пакеты в выгрузке и какая роль разбирает пустые описания колонок?
+  method: assistant
+  expected_doc_ids: [DEMO-SRC-005]
+  facts_required: ["отсутствует в следующем полном снимке", "2 000 строк", "src-steward-erp"]
+  holdout: false
+  notes: Constraints, outputs and owners sections of the ERP source profile.
+- case_id: RQ-MS-04
+  category: rq_multisection
+  question: Что происходит, если изделие CATIA ссылается на неизвестную сборку, и почему один неудачный запуск уже означает нарушение актуальности?
+  method: assistant
+  expected_doc_ids: [DEMO-INT-004]
+  facts_required: ["unknown_assembly", "не старше 24 часов"]
+  holdout: false
+  notes: Error cases + constraints of the CATIA flow overview.
+
+# --- two facts in two documents -----------------------------------------------------------------------------
+- case_id: RQ-MD-01
+  category: rq_multidoc
+  question: Когда запускается поток CATIA в каталог и как из номера изделия строится идентификатор узла в графе зависимостей?
+  method: assistant
+  expected_doc_ids: [DEMO-INT-004, DEMO-INT-005]
+  facts_required: ["02:30", "node_id"]
+  holdout: false
+  notes: Schedule from the flow overview, node id rule from the field mapping.
+- case_id: RQ-MD-02
+  category: rq_multidoc
+  question: Сколько повторных попыток делает поток при недоступности источника и сколько часов реестр помнит обработанный ключ идемпотентности?
+  method: assistant
+  expected_doc_ids: [DEMO-INT-011, DEMO-INT-012]
+  facts_required: ["5 повторных", "72 ч"]
+  holdout: false
+  notes: Retry count from the retry policy, key retention from the idempotency rules.
+
+# --- the canonical source of a rule vs a document that only mentions it -------------------------------------
+- case_id: RQ-CAN-01
+  category: rq_canonical
+  question: Из каких полей состоит ключ идемпотентности и как долго обработанный ключ хранится в реестре?
+  method: assistant
+  expected_doc_ids: [DEMO-INT-012]
+  facts_required: ["source_changed_at", "72 ч"]
+  holdout: false
+  notes: The CATIA overview repeats the key; the idempotency document is the rule.
+- case_id: RQ-CAN-02
+  category: rq_canonical
+  question: С какими паузами выполняются повторные попытки, если источник недоступен?
+  method: assistant
+  expected_doc_ids: [DEMO-INT-011]
+  facts_required: ["30 с"]
+  holdout: false
+  notes: The CATIA overview mentions «до 5 повторных попыток»; the intervals are in the retry policy only.
+- case_id: RQ-CAN-03
+  category: rq_canonical
+  question: правило направления ребра графа зависимостей для сборок CATIA
+  method: search
+  expected_doc_ids: [DEMO-INT-005]
+  k: 3
+  holdout: false
+
+# --- colloquial paraphrase ----------------------------------------------------------------------------------
+- case_id: RQ-PAR-01
+  category: rq_paraphrase
+  question: сколько держим архивные снимки перед удалением
+  method: search
+  expected_doc_ids: [DEMO-GOV-008]
+  k: 3
+  holdout: false
+- case_id: RQ-PAR-02
+  category: rq_paraphrase
+  question: что делать, если источник не отвечает и поток падает
+  method: search
+  expected_doc_ids: [DEMO-INT-011]
+  k: 3
+  holdout: false
+- case_id: RQ-PAR-03
+  category: rq_paraphrase
+  question: как не задвоить записи при повторной отправке сообщения
+  method: search
+  expected_doc_ids: [DEMO-INT-012]
+  k: 3
+  holdout: false
+- case_id: RQ-PAR-04
+  category: rq_paraphrase
+  question: почему деталь из CATIA не появилась в каталоге
+  method: search
+  expected_doc_ids: [DEMO-INT-004]
+  k: 3
+  holdout: false
+- case_id: RQ-PAR-05
+  category: rq_paraphrase
+  question: ночная перезаливка справочников ERP целиком
+  method: search
+  expected_doc_ids: [DEMO-SRC-005]
+  k: 3
+  holdout: false
+
+# --- local evidence topical but not confirming the asked value: the external source must be consulted ---------
+- case_id: RQ-EXT-01
+  category: rq_external
+  question: Кто отвечает за регистрацию соответствия в MAP_ARIS_PROCESS и в какой срок это нужно сделать?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: true
+  expected_doc_ids: ["200123"]
+  facts_required: ["1 рабочего дня"]
+  holdout: false
+  notes: Local mapping/retry documents say a steward registers it, but no deadline; the RACI page has it.
+- case_id: RQ-EXT-02
+  category: rq_external
+  question: Сколько записей должно быть в пробном прогоне маппинга перед вводом новой интеграции в эксплуатацию?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: true
+  expected_doc_ids: ["200105"]
+  facts_required: ["200 записей"]
+  holdout: false
+- case_id: RQ-EXT-03
+  category: rq_external
+  question: В какой срок проводится разбор инцидента качества данных после его закрытия?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: true
+  expected_doc_ids: ["200107"]
+  facts_required: ["5 рабочих дней"]
+  holdout: false
+- case_id: RQ-EXT-04
+  category: rq_external
+  question: Какой лимит размера пакета выгрузки CATIA?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: true
+  expected_doc_ids: ["200115"]
+  holdout: false
+  notes: The local flow overview says only that there is no separate batch size; the limit is on the page.
+
+# --- local evidence sufficient: no external call ------------------------------------------------------------
+- case_id: RQ-EXT-N1
+  category: rq_external_negative
+  question: Сколько повторных попыток выполняется при недоступности источника и с какими паузами?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: false
+  expected_doc_ids: [DEMO-INT-011]
+  holdout: false
+- case_id: RQ-EXT-N2
+  category: rq_external_negative
+  question: Когда запускается поток CATIA в каталог?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: false
+  cited_any: [DEMO-INT-004, DEMO-INT-013]
+  holdout: false
+- case_id: RQ-EXT-N3
+  category: rq_external_negative
+  question: Сколько месяцев хранится снимок Archive Store?
+  method: assistant
+  sources: [team, corporate]
+  expect_external_called: false
+  cited_any: [DEMO-GOV-008]
+  facts_required: ["36 месяцев"]
+  holdout: false
+- case_id: RQ-EXT-N4
+  category: rq_external_negative
+  question: Кто отвечает за регистрацию соответствия в MAP_ARIS_PROCESS и в какой срок это нужно сделать?
+  method: assistant
+  sources: [team]
+  expect_external_called: false
+  holdout: false
+  notes: local_only never calls the external source, even when the local evidence is incomplete.

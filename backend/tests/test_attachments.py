@@ -27,6 +27,7 @@ from app.services.attachments import (
 )
 from tests.conftest import make_doc, write_doc
 from tests.support.attachment_files import make_docx, make_pdf, make_xlsx, make_zip, with_extra_entry
+from tests.support.aux_model import aux_reply
 from tests.test_assistant import provider
 
 CONV = "conv-0001-test"
@@ -521,7 +522,11 @@ def use_model(client: TestClient, content: str) -> list[dict[str, Any]]:
     sent: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        sent.append(json.loads(request.content))
+        body = json.loads(request.content)
+        neutral = aux_reply(body["messages"][0]["content"])  # Adaptive RAG rewrite / gap: not the answer
+        if neutral is not None:
+            return httpx.Response(200, json={"choices": [{"message": {"content": neutral}}]})
+        sent.append(body)
         return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
 
     client.app.state.container.assistant._provider = provider(handler)  # type: ignore[attr-defined]

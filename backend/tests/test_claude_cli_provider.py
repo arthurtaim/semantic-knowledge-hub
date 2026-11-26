@@ -23,6 +23,7 @@ from app.adapters.ai.claude_cli import (
     parse_answer,
     validate_worker_url,
 )
+from app.adapters.ai.rewrite_protocol import REWRITE_MARKER
 from app.config import security_violations
 from app.services.assistant import FIXED_INSUFFICIENT
 from claude_worker.app import create_worker_app
@@ -130,16 +131,29 @@ def test_answer_without_evidence_block_is_not_trusted(claude_client: Callable[..
     assert data["answer"].startswith(FIXED_INSUFFICIENT)
 
 
-def test_unknown_question_never_reaches_claude(claude_client: Callable[..., TestClient]) -> None:
-    # Content-only path (AI_TOOLS_ENABLED=false, explicit skills): no passages → no model call. In the M5.7 tool loop
+def test_unknown_question_never_reaches_claude_for_an_answer(
+    claude_client: Callable[..., TestClient],
+) -> None:
+    # Content-only path (AI_TOOLS_ENABLED=false, explicit skills): no passages → no ANSWER call. In the M5.7 tool loop
     # the model is asked even without passages (a question about SKH state has none); that path is covered by
     # tests/test_assistant_tool_loop.py::test_cli_tool_mode_unknown_question_reaches_model_without_inventing.
+    # Adaptive RAG (docs/ADAPTIVE_RAG.md §Query rewrite) deliberately changes «no model call at all»: the question ALONE
+    # (no document text) may go to the model to be rephrased for the search; nothing found again → insufficient.
+    question = {"question": "Квазизвёздный шлюз ZQX-777?", "sources": ["team"]}
     client = claude_client(ai_tools_enabled=False)
-    data = client.post(
-        "/api/assistant/ask", json={"question": "Квазизвёздный шлюз ZQX-777?", "sources": ["team"]}
-    ).json()
+    data = client.post("/api/assistant/ask", json=question).json()
     assert data["confidence"] == "insufficient_evidence" and data["citations"] == []
-    assert not client.record_path.exists()  # type: ignore[attr-defined]
+    assert (
+        data["query_rewrite"]["trigger"] == "no_local_passages" and data["query_rewrite"]["model_calls"] >= 1
+    )
+    rec = record(client)
+    assert REWRITE_MARKER in " ".join(rec["argv"]) and "Квазизвёздный шлюз ZQX-777?" in rec["prompt"]
+    assert "<<<PASSAGE" not in rec["prompt"]  # no document text: the model only rephrases the question
+    # With the rewrite off, the previous guarantee holds exactly: the model is not called at all.
+    off = claude_client(ai_tools_enabled=False, query_rewrite="off")
+    data = off.post("/api/assistant/ask", json=question).json()
+    assert data["confidence"] == "insufficient_evidence" and data["query_rewrite"] is None
+    assert not off.record_path.exists()  # type: ignore[attr-defined]
 
 
 def test_history_is_passed_as_data_and_conversations_do_not_mix(

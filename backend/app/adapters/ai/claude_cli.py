@@ -36,7 +36,9 @@ from app.adapters.ai.base import (
     AuthoringDraft,
     AuthoringRequest,
     ContextPassage,
+    GapAssessmentRequest,
     ProviderAnswer,
+    QueryRewriteRequest,
     TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
@@ -204,6 +206,10 @@ class ClaudeCodeCLIProvider:
     # M5.7: tool loop through the constrained text envelope. The CLI keeps every tool disabled (the worker flags are
     # unchanged): SKH tools are executed by the backend, never by the CLI (docs/AI_NATIVE_TOOLS.md).
     supports_tools = True
+    # Adaptive RAG: the evidence-gap check through the same plain prompt → text run (gap_protocol.py).
+    supports_gap_assessment = True
+    # Adaptive RAG: phrasings of the question for the team search (rewrite_protocol.py), the same plain call.
+    supports_query_rewrite = True
 
     def __init__(
         self,
@@ -288,7 +294,9 @@ class ClaudeCodeCLIProvider:
     async def stream_answer(
         self, question: str, passages: list[ContextPassage], options: AnswerOptions
     ) -> AsyncGenerator[AnswerStreamEvent, None]:
-        prompt = build_user_message(question, passages, self._max_context_chars, options.history)
+        prompt = build_user_message(
+            question, passages, self._max_context_chars, options.history, options.evidence_gap
+        )
         visible = _VisibleText(EVIDENCE_MARKER)
         final: str | None = None
         async with contextlib.aclosing(
@@ -315,6 +323,22 @@ class ClaudeCodeCLIProvider:
                     result = event.answer
         assert result is not None  # stream_answer always ends with AnswerComplete or raises
         return result
+
+    async def rewrite_query(self, request: QueryRewriteRequest, *, max_chars: int) -> str:
+        """Adaptive RAG: ONE short run with phrasings of the question for the team search; the raw reply."""
+        from app.adapters.ai.rewrite_protocol import build_rewrite_message, rewrite_system_prompt
+
+        return await self._collect(
+            rewrite_system_prompt(), build_rewrite_message(request, max_chars), self._timeout
+        )
+
+    async def assess_evidence_gap(self, request: GapAssessmentRequest, *, max_chars: int) -> str:
+        """Adaptive RAG: ONE short classification run; the raw reply (the gate parses and validates it)."""
+        from app.adapters.ai.gap_protocol import build_gap_message, gap_system_prompt
+
+        return await self._collect(
+            gap_system_prompt(request.ask_known), build_gap_message(request, max_chars), self._timeout
+        )
 
     async def tool_turn(self, request: ToolTurnRequest) -> AsyncGenerator[ToolTurnEvent, None]:
         """One round of the tool loop. Deltas: the prose of a final answer only (a JSON tool request is held back)."""

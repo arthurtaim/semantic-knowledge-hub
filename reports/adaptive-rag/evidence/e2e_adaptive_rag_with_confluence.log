@@ -1,0 +1,12 @@
+(node:50522) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+Running 2 tests using 1 worker
+
+(node:50532) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  ✓  1 [scripted] › e2e/adaptiveRag.spec.ts:36:1 › adaptive RAG: a gap in the team documents is searched in Confluence and named in words (1.4s)
+  ✓  2 [scripted] › e2e/adaptiveRag.spec.ts:60:1 › adaptive RAG: sufficient team documents mean no Confluence call (616ms)
+
+  2 passed (2.7s)
+exit=0

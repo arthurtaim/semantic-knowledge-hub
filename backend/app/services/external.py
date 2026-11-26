@@ -1,10 +1,11 @@
 """External (Confluence MCP) evidence for the assistant: federated retrieval without importing pages.
 
-    question → connector.search (ACL-filtered by the source, ≤ N candidates, 1 MCP call)
+    question — or 1–2 FOCUSED queries of the evidence gate (Adaptive RAG, docs/ADAPTIVE_RAG.md) —
+    → connector.search (ACL-filtered by the source, ≤ N candidates in total, 1 MCP call per query)
     → candidate ranking (lexical + bounded discovery hints of the same scope/intent)
     → de-duplication with the curated base (verified mapping, never by a similar title)
     → ≤ M page fetches (bounded cache keyed by instance/page/VERSION/ACL scope/render+policy version)
-    → structured text → fragments → only fragments that actually contain the question's terms
+    → structured text → fragments → only fragments that actually contain the question's (or the gap's) terms
     → bounded, cite-ready fragments with namespaced ids `confluence:<instance>:<page>:<version>`.
 
 Guarantees (M5.6.2 Appendix 5 §5): a cached fragment is reused ONLY when the page appears again in a fresh,
@@ -21,7 +22,7 @@ import logging
 import math
 import time
 from collections import OrderedDict, deque
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, TypeVar
@@ -41,7 +42,9 @@ from app.services.discovery import DiscoveryStore, acl_scope_key
 logger = logging.getLogger("skh.external")
 
 RENDER_VERSION = "r1"
-POLICY_VERSION = "ext-v1"
+POLICY_VERSION = "ext-v1"  # part of the page cache key: cached fragments do not depend on the queries
+MAX_QUERIES = 2
+FOCUSED_PAGE_FRAGMENTS = 3
 T = TypeVar("T")
 
 
@@ -96,11 +99,31 @@ class ExternalRetrieval:
     warnings: list[str] = field(default_factory=list)
     degraded: bool = False
     elapsed_ms: float = 0.0
+    searches: int = 0  # MCP search calls (1, or one per focused query)
+    focused: bool = False  # searched with the gate's focused queries instead of the question
+
+    @property
+    def outcome(self) -> str:
+        """What can honestly be said about the external source for this answer (never «it is not there»):
+        found · no_match (the search returned nothing visible) · insufficient_evidence (pages found, none states the
+        sought terms) · denied (candidates were no longer readable) · source_unavailable (timeout, error, breaker)."""
+        if self.degraded:
+            return "source_unavailable"
+        if self.fragments:
+            return "found"
+        if self.candidates == 0:
+            return "no_match"
+        if self.rejected and all(r["reason"] == "not_found_or_revoked" for r in self.rejected):
+            return "denied"
+        return "insufficient_evidence"
 
     def summary(self) -> dict[str, Any]:
         return {
             "called": self.called,
             "trigger": self.trigger,
+            "outcome": self.outcome if self.called else None,
+            "searches": self.searches,
+            "focused": self.focused,
             "candidates": self.candidates,
             "fetched": self.fetched,
             "cache_hits": self.cache_hits,
@@ -248,9 +271,16 @@ class ExternalEvidenceService:
         snapshot: KnowledgeSnapshot | None,
         *,
         trigger: str,
+        queries: Sequence[str] = (),
+        focus: list[list[QueryTerm]] | None = None,
     ) -> ExternalRetrieval:
+        """`queries`: up to MAX_QUERIES focused search texts (empty: the question is the search text, as before);
+        `focus`: the terms of each query — a candidate or a fragment is relevant when it answers ONE of them (two
+        aspects of a question are two queries); without it, the question's `terms` are the only group (as before).
+        `terms` stay the intent of discovery hints. Fetch, fragment, context and deadline limits are shared by all
+        queries of the answer."""
         started = time.perf_counter()
-        result = ExternalRetrieval(called=True, trigger=trigger)
+        result = ExternalRetrieval(called=True, trigger=trigger, focused=bool(queries))
         self.counters["requests"] += 1
         self._sweep()
         if not self.enabled:
@@ -264,7 +294,10 @@ class ExternalEvidenceService:
             return result
         try:
             async with asyncio.timeout(self.limits.deadline_seconds):
-                await self._retrieve(user, question, terms, snapshot, result)
+                groups = [g for g in (focus or [])[:MAX_QUERIES] if g] or [terms]
+                await self._retrieve(
+                    user, list(queries[:MAX_QUERIES]) or [question], terms, groups, snapshot, result
+                )
             self._breaker.success()
         except TimeoutError:
             self.counters["timeouts"] += 1
@@ -284,48 +317,75 @@ class ExternalEvidenceService:
         self._latencies.append(result.elapsed_ms)
         return result
 
+    async def _search(
+        self, queries: list[str], user: UserContext, result: ExternalRetrieval
+    ) -> list[CorporatePage]:
+        """One MCP search per query; results interleaved by rank, de-duplicated by page, ≤ `candidates` in total."""
+        lists: list[list[CorporatePage]] = []
+        for query in queries:
+            result.searches += 1
+            found = await self._call(
+                self._connector.search(query, user, limit=self.limits.candidates), result
+            )
+            lists.append(list(found[: self.limits.candidates]))
+        merged: list[CorporatePage] = []
+        seen: set[tuple[str, str]] = set()
+        for index in range(max((len(found) for found in lists), default=0)):
+            for found in lists:
+                if index < len(found):
+                    page = found[index]
+                    key = (page.instance or "-", page.page_id)
+                    if key not in seen:
+                        seen.add(key)
+                        merged.append(page)
+        return merged[: self.limits.candidates]
+
     async def _retrieve(
         self,
         user: UserContext,
-        question: str,
-        terms: list[QueryTerm],
+        queries: list[str],
+        intent_terms: list[QueryTerm],
+        groups: list[list[QueryTerm]],
         snapshot: KnowledgeSnapshot | None,
         result: ExternalRetrieval,
     ) -> None:
         scope = acl_scope_key(user)
-        candidates = await self._call(
-            self._connector.search(question, user, limit=self.limits.candidates), result
-        )
-        candidates = candidates[: self.limits.candidates]
+        candidates = await self._search(queries, user, result)
         result.candidates = len(candidates)
-        if not candidates or not terms:
+        if not candidates or not any(groups):
             return
-        intent = sorted({t.stem for t in terms})
+        intent = sorted({t.stem for t in intent_terms})
         hints = self._discovery.hints(intent, scope) if self._discovery else {}
         invalidated = self._discovery.invalidated() if self._discovery else set()
 
+        def weight(group: list[QueryTerm], matched: list[QueryTerm]) -> float:
+            # Identifiers and acronyms weigh double.
+            return sum(2 if t.is_entity_like else 1 for t in matched) / sum(
+                2 if t.is_entity_like else 1 for t in group
+            )
+
         ranked: list[tuple[float, int, CorporatePage, list[str]]] = []
-        total_weight = sum(2 if t.is_entity_like else 1 for t in terms)
         for position, page in enumerate(candidates):
             base = self._source_base(page)
             if base in invalidated and self._discovery is not None:
                 self._discovery.clear_invalidation(base)  # visible again in a fresh, ACL-filtered search
-            matched = self._matched(terms, f"{page.title} {' '.join(page.labels)} {page.body[:2000]}")
+            head = f"{page.title} {' '.join(page.labels)} {page.body[:2000]}"
+            group, matched = max(
+                ((g, self._matched(g, head)) for g in groups if g), key=lambda item: weight(*item)
+            )
             if not matched:
                 self._reject(result, page, "irrelevant_metadata")
                 continue
             hint = hints.get(base, 0.0)
-            reasons = [f"совпало слов: {len(matched)} из {len(terms)}"]
+            reasons = [f"совпало слов: {len(matched)} из {len(group)}"]
             if hint:
                 reasons.append("приоритет по отзывам на похожий вопрос" if hint > 0 else "понижен по отзывам")
-            # Identifiers and acronyms weigh double; ties keep the source's own ranking.
-            weight = sum(2 if t.is_entity_like else 1 for t in matched) / total_weight
-            ranked.append((weight + 0.25 * hint, position, page, reasons))
+            # The best-answered query decides; ties keep the source's own ranking.
+            ranked.append((weight(group, matched) + 0.25 * hint, position, page, reasons))
         ranked.sort(key=lambda item: (-item[0], item[1]))
 
         selected: list[ExternalFragment] = []
         budget = self.limits.context_chars
-        need = max(1, math.ceil(len(terms) / 2))
         for score, _position, candidate, reasons in ranked[: self.limits.fetches]:
             if score <= 0:
                 self._reject(result, candidate, "lowered_by_feedback")
@@ -342,14 +402,28 @@ class ExternalEvidenceService:
             page = entry.page
             best: list[tuple[int, Fragment]] = []
             for frag in entry.fragments:
-                matched = self._matched(terms, f"{frag.heading or ''} {frag.text}")
-                if len(matched) >= need or any(t.is_entity_like for t in matched):
-                    best.append((len(matched), frag))
+                # Focused search: a section speaks about its page's subject, named once in the page title; a specific
+                # section («Исключения») need not repeat it to answer the gap.
+                head = f"{page.title} " if result.focused else ""
+                text = f"{head}{frag.heading or ''} {frag.text}"
+                found = [(g, self._matched(g, text)) for g in groups if g]
+                own = f"{frag.heading or ''} {frag.text}"
+                if result.focused and not any(self._matched(g, own) for g in groups):
+                    continue  # only the title matched: boilerplate of the page, not evidence
+                # Relevant when it states at least half of ONE query's words (or names its identifier).
+                if any(
+                    len(m) >= max(1, math.ceil(len(g) / 2)) or any(t.is_entity_like for t in m)
+                    for g, m in found
+                ):
+                    best.append((max(len(m) for _g, m in found), frag))
             if not best:
                 self._reject(result, page, "irrelevant_text")
                 continue
             best.sort(key=lambda item: (-item[0], item[1].fragment_id))
-            for count, frag in best[:2]:
+            if result.focused and len(best) > 2:
+                best = self._covering(best, groups)
+            # A focused search fetches fewer, better pages: one page may give up to 3 fragments (≤ 6 in total).
+            for count, frag in best[: FOCUSED_PAGE_FRAGMENTS if result.focused else 2]:
                 if len(selected) >= self.limits.fragments or budget <= 0:
                     break
                 text = frag.text[: min(1500, budget)]
@@ -377,6 +451,32 @@ class ExternalEvidenceService:
                     )
                 )
         result.fragments = selected
+
+    def _covering(
+        self, best: list[tuple[int, Fragment]], groups: list[list[QueryTerm]]
+    ) -> list[tuple[int, Fragment]]:
+        """Focused search: order a page's relevant fragments so that each next one ADDS the gap's words the earlier
+        ones lack, a word weighted by its rarity among these fragments (the page's subject, named in every section,
+        says little). The question path keeps the plain count order (the A/B baseline)."""
+        terms = list({t.stem: t for g in groups for t in g}.values())
+        present = [
+            {t.stem for t in terms if term_matches_text(t, tokenize(f"{f.heading or ''} {f.text}"))}
+            for _c, f in best
+        ]
+        df: dict[str, int] = {}
+        for found in present:
+            for stem in found:
+                df[stem] = df.get(stem, 0) + 1
+        order: list[int] = []
+        covered: set[str] = set()
+        while len(order) < len(best):
+            remaining = [i for i in range(len(best)) if i not in order]
+            pick = max(
+                remaining, key=lambda i: (sum(1 / df[x] for x in present[i] - covered), len(present[i]), -i)
+            )
+            order.append(pick)
+            covered |= present[pick]
+        return [best[i] for i in order]
 
     def _reject(self, result: ExternalRetrieval, page: CorporatePage, reason: str) -> None:
         self.counters["rejected"] += 1

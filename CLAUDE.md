@@ -36,6 +36,8 @@ registry. GitLab MR workflow and Confluence publication: `docs/GITLAB_KNOWLEDGE_
 `docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`. Overall: `docs/ARCHITECTURE.md`.
 M5.6.3: metadata without YAML + WikiLinks/backlinks (`docs/METADATA_AND_LINKS.md`), Template Hub
 (`docs/TEMPLATE_HUB.md`), AI-first proposals with Accept/Reject (`docs/AI_WORKFLOWS.md`).
+Adaptive RAG: the local-first evidence gate decides «Оба» → Confluence with ONE small model decision
+(weak-model contract, `docs/ADAPTIVE_RAG.md`).
 M6: native Work Management — projects/tasks/FS scheduling/identity gate, task↔document links (reader-scoped),
 `work_inspect` (read-only M5.7 tool) and typed «AI план» proposals in `backend/app/work/` (`docs/WORK_MANAGEMENT.md`).
 Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
