@@ -269,6 +269,13 @@ def test_lf03_a_gap_is_searched_with_a_focused_query_and_local_evidence_is_kept(
     assert "300001" in nodes and "LF-DOC-01" in nodes  # the gap page AND the local evidence are in context
     # the model saw the excerpts, not the documents; the gap goes to the answering model as data
     assert provider.calls[0].cards[0].document_id == "LF-DOC-01"
+    # Definition of done: local incomplete → gap → focused Confluence search → a verified quote with its version and
+    # unconfirmed status, next to the team evidence
+    external_cited = [c for c in answer["citations"] if c["source_kind"] == "confluence_mcp"]
+    assert [c["document_id"] for c in external_cited] == ["300001"]
+    assert external_cited[0]["source_id"] == "confluence:demo-wiki:300001:2"
+    assert external_cited[0]["external_status"] == "unknown" and "CSV" in external_cited[0]["excerpt"]
+    assert any(c["source_kind"] == "local_markdown" for c in answer["citations"])
 
 
 def test_lf21_two_independent_aspects_give_two_focused_searches_at_most(lf: Factory) -> None:
