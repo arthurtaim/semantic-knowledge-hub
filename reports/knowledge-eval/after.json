@@ -1,7 +1,7 @@
 {
   "label": "after",
-  "timestamp": "2026-11-25T22:34:23+00:00",
-  "commit": "fe6af11",
+  "timestamp": "2026-11-26T07:39:16+00:00",
+  "commit": "f4ea26e",
   "worktree_dirty": true,
   "kb_snapshot_hash": "4cc6e409e5231bb3",
   "cases_hash": "395a00146d3c1d34",
@@ -11,51 +11,51 @@
   "summary": {
     "overall": {
       "cases": 216,
-      "passed": 207,
-      "failed": 9,
+      "passed": 210,
+      "failed": 6,
       "errors": 0,
       "unsupported": 0,
-      "pass_rate": 0.9583,
-      "pass_rate_executed": 0.9583,
+      "pass_rate": 0.9722,
+      "pass_rate_executed": 0.9722,
       "recall_at_1": 0.9487,
       "recall_at_5": 0.9744,
       "mrr": 0.9647,
       "leaks": 0,
-      "context_ok": 0.9057,
-      "latency_p50_ms": 31.71,
-      "latency_p95_ms": 458.5
+      "context_ok": 0.9434,
+      "latency_p50_ms": 36.53,
+      "latency_p95_ms": 468.0
     },
     "tuning_set": {
       "cases": 184,
-      "passed": 178,
-      "failed": 6,
+      "passed": 180,
+      "failed": 4,
       "errors": 0,
       "unsupported": 0,
-      "pass_rate": 0.9674,
-      "pass_rate_executed": 0.9674,
+      "pass_rate": 0.9783,
+      "pass_rate_executed": 0.9783,
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "mrr": 1.0,
       "leaks": 0,
-      "context_ok": 0.9348,
-      "latency_p50_ms": 36.61,
-      "latency_p95_ms": 464.99
+      "context_ok": 0.9565,
+      "latency_p50_ms": 41.91,
+      "latency_p95_ms": 472.32
     },
     "holdout": {
       "cases": 32,
-      "passed": 29,
-      "failed": 3,
+      "passed": 30,
+      "failed": 2,
       "errors": 0,
       "unsupported": 0,
-      "pass_rate": 0.9062,
-      "pass_rate_executed": 0.9062,
+      "pass_rate": 0.9375,
+      "pass_rate_executed": 0.9375,
       "recall_at_1": 0.8182,
       "recall_at_5": 0.9091,
       "mrr": 0.875,
       "leaks": 0,
-      "context_ok": 0.7143,
-      "latency_p50_ms": 17.52,
-      "latency_p95_ms": 304.2
+      "context_ok": 0.8571,
+      "latency_p50_ms": 18.56,
+      "latency_p95_ms": 328.64
     },
     "by_category": {
       "abbreviation": {
@@ -71,8 +71,8 @@
         "mrr": 1.0,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 15.22,
-        "latency_p95_ms": 22.06
+        "latency_p50_ms": 15.81,
+        "latency_p95_ms": 36.28
       },
       "ai_workflow": {
         "cases": 10,
@@ -87,8 +87,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 332.97,
-        "latency_p95_ms": 504.81
+        "latency_p50_ms": 339.7,
+        "latency_p95_ms": 564.66
       },
       "discovery": {
         "cases": 8,
@@ -103,8 +103,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 312.43,
-        "latency_p95_ms": 330.74
+        "latency_p50_ms": 327.22,
+        "latency_p95_ms": 366.56
       },
       "exact_id": {
         "cases": 14,
@@ -119,8 +119,8 @@
         "mrr": 1.0,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 7.02,
-        "latency_p95_ms": 8.11
+        "latency_p50_ms": 7.23,
+        "latency_p95_ms": 8.12
       },
       "external_cache": {
         "cases": 10,
@@ -135,8 +135,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": 1.0,
-        "latency_p50_ms": 298.59,
-        "latency_p95_ms": 320.08
+        "latency_p50_ms": 305.71,
+        "latency_p95_ms": 329.99
       },
       "external_rag": {
         "cases": 12,
@@ -151,8 +151,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": 0.9167,
-        "latency_p50_ms": 43.46,
-        "latency_p95_ms": 50.49
+        "latency_p50_ms": 44.4,
+        "latency_p95_ms": 53.61
       },
       "followup": {
         "cases": 8,
@@ -167,8 +167,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": 1.0,
-        "latency_p50_ms": 33.76,
-        "latency_p95_ms": 53.36
+        "latency_p50_ms": 40.2,
+        "latency_p95_ms": 60.76
       },
       "graph": {
         "cases": 12,
@@ -183,8 +183,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 286.49,
-        "latency_p95_ms": 334.53
+        "latency_p50_ms": 286.04,
+        "latency_p95_ms": 327.72
       },
       "metadata": {
         "cases": 10,
@@ -199,8 +199,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 304.71,
-        "latency_p95_ms": 506.45
+        "latency_p50_ms": 314.75,
+        "latency_p95_ms": 514.0
       },
       "metadata_filter": {
         "cases": 14,
@@ -215,8 +215,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 5.9,
-        "latency_p95_ms": 6.01
+        "latency_p50_ms": 5.95,
+        "latency_p95_ms": 6.16
       },
       "no_answer": {
         "cases": 3,
@@ -231,8 +231,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 16.24,
-        "latency_p95_ms": 18.14
+        "latency_p50_ms": 17.29,
+        "latency_p95_ms": 21.1
       },
       "provenance": {
         "cases": 8,
@@ -247,8 +247,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": 1.0,
-        "latency_p50_ms": 31.71,
-        "latency_p95_ms": 46.58
+        "latency_p50_ms": 36.53,
+        "latency_p95_ms": 49.82
       },
       "relation": {
         "cases": 18,
@@ -263,8 +263,8 @@
         "mrr": 0.5,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 5.79,
-        "latency_p95_ms": 14.91
+        "latency_p50_ms": 5.82,
+        "latency_p95_ms": 15.3
       },
       "resource": {
         "cases": 8,
@@ -279,24 +279,24 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": 1.0,
-        "latency_p50_ms": 104.39,
-        "latency_p95_ms": 351.41
+        "latency_p50_ms": 102.45,
+        "latency_p95_ms": 381.3
       },
       "status": {
         "cases": 10,
-        "passed": 9,
-        "failed": 1,
+        "passed": 10,
+        "failed": 0,
         "errors": 0,
         "unsupported": 0,
-        "pass_rate": 0.9,
-        "pass_rate_executed": 0.9,
+        "pass_rate": 1.0,
+        "pass_rate_executed": 1.0,
         "recall_at_1": 1.0,
         "recall_at_5": 1.0,
         "mrr": 1.0,
         "leaks": 0,
         "context_ok": 1.0,
-        "latency_p50_ms": 26.6,
-        "latency_p95_ms": 36.61
+        "latency_p50_ms": 30.47,
+        "latency_p95_ms": 42.19
       },
       "sync": {
         "cases": 10,
@@ -311,8 +311,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 67.35,
-        "latency_p95_ms": 135.15
+        "latency_p50_ms": 68.72,
+        "latency_p95_ms": 136.29
       },
       "synonym": {
         "cases": 14,
@@ -327,24 +327,24 @@
         "mrr": 0.9375,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 12.92,
-        "latency_p95_ms": 20.54
+        "latency_p50_ms": 13.72,
+        "latency_p95_ms": 22.01
       },
       "synthesis": {
         "cases": 10,
-        "passed": 4,
-        "failed": 6,
+        "passed": 6,
+        "failed": 4,
         "errors": 0,
         "unsupported": 0,
-        "pass_rate": 0.4,
-        "pass_rate_executed": 0.4,
+        "pass_rate": 0.6,
+        "pass_rate_executed": 0.6,
         "recall_at_1": null,
         "recall_at_5": null,
         "mrr": null,
         "leaks": 0,
-        "context_ok": 0.6,
-        "latency_p50_ms": 40.65,
-        "latency_p95_ms": 61.93
+        "context_ok": 0.8,
+        "latency_p50_ms": 47.82,
+        "latency_p95_ms": 70.44
       },
       "template": {
         "cases": 8,
@@ -359,8 +359,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 74.54,
-        "latency_p95_ms": 144.61
+        "latency_p50_ms": 76.85,
+        "latency_p95_ms": 89.06
       },
       "template_hub": {
         "cases": 10,
@@ -375,8 +375,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 308.04,
-        "latency_p95_ms": 628.67
+        "latency_p50_ms": 333.56,
+        "latency_p95_ms": 643.1
       },
       "wikilink": {
         "cases": 10,
@@ -391,8 +391,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 452.6,
-        "latency_p95_ms": 633.09
+        "latency_p50_ms": 450.69,
+        "latency_p95_ms": 641.21
       }
     },
     "by_method": {
@@ -409,8 +409,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 302.94,
-        "latency_p95_ms": 302.94
+        "latency_p50_ms": 317.1,
+        "latency_p95_ms": 317.1
       },
       "ai_explain_relation_kinds": {
         "cases": 1,
@@ -425,8 +425,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 311.5,
-        "latency_p95_ms": 311.5
+        "latency_p50_ms": 328.88,
+        "latency_p95_ms": 328.88
       },
       "ai_impact_is_a_plan": {
         "cases": 1,
@@ -441,8 +441,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 318.46,
-        "latency_p95_ms": 318.46
+        "latency_p50_ms": 300.7,
+        "latency_p95_ms": 300.7
       },
       "ai_improve_section_partial": {
         "cases": 1,
@@ -457,8 +457,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 366.01,
-        "latency_p95_ms": 366.01
+        "latency_p50_ms": 362.25,
+        "latency_p95_ms": 362.25
       },
       "ai_metadata_partial_accept": {
         "cases": 1,
@@ -473,8 +473,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 346.58,
-        "latency_p95_ms": 346.58
+        "latency_p50_ms": 374.98,
+        "latency_p95_ms": 374.98
       },
       "ai_metadata_reject_unchanged": {
         "cases": 1,
@@ -489,8 +489,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 332.97,
-        "latency_p95_ms": 332.97
+        "latency_p50_ms": 339.7,
+        "latency_p95_ms": 339.7
       },
       "ai_prompt_to_document": {
         "cases": 1,
@@ -505,8 +505,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 328.93,
-        "latency_p95_ms": 328.93
+        "latency_p50_ms": 337.42,
+        "latency_p95_ms": 337.42
       },
       "ai_related_links_are_proposals": {
         "cases": 1,
@@ -521,8 +521,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 397.01,
-        "latency_p95_ms": 397.01
+        "latency_p50_ms": 389.9,
+        "latency_p95_ms": 389.9
       },
       "ai_stale_proposal_invalidated": {
         "cases": 1,
@@ -537,8 +537,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 352.54,
-        "latency_p95_ms": 352.54
+        "latency_p50_ms": 362.57,
+        "latency_p95_ms": 362.57
       },
       "ai_template_change_invalidates": {
         "cases": 1,
@@ -553,24 +553,24 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 504.81,
-        "latency_p95_ms": 504.81
+        "latency_p50_ms": 564.66,
+        "latency_p95_ms": 564.66
       },
       "assistant": {
         "cases": 58,
-        "passed": 50,
-        "failed": 8,
+        "passed": 53,
+        "failed": 5,
         "errors": 0,
         "unsupported": 0,
-        "pass_rate": 0.8621,
-        "pass_rate_executed": 0.8621,
+        "pass_rate": 0.9138,
+        "pass_rate_executed": 0.9138,
         "recall_at_1": null,
         "recall_at_5": null,
         "mrr": null,
         "leaks": 0,
-        "context_ok": 0.9057,
-        "latency_p50_ms": 30.71,
-        "latency_p95_ms": 50.49
+        "context_ok": 0.9434,
+        "latency_p50_ms": 36.25,
+        "latency_p95_ms": 57.31
       },
       "catalog": {
         "cases": 15,
@@ -585,8 +585,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 5.9,
-        "latency_p95_ms": 6.01
+        "latency_p50_ms": 5.95,
+        "latency_p95_ms": 6.22
       },
       "disc_feedback_changes_no_authority": {
         "cases": 1,
@@ -601,8 +601,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 326.39,
-        "latency_p95_ms": 326.39
+        "latency_p50_ms": 366.56,
+        "latency_p95_ms": 366.56
       },
       "disc_feedback_irrelevant_is_local_to_the_intent": {
         "cases": 1,
@@ -617,8 +617,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 309.15,
-        "latency_p95_ms": 309.15
+        "latency_p50_ms": 303.0,
+        "latency_p95_ms": 303.0
       },
       "disc_feedback_relevant_boosts_same_intent": {
         "cases": 1,
@@ -633,8 +633,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 294.05,
-        "latency_p95_ms": 294.05
+        "latency_p50_ms": 317.57,
+        "latency_p95_ms": 317.57
       },
       "disc_propose_is_a_draft": {
         "cases": 1,
@@ -649,26 +649,10 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 330.74,
-        "latency_p95_ms": 330.74
+        "latency_p50_ms": 322.52,
+        "latency_p95_ms": 322.52
       },
       "disc_purge": {
-        "cases": 1,
-        "passed": 1,
-        "failed": 0,
-        "errors": 0,
-        "unsupported": 0,
-        "pass_rate": 1.0,
-        "pass_rate_executed": 1.0,
-        "recall_at_1": null,
-        "recall_at_5": null,
-        "mrr": null,
-        "leaks": 0,
-        "context_ok": null,
-        "latency_p50_ms": 304.2,
-        "latency_p95_ms": 304.2
-      },
-      "disc_query_text_not_stored": {
         "cases": 1,
         "passed": 1,
         "failed": 0,
@@ -684,6 +668,22 @@
         "latency_p50_ms": 328.64,
         "latency_p95_ms": 328.64
       },
+      "disc_query_text_not_stored": {
+        "cases": 1,
+        "passed": 1,
+        "failed": 0,
+        "errors": 0,
+        "unsupported": 0,
+        "pass_rate": 1.0,
+        "pass_rate_executed": 1.0,
+        "recall_at_1": null,
+        "recall_at_5": null,
+        "mrr": null,
+        "leaks": 0,
+        "context_ok": null,
+        "latency_p50_ms": 327.22,
+        "latency_p95_ms": 327.22
+      },
       "disc_trace_is_reproducible": {
         "cases": 1,
         "passed": 1,
@@ -697,8 +697,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 312.43,
-        "latency_p95_ms": 312.43
+        "latency_p50_ms": 334.98,
+        "latency_p95_ms": 334.98
       },
       "ext_cache_hit_after_fresh_search": {
         "cases": 1,
@@ -713,8 +713,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 313.24,
-        "latency_p95_ms": 313.24
+        "latency_p50_ms": 322.38,
+        "latency_p95_ms": 322.38
       },
       "ext_cross_scope": {
         "cases": 1,
@@ -729,8 +729,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 307.71,
-        "latency_p95_ms": 307.71
+        "latency_p50_ms": 329.99,
+        "latency_p95_ms": 329.99
       },
       "ext_delete": {
         "cases": 1,
@@ -745,8 +745,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 302.67,
-        "latency_p95_ms": 302.67
+        "latency_p50_ms": 308.79,
+        "latency_p95_ms": 308.79
       },
       "ext_revoke_no_reuse": {
         "cases": 1,
@@ -761,8 +761,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 298.59,
-        "latency_p95_ms": 298.59
+        "latency_p50_ms": 305.71,
+        "latency_p95_ms": 305.71
       },
       "ext_ttl_zero_no_cache": {
         "cases": 1,
@@ -777,8 +777,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 320.08,
-        "latency_p95_ms": 320.08
+        "latency_p50_ms": 308.38,
+        "latency_p95_ms": 308.38
       },
       "ext_version_update": {
         "cases": 1,
@@ -793,8 +793,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 319.08,
-        "latency_p95_ms": 319.08
+        "latency_p50_ms": 320.57,
+        "latency_p95_ms": 320.57
       },
       "graph_dangling_after_delete": {
         "cases": 1,
@@ -809,8 +809,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 449.26,
-        "latency_p95_ms": 449.26
+        "latency_p50_ms": 468.0,
+        "latency_p95_ms": 468.0
       },
       "graph_local_depth_bounded": {
         "cases": 1,
@@ -825,8 +825,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 290.28,
-        "latency_p95_ms": 290.28
+        "latency_p50_ms": 309.81,
+        "latency_p95_ms": 309.81
       },
       "graph_neighbors": {
         "cases": 12,
@@ -841,8 +841,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 5.77,
-        "latency_p95_ms": 5.87
+        "latency_p50_ms": 5.86,
+        "latency_p95_ms": 5.92
       },
       "graph_overview_bounded_and_typed": {
         "cases": 1,
@@ -857,8 +857,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 299.2,
-        "latency_p95_ms": 299.2
+        "latency_p50_ms": 291.49,
+        "latency_p95_ms": 291.49
       },
       "graph_path": {
         "cases": 11,
@@ -873,8 +873,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 5.75,
-        "latency_p95_ms": 14.91
+        "latency_p50_ms": 5.85,
+        "latency_p95_ms": 15.3
       },
       "graph_query_hides_revoked": {
         "cases": 1,
@@ -889,8 +889,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 294.49,
-        "latency_p95_ms": 294.49
+        "latency_p50_ms": 319.64,
+        "latency_p95_ms": 319.64
       },
       "graph_query_shows_external_evidence": {
         "cases": 1,
@@ -905,8 +905,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 334.53,
-        "latency_p95_ms": 334.53
+        "latency_p50_ms": 327.72,
+        "latency_p95_ms": 327.72
       },
       "graph_scoped_trace": {
         "cases": 1,
@@ -921,8 +921,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 286.49,
-        "latency_p95_ms": 286.49
+        "latency_p50_ms": 286.04,
+        "latency_p95_ms": 286.04
       },
       "md_bare_markdown_staged": {
         "cases": 1,
@@ -937,8 +937,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 506.45,
-        "latency_p95_ms": 506.45
+        "latency_p50_ms": 514.0,
+        "latency_p95_ms": 514.0
       },
       "md_concurrent_save_guard": {
         "cases": 1,
@@ -953,8 +953,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 306.85,
-        "latency_p95_ms": 306.85
+        "latency_p50_ms": 322.17,
+        "latency_p95_ms": 322.17
       },
       "md_create_without_yaml": {
         "cases": 1,
@@ -969,8 +969,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 287.73,
-        "latency_p95_ms": 287.73
+        "latency_p50_ms": 314.75,
+        "latency_p95_ms": 314.75
       },
       "md_duplicate_title_warns": {
         "cases": 1,
@@ -985,8 +985,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 301.6,
-        "latency_p95_ms": 301.6
+        "latency_p50_ms": 324.85,
+        "latency_p95_ms": 324.85
       },
       "md_existing_yaml_kept": {
         "cases": 1,
@@ -1001,8 +1001,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 304.71,
-        "latency_p95_ms": 304.71
+        "latency_p50_ms": 329.92,
+        "latency_p95_ms": 329.92
       },
       "md_idempotent_retry": {
         "cases": 1,
@@ -1017,8 +1017,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 314.83,
-        "latency_p95_ms": 314.83
+        "latency_p50_ms": 301.68,
+        "latency_p95_ms": 301.68
       },
       "md_import_preview_fields": {
         "cases": 1,
@@ -1033,8 +1033,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 297.95,
-        "latency_p95_ms": 297.95
+        "latency_p50_ms": 307.85,
+        "latency_p95_ms": 307.85
       },
       "md_invalid_yaml_reported": {
         "cases": 1,
@@ -1049,8 +1049,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 314.84,
-        "latency_p95_ms": 314.84
+        "latency_p50_ms": 297.64,
+        "latency_p95_ms": 297.64
       },
       "md_missing_owner_unassigned": {
         "cases": 1,
@@ -1065,8 +1065,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 304.48,
-        "latency_p95_ms": 304.48
+        "latency_p50_ms": 296.46,
+        "latency_p95_ms": 296.46
       },
       "md_move_keeps_id": {
         "cases": 1,
@@ -1081,8 +1081,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 458.5,
-        "latency_p95_ms": 458.5
+        "latency_p50_ms": 470.4,
+        "latency_p95_ms": 470.4
       },
       "res_api_limits_clamped": {
         "cases": 1,
@@ -1097,8 +1097,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 295.28,
-        "latency_p95_ms": 295.28
+        "latency_p50_ms": 289.92,
+        "latency_p95_ms": 289.92
       },
       "res_concurrency_bounded": {
         "cases": 1,
@@ -1113,8 +1113,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 160.63,
-        "latency_p95_ms": 160.63
+        "latency_p50_ms": 155.63,
+        "latency_p95_ms": 155.63
       },
       "res_parallel_requests_isolated": {
         "cases": 1,
@@ -1129,8 +1129,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 351.41,
-        "latency_p95_ms": 351.41
+        "latency_p50_ms": 381.3,
+        "latency_p95_ms": 381.3
       },
       "res_timeout_falls_back": {
         "cases": 1,
@@ -1145,8 +1145,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 104.39,
-        "latency_p95_ms": 104.39
+        "latency_p50_ms": 102.45,
+        "latency_p95_ms": 102.45
       },
       "search": {
         "cases": 39,
@@ -1161,8 +1161,8 @@
         "mrr": 0.9647,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 12.7,
-        "latency_p95_ms": 22.06
+        "latency_p50_ms": 12.91,
+        "latency_p95_ms": 22.33
       },
       "sync_add_approved": {
         "cases": 1,
@@ -1177,8 +1177,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 83.39,
-        "latency_p95_ms": 83.39
+        "latency_p50_ms": 85.33,
+        "latency_p95_ms": 85.33
       },
       "sync_add_draft": {
         "cases": 1,
@@ -1193,8 +1193,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 64.19,
-        "latency_p95_ms": 64.19
+        "latency_p50_ms": 67.43,
+        "latency_p95_ms": 67.43
       },
       "sync_delete": {
         "cases": 1,
@@ -1209,8 +1209,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 76.49,
-        "latency_p95_ms": 76.49
+        "latency_p50_ms": 76.81,
+        "latency_p95_ms": 76.81
       },
       "sync_duplicate_id": {
         "cases": 1,
@@ -1225,8 +1225,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 67.35,
-        "latency_p95_ms": 67.35
+        "latency_p50_ms": 68.72,
+        "latency_p95_ms": 68.72
       },
       "sync_idempotent_parallel": {
         "cases": 1,
@@ -1241,8 +1241,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 135.15,
-        "latency_p95_ms": 135.15
+        "latency_p50_ms": 136.29,
+        "latency_p95_ms": 136.29
       },
       "sync_invalid_yaml": {
         "cases": 1,
@@ -1257,8 +1257,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 59.6,
-        "latency_p95_ms": 59.6
+        "latency_p50_ms": 59.92,
+        "latency_p95_ms": 59.92
       },
       "sync_rename": {
         "cases": 1,
@@ -1273,8 +1273,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 61.33,
-        "latency_p95_ms": 61.33
+        "latency_p50_ms": 63.12,
+        "latency_p95_ms": 63.12
       },
       "sync_update_metadata": {
         "cases": 1,
@@ -1289,8 +1289,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 64.19,
-        "latency_p95_ms": 64.19
+        "latency_p50_ms": 67.21,
+        "latency_p95_ms": 67.21
       },
       "sync_update_relation": {
         "cases": 1,
@@ -1305,8 +1305,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 73.85,
-        "latency_p95_ms": 73.85
+        "latency_p50_ms": 75.93,
+        "latency_p95_ms": 75.93
       },
       "sync_update_rule": {
         "cases": 1,
@@ -1321,8 +1321,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 84.41,
-        "latency_p95_ms": 84.41
+        "latency_p50_ms": 71.27,
+        "latency_p95_ms": 71.27
       },
       "template_ai_authoring_uses_registry": {
         "cases": 1,
@@ -1337,8 +1337,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 73.96,
-        "latency_p95_ms": 73.96
+        "latency_p50_ms": 56.43,
+        "latency_p95_ms": 56.43
       },
       "template_new_visible": {
         "cases": 1,
@@ -1353,8 +1353,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 144.61,
-        "latency_p95_ms": 144.61
+        "latency_p50_ms": 89.06,
+        "latency_p95_ms": 89.06
       },
       "template_old_draft_keeps_version": {
         "cases": 1,
@@ -1369,8 +1369,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 76.94,
-        "latency_p95_ms": 76.94
+        "latency_p50_ms": 80.63,
+        "latency_p95_ms": 80.63
       },
       "template_registry_restart": {
         "cases": 1,
@@ -1385,8 +1385,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 75.6,
-        "latency_p95_ms": 75.6
+        "latency_p50_ms": 78.3,
+        "latency_p95_ms": 78.3
       },
       "template_removed_old_draft_opens": {
         "cases": 1,
@@ -1401,8 +1401,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 74.54,
-        "latency_p95_ms": 74.54
+        "latency_p50_ms": 76.85,
+        "latency_p95_ms": 76.85
       },
       "template_required_section_only_for_new_docs": {
         "cases": 1,
@@ -1417,8 +1417,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 73.08,
-        "latency_p95_ms": 73.08
+        "latency_p50_ms": 76.18,
+        "latency_p95_ms": 76.18
       },
       "template_silent_edit_versioned": {
         "cases": 1,
@@ -1433,8 +1433,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 68.76,
-        "latency_p95_ms": 68.76
+        "latency_p50_ms": 69.12,
+        "latency_p95_ms": 69.12
       },
       "template_v2_for_new_drafts": {
         "cases": 1,
@@ -1449,8 +1449,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 60.46,
-        "latency_p95_ms": 60.46
+        "latency_p50_ms": 60.24,
+        "latency_p95_ms": 60.24
       },
       "tp_catalogue_statuses": {
         "cases": 1,
@@ -1465,8 +1465,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 305.36,
-        "latency_p95_ms": 305.36
+        "latency_p50_ms": 289.95,
+        "latency_p95_ms": 289.95
       },
       "tp_compare_breaking": {
         "cases": 1,
@@ -1481,8 +1481,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 305.2,
-        "latency_p95_ms": 305.2
+        "latency_p50_ms": 291.67,
+        "latency_p95_ms": 291.67
       },
       "tp_compare_optional_rename": {
         "cases": 1,
@@ -1497,8 +1497,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 286.78,
-        "latency_p95_ms": 286.78
+        "latency_p50_ms": 306.63,
+        "latency_p95_ms": 306.63
       },
       "tp_deprecated_not_recommended": {
         "cases": 1,
@@ -1513,8 +1513,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 340.87,
-        "latency_p95_ms": 340.87
+        "latency_p50_ms": 347.58,
+        "latency_p95_ms": 347.58
       },
       "tp_detail_structure": {
         "cases": 1,
@@ -1529,8 +1529,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 293.65,
-        "latency_p95_ms": 293.65
+        "latency_p50_ms": 310.1,
+        "latency_p95_ms": 310.1
       },
       "tp_invalid_revision_keeps_active": {
         "cases": 1,
@@ -1545,8 +1545,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 481.04,
-        "latency_p95_ms": 481.04
+        "latency_p50_ms": 486.11,
+        "latency_p95_ms": 486.11
       },
       "tp_new_template_everywhere": {
         "cases": 1,
@@ -1561,8 +1561,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 497.6,
-        "latency_p95_ms": 497.6
+        "latency_p50_ms": 484.5,
+        "latency_p95_ms": 484.5
       },
       "tp_schema_defines_version": {
         "cases": 1,
@@ -1577,8 +1577,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 628.67,
-        "latency_p95_ms": 628.67
+        "latency_p50_ms": 643.1,
+        "latency_p95_ms": 643.1
       },
       "tp_usage_counts_visible_documents": {
         "cases": 1,
@@ -1593,8 +1593,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 308.04,
-        "latency_p95_ms": 308.04
+        "latency_p50_ms": 333.56,
+        "latency_p95_ms": 333.56
       },
       "tp_v2_keeps_old_drafts": {
         "cases": 1,
@@ -1609,8 +1609,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 493.76,
-        "latency_p95_ms": 493.76
+        "latency_p50_ms": 501.47,
+        "latency_p95_ms": 501.47
       },
       "wl_code_is_not_a_link": {
         "cases": 1,
@@ -1625,8 +1625,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 452.6,
-        "latency_p95_ms": 452.6
+        "latency_p50_ms": 442.71,
+        "latency_p95_ms": 442.71
       },
       "wl_curated_backlink": {
         "cases": 1,
@@ -1641,8 +1641,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 300.99,
-        "latency_p95_ms": 300.99
+        "latency_p50_ms": 289.57,
+        "latency_p95_ms": 289.57
       },
       "wl_delete_target_reported": {
         "cases": 1,
@@ -1657,8 +1657,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 633.09,
-        "latency_p95_ms": 633.09
+        "latency_p50_ms": 637.42,
+        "latency_p95_ms": 637.42
       },
       "wl_inaccessible_target_no_leak": {
         "cases": 1,
@@ -1673,8 +1673,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 0.69,
-        "latency_p95_ms": 0.69
+        "latency_p50_ms": 0.73,
+        "latency_p95_ms": 0.73
       },
       "wl_insert_then_sync": {
         "cases": 1,
@@ -1689,8 +1689,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 473.91,
-        "latency_p95_ms": 473.91
+        "latency_p50_ms": 482.18,
+        "latency_p95_ms": 482.18
       },
       "wl_label_escaped": {
         "cases": 1,
@@ -1705,8 +1705,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 442.44,
-        "latency_p95_ms": 442.44
+        "latency_p50_ms": 450.69,
+        "latency_p95_ms": 450.69
       },
       "wl_provenance_merged": {
         "cases": 1,
@@ -1721,8 +1721,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 282.81,
-        "latency_p95_ms": 282.81
+        "latency_p50_ms": 310.28,
+        "latency_p95_ms": 310.28
       },
       "wl_remove_link_no_stale_edge": {
         "cases": 1,
@@ -1737,8 +1737,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 623.45,
-        "latency_p95_ms": 623.45
+        "latency_p50_ms": 641.21,
+        "latency_p95_ms": 641.21
       },
       "wl_rename_target": {
         "cases": 1,
@@ -1753,8 +1753,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 464.99,
-        "latency_p95_ms": 464.99
+        "latency_p50_ms": 461.05,
+        "latency_p95_ms": 461.05
       },
       "wl_title_link_not_guessed": {
         "cases": 1,
@@ -1769,8 +1769,8 @@
         "mrr": null,
         "leaks": 0,
         "context_ok": null,
-        "latency_p50_ms": 459.49,
-        "latency_p95_ms": 459.49
+        "latency_p50_ms": 472.32,
+        "latency_p95_ms": 472.32
       }
     }
   },
@@ -1786,7 +1786,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 46.58,
+      "latency_ms": 49.82,
       "returned": [
         "DEMO-SEM-007",
         "DEMO-SEM-002",
@@ -1806,7 +1806,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 27.05,
+      "latency_ms": 29.15,
       "returned": [
         "DEMO-GOV-001",
         "DEMO-INT-013",
@@ -1825,7 +1825,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 31.71,
+      "latency_ms": 36.53,
       "returned": [
         "DEMO-SEM-002",
         "DEMO-GUIDE-005",
@@ -1845,7 +1845,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 36.96,
+      "latency_ms": 40.9,
       "returned": [
         "DEMO-INT-010",
         "DEMO-SEM-001",
@@ -1865,7 +1865,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 13.6,
+      "latency_ms": 14.37,
       "returned": [],
       "context_ok": null
     },
@@ -1880,7 +1880,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 24.73,
+      "latency_ms": 27.06,
       "returned": [
         "DEMO-INT-017",
         "DEMO-GOV-001",
@@ -1900,7 +1900,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 38.47,
+      "latency_ms": 43.03,
       "returned": [
         "DEMO-INT-018",
         "DEMO-INT-018",
@@ -1920,7 +1920,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 23.53,
+      "latency_ms": 25.39,
       "returned": [
         "DEMO-SEM-006",
         "DEMO-SEM-007",
@@ -1940,7 +1940,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 29.05,
+      "latency_ms": 32.73,
       "returned": [
         "DEMO-GUIDE-005",
         "DEMO-SEM-006",
@@ -1959,7 +1959,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 33.76,
+      "latency_ms": 40.2,
       "returned": [
         "DEMO-GOV-001",
         "DEMO-INT-013",
@@ -1979,7 +1979,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 31.88,
+      "latency_ms": 36.4,
       "returned": [
         "DEMO-INT-002",
         "DEMO-INT-001",
@@ -1998,7 +1998,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 32.36,
+      "latency_ms": 41.91,
       "returned": [
         "DEMO-SEM-005",
         "DEMO-SEM-006",
@@ -2018,7 +2018,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 35.18,
+      "latency_ms": 38.72,
       "returned": [
         "DEMO-INT-010",
         "DEMO-INT-010",
@@ -2038,7 +2038,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 30.71,
+      "latency_ms": 36.25,
       "returned": [
         "DEMO-SEM-003",
         "DEMO-SEM-002",
@@ -2057,7 +2057,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 53.36,
+      "latency_ms": 60.76,
       "returned": [
         "DEMO-SEM-004",
         "DEMO-SEM-004",
@@ -2076,7 +2076,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 49.14,
+      "latency_ms": 53.31,
       "returned": [
         "DEMO-GUIDE-002",
         "DEMO-SRC-007",
@@ -2096,7 +2096,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 7.68,
+      "latency_ms": 7.65,
       "returned": [
         "DEMO-ADR-003",
         "DEMO-ADR-004",
@@ -2118,7 +2118,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 17.27,
+      "latency_ms": 18.52,
       "returned": [
         "DEMO-ADR-002",
         "DEMO-PROC-009",
@@ -2144,7 +2144,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.99,
+      "latency_ms": 6.04,
       "returned": [
         "DEMO-ADR-002",
         "DEMO-ADR-003",
@@ -2164,7 +2164,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 14.91,
+      "latency_ms": 15.3,
       "returned": [
         "DEMO-ADR-002",
         "DEMO-GOV-001",
@@ -2178,16 +2178,17 @@
       "method": "assistant",
       "holdout": false,
       "status": "fail",
-      "detail": "facts missing from the grounded answer: ['Черновик (draft) никогда не авторитетен']",
+      "detail": "facts missing from the grounded answer: ['revision_conflict', 'Черновик (draft) никогда не авторитетен']",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 49.79,
+      "latency_ms": 57.24,
       "returned": [
         "DEMO-GUIDE-004",
+        "DEMO-ADR-002",
         "DEMO-GOV-007",
-        "DEMO-ADR-002"
+        "DEMO-GUIDE-004"
       ],
       "context_ok": true
     },
@@ -2202,7 +2203,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 6.77,
+      "latency_ms": 7.14,
       "returned": [
         "DEMO-GUIDE-004",
         "DEMO-GOV-007",
@@ -2222,7 +2223,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 11.61,
+      "latency_ms": 12.34,
       "returned": [
         "DEMO-GUIDE-005",
         "DEMO-PROC-004",
@@ -2248,7 +2249,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 17.52,
+      "latency_ms": 18.56,
       "returned": [
         "DEMO-GUIDE-002",
         "DEMO-INT-014",
@@ -2274,7 +2275,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.92,
+      "latency_ms": 6.22,
       "returned": [
         "DEMO-GUIDE-001",
         "DEMO-GUIDE-002",
@@ -2295,7 +2296,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 6.07,
+      "latency_ms": 6.34,
       "returned": [
         "DEMO-INT-001",
         "DEMO-INT-002",
@@ -2318,7 +2319,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 47.77,
+      "latency_ms": 49.23,
       "returned": [
         "200101",
         "200101",
@@ -2338,7 +2339,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 45.94,
+      "latency_ms": 45.12,
       "returned": [
         "200102",
         "200102"
@@ -2356,12 +2357,12 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 54.63,
+      "latency_ms": 53.61,
       "returned": [
+        "200104",
         "200103",
-        "200104",
-        "200104",
-        "200103"
+        "200103",
+        "200104"
       ],
       "context_ok": true
     },
@@ -2376,7 +2377,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 30.67,
+      "latency_ms": 33.15,
       "returned": [
         "DEMO-SRC-007",
         "DEMO-PROC-003",
@@ -2396,7 +2397,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 50.49,
+      "latency_ms": 55.93,
       "returned": [
         "DEMO-INT-003",
         "200106",
@@ -2416,7 +2417,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 38.21,
+      "latency_ms": 39.07,
       "returned": [
         "200108",
         "200108",
@@ -2435,7 +2436,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 26.6,
+      "latency_ms": 26.69,
       "returned": [
         "DEMO-GOV-001",
         "DEMO-INT-013",
@@ -2454,7 +2455,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 26.67,
+      "latency_ms": 29.48,
       "returned": [
         "DEMO-SEM-007",
         "DEMO-SEM-002",
@@ -2474,7 +2475,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 46.13,
+      "latency_ms": 49.42,
       "returned": [
         "DEMO-SRC-002",
         "200109",
@@ -2494,7 +2495,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 23.29,
+      "latency_ms": 24.25,
       "returned": [],
       "context_ok": true
     },
@@ -2509,7 +2510,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 43.46,
+      "latency_ms": 44.4,
       "returned": [
         "200106",
         "200123"
@@ -2527,7 +2528,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 21.69,
+      "latency_ms": 22.41,
       "returned": [
         "200117",
         "200117"
@@ -2545,7 +2546,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 313.24,
+      "latency_ms": 322.38,
       "returned": [],
       "context_ok": null
     },
@@ -2560,7 +2561,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 298.59,
+      "latency_ms": 305.71,
       "returned": [],
       "context_ok": null
     },
@@ -2575,7 +2576,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 319.08,
+      "latency_ms": 320.57,
       "returned": [],
       "context_ok": null
     },
@@ -2590,7 +2591,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 302.67,
+      "latency_ms": 308.79,
       "returned": [],
       "context_ok": null
     },
@@ -2605,7 +2606,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 307.71,
+      "latency_ms": 329.99,
       "returned": [],
       "context_ok": null
     },
@@ -2620,7 +2621,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 320.08,
+      "latency_ms": 308.38,
       "returned": [],
       "context_ok": null
     },
@@ -2635,7 +2636,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 25.27,
+      "latency_ms": 26.2,
       "returned": [],
       "context_ok": true
     },
@@ -2650,7 +2651,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 24.28,
+      "latency_ms": 25.02,
       "returned": [
         "200122",
         "200122",
@@ -2669,7 +2670,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 27.1,
+      "latency_ms": 28.08,
       "returned": [
         "200116"
       ],
@@ -2686,7 +2687,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 22.88,
+      "latency_ms": 24.19,
       "returned": [
         "200121"
       ],
@@ -2703,7 +2704,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 294.05,
+      "latency_ms": 317.57,
       "returned": [],
       "context_ok": null
     },
@@ -2718,7 +2719,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 309.15,
+      "latency_ms": 303.0,
       "returned": [],
       "context_ok": null
     },
@@ -2733,7 +2734,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 326.39,
+      "latency_ms": 366.56,
       "returned": [],
       "context_ok": null
     },
@@ -2748,7 +2749,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 328.64,
+      "latency_ms": 327.22,
       "returned": [],
       "context_ok": null
     },
@@ -2763,7 +2764,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 304.2,
+      "latency_ms": 328.64,
       "returned": [],
       "context_ok": null
     },
@@ -2778,7 +2779,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 330.74,
+      "latency_ms": 322.52,
       "returned": [],
       "context_ok": null
     },
@@ -2793,7 +2794,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 312.43,
+      "latency_ms": 334.98,
       "returned": [],
       "context_ok": null
     },
@@ -2808,7 +2809,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 18.86,
+      "latency_ms": 19.67,
       "returned": [],
       "context_ok": null
     },
@@ -2823,7 +2824,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 299.2,
+      "latency_ms": 291.49,
       "returned": [],
       "context_ok": null
     },
@@ -2838,7 +2839,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 290.28,
+      "latency_ms": 309.81,
       "returned": [],
       "context_ok": null
     },
@@ -2853,7 +2854,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 334.53,
+      "latency_ms": 327.72,
       "returned": [],
       "context_ok": null
     },
@@ -2868,7 +2869,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 294.49,
+      "latency_ms": 319.64,
       "returned": [],
       "context_ok": null
     },
@@ -2883,7 +2884,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 286.49,
+      "latency_ms": 286.04,
       "returned": [],
       "context_ok": null
     },
@@ -2898,7 +2899,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 449.26,
+      "latency_ms": 468.0,
       "returned": [],
       "context_ok": null
     },
@@ -2913,7 +2914,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 6.26,
+      "latency_ms": 6.91,
       "returned": [
         "DEMO-SRC-002",
         "DEMO-INT-014",
@@ -2932,7 +2933,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.57,
+      "latency_ms": 5.85,
       "returned": [
         "DEMO-SRC-003",
         "DEMO-SEM-003",
@@ -2951,7 +2952,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.52,
+      "latency_ms": 5.85,
       "returned": [
         "DEMO-SRC-005",
         "DEMO-INT-007",
@@ -2971,7 +2972,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.37,
+      "latency_ms": 5.94,
       "returned": [
         "DEMO-GOV-003",
         "DEMO-SEM-009"
@@ -2989,7 +2990,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.53,
+      "latency_ms": 5.86,
       "returned": [
         "DEMO-SEM-002"
       ],
@@ -3006,7 +3007,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.33,
+      "latency_ms": 5.88,
       "returned": [
         "DEMO-PROC-007"
       ],
@@ -3023,7 +3024,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 22.67,
+      "latency_ms": 24.85,
       "returned": [
         "200101",
         "200101",
@@ -3043,7 +3044,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 27.43,
+      "latency_ms": 28.86,
       "returned": [
         "DEMO-GOV-001",
         "DEMO-INT-013",
@@ -3062,7 +3063,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 104.39,
+      "latency_ms": 102.45,
       "returned": [],
       "context_ok": null
     },
@@ -3077,7 +3078,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 160.63,
+      "latency_ms": 155.63,
       "returned": [],
       "context_ok": null
     },
@@ -3092,7 +3093,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 351.41,
+      "latency_ms": 381.3,
       "returned": [],
       "context_ok": null
     },
@@ -3107,7 +3108,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 295.28,
+      "latency_ms": 289.92,
       "returned": [],
       "context_ok": null
     },
@@ -3122,7 +3123,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 22.64,
+      "latency_ms": 24.51,
       "returned": [
         "200115",
         "200115",
@@ -3141,7 +3142,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 20.44,
+      "latency_ms": 22.15,
       "returned": [],
       "context_ok": true
     },
@@ -3156,7 +3157,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 7.02,
+      "latency_ms": 7.46,
       "returned": [
         "DEMO-GOV-006",
         "DEMO-INT-002",
@@ -3179,7 +3180,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 6.31,
+      "latency_ms": 6.8,
       "returned": [
         "DEMO-GOV-013",
         "DEMO-GOV-009",
@@ -3198,7 +3199,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 14.53,
+      "latency_ms": 15.69,
       "returned": [
         "DEMO-GOV-005",
         "DEMO-INT-004",
@@ -3224,7 +3225,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 12.46,
+      "latency_ms": 13.72,
       "returned": [
         "DEMO-GOV-003",
         "DEMO-INT-003",
@@ -3250,7 +3251,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 13.47,
+      "latency_ms": 14.49,
       "returned": [
         "DEMO-GOV-004",
         "DEMO-SEM-008",
@@ -3276,7 +3277,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.59,
+      "latency_ms": 5.93,
       "returned": [
         "DEMO-GOV-013"
       ],
@@ -3293,7 +3294,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.56,
+      "latency_ms": 5.89,
       "returned": [
         "DEMO-GOV-012"
       ],
@@ -3310,7 +3311,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.56,
+      "latency_ms": 5.98,
       "returned": [
         "DEMO-GOV-009",
         "DEMO-ADR-003",
@@ -3329,7 +3330,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.52,
+      "latency_ms": 5.92,
       "returned": [
         "DEMO-INT-002",
         "DEMO-SEM-006"
@@ -3347,7 +3348,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 44.19,
+      "latency_ms": 49.23,
       "returned": [
         "DEMO-GOV-003",
         "DEMO-GOV-007",
@@ -3366,7 +3367,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 7.16,
+      "latency_ms": 7.67,
       "returned": [
         "DEMO-INT-002",
         "DEMO-GUIDE-002",
@@ -3392,7 +3393,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 6.2,
+      "latency_ms": 6.62,
       "returned": [
         "DEMO-INT-008",
         "DEMO-SRC-007",
@@ -3412,7 +3413,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 20.54,
+      "latency_ms": 22.01,
       "returned": [
         "DEMO-INT-002",
         "DEMO-INT-001",
@@ -3438,7 +3439,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 16.91,
+      "latency_ms": 17.81,
       "returned": [
         "DEMO-INT-009",
         "DEMO-PROC-002",
@@ -3464,7 +3465,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 22.06,
+      "latency_ms": 36.28,
       "returned": [
         "DEMO-INT-006",
         "DEMO-SRC-008",
@@ -3490,7 +3491,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 15.22,
+      "latency_ms": 15.81,
       "returned": [
         "DEMO-INT-003",
         "DEMO-INT-001",
@@ -3516,7 +3517,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 7.26,
+      "latency_ms": 5.98,
       "returned": [
         "DEMO-INT-004",
         "DEMO-INT-005"
@@ -3534,7 +3535,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.73,
+      "latency_ms": 5.82,
       "returned": [
         "DEMO-INT-001",
         "DEMO-INT-002",
@@ -3553,7 +3554,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.54,
+      "latency_ms": 5.68,
       "returned": [
         "DEMO-GOV-006",
         "DEMO-INT-003"
@@ -3571,7 +3572,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.57,
+      "latency_ms": 5.7,
       "returned": [
         "DEMO-GOV-003",
         "DEMO-INT-003",
@@ -3590,7 +3591,7 @@
       "recall_at_1": 0.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 22.89,
+      "latency_ms": 22.33,
       "returned": [
         "DEMO-SEM-011",
         "DEMO-INT-007",
@@ -3601,7 +3602,7 @@
         "DEMO-PROC-001",
         "DEMO-SRC-005",
         "DEMO-SRC-001",
-        "DEMO-SEM-001"
+        "DEMO-INT-014"
       ],
       "context_ok": null
     },
@@ -3611,17 +3612,17 @@
       "method": "assistant",
       "holdout": false,
       "status": "fail",
-      "detail": "not cited: ['DEMO-INT-002'] (cited ['DEMO-INT-001', 'DEMO-SRC-002', 'DEMO-INT-001', 'DEMO-SEM-002'], confidence partial)",
+      "detail": "not cited: ['DEMO-INT-002'] (cited ['DEMO-SRC-002', 'DEMO-INT-001', 'DEMO-SEM-002', 'DEMO-INT-001'], confidence partial)",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 31.56,
+      "latency_ms": 38.2,
       "returned": [
-        "DEMO-INT-001",
         "DEMO-SRC-002",
         "DEMO-INT-001",
-        "DEMO-SEM-002"
+        "DEMO-SEM-002",
+        "DEMO-INT-001"
       ],
       "context_ok": false
     },
@@ -3636,11 +3637,11 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 50.03,
+      "latency_ms": 58.09,
       "returned": [
         "DEMO-INT-003",
-        "DEMO-GOV-003",
-        "DEMO-GUIDE-003"
+        "DEMO-GUIDE-003",
+        "DEMO-GOV-003"
       ],
       "context_ok": true
     },
@@ -3655,7 +3656,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 7.05,
+      "latency_ms": 7.23,
       "returned": [
         "DEMO-INT-011",
         "DEMO-GUIDE-003",
@@ -3677,7 +3678,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 6.52,
+      "latency_ms": 6.68,
       "returned": [
         "DEMO-INT-015",
         "DEMO-INT-016",
@@ -3702,7 +3703,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 24.35,
+      "latency_ms": 24.3,
       "returned": [
         "DEMO-INT-014",
         "DEMO-GUIDE-002",
@@ -3728,7 +3729,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 11.37,
+      "latency_ms": 11.7,
       "returned": [
         "DEMO-INT-011",
         "DEMO-PROC-008",
@@ -3754,7 +3755,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 15.13,
+      "latency_ms": 14.32,
       "returned": [
         "DEMO-INT-010",
         "DEMO-SEM-001",
@@ -3780,7 +3781,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.99,
+      "latency_ms": 5.95,
       "returned": [
         "DEMO-INT-017"
       ],
@@ -3797,7 +3798,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.79,
+      "latency_ms": 5.82,
       "returned": [
         "DEMO-INT-018"
       ],
@@ -3814,7 +3815,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.74,
+      "latency_ms": 5.79,
       "returned": [
         "DEMO-INT-001",
         "DEMO-INT-002",
@@ -3835,7 +3836,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.72,
+      "latency_ms": 5.69,
       "returned": [
         "DEMO-INT-001"
       ],
@@ -3852,7 +3853,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.75,
+      "latency_ms": 5.69,
       "returned": [
         "DEMO-INT-017",
         "DEMO-INT-013",
@@ -3871,11 +3872,11 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 40.47,
+      "latency_ms": 44.7,
       "returned": [
         "DEMO-INT-013",
-        "DEMO-SRC-002",
-        "DEMO-INT-001"
+        "DEMO-INT-013",
+        "DEMO-SRC-002"
       ],
       "context_ok": true
     },
@@ -3890,7 +3891,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 83.39,
+      "latency_ms": 85.33,
       "returned": [],
       "context_ok": null
     },
@@ -3905,7 +3906,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 64.19,
+      "latency_ms": 67.43,
       "returned": [],
       "context_ok": null
     },
@@ -3920,7 +3921,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 84.41,
+      "latency_ms": 71.27,
       "returned": [],
       "context_ok": null
     },
@@ -3935,7 +3936,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 64.19,
+      "latency_ms": 67.21,
       "returned": [],
       "context_ok": null
     },
@@ -3950,7 +3951,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 73.85,
+      "latency_ms": 75.93,
       "returned": [],
       "context_ok": null
     },
@@ -3965,7 +3966,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 76.49,
+      "latency_ms": 76.81,
       "returned": [],
       "context_ok": null
     },
@@ -3980,7 +3981,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 61.33,
+      "latency_ms": 63.12,
       "returned": [],
       "context_ok": null
     },
@@ -3995,7 +3996,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 67.35,
+      "latency_ms": 68.72,
       "returned": [],
       "context_ok": null
     },
@@ -4010,7 +4011,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 59.6,
+      "latency_ms": 59.92,
       "returned": [],
       "context_ok": null
     },
@@ -4025,7 +4026,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 135.15,
+      "latency_ms": 136.29,
       "returned": [],
       "context_ok": null
     },
@@ -4040,7 +4041,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 144.61,
+      "latency_ms": 89.06,
       "returned": [],
       "context_ok": null
     },
@@ -4055,7 +4056,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 60.46,
+      "latency_ms": 60.24,
       "returned": [],
       "context_ok": null
     },
@@ -4070,7 +4071,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 76.94,
+      "latency_ms": 80.63,
       "returned": [],
       "context_ok": null
     },
@@ -4085,7 +4086,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 74.54,
+      "latency_ms": 76.85,
       "returned": [],
       "context_ok": null
     },
@@ -4100,7 +4101,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 68.76,
+      "latency_ms": 69.12,
       "returned": [],
       "context_ok": null
     },
@@ -4115,7 +4116,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 73.96,
+      "latency_ms": 56.43,
       "returned": [],
       "context_ok": null
     },
@@ -4130,7 +4131,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 73.08,
+      "latency_ms": 76.18,
       "returned": [],
       "context_ok": null
     },
@@ -4145,7 +4146,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 75.6,
+      "latency_ms": 78.3,
       "returned": [],
       "context_ok": null
     },
@@ -4160,7 +4161,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 287.73,
+      "latency_ms": 314.75,
       "returned": [],
       "context_ok": null
     },
@@ -4175,7 +4176,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 314.83,
+      "latency_ms": 301.68,
       "returned": [],
       "context_ok": null
     },
@@ -4190,7 +4191,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 301.6,
+      "latency_ms": 324.85,
       "returned": [],
       "context_ok": null
     },
@@ -4205,7 +4206,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 304.48,
+      "latency_ms": 296.46,
       "returned": [],
       "context_ok": null
     },
@@ -4220,7 +4221,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 506.45,
+      "latency_ms": 514.0,
       "returned": [],
       "context_ok": null
     },
@@ -4235,7 +4236,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 297.95,
+      "latency_ms": 307.85,
       "returned": [],
       "context_ok": null
     },
@@ -4250,7 +4251,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 304.71,
+      "latency_ms": 329.92,
       "returned": [],
       "context_ok": null
     },
@@ -4265,7 +4266,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 314.84,
+      "latency_ms": 297.64,
       "returned": [],
       "context_ok": null
     },
@@ -4280,7 +4281,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 458.5,
+      "latency_ms": 470.4,
       "returned": [],
       "context_ok": null
     },
@@ -4295,7 +4296,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 306.85,
+      "latency_ms": 322.17,
       "returned": [],
       "context_ok": null
     },
@@ -4310,7 +4311,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 300.99,
+      "latency_ms": 289.57,
       "returned": [],
       "context_ok": null
     },
@@ -4325,7 +4326,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 282.81,
+      "latency_ms": 310.28,
       "returned": [],
       "context_ok": null
     },
@@ -4340,7 +4341,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 473.91,
+      "latency_ms": 482.18,
       "returned": [],
       "context_ok": null
     },
@@ -4355,7 +4356,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 464.99,
+      "latency_ms": 461.05,
       "returned": [],
       "context_ok": null
     },
@@ -4370,7 +4371,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 623.45,
+      "latency_ms": 641.21,
       "returned": [],
       "context_ok": null
     },
@@ -4385,7 +4386,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 633.09,
+      "latency_ms": 637.42,
       "returned": [],
       "context_ok": null
     },
@@ -4400,7 +4401,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 452.6,
+      "latency_ms": 442.71,
       "returned": [],
       "context_ok": null
     },
@@ -4415,7 +4416,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 459.49,
+      "latency_ms": 472.32,
       "returned": [],
       "context_ok": null
     },
@@ -4430,7 +4431,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 442.44,
+      "latency_ms": 450.69,
       "returned": [],
       "context_ok": null
     },
@@ -4445,7 +4446,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 0.69,
+      "latency_ms": 0.73,
       "returned": [],
       "context_ok": null
     },
@@ -4460,7 +4461,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 328.93,
+      "latency_ms": 337.42,
       "returned": [],
       "context_ok": null
     },
@@ -4475,7 +4476,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 332.97,
+      "latency_ms": 339.7,
       "returned": [],
       "context_ok": null
     },
@@ -4490,7 +4491,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 346.58,
+      "latency_ms": 374.98,
       "returned": [],
       "context_ok": null
     },
@@ -4505,7 +4506,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 366.01,
+      "latency_ms": 362.25,
       "returned": [],
       "context_ok": null
     },
@@ -4520,7 +4521,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 352.54,
+      "latency_ms": 362.57,
       "returned": [],
       "context_ok": null
     },
@@ -4535,7 +4536,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 397.01,
+      "latency_ms": 389.9,
       "returned": [],
       "context_ok": null
     },
@@ -4550,7 +4551,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 311.5,
+      "latency_ms": 328.88,
       "returned": [],
       "context_ok": null
     },
@@ -4565,7 +4566,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 318.46,
+      "latency_ms": 300.7,
       "returned": [],
       "context_ok": null
     },
@@ -4580,7 +4581,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 504.81,
+      "latency_ms": 564.66,
       "returned": [],
       "context_ok": null
     },
@@ -4595,7 +4596,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 302.94,
+      "latency_ms": 317.1,
       "returned": [],
       "context_ok": null
     },
@@ -4610,7 +4611,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 305.36,
+      "latency_ms": 289.95,
       "returned": [],
       "context_ok": null
     },
@@ -4625,7 +4626,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 293.65,
+      "latency_ms": 310.1,
       "returned": [],
       "context_ok": null
     },
@@ -4640,7 +4641,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 305.2,
+      "latency_ms": 291.67,
       "returned": [],
       "context_ok": null
     },
@@ -4655,7 +4656,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 286.78,
+      "latency_ms": 306.63,
       "returned": [],
       "context_ok": null
     },
@@ -4670,7 +4671,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 340.87,
+      "latency_ms": 347.58,
       "returned": [],
       "context_ok": null
     },
@@ -4685,7 +4686,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 497.6,
+      "latency_ms": 484.5,
       "returned": [],
       "context_ok": null
     },
@@ -4700,7 +4701,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 493.76,
+      "latency_ms": 501.47,
       "returned": [],
       "context_ok": null
     },
@@ -4715,7 +4716,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 481.04,
+      "latency_ms": 486.11,
       "returned": [],
       "context_ok": null
     },
@@ -4730,7 +4731,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 628.67,
+      "latency_ms": 643.1,
       "returned": [],
       "context_ok": null
     },
@@ -4745,7 +4746,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 308.04,
+      "latency_ms": 333.56,
       "returned": [],
       "context_ok": null
     },
@@ -4760,7 +4761,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 8.11,
+      "latency_ms": 8.12,
       "returned": [
         "DEMO-PROC-006",
         "DEMO-ADR-005",
@@ -4782,7 +4783,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 6.93,
+      "latency_ms": 7.15,
       "returned": [
         "DEMO-PROC-010",
         "DEMO-ADR-005",
@@ -4831,7 +4832,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 11.52,
+      "latency_ms": 11.2,
       "returned": [
         "DEMO-PROC-006",
         "DEMO-PROC-007",
@@ -4857,7 +4858,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 14.31,
+      "latency_ms": 14.45,
       "returned": [
         "DEMO-PROC-009",
         "DEMO-ADR-005",
@@ -4883,7 +4884,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.89,
+      "latency_ms": 6.16,
       "returned": [
         "DEMO-PROC-006",
         "DEMO-PROC-007",
@@ -4904,7 +4905,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.91,
+      "latency_ms": 6.06,
       "returned": [
         "DEMO-PROC-001",
         "DEMO-PROC-002",
@@ -4925,7 +4926,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 6.23,
+      "latency_ms": 6.46,
       "returned": [
         "DEMO-PROC-002",
         "DEMO-PROC-007",
@@ -4944,7 +4945,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.77,
+      "latency_ms": 5.79,
       "returned": [
         "DEMO-PROC-006"
       ],
@@ -4961,11 +4962,11 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 38.47,
+      "latency_ms": 42.59,
       "returned": [
         "DEMO-PROC-010",
-        "DEMO-PROC-006",
-        "DEMO-PROC-007"
+        "DEMO-PROC-010",
+        "DEMO-PROC-006"
       ],
       "context_ok": true
     },
@@ -4980,7 +4981,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 7.08,
+      "latency_ms": 7.54,
       "returned": [
         "DEMO-SEM-007",
         "DEMO-GOV-006",
@@ -5006,7 +5007,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 6.88,
+      "latency_ms": 7.23,
       "returned": [
         "DEMO-SEM-012",
         "DEMO-SEM-003",
@@ -5031,7 +5032,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 12.3,
+      "latency_ms": 12.51,
       "returned": [
         "DEMO-SEM-001",
         "DEMO-INT-014",
@@ -5057,7 +5058,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 11.52,
+      "latency_ms": 11.47,
       "returned": [
         "DEMO-SEM-006",
         "DEMO-GUIDE-005",
@@ -5083,7 +5084,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 12.7,
+      "latency_ms": 13.2,
       "returned": [
         "DEMO-SEM-001",
         "DEMO-SRC-006",
@@ -5109,7 +5110,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.9,
+      "latency_ms": 6.04,
       "returned": [
         "DEMO-SEM-009",
         "DEMO-SEM-010",
@@ -5128,7 +5129,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.78,
+      "latency_ms": 5.9,
       "returned": [
         "DEMO-SEM-012"
       ],
@@ -5145,7 +5146,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.81,
+      "latency_ms": 5.92,
       "returned": [
         "DEMO-SEM-002",
         "DEMO-SEM-005"
@@ -5163,7 +5164,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.79,
+      "latency_ms": 5.82,
       "returned": [
         "DEMO-SEM-005",
         "DEMO-SEM-009"
@@ -5181,7 +5182,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.83,
+      "latency_ms": 5.78,
       "returned": [
         "DEMO-SEM-011",
         "DEMO-SEM-006",
@@ -5194,39 +5195,40 @@
       "category": "synthesis",
       "method": "assistant",
       "holdout": false,
-      "status": "fail",
-      "detail": "facts missing from the grounded answer: ['mapping_state = retired']",
+      "status": "pass",
+      "detail": "",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 41.07,
+      "latency_ms": 57.31,
       "returned": [
         "DEMO-SEM-007",
         "DEMO-SEM-002",
-        "DEMO-SRC-002",
-        "DEMO-SEM-007"
+        "DEMO-SEM-007",
+        "DEMO-SRC-002"
       ],
-      "context_ok": false
+      "context_ok": true
     },
     {
       "case_id": "KE-SEM-012",
       "category": "synthesis",
       "method": "assistant",
       "holdout": true,
-      "status": "fail",
-      "detail": "facts missing from the grounded answer: ['ROLE-014', 'E-MAP-001']",
+      "status": "pass",
+      "detail": "",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 33.91,
+      "latency_ms": 39.19,
       "returned": [
         "DEMO-SEM-005",
         "DEMO-GUIDE-005",
+        "DEMO-SEM-006",
         "DEMO-SEM-006"
       ],
-      "context_ok": false
+      "context_ok": true
     },
     {
       "case_id": "KE-SRC-001",
@@ -5239,7 +5241,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 7.22,
+      "latency_ms": 7.3,
       "returned": [
         "DEMO-SRC-011",
         "DEMO-GOV-004",
@@ -5264,7 +5266,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 12.8,
+      "latency_ms": 12.91,
       "returned": [
         "DEMO-SRC-003",
         "DEMO-INT-004",
@@ -5290,7 +5292,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 18.02,
+      "latency_ms": 16.67,
       "returned": [
         "DEMO-SRC-006",
         "DEMO-SEM-008",
@@ -5316,7 +5318,7 @@
       "recall_at_1": 0.0,
       "recall_at_5": 0.0,
       "leaks": 0,
-      "latency_ms": 12.92,
+      "latency_ms": 12.18,
       "returned": [
         "DEMO-SEM-003",
         "DEMO-PROC-008",
@@ -5342,7 +5344,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 18.55,
+      "latency_ms": 18.61,
       "returned": [
         "DEMO-SRC-011",
         "DEMO-PROC-009",
@@ -5368,7 +5370,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 16.64,
+      "latency_ms": 16.57,
       "returned": [
         "DEMO-SRC-006",
         "DEMO-INT-006",
@@ -5394,7 +5396,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 6.01,
+      "latency_ms": 5.95,
       "returned": [
         "DEMO-SRC-009"
       ],
@@ -5411,7 +5413,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.93,
+      "latency_ms": 5.77,
       "returned": [
         "DEMO-SRC-004",
         "DEMO-SRC-006",
@@ -5430,7 +5432,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.87,
+      "latency_ms": 5.75,
       "returned": [
         "DEMO-SRC-002",
         "DEMO-SRC-003",
@@ -5456,7 +5458,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.79,
+      "latency_ms": 5.88,
       "returned": [
         "DEMO-SRC-002",
         "DEMO-SRC-003"
@@ -5474,7 +5476,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.82,
+      "latency_ms": 5.84,
       "returned": [
         "DEMO-SRC-002",
         "DEMO-SRC-012",
@@ -5488,15 +5490,15 @@
       "method": "assistant",
       "holdout": false,
       "status": "fail",
-      "detail": "not cited: ['DEMO-SRC-004'] (cited ['DEMO-INT-006', 'DEMO-INT-006', 'DEMO-SRC-006'], confidence partial); facts missing from the grounded answer: ['mdm_golden_id', 'mdm_match_score']",
+      "detail": "facts missing from the grounded answer: ['crm_card_id', 'mdm_match_score']",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 40.65,
+      "latency_ms": 47.82,
       "returned": [
         "DEMO-INT-006",
-        "DEMO-INT-006",
+        "DEMO-SRC-004",
         "DEMO-SRC-006"
       ],
       "context_ok": false
@@ -5507,18 +5509,13 @@
       "method": "assistant",
       "holdout": false,
       "status": "fail",
-      "detail": "facts missing from the grounded answer: ['DQ-COMP-001', '24 ч']",
+      "detail": "not cited: ['DEMO-SRC-011'] (cited [], confidence insufficient_evidence); facts missing from the grounded answer: ['DQ-COMP-001', '95 %', '24 ч', 'Average Daily Rows']",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 61.93,
-      "returned": [
-        "DEMO-SEM-001",
-        "DEMO-PROC-009",
-        "DEMO-SRC-011",
-        "DEMO-GOV-003"
-      ],
+      "latency_ms": 70.44,
+      "returned": [],
       "context_ok": true
     },
     {
@@ -5532,7 +5529,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 25.56,
+      "latency_ms": 26.5,
       "returned": [
         "DEMO-GOV-001",
         "DEMO-INT-013",
@@ -5551,7 +5548,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 23.86,
+      "latency_ms": 26.01,
       "returned": [
         "DEMO-INT-017",
         "DEMO-GOV-001",
@@ -5571,10 +5568,10 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 36.61,
+      "latency_ms": 42.19,
       "returned": [
         "DEMO-INT-001",
-        "DEMO-INT-001",
+        "DEMO-INT-010",
         "DEMO-INT-010"
       ],
       "context_ok": true
@@ -5590,8 +5587,9 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 35.07,
+      "latency_ms": 38.67,
       "returned": [
+        "DEMO-GOV-009",
         "DEMO-GUIDE-004",
         "DEMO-GOV-009",
         "DEMO-GOV-009"
@@ -5609,7 +5607,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 26.91,
+      "latency_ms": 30.47,
       "returned": [
         "DEMO-SEM-003",
         "DEMO-INT-012",
@@ -5623,17 +5621,17 @@
       "category": "status",
       "method": "assistant",
       "holdout": false,
-      "status": "fail",
-      "detail": "not cited: ['DEMO-SEM-012'] (cited ['DEMO-SEM-003', 'DEMO-SEM-008', 'DEMO-SEM-008', 'DEMO-SEM-001'], confidence supported)",
+      "status": "pass",
+      "detail": "",
       "rank": null,
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 26.6,
+      "latency_ms": 31.36,
       "returned": [
         "DEMO-SEM-003",
         "DEMO-SEM-008",
-        "DEMO-SEM-008",
+        "DEMO-SEM-012",
         "DEMO-SEM-001"
       ],
       "context_ok": true
@@ -5649,12 +5647,12 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 28.94,
+      "latency_ms": 31.91,
       "returned": [
         "DEMO-GOV-003",
-        "DEMO-GOV-003",
         "DEMO-INT-003",
-        "DEMO-GUIDE-003"
+        "DEMO-GUIDE-003",
+        "DEMO-SEM-009"
       ],
       "context_ok": true
     },
@@ -5669,7 +5667,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 28.93,
+      "latency_ms": 33.68,
       "returned": [
         "DEMO-GOV-005",
         "DEMO-SEM-009",
@@ -5689,7 +5687,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 5.88,
+      "latency_ms": 6.36,
       "returned": [
         "DEMO-GOV-013",
         "DEMO-INT-018",
@@ -5708,7 +5706,7 @@
       "recall_at_1": 1.0,
       "recall_at_5": 1.0,
       "leaks": 0,
-      "latency_ms": 15.09,
+      "latency_ms": 14.39,
       "returned": [
         "DEMO-INT-013",
         "DEMO-INT-001",
@@ -5734,7 +5732,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 15.69,
+      "latency_ms": 17.29,
       "returned": [],
       "context_ok": null
     },
@@ -5749,7 +5747,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 18.14,
+      "latency_ms": 21.1,
       "returned": [],
       "context_ok": null
     },
@@ -5764,7 +5762,7 @@
       "recall_at_1": null,
       "recall_at_5": null,
       "leaks": 0,
-      "latency_ms": 16.24,
+      "latency_ms": 16.2,
       "returned": [],
       "context_ok": null
     }

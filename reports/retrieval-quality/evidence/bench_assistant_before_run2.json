@@ -1,0 +1,192 @@
+{
+ "label": "before_run2",
+ "questions": 58,
+ "rounds": 5,
+ "ask": {
+  "p50_ms": 19.07,
+  "p95_ms": 31.5,
+  "max_ms": 37.18,
+  "errors": 0
+ },
+ "external": {
+  "questions_with_corporate_scope": 19,
+  "called": 16,
+  "mcp_calls": 33,
+  "pages_fetched": 17,
+  "expected_no_call_but_called": [],
+  "expected_call_but_not_called": [],
+  "per_case": [
+   {
+    "case_id": "KX-RAG-01",
+    "corporate": true,
+    "called": true,
+    "trigger": "no_single_local_passage",
+    "mcp_calls": 4,
+    "fetched": 3,
+    "expect": true
+   },
+   {
+    "case_id": "KX-RAG-02",
+    "corporate": true,
+    "called": true,
+    "trigger": "low_term_coverage",
+    "mcp_calls": 4,
+    "fetched": 3,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-03",
+    "corporate": true,
+    "called": true,
+    "trigger": "no_single_local_passage",
+    "mcp_calls": 4,
+    "fetched": 3,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-04",
+    "corporate": true,
+    "called": false,
+    "trigger": null,
+    "mcp_calls": 0,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-05",
+    "corporate": true,
+    "called": true,
+    "trigger": "unmatched_entities",
+    "mcp_calls": 2,
+    "fetched": 1,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-06",
+    "corporate": true,
+    "called": true,
+    "trigger": "unmatched_entities",
+    "mcp_calls": 2,
+    "fetched": 1,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-07",
+    "corporate": true,
+    "called": false,
+    "trigger": null,
+    "mcp_calls": 0,
+    "fetched": 0,
+    "expect": false
+   },
+   {
+    "case_id": "KX-RAG-08",
+    "corporate": true,
+    "called": false,
+    "trigger": null,
+    "mcp_calls": 0,
+    "fetched": 0,
+    "expect": false
+   },
+   {
+    "case_id": "KX-RAG-09",
+    "corporate": true,
+    "called": true,
+    "trigger": "no_single_local_passage",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-10",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-11",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 3,
+    "fetched": 2,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RAG-12",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-CACHE-07",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 3,
+    "fetched": 2,
+    "expect": null
+   },
+   {
+    "case_id": "KX-CACHE-08",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 2,
+    "fetched": 1,
+    "expect": null
+   },
+   {
+    "case_id": "KX-CACHE-09",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-CACHE-10",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RES-01",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RES-07",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 2,
+    "fetched": 1,
+    "expect": null
+   },
+   {
+    "case_id": "KX-RES-08",
+    "corporate": true,
+    "called": true,
+    "trigger": "external_scope_selected",
+    "mcp_calls": 1,
+    "fetched": 0,
+    "expect": null
+   }
+  ]
+ }
+}

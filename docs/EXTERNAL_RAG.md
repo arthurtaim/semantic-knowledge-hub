@@ -15,10 +15,22 @@ Source switch on the Ask page:
 | «Оба» | `local_then_external` | calls Confluence only if local evidence is insufficient |
 | «Корпоративные» | external | always calls Confluence |
 
-Local sufficiency (`LOCAL_SUFFICIENCY v1`) fails with a reason: `no_local_passages`,
-`unmatched_entities` (an identifier/term of the question is in no local passage), `low_term_coverage`,
-`no_single_local_passage` (no single passage covers ≥ 2/3 of the terms). The reason is in the answer's
-`external` block.
+Local sufficiency (`LOCAL_SUFFICIENCY v2`, `app/services/assistant.py::local_insufficiency`) fails with a reason:
+
+| Reason | Meaning |
+|---|---|
+| `no_local_passages` | no team passage at all |
+| `unmatched_entities` | an identifier / acronym of the question is in no eligible team document |
+| `low_term_coverage` | more than 1/3 of the question's words are in no eligible team document |
+| `no_single_local_source` | no single team DOCUMENT covers ≥ 2/3 of the question's words with the passages given to the model (sections of one document complement each other; words scattered over different documents are not an answer) |
+| `specific_terms_not_covered` | the documents that do cover ≥ 2/3 all lack a **specific** word of the question — one found in at most 10 % of the eligible documents («лимит», «срок»): they are topical, they do not state what is asked |
+
+v1 (until 2026-11-26) counted coverage per single passage (`no_single_local_passage`) and had no specific-word rule:
+a description of the right flow without the asked value («какой лимит пакета?») was judged sufficient, while two
+sections of the one answering document were not. A word that occurs in NO team document (df = 0) only counts towards
+`low_term_coverage`: without semantic matching it cannot be told whether it is the subject the team never documented
+or a paraphrase of a documented word («пауза» for «задержка») — `reports/retrieval-quality/05_REMAINING_RISKS.md`.
+The reason is in the answer's `external` block; `local_only` («Команда») never consults Confluence.
 
 ## Pipeline (`app/services/external.py`)
 

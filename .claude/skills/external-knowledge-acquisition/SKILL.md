@@ -16,8 +16,9 @@ debugging why an answer did or did not use Confluence; feedback/cache behaviour.
 
 ## Procedure
 1. **Search** (synthetic MCP double): `POST /api/assistant/ask` with `sources: ["team","corporate"]`.
-   The response `external` block shows `called`, reason (`no_local_passages`, `unmatched_entities`,
-   `low_term_coverage`, `no_single_local_passage`), candidates, fetched pages.
+   The response `external` block shows `called`, reason (LOCAL_SUFFICIENCY v2: `no_local_passages`,
+   `unmatched_entities`, `low_term_coverage`, `no_single_local_source`, `specific_terms_not_covered` —
+   docs/EXTERNAL_RAG.md), candidates, fetched pages.
 2. **Access / status / version.** Every fetched page is re-checked for ACL and version; unknown status
    comes with the warning «Сведения со страниц Confluence, статус которых не подтверждён…». Restricted pages never reach answers or graphs.
 3. **Cite-ready fragments.** Fragments split by `##` headings; a citation carries

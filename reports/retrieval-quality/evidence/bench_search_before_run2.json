@@ -1,0 +1,1 @@
+{"label": "before_run2", "queries": 39, "rounds": 5, "search": {"p50_ms": 7.44, "p95_ms": 16.66, "max_ms": 20.05, "errors": 0}, "catalog_query": {"p50_ms": 11.39, "p95_ms": 24.1, "max_ms": 27.94, "errors": 0}, "sync_noop_ms": 153.96, "sync_rebuild_ms": 230.01}
