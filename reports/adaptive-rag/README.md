@@ -1,7 +1,8 @@
 # Local-First Adaptive RAG для слабой целевой модели — итог
 
 Ветка `feat/skh-local-first-adaptive-rag` от `fix/skh-retrieval-quality` @ `9b9f3c7` (не от `main`). Код заморожен для
-holdout на `1fdc682`. **PUSH_NOT_DONE / MERGE_NOT_DONE / DEPLOY_NOT_DONE. `TARGET_MODEL_NOT_VALIDATED`.**
+holdout на `1fdc682`. По разрешению владельца 26.11.2026: **ветка запушена, PR #2 открыт (не слит); `b23fe02` задеплоен
+на личный стенд Hetzner** (бэкап и `ROLLBACK.sh` → `main` `f4ea26e`). **MERGE_NOT_DONE. `TARGET_MODEL_NOT_VALIDATED`.**
 
 | Отчёт | Содержание |
 |---|---|
@@ -11,6 +12,7 @@ holdout на `1fdc682`. **PUSH_NOT_DONE / MERGE_NOT_DONE / DEPLOY_NOT_DONE. `TAR
 | [03_BEFORE_AFTER.md](03_BEFORE_AFTER.md) | `main` / ветка `9b9f3c7` / новая архитектура на 40 независимых вопросах (dev + holdout), шум, стоимость |
 | [04_WEAK_MODEL.md](04_WEAK_MODEL.md) | scripted-двойники слабой модели, что нужно для sign-off на целевой модели |
 | [05_LIMITATIONS.md](05_LIMITATIONS.md) | нерешённые случаи, цена лишних запросов, риски FP/FN, основания для отката |
+| [06_CLAUDE_STAND_RUN.md](06_CLAUDE_STAND_RUN.md) | живой прогон 40 вопросов на Claude Sonnet 5.5 на стенде (проверка контракта, не sign-off слабой модели) |
 | `eval/`, `evidence/` | результаты по кейсам (JSON), логи проверок, образцы трассы ответа |
 
 Архитектура и конфигурация для команды: `docs/ADAPTIVE_RAG.md`; решение: ADR-044 в `docs/DECISIONS.md`.
@@ -43,6 +45,15 @@ Mock-провайдер остаётся на правиле v2 (ничего «
 
 oracle и weak — **scripted-двойники, не модели**: они показывают, что делает сервер с хорошим и с плохим решением.
 Качество целевой слабой модели не измерено.
+
+**Живая модель (Claude Sonnet 5.5, стенд Hetzner, все 40 вопросов):**
+- верное решение 0,775 против 0,650 у правила v2;
+- пропусков нужного внешнего поиска 0 из 21, лишних поисков 9 из 19 против 13;
+- невалидные цитаты и утечки 0; JSON соблюдён без repair;
+- вызов ворот p50 2,4 с, p95 3,2 с;
+- 2–3 решения из 40 отвергнуты за превышение длины поля `known`.
+
+Это проверка контракта на настоящей модели, не sign-off слабой: см. `06_CLAUDE_STAND_RUN.md`.
 
 ## Регрессия
 
