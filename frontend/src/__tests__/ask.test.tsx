@@ -228,6 +228,26 @@ describe("Streaming answers", () => {
     expect(sendButton()).toBeInTheDocument();
   });
 
+  it("says when it checks the team documents' completeness and when it searches Confluence (Adaptive RAG)", async () => {
+    const stream = ndjsonStream();
+    mockApi([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await userEvent.type(field(), "Какие требования у приёмника?");
+    await userEvent.click(sendButton());
+
+    await send(stream, { type: "status", stage: "retrieving" });
+    await send(stream, { type: "status", stage: "retrieving", step: "assessing" });
+    expect(await screen.findByText("Проверяю, хватает ли сведений в документах команды…")).toBeInTheDocument();
+    await send(stream, { type: "status", stage: "retrieving", step: "external" });
+    expect(await screen.findByText("Ищу недостающее во внешнем источнике (Confluence)…")).toBeInTheDocument();
+    // An unknown step is ignored, never an error; the generic stage text stays.
+    await send(stream, { type: "status", stage: "retrieving", step: "something-new" });
+    expect(await screen.findByText("Ищу источники…")).toBeInTheDocument();
+    await send(stream, { type: "final", response: claudeAnswer });
+    stream.close();
+    expect(await screen.findByRole("heading", { name: "Ассистент" })).toBeInTheDocument();
+  });
+
   it("uses a provider-neutral stage text for other providers", async () => {
     const stream = ndjsonStream();
     mockApi([{ method: "POST", path: STREAM, respond: (init) => stream.respond(init) }]);
@@ -511,6 +531,25 @@ describe("Ask: Confluence evidence and the answer graph", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/specific_terms_not_covered/)).not.toBeInTheDocument();
+  });
+
+  it("names the evidence-gap reason and an unconfirmed outcome in words (Adaptive RAG)", async () => {
+    const external = externalAnswer.external;
+    if (!external) throw new Error("fixture without an external block");
+    const answer: AskResponse = {
+      ...externalAnswer,
+      external: { ...external, trigger: "evidence_gap", outcome: "insufficient_evidence", searches: 2, focused: true },
+    };
+    mockApi([streamRoute(...mockEvents(answer))]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await askExternal();
+
+    expect(
+      screen.getByText(
+        "Внешний источник: запрос к Confluence (причина: в документах команды не хватает части сведений), загружено 2 стр., из кэша 1, недостающее не подтверждено",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/evidence_gap|insufficient_evidence/)).not.toBeInTheDocument();
   });
 
   it("labels Confluence citations with the page version and an unconfirmed status, and links the answer graph", async () => {

@@ -264,6 +264,8 @@ function parseStreamEvent(line: string, requestId: string | null): AskStreamEven
         provider: typeof value.provider === "string" ? (value.provider as AiMode) : undefined,
         // M5.7: the model round of a tool loop (each round starts a new preliminary text).
         round: typeof value.round === "number" ? value.round : undefined,
+        // Adaptive RAG: an unknown step is ignored (forward compatibility), never an error.
+        step: value.step === "assessing" || value.step === "external" ? value.step : undefined,
       };
     // M5.7: the backend runs an allowlisted tool for the model / reports how it ended (no payloads). A malformed
     // tool event is skipped like an unknown one: it only feeds a progress line, never the answer.

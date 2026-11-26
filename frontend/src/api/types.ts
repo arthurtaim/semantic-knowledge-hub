@@ -584,7 +584,14 @@ export type ExternalTrigger =
   | "no_single_local_source"
   | "specific_terms_not_covered"
   | "external_scope_selected"
-  | "explicit_request";
+  | "explicit_request"
+  // Adaptive RAG (docs/ADAPTIVE_RAG.md): the local-first evidence gate.
+  | "evidence_gap"
+  | "model_uncertain"
+  | "decision_invalid";
+
+/** What can honestly be said about the external source for one answer (never «it is not there»). */
+export type ExternalOutcome = "found" | "no_match" | "insufficient_evidence" | "denied" | "source_unavailable";
 
 /** How the external source (Confluence through MCP) took part in one answer. */
 export interface ExternalRetrievalSummary {
@@ -599,6 +606,30 @@ export interface ExternalRetrievalSummary {
   degraded: boolean;
   elapsed_ms: number;
   policy_version: string;
+  /** Adaptive RAG (additive): outcome, MCP searches and whether the gate's focused queries were used. */
+  outcome?: ExternalOutcome | null;
+  searches?: number;
+  focused?: boolean;
+}
+
+/** Adaptive RAG: how the answer decided whether to consult the external source (codes and counts only). */
+export interface EvidenceGateSummary {
+  policy: string;
+  decision: "sufficient" | "need_external" | "uncertain" | "invalid" | "not_assessed";
+  reason: string;
+  external_called: boolean;
+  model_calls: number;
+  repaired: boolean;
+  error: string | null;
+  fallback: string | null;
+  lexical: string | null;
+  cards: number;
+  evidence: number;
+  missing: number;
+  queries: number;
+  queries_rejected: number;
+  incomplete: boolean;
+  elapsed_ms: number;
 }
 
 export interface AskResponse {
@@ -615,6 +646,7 @@ export interface AskResponse {
   index_generation?: string | null;
   instructions_version?: string | null;
   external?: ExternalRetrievalSummary | null;
+  evidence_gate?: EvidenceGateSummary | null;
   /** UI v2: the skill used (null for a plain question). */
   skill?: AskSkillRef | null;
   /** UI v2: the proposal a workflow skill created — show it as a card with a link. M5.7: also a drafts_propose step. */
@@ -691,7 +723,11 @@ export interface AskStreamStatusEvent {
   passages?: number;
   provider?: AiMode;
   round?: number;
+  /** Adaptive RAG: what `retrieving` is doing now — checking the team documents' completeness, searching Confluence. */
+  step?: AskStreamRetrievalStep;
 }
+
+export type AskStreamRetrievalStep = "assessing" | "external";
 
 /** M5.7: the backend is about to execute an allowlisted tool the model asked for. */
 export interface AskStreamToolCallEvent {
