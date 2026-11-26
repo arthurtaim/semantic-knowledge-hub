@@ -765,3 +765,34 @@ server-owned fields → `422 invalid_request`). Dates are `YYYY-MM-DD`; a schedu
 - Additive elsewhere: `SessionResponse.features.work_management` (`local_operator\|read_only\|shared_login\|membership\|disabled`; the configured gate — per-request read-only on the open link is in `GET /api/work/capabilities`);
   `GET /api/integrations/status` item `task_system` is the built-in module (`connected`, target `local`, access
   `read_write`/`read`); CORS allows `PATCH`.
+
+## Implemented contract (v0.9, M7 chat work skills — `docs/WORK_CHAT_SKILLS.md`)
+
+All additive; requests without the new fields behave exactly as before.
+
+- `GET /api/assistant/skills`: 13 skills; new `analyze_project` (read), `draft_task_plan` and `propose_task_changes`
+  (draft); `SkillInfo.work: bool`, `SkillInfo.requires.project: bool`. Availability reflects the work module, the
+  reader's global/gate rights (read-only exposure → not available, with the reason) and the provider's capabilities.
+- `POST /api/assistant/ask(/stream)`: `work_context {project_key, task_keys[] ≤ 20, proposal_id (WAP-|WCP-…),
+  client_request_id}` — only with a work skill (otherwise 422), strict, references only. Errors BEFORE any model call:
+  `403 forbidden` (global Action or read-only gate), `503 feature_unavailable` (module off), `503 skill_unavailable`
+  (mock / no capability), `422 work_project_required`, `404 not_found` (unknown = hidden project / task of another
+  project / foreign proposal), `409 conflict` (`project_archived`, `task_archived`), `422 work_context_invalid` (a
+  proposal of the other kind), `409 proposal_stale` (refining an applied / rejected / stale proposal).
+  `AskResponse.work_proposal {kind: task_plan|task_changes, id, project_key, state, app_path, task_count,
+  dependency_count, change_count, revised_from, requires_confirmation}` — separate from `proposal`. `analyze_project`
+  answers with `system_facts` (`source: skh_work`); without a tool-capable model the text is composed by the server and
+  labelled in `warnings`. `503 work_unavailable` when the work data cannot be read.
+- Chat history: `StoredTurnRequest.work {project_key, task_keys, proposal_id, client_request_id}` (null for other turns).
+- `POST /api/work-ai/proposals/{id}/revise {instruction, client_request_id?}` → `201 WorkProposalOut` (a NEW proposal;
+  `revised_from` = id). `WorkProposalOut.revised_from` added.
+- Change-sets of existing tasks: `POST /api/work-ai/change-proposals {project_id, request, task_keys[], document_ids[],
+  client_request_id?}` → `201 WorkChangeProposalOut`; `GET …/{id}`; `POST …/{id}/preview {operation_ids[]}`;
+  `POST …/{id}/apply {operation_ids[], expected_plan_revision, client_request_id}` → `WorkChangeApplyResult`;
+  `POST …/{id}/revise {instruction, client_request_id?}`; `POST …/{id}/reject`. `WorkChangeProposalOut.changes[]`:
+  `operation_id, task_id|null, task_key, task_title|null, field (title|description|status|priority|due_date),
+  field_label, before, after, current, expected_version, current_version, reason (unverified), included, state
+  (ok|no_op|task_changed|task_archived|task_unavailable)`; `state` ready|stale|applied|rejected with `stale_reasons`.
+  `502 ai_invalid_response` (wrong reply types, nothing stored), `422 proposal_invalid` (`nothing_to_propose`,
+  `nothing_to_apply`, `unknown_operation`, `invalid_value`), `409 proposal_stale`, `409 conflict`
+  (`idempotency_key_reused`).

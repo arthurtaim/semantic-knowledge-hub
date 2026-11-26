@@ -40,6 +40,8 @@ Adaptive RAG: the local-first evidence gate decides «Оба» → Confluence wi
 (weak-model contract, `docs/ADAPTIVE_RAG.md`).
 M6: native Work Management — projects/tasks/FS scheduling/identity gate, task↔document links (reader-scoped),
 `work_inspect` (read-only M5.7 tool) and typed «AI план» proposals in `backend/app/work/` (`docs/WORK_MANAGEMENT.md`).
+M7: chat work skills (analyze / plan WAP / change-set WCP of existing tasks, schema v4) over the same work services;
+the chat never applies — a person confirms in the project review (`docs/WORK_CHAT_SKILLS.md`).
 Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
 AI service; no embeddings, vector DB, LLM re-ranker or orchestration framework by default. Claude Code is the
 current developer agent, GigaCode the future one — never couple app logic to either, never assume a

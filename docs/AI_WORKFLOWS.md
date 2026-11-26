@@ -77,6 +77,16 @@ as review issues; dates are computed by the server), staleness (`plan_changed`, 
 the optional `WorkPlanningAIProvider.plan_work` over the model-agnostic JSON protocol `app/adapters/ai/work_protocol.py`
 (`internal_api`, `claude_cli`); `mock` and `disabled` have none, and the feature says it is unavailable.
 
+## Change-set proposals of existing tasks (M7)
+
+`propose_task_changes` (chat skill) and `POST /api/work-ai/change-proposals` create a typed change-set (WCP) of
+EXISTING tasks — a third kind of proposal, separate from document AI proposals (`/api/ai/proposals`) and from task-plan
+proposals (WAP, new tasks). The model proposes `{task_key, field, new_value, reason}` for the v1 allowlist (title,
+description, status, priority, due_date); the server reads every `before` value and task version itself, drops unknown
+tasks, unsupported fields and invalid values as review issues, stores nothing when nothing valid is left, and applies
+the operations a person keeps in ONE transaction after re-checking the plan revision and every task version. A refinement
+(WAP or WCP) is always a NEW proposal with `revised_from`. Details: `docs/WORK_CHAT_SKILLS.md`.
+
 ## Навыки ассистента и вложения (UI v2, фаза C)
 
 Навык — именованный сценарий с явным правом поверх тех же сценариев: реестр отдаёт
