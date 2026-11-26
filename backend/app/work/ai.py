@@ -72,7 +72,7 @@ from app.work.models import (
     WorkProposalOut,
 )
 from app.work.permissions import WorkAccessMode, WorkPrincipal
-from app.work.service import PlannedTask, PlanToApply, WorkService, check_work_date
+from app.work.service import PlannedTask, PlanningContext, PlanToApply, WorkService, check_work_date
 
 if TYPE_CHECKING:
     from app.services.knowledge import KnowledgeService
@@ -124,6 +124,23 @@ def _stale(reason: str, message: str) -> ApiError:
 
 def _now_iso(now: datetime) -> str:
     return now.astimezone(UTC).isoformat()
+
+
+def request_hash(payload: Any) -> str:
+    """The canonical hash of an idempotent request body (same payload → same hash)."""
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()
+    ).hexdigest()
+
+
+@dataclass(frozen=True)
+class Idempotency:
+    """One send of a chat work skill (M7): a retry with the same key and payload returns the proposal already stored.
+    Kept in `work_idempotency` (scope + actor + key) in the SAME transaction as the proposal."""
+
+    scope: str
+    key: str
+    request_hash: str
 
 
 # --- validation of the model's reply (pure) ----------------------------------------------------------------------
@@ -513,21 +530,162 @@ class WorkAiService:
                 {"provider": self._ai.mode},
             )
 
+    @property
+    def provider(self) -> AIProvider:
+        return self._ai
+
     # --- propose ---------------------------------------------------------------------------------------------
-    async def propose(self, principal: WorkPrincipal, body: WorkPlanCreate) -> WorkProposalOut:
+    async def propose(
+        self, principal: WorkPrincipal, body: WorkPlanCreate, *, idempotency: Idempotency | None = None
+    ) -> WorkProposalOut:
+        """A new task-plan proposal. `idempotency` (the M7 chat: one send = one key) makes a retry return the proposal
+        already stored instead of a second one — checked BEFORE the model is called."""
         # The gate first: read-only exposure, viewers and non-members never reach the model (M6-20).
         ctx = await asyncio.to_thread(
             self._work.planning_context, principal, body.project_id, body.parent_task_id
         )
         self._require_available()
         check_work_date(body.start_date, "start_date")  # before the model: a refused input costs nothing
+        replayed = await asyncio.to_thread(self._replayed, principal, idempotency)
+        if replayed is not None:
+            return self.get(principal, replayed)
+        snapshot = await self._snapshot(principal)
+        docs = self._documents(snapshot, body)
+        proposal_id = await self._generate(
+            principal,
+            ctx,
+            docs,
+            request_text=body.request,
+            start_date=body.start_date,
+            idempotency=idempotency,
+        )
+        return self.get(principal, proposal_id)
+
+    async def revise(
+        self,
+        principal: WorkPrincipal,
+        proposal_id: str,
+        instruction: str,
+        *,
+        idempotency: Idempotency | None = None,
+    ) -> WorkProposalOut:
+        """M7 multi-turn refinement: a NEW proposal from the stored one (its validated plan + the SAME sources) and the
+        person's instruction. The refined proposal is never changed, re-interpreted or applied. Everything it was based
+        on is re-checked BEFORE the model is called: owner (foreign → 404), project gate (read-only → 403), status
+        (applied / rejected → 409), plan revision, expiry, every source revision (changed / unavailable → 409)."""
+        row = await asyncio.to_thread(self._row, principal, proposal_id)
+        ctx = await asyncio.to_thread(
+            self._work.planning_context, principal, row["project_id"], row["parent_task_id"]
+        )
+        self._require_available()
+        if row["status"] != "suggested":
+            raise _stale(
+                f"already_{row['status']}",
+                "Предложение уже применено или отклонено — уточнить можно только действующее; подготовьте новое.",
+            )
+        scope = principal.documents or DocumentScope.unavailable()
+        reasons = self._stale_reasons(row, ctx.plan_revision, scope)
+        if "knowledge_unavailable" in reasons:
+            raise ApiError(
+                503, "knowledge_unavailable", "База знаний недоступна: источники предложения не проверить."
+            )
+        if reasons:
+            raise _stale(
+                reasons[0],
+                "Предложение устарело (изменился план проекта, источники или срок действия) — уточнять его нельзя; "
+                "подготовьте новое.",
+            )
+        replayed = await asyncio.to_thread(self._replayed, principal, idempotency)
+        if replayed is not None:
+            return self.get(principal, replayed)
+        snapshot = await self._snapshot(principal)
+        docs: list[DocumentRecord] = []
+        for src in json.loads(row["sources_json"]):
+            doc = snapshot.get(src["document_id"])
+            if doc is None or doc.revision != src["revision"]:  # re-checked: never a silently newer source
+                raise _stale(
+                    "source_changed", "Документы-источники изменились — подготовьте новое предложение."
+                )
+            docs.append(doc)
+        stored, deps = self._plan(row)
+        previous = json.dumps(
+            {
+                "goal": row["goal"],
+                "tasks": [
+                    {
+                        "local_id": t.local_id,
+                        "title": t.title,
+                        "description": t.description[:300],
+                        "estimate_workdays": t.estimate,
+                        "priority": t.priority,
+                        "milestone": t.milestone,
+                        "parent_local_id": t.parent,
+                        "sources": [
+                            {"document_id": src["document_id"], "quote": src["quote"]}
+                            for src in t.sources
+                            if src.get("verified") and src.get("quote")
+                        ],
+                    }
+                    for t in stored
+                ],
+                "dependencies": [{"predecessor": a, "successor": b} for a, b in deps],
+            },
+            ensure_ascii=False,
+        )
+        new_id = await self._generate(
+            principal,
+            ctx,
+            docs,
+            request_text=row["request_text"],
+            start_date=date.fromisoformat(row["start_date"]) if row["start_date"] else None,
+            refinement=instruction,
+            previous_plan=previous,
+            revised_from=proposal_id,
+            idempotency=idempotency,
+        )
+        return self.get(principal, new_id)
+
+    async def _snapshot(self, principal: WorkPrincipal) -> KnowledgeSnapshot:
         try:
-            snapshot = await self._knowledge.snapshot(principal.user)
+            return await self._knowledge.snapshot(principal.user)
         except RepositoryUnavailableError as exc:
             raise ApiError(
                 503, "knowledge_unavailable", "База знаний недоступна: план без документов не готовится."
             ) from exc
-        docs = self._documents(snapshot, body)
+
+    def _replayed(self, principal: WorkPrincipal, idempotency: Idempotency | None) -> str | None:
+        """The proposal a previous send with the same idempotency key stored (same payload), or None; a reused key
+        with another payload is 409 (never the wrong proposal)."""
+        if idempotency is None:
+            return None
+        with self._work.db.read() as conn:
+            row = store.get_idempotent(conn, idempotency.scope, principal.user.user_id, idempotency.key)
+        if row is None:
+            return None
+        if row["request_hash"] != idempotency.request_hash:
+            raise ApiError(
+                409,
+                "conflict",
+                "client_request_id уже использован для другого запроса.",
+                {"reason": "idempotency_key_reused"},
+            )
+        return str(json.loads(row["response_json"])["proposal_id"])
+
+    async def _generate(
+        self,
+        principal: WorkPrincipal,
+        ctx: PlanningContext,
+        docs: list[DocumentRecord],
+        *,
+        request_text: str,
+        start_date: date | None,
+        refinement: str | None = None,
+        previous_plan: str | None = None,
+        revised_from: str | None = None,
+        idempotency: Idempotency | None = None,
+    ) -> str:
+        """ONE model call → strict parse → `validate_plan` → stored `suggested` proposal (+ audit, + the idempotency
+        receipt in the same transaction). Structural errors store nothing (422); a model failure stores nothing."""
         references = tuple(
             AuthoringReference(
                 document_id=d.id,
@@ -548,10 +706,12 @@ class WorkAiService:
         request = WorkPlanRequest(
             project_key=ctx.project_key,
             project_title=ctx.project_title,
-            request=body.request,
-            start_date=body.start_date.isoformat() if body.start_date else None,
+            request=request_text,
+            start_date=start_date.isoformat() if start_date else None,
             existing_tasks=tuple(ctx.existing),
             references=references,
+            refinement=refinement,
+            previous_plan=previous_plan,
         )
         provider: WorkPlanningAIProvider = self._ai  # type: ignore[assignment]  # checked by `available`
         try:
@@ -565,7 +725,8 @@ class WorkAiService:
             reply, {d.id.lower(): d for d in docs}, existing, ctx.anchor[2] if ctx.anchor else 0
         )
         now = self._now()
-        proposal_id = f"WAP-{hashlib.sha256(f'{now.isoformat()}{principal.request_id}{body.request}'.encode()).hexdigest()[:16]}"
+        seed = f"{now.isoformat()}{principal.request_id}{request_text}{refinement or ''}{revised_from or ''}"
+        proposal_id = f"WAP-{hashlib.sha256(seed.encode()).hexdigest()[:16]}"
         row = {
             "id": proposal_id,
             "project_id": ctx.project_id,
@@ -574,10 +735,12 @@ class WorkAiService:
             "schema_version": SCHEMA_VERSION,
             "status": "suggested",
             "provider": self._ai.mode,
-            "request_text": body.request,
+            "request_text": request_text
+            if refinement is None
+            else f"{request_text}\nУточнение: {refinement}"[:4000],
             "goal": reply.goal,
             "parent_task_id": ctx.anchor[0] if ctx.anchor else None,
-            "start_date": body.start_date.isoformat() if body.start_date else None,
+            "start_date": start_date.isoformat() if start_date else None,
             "base_plan_revision": ctx.plan_revision,
             "sources_json": json.dumps(
                 [{"document_id": d.id, "revision": d.revision, "status": d.status.value} for d in docs],
@@ -591,18 +754,20 @@ class WorkAiService:
             "assumptions_json": json.dumps(reply.assumptions + reply.warnings, ensure_ascii=False),
             "created_at": _now_iso(now),
             "expires_at": _now_iso(now + timedelta(seconds=self._ttl)),
+            "revised_from": revised_from,
         }
-        await asyncio.to_thread(self._store, principal, row, len(stored), len(deps))
+        stored_id = await asyncio.to_thread(self._store, principal, row, len(stored), len(deps), idempotency)
         logger.info(
-            "work ai proposal project=%s id=%s tasks=%d deps=%d issues=%d mode=%s",
+            "work ai proposal project=%s id=%s tasks=%d deps=%d issues=%d mode=%s revised=%s",
             ctx.project_key,
-            proposal_id,
+            stored_id,
             len(stored),
             len(deps),
             len(issues),
             self._ai.mode,
+            bool(revised_from),
         )
-        return self.get(principal, proposal_id)
+        return stored_id
 
     def _documents(self, snapshot: KnowledgeSnapshot, body: WorkPlanCreate) -> list[DocumentRecord]:
         docs: list[DocumentRecord] = []
@@ -628,8 +793,40 @@ class WorkAiService:
             )
         return docs
 
-    def _store(self, principal: WorkPrincipal, row: dict[str, Any], tasks: int, deps: int) -> None:
+    def _store(
+        self,
+        principal: WorkPrincipal,
+        row: dict[str, Any],
+        tasks: int,
+        deps: int,
+        idempotency: Idempotency | None = None,
+    ) -> str:
+        """Stores the proposal (+ audit, + the idempotency receipt) in ONE transaction; returns its id — or, when a
+        concurrent send with the same key won the race, the id that send stored (this one is not written)."""
         with self._work.db.write() as conn:
+            if idempotency is not None:
+                previous = store.get_idempotent(
+                    conn, idempotency.scope, principal.user.user_id, idempotency.key
+                )
+                if previous is not None and previous["request_hash"] == idempotency.request_hash:
+                    return str(json.loads(previous["response_json"])["proposal_id"])
+                if previous is not None:
+                    raise ApiError(
+                        409,
+                        "conflict",
+                        "client_request_id уже использован для другого запроса.",
+                        {"reason": "idempotency_key_reused"},
+                    )
+                store.put_idempotent(
+                    conn,
+                    scope=idempotency.scope,
+                    actor_id=principal.user.user_id,
+                    key=idempotency.key,
+                    request_hash=idempotency.request_hash,
+                    status_code=201,
+                    response={"proposal_id": row["id"]},
+                    at=row["created_at"],
+                )
             store.insert_proposal(conn, row)
             store.insert_audit(
                 conn,
@@ -646,8 +843,10 @@ class WorkAiService:
                     "dependencies": deps,
                     "provider": row["provider"],
                     "schema": SCHEMA_VERSION,
+                    **({"revised_from": row["revised_from"]} if row.get("revised_from") else {}),
                 },
             )
+        return str(row["id"])
 
     # --- read / preview --------------------------------------------------------------------------------------
     def _row(self, principal: WorkPrincipal, proposal_id: str) -> Any:
@@ -737,6 +936,7 @@ class WorkAiService:
             and any(t.included for t in built.tasks)
             and not any(i.code in BLOCKING_ISSUES for i in built.issues),
             applied_task_keys=list((result.get("task_keys") or {}).values()),
+            revised_from=row["revised_from"],
         )
 
     def get(self, principal: WorkPrincipal, proposal_id: str) -> WorkProposalOut:

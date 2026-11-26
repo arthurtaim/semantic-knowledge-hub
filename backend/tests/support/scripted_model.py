@@ -53,6 +53,16 @@ verbatim quote, an implementation task with a subtask, a check and a milestone (
 cycle; «неизвестн» — a dependency on an unknown local id; «галлюцин» — an assignee, dates, an invented source and a
 non-verbatim quote; «сломанный формат» — not JSON; «упади» — the model fails.
 
+M7 plan refinement (the same protocol with <<<PREVIOUS PLAN>>> / <<<REFINEMENT>>>): the default plan again; «разбей
+первую» — plus three subtasks of the first task; «цикл в иерархии» — a parent cycle.
+
+M7 «Предложить изменения задач» (app/adapters/ai/work_change_protocol.py), keyed by the REQUEST text: per segment
+(split by «,» / «;») naming a task key — a date → due_date; «без срока» → due_date null; «на ревью/review», «в работу»,
+«готов/done», «todo» → status; «высок/high», «критич», «низк/low», «средн/medium» → priority; «назови «…»» → title.
+«все на ревью» — status review for every listed task; «чужая задача» — a change for a key not in the list;
+«исполнител» — an assignee change; «гант» — a plan start date; «невалид» — an impossible status; «повтор» — the same
+change twice; «сломанный формат» — not JSON; «неверные типы» — new_value is a number; «упади» — the model fails.
+
 Adaptive RAG query rewrite (app/adapters/ai/rewrite_protocol.py): no phrasing, unless the question says «другими
 словами» (then one phrasing from the first offered document title).
 
@@ -239,6 +249,8 @@ def tool_script(r: Round) -> str:
             "Общее количество страниц Confluence ассистенту недоступно: частичный поиск не даёт полного числа.",
             confidence="insufficient_evidence",
         )
+    if r.facts("work_inspect") and r.question.startswith("Проект "):  # M7 analyze_project: seeded facts
+        return _work_script(r, q)
     if "задач" in q and r.offers("work_inspect"):
         return _work_script(r, q)
     if "задач" in q:
@@ -412,7 +424,8 @@ _PROJECT_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]{1,9})\b")
 
 
 def _work_script(r: Round, q: str) -> str:
-    """M6 `work_inspect` (read-only): the double reads work facts and repeats ONLY values from the results."""
+    """M6 `work_inspect` (read-only): the double reads work facts and repeats ONLY values from the results. Facts are
+    picked by their shape, so results the SERVER already made (M7 `analyze_project`, round 0) are used the same way."""
     facts = r.facts("work_inspect")
     if r.results and not facts:
         errors = [res.get("error", {}).get("message", "ошибка") for _, _, _, res in r.results]
@@ -422,15 +435,20 @@ def _work_script(r: Round, q: str) -> str:
         (m.group(1) for m in _PROJECT_KEY_RE.finditer(r.question) if m.group(1) not in ("SKH", "FS", "AI")),
         None,
     )
+    schedule = next((f for f in facts if "counts" in f), None)
+    task_fact = next((f for f in facts if isinstance(f.get("task"), dict)), None)
+    listing = next((f for f in facts if "tasks" in f and "total" in f), None)
     if task:
-        if not r.results:
-            return tool_request(("work_inspect", {"operation": "get_task", "task": task.group(1)}))
-        fact = facts[0]
-        t = fact["task"]
+        if task_fact is None:
+            if not r.results or schedule is not None:
+                return tool_request(("work_inspect", {"operation": "get_task", "task": task.group(1)}))
+            return final("Задачу проверить не удалось.", confidence="insufficient_evidence")
+        t = task_fact["task"]
         waits = ", ".join(t["waits_for"]) or "нет"
         return final(
-            f"{t['key']} «{t['title']}»: статус {t['status']}, ждёт предшественников: {waits} [{fact['fact_id']}].",
-            facts=[fact["fact_id"]],
+            f"{t['key']} «{t['title']}»: статус {t['status']}, ждёт предшественников: {waits} "
+            f"[{task_fact['fact_id']}].",
+            facts=[task_fact["fact_id"]],
         )
     if project is None:
         if not r.results:
@@ -443,25 +461,37 @@ def _work_script(r: Round, q: str) -> str:
             f"Доступно проектов: {fact['total']} [{fact['fact_id']}] — {rows}.", facts=[fact["fact_id"]]
         )
     if "просроч" in q:
-        if not r.results:
-            args = {"operation": "list_project_tasks", "project": project, "filters": {"overdue": True}}
-            return tool_request(("work_inspect", args))
-        fact = facts[0]
-        keys = ", ".join(t["key"] for t in fact["tasks"]) or "нет"
+        if listing is not None:
+            keys = ", ".join(t["key"] for t in listing["tasks"]) or "нет"
+            return final(
+                f"Просроченных задач в {project}: {listing['total']} [{listing['fact_id']}] — {keys}.",
+                facts=[listing["fact_id"]],
+            )
+        if schedule is not None:
+            keys = ", ".join(t["key"] for t in schedule["overdue"]) or "нет"
+            return final(
+                f"Просроченных задач в {project}: {schedule['counts']['overdue']} [{schedule['fact_id']}] — {keys}.",
+                facts=[schedule["fact_id"]],
+            )
+        args = {"operation": "list_project_tasks", "project": project, "filters": {"overdue": True}}
+        return tool_request(("work_inspect", args))
+    if "без дат" in q and schedule is not None:
+        keys = ", ".join(schedule["unscheduled"]) or "нет"
         return final(
-            f"Просроченных задач в {project}: {fact['total']} [{fact['fact_id']}] — {keys}.",
-            facts=[fact["fact_id"]],
+            f"Без дат в {project}: {schedule['counts']['unscheduled']} [{schedule['fact_id']}] — {keys}.",
+            facts=[schedule["fact_id"]],
         )
-    if not r.results:  # status, risks, delays: the plan summary
+    if schedule is None:  # status, risks, delays: the plan summary
         return tool_request(("work_inspect", {"operation": "get_project_schedule", "project": project}))
-    fact = facts[0]
+    fact = schedule
     c = fact["counts"]
     late = ", ".join(t["key"] for t in fact["late"]) or "нет"
     waiting = "; ".join(f"{w['key']} ждёт {', '.join(w['waits_for'])}" for w in fact["waiting"]) or "нет"
     return final(
         f"План {project}, ревизия {fact['plan_revision']} [{fact['fact_id']}]: задач {c['tasks']}, просрочено "
         f"{c['overdue']}, отстают от плана {c['late']} ({late}), ждут предшественников "
-        f"{c['waiting_for_predecessors']} ({waiting}), без дат {c['unscheduled']}.",
+        f"{c['waiting_for_predecessors']} ({waiting}), без дат {c['unscheduled']}. Критический путь не "
+        "рассчитывается.",
         facts=[fact["fact_id"]],
     )
 
@@ -744,6 +774,8 @@ def work_plan_script(prompt: str) -> str:
         ]
         deps = [{"predecessor": "t1", "successor": "t2"}, {"predecessor": "t2", "successor": "t1"}]
         return json.dumps({"goal": request[:80], "tasks": tasks, "dependencies": deps}, ensure_ascii=False)
+    refinement = re.search(r"<<<REFINEMENT>>>\n(.*?)\n<<<END REFINEMENT>>>", prompt, re.S)
+    refine = refinement.group(1).casefold() if refinement else ""
     if "неизвестн" in q:
         tasks = [{"local_id": "t1", "title": "Единственная", "estimate_workdays": 1, "sources": []}]
         deps = [{"predecessor": "t1", "successor": "t9"}]
@@ -803,6 +835,22 @@ def work_plan_script(prompt: str) -> str:
     ]
     deps = [{"predecessor": f"t{i}", "successor": impl} for i in range(1, n + 1)]
     deps += [{"predecessor": impl, "successor": check}, {"predecessor": check, "successor": done}]
+    if "разбей первую" in refine and tasks:  # M7 refinement: three subtasks of the first task
+        first_id = tasks[0]["local_id"]
+        for n in range(1, 4):
+            tasks.append(
+                {
+                    "local_id": f"{first_id}.{n}",
+                    "title": f"Часть {n}: {tasks[0]['title']}"[:120],
+                    "estimate_workdays": 1,
+                    "priority": "medium",
+                    "parent_local_id": first_id,
+                    "sources": [],
+                }
+            )
+    if "цикл в иерархии" in refine and len(tasks) >= 2:
+        tasks[0]["parent_local_id"] = tasks[1]["local_id"]
+        tasks[1]["parent_local_id"] = tasks[0]["local_id"]
     if "галлюцин" in q:  # fields the model must not set, an invented source and a non-verbatim quote
         tasks[0]["assignee_id"] = "real.person@bank.example"
         tasks[0]["start_date"] = "2026-12-01"
@@ -825,6 +873,103 @@ def work_plan_script(prompt: str) -> str:
         "warnings": [],
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+_CHANGE_TASKS_RE = re.compile(r"<<<TASKS>>>\n(.*?)\n?<<<END TASKS>>>", re.S)
+_DATE_RE = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+_TITLE_RE = re.compile(r"назови\s+«([^»]{1,180})»")
+_STATUS_WORDS = (
+    ("ревью", "review"),
+    ("review", "review"),
+    ("в работу", "in_progress"),
+    ("in_progress", "in_progress"),
+    ("готов", "done"),
+    ("done", "done"),
+    ("todo", "todo"),
+)
+_PRIORITY_WORDS = (
+    ("критич", "critical"),
+    ("critical", "critical"),
+    ("высок", "high"),
+    ("high", "high"),
+    ("низк", "low"),
+    ("low", "low"),
+    ("средн", "medium"),
+    ("medium", "medium"),
+)
+
+
+def work_change_script(prompt: str) -> str:
+    """M7 change-set in the model-agnostic JSON protocol (app/adapters/ai/work_change_protocol.py), keyed by the
+    REQUEST text. It never knows current values in advance: it proposes what the request asks for."""
+    match = _REQUEST_RE.search(prompt)
+    request = (match.group(1) if match else "").strip()
+    q = request.casefold()
+    if "сломанный формат" in q:
+        return "Поменяю статусы, как просили — без JSON."
+    if "упади" in q:
+        raise ScriptedFailure("scripted model failure")
+    if "неверные типы" in q:
+        return json.dumps({"goal": "x", "changes": [{"task_key": "A-1", "field": "status", "new_value": 5}]})
+    tasks: list[dict[str, Any]] = []
+    if block := _CHANGE_TASKS_RE.search(prompt):
+        for line in block.group(1).splitlines():
+            try:
+                tasks.append(json.loads(line))
+            except ValueError:
+                continue
+    keys = [t["task_key"] for t in tasks]
+    changes: list[dict[str, Any]] = []
+    if "все на ревью" in q:
+        changes = [
+            {"task_key": k, "field": "status", "new_value": "review", "reason": "по запросу"} for k in keys
+        ]
+    for segment in re.split(r"[,;]", request):
+        key = _TASK_KEY_RE.search(segment.upper())
+        if key is None:
+            continue
+        k, seg = key.group(1), segment.casefold()
+        if date_match := _DATE_RE.search(segment):
+            changes.append(
+                {"task_key": k, "field": "due_date", "new_value": date_match.group(1), "reason": "срок"}
+            )
+        elif "без срока" in seg:
+            changes.append({"task_key": k, "field": "due_date", "new_value": None, "reason": "срок снят"})
+        if title := _TITLE_RE.search(segment):
+            changes.append(
+                {"task_key": k, "field": "title", "new_value": title.group(1), "reason": "название"}
+            )
+        for word, value in _STATUS_WORDS:
+            if word in seg:
+                changes.append({"task_key": k, "field": "status", "new_value": value, "reason": "статус"})
+                break
+        for word, value in _PRIORITY_WORDS:
+            if word in seg:
+                changes.append(
+                    {"task_key": k, "field": "priority", "new_value": value, "reason": "приоритет"}
+                )
+                break
+        if "исполнител" in seg:
+            changes.append(
+                {"task_key": k, "field": "assignee_id", "new_value": "someone", "reason": "исполнитель"}
+            )
+        if "гант" in seg:
+            changes.append(
+                {"task_key": k, "field": "start_date", "new_value": "2027-01-04", "reason": "даты"}
+            )
+    if "чужая задача" in q:
+        changes.append({"task_key": "ZZZ-999", "field": "status", "new_value": "done", "reason": "чужая"})
+    if "невалид" in q and keys:
+        changes.append(
+            {"task_key": keys[0], "field": "status", "new_value": "blocked", "reason": "нет такого"}
+        )
+    if "повтор" in q and changes:
+        changes.append(dict(changes[0]))
+    unsupported = ["передвинуть задачи по Ганту"] if "гант" in q else []
+    return json.dumps(
+        {"goal": request[:120], "changes": changes, "unsupported": unsupported, "assumptions": []},
+        ensure_ascii=False,
+    )
 
 
 GAP_STOPWORDS = {
@@ -896,6 +1041,8 @@ def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
         return template_script(prompt)
     if "Режим планирования задач SKH" in system:
         return work_plan_script(prompt)
+    if "Режим изменения задач SKH" in system:
+        return work_change_script(prompt)
     return legacy_script(system, prompt, transport)
 
 

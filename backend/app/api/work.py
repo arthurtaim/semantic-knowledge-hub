@@ -25,6 +25,7 @@ from app.authz import Action, ensure_allowed, require
 from app.container import Container
 from app.domain.models import UserContext
 from app.errors import request_id_of
+from app.work.ai import Idempotency, request_hash
 from app.work.links import DocumentScope
 from app.work.models import (
     PAGE_MAX,
@@ -59,11 +60,18 @@ from app.work.models import (
     TaskStatus,
     TaskUpdate,
     WorkCapabilities,
+    WorkChangeApply,
+    WorkChangeApplyResult,
+    WorkChangeCreate,
+    WorkChangeProposalOut,
+    WorkChangeRevise,
+    WorkChangeSelection,
     WorkPlanCreate,
     WorkProposalApply,
     WorkProposalApplyResult,
     WorkProposalEdits,
     WorkProposalOut,
+    WorkProposalRevise,
 )
 from app.work.permissions import EXPOSURE_HEADER, WorkPrincipal
 
@@ -78,16 +86,24 @@ def acting(action: Action) -> Callable[..., Awaitable[WorkPrincipal]]:
 
     # A default (not `Annotated`): with postponed annotations a closure variable cannot be resolved by FastAPI.
     async def dependency(request: Request, user: UserContext = Depends(required)) -> WorkPrincipal:  # noqa: B008
-        container = get_container(request)
-        return WorkPrincipal(
-            user=user,
-            request_id=request_id_of(request),
-            exposed=bool(request.headers.get(EXPOSURE_HEADER)),
-            exposure=(request.headers.get(EXPOSURE_HEADER) or "").strip().lower()[:32] or None,
-            documents=await reader_documents(container, user),
-        )
+        return await work_principal(request, get_container(request), user)
 
     return dependency
+
+
+async def work_principal(
+    request: Request, container: Container, user: UserContext, *, with_documents: bool = True
+) -> WorkPrincipal:
+    """THE one builder of a work principal (M6 routes and the M7 chat work skills alike): the server identity, the
+    request id, the gateway exposure marker (which can only RESTRICT access) and the reader's current documents.
+    `with_documents=False` (capability checks only, e.g. the skill catalog) leaves the documents unresolved."""
+    return WorkPrincipal(
+        user=user,
+        request_id=request_id_of(request),
+        exposed=bool(request.headers.get(EXPOSURE_HEADER)),
+        exposure=(request.headers.get(EXPOSURE_HEADER) or "").strip().lower()[:32] or None,
+        documents=await reader_documents(container, user) if with_documents else None,
+    )
 
 
 async def reader_documents(container: Container, user: UserContext) -> DocumentScope:
@@ -481,6 +497,28 @@ def apply_work_proposal(
     return container.work_ai.apply(principal, proposal_id, body)
 
 
+@router.post("/work-ai/proposals/{proposal_id}/revise", response_model=WorkProposalOut, status_code=201)
+async def revise_work_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ProposalId,
+    body: WorkProposalRevise,
+) -> WorkProposalOut:
+    """M7 refinement: a NEW proposal from this one (its validated plan + the same sources) and the instruction. The
+    refined proposal is never changed or applied; `409 proposal_stale` when it is applied / rejected / stale, all
+    checked before any model call. A replay with the same `client_request_id` returns the proposal already stored."""
+    idempotency = (
+        Idempotency(
+            scope=f"proposal_revise:{proposal_id}",
+            key=body.client_request_id,
+            request_hash=request_hash({"instruction": body.instruction}),
+        )
+        if body.client_request_id
+        else None
+    )
+    return await container.work_ai.revise(principal, proposal_id, body.instruction, idempotency=idempotency)
+
+
 @router.post("/work-ai/proposals/{proposal_id}/reject", response_model=WorkProposalOut)
 def reject_work_proposal(
     container: ContainerDep,
@@ -489,3 +527,90 @@ def reject_work_proposal(
 ) -> WorkProposalOut:
     """Reject: the proposal is closed; no task is created."""
     return container.work_ai.reject(principal, proposal_id)
+
+
+# --- M7: change-set proposals for EXISTING tasks (docs/WORK_CHAT_SKILLS.md) --------------------------------------------
+ChangeProposalId = Annotated[str, Path(min_length=5, max_length=40, pattern=r"^WCP-[0-9a-f]{16}$")]
+
+
+@router.post("/work-ai/change-proposals", response_model=WorkChangeProposalOut, status_code=201)
+async def create_change_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    body: WorkChangeCreate,
+) -> WorkChangeProposalOut:
+    """«Предложить изменения задач»: a typed change-set PROPOSAL for existing tasks (title, description, status,
+    priority, due_date). Writes NO task. The gate (`propose_work` + `edit_task` on the project) is checked before any
+    model call; `503 feature_unavailable` without a capable AI provider; `502 ai_invalid_response` for a malformed reply
+    and `422 proposal_invalid` when nothing valid is left (nothing stored)."""
+    return await container.work_changes.propose(principal, body)
+
+
+@router.get("/work-ai/change-proposals/{proposal_id}", response_model=WorkChangeProposalOut)
+def get_change_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ChangeProposalId,
+) -> WorkChangeProposalOut:
+    """The change-set with its CURRENT state: `ready`, or `stale` with reasons (the plan or a task changed, a task was
+    archived or is no longer visible, a source changed, expired) — a stale change-set cannot be applied."""
+    return container.work_changes.get(principal, proposal_id)
+
+
+@router.post("/work-ai/change-proposals/{proposal_id}/preview", response_model=WorkChangeProposalOut)
+def preview_change_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ChangeProposalId,
+    body: WorkChangeSelection,
+) -> WorkChangeProposalOut:
+    """The change-set with only the chosen operations included, re-read from the current state; writes nothing."""
+    return container.work_changes.preview(principal, proposal_id, body)
+
+
+@router.post("/work-ai/change-proposals/{proposal_id}/apply", response_model=WorkChangeApplyResult)
+def apply_change_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.apply_work_proposal))],
+    proposal_id: ChangeProposalId,
+    body: WorkChangeApply,
+) -> WorkChangeApplyResult:
+    """Explicit «Применить изменения»: the chosen operations, re-validated and written in ONE transaction (one version
+    bump per task, one plan-revision bump, audit). `409 proposal_stale` when anything it was based on changed (nothing
+    written); a replay with the same `client_request_id` returns the first result."""
+    ensure_allowed(container.policy, principal.user, Action.edit_task)
+    return container.work_changes.apply(principal, proposal_id, body)
+
+
+@router.post(
+    "/work-ai/change-proposals/{proposal_id}/revise", response_model=WorkChangeProposalOut, status_code=201
+)
+async def revise_change_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ChangeProposalId,
+    body: WorkChangeRevise,
+) -> WorkChangeProposalOut:
+    """A NEW change-set from this one and the instruction; this one is never changed or applied."""
+    idempotency = (
+        Idempotency(
+            scope=f"change_revise:{proposal_id}",
+            key=body.client_request_id,
+            request_hash=request_hash({"instruction": body.instruction}),
+        )
+        if body.client_request_id
+        else None
+    )
+    return await container.work_changes.revise(
+        principal, proposal_id, body.instruction, idempotency=idempotency
+    )
+
+
+@router.post("/work-ai/change-proposals/{proposal_id}/reject", response_model=WorkChangeProposalOut)
+def reject_change_proposal(
+    container: ContainerDep,
+    principal: Annotated[WorkPrincipal, Depends(acting(Action.propose_work))],
+    proposal_id: ChangeProposalId,
+) -> WorkChangeProposalOut:
+    """Reject: the change-set is closed; no task changes. A second reject is `409 proposal_stale`."""
+    return container.work_changes.reject(principal, proposal_id)

@@ -113,6 +113,7 @@ def test_ask_stores_the_completed_turn_as_sent(client: TestClient) -> None:
         "documents": [],
         "attachments": [],
         "selection": None,
+        "work": None,  # M7 (additive): a work skill's project / tasks / proposal references
     }
     assert turn["generation_changed"] is False and turn["notes"] == []
     assert stored["index_generation"] == sent["index_generation"]

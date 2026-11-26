@@ -105,7 +105,7 @@ export const SKILL_ACCESS_LABEL: Record<AssistantSkill["access"], string> = {
   draft: "создаёт черновик",
 };
 
-export type SkillInput = "document" | "selection" | "attachment" | "document_or_question";
+export type SkillInput = "document" | "selection" | "attachment" | "document_or_question" | "project";
 
 /** A question shorter than this is no question (the server's rule for `ask` and «документ или вопрос»). */
 export const MIN_QUESTION_CHARS = 3;
@@ -113,9 +113,10 @@ export const MIN_QUESTION_CHARS = 3;
 /** What a chosen skill still needs before it can run (the registry's `requires`, as the server checks it). */
 export function missingInput(
   skill: AssistantSkill | null,
-  context: { documents: number; selection: boolean; attachments: number; question?: string },
+  context: { documents: number; selection: boolean; attachments: number; question?: string; project?: boolean },
 ): SkillInput | null {
   if (!skill) return null;
+  if (skill.requires.project && !context.project) return "project";
   const document = context.documents > 0 || context.selection;
   if (skill.requires.selection && !context.selection) return "selection";
   if (skill.requires.document && !document) return "document";
@@ -130,6 +131,7 @@ export const MISSING_INPUT_HINT: Record<SkillInput, string> = {
   selection: "нужен выделенный фрагмент документа",
   attachment: "нужен файл: кнопка «Файл» или перетащите его в поле",
   document_or_question: "нужен документ или вопрос: кнопка «Документ», @ в тексте или напишите вопрос",
+  project: "нужен проект: выберите его в поле «Проект» под сообщением",
 };
 
 /** Titles of the ask errors (v0.3 provider errors plus the v0.4 skill and attachment checks). */
@@ -142,6 +144,16 @@ export const ASK_ERROR_TITLE: Record<string, string> = {
   attachment_not_found: "Файл больше недоступен",
   selection_not_found: "Выделенный текст не найден в документе",
   document_not_found: "Документ не найден",
+  // M7 chat work skills
+  work_project_required: "Выберите проект",
+  work_context_invalid: "Предложение не относится к этому навыку",
+  work_tasks_required: "Укажите задачи",
+  work_unavailable: "Данные задач недоступны",
+  proposal_stale: "Предложение устарело — подготовьте заново",
+  proposal_invalid: "Предложение не принято сервером",
+  feature_unavailable: "Недоступно",
+  forbidden: "Нет прав",
+  not_found: "Не найдено",
 };
 
 /** Ask errors that are a conflict with the current state rather than a failure: the request can be repeated later. */

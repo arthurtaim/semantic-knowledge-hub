@@ -225,10 +225,45 @@ _V3 = (
     "CREATE INDEX work_ai_proposals_by_project ON work_ai_proposals (project_id, created_at)",
 )
 
+# v4 (M7 chat work skills, docs/WORK_CHAT_SKILLS.md): a change-set PROPOSAL for EXISTING tasks (WCP): field-level
+# operations (title, description, status, priority, due_date) with the `before` values the SERVER read and the task
+# versions they were computed from. Nothing in work_tasks changes until a person applies it — then in one transaction
+# with the status change below; `stale` is computed on read, never stored. Stored: the user's request (for review, as
+# for task-plan proposals), the operations, the reasons the model gave (shown as unverified notes) — never the
+# composed prompt or task descriptions beyond the proposed values. Plus `revised_from` on task-plan proposals: a
+# refinement is a NEW proposal; the refined one is never changed.
+_V4 = (
+    "ALTER TABLE work_ai_proposals ADD COLUMN revised_from TEXT",
+    """CREATE TABLE work_task_change_proposals (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES work_projects(id),
+        actor_id TEXT NOT NULL,
+        schema_version TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'suggested' CHECK (status IN ('suggested', 'applied', 'rejected')),
+        provider TEXT NOT NULL,
+        request_text TEXT NOT NULL,
+        goal TEXT NOT NULL DEFAULT '',
+        base_plan_revision INTEGER NOT NULL CHECK (base_plan_revision >= 1),
+        operations_json TEXT NOT NULL,
+        task_versions_json TEXT NOT NULL,
+        sources_json TEXT NOT NULL DEFAULT '[]',
+        issues_json TEXT NOT NULL DEFAULT '[]',
+        assumptions_json TEXT NOT NULL DEFAULT '[]',
+        revised_from TEXT,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT,
+        result_json TEXT)""",
+    """CREATE INDEX work_change_proposals_by_project
+        ON work_task_change_proposals (project_id, actor_id, status, created_at)""",
+)
+
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(1, "work_core", _V1),
     Migration(2, "task_document_links", _V2),
     Migration(3, "work_ai_proposals", _V3),
+    Migration(4, "work_task_change_proposals", _V4),
 )
 LATEST_VERSION = MIGRATIONS[-1].version
 
@@ -245,6 +280,7 @@ REQUIRED_TABLES = frozenset(
         "work_idempotency",
         "work_schedule_previews",
         "work_ai_proposals",
+        "work_task_change_proposals",
     }
 )
 

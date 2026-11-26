@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api/client";
-import type { AskRequest, AssistantAttachment, StoredTurnRequest } from "../api/types";
+import type { AskRequest, AssistantAttachment, StoredTurnRequest, WorkProposalRef } from "../api/types";
 import { NOTHING_ATTACHED, TurnView, type Turn, type TurnDisplay } from "../components/AssistantTurn";
 import { Composer } from "../components/Composer";
 import { ErrorState, Notice } from "../components/Feedback";
@@ -435,6 +435,17 @@ function DialogView({ conversationId, named, initial, reopened, prefill, scopePa
     composer.focus();
   }
 
+  /** M7 «Уточнить»: the same work skill and project, the proposal as the referent; the person writes what to change.
+   * The server prepares a NEW proposal (the referenced one stays unchanged) — never an apply. */
+  function refineWork(reference: WorkProposalRef) {
+    const id = reference.kind === "task_plan" ? "draft_task_plan" : "propose_task_changes";
+    const skill = skills.items?.find((item) => item.id === id && item.available) ?? null;
+    if (!skill) return;
+    composer.setSkill(skill);
+    composer.setWork({ projectKey: reference.project_key, taskKeys: [], proposalId: reference.id });
+    composer.focus();
+  }
+
   const lastTurn = turns[turns.length - 1];
   const first = turns[0];
   const title = first ? first.request.question || first.display.skill?.name || "Диалог" : (state.stored?.title ?? null);
@@ -493,6 +504,7 @@ function DialogView({ conversationId, named, initial, reopened, prefill, scopePa
                     !pending && resendable && (turn.phase === "interrupted" ? last : Boolean(turn.stored?.withheld)) ? again : undefined
                   }
                   onRefine={refine}
+                  onRefineWork={refineWork}
                   onAskCorporate={(request, display) => void run(request, display)}
                 />
               );

@@ -51,9 +51,23 @@ export interface ComposerSelection {
   label: string;
 }
 
+/**
+ * M7 (docs/WORK_CHAT_SKILLS.md): what a WORK skill acts on — the project the person CHOSE (never the first one by
+ * default), optional task keys of that project, and the proposal a follow-up refines (a NEW proposal is created).
+ * Sent only with a work skill; the server re-checks every reference.
+ */
+export interface ComposerWork {
+  projectKey: string | null;
+  taskKeys: string[];
+  proposalId: string | null;
+}
+
+export const EMPTY_WORK: ComposerWork = { projectKey: null, taskKeys: [], proposalId: null };
+
 export interface ComposerDraft {
   text: string;
   skill: AssistantSkill | null;
+  work: ComposerWork;
   files: ComposerFile[];
   documents: ComposerDocument[];
   selection: ComposerSelection | null;
@@ -67,6 +81,10 @@ export interface ComposerMessage {
   conversationId: string;
   question: string;
   skill: AssistantSkill | null;
+  /** Only with a work skill. */
+  work?: ComposerWork | null;
+  /** One send = one key: a retry of THIS message returns the proposal already stored, never a second one. */
+  clientRequestId?: string;
   attachments: AssistantAttachment[];
   documents: ComposerDocument[];
   selection: ComposerSelection | null;
@@ -81,6 +99,7 @@ export const MAX_CONTEXT_DOCUMENTS = 5;
 export const EMPTY_DRAFT: ComposerDraft = {
   text: "",
   skill: null,
+  work: EMPTY_WORK,
   files: [],
   documents: [],
   selection: null,
@@ -100,6 +119,12 @@ export function toAskRequest(message: ComposerMessage, history: ConversationTurn
     conversation_id: message.conversationId,
   };
   if (message.skill) request.skill_id = message.skill.id;
+  if (message.skill?.work && message.work?.projectKey) {
+    request.work_context = { project_key: message.work.projectKey };
+    if (message.work.taskKeys.length > 0) request.work_context.task_keys = message.work.taskKeys;
+    if (message.work.proposalId) request.work_context.proposal_id = message.work.proposalId;
+    if (message.clientRequestId) request.work_context.client_request_id = message.clientRequestId;
+  }
   if (message.attachments.length > 0) request.attachment_ids = message.attachments.map((a) => a.id);
   if (message.documents.length > 0) request.context_document_ids = message.documents.map((d) => d.id);
   if (message.selection) {
@@ -131,6 +156,8 @@ export interface ComposerController {
   reading: boolean;
   setText: (text: string) => void;
   setSkill: (skill: AssistantSkill | null) => void;
+  /** M7: the project / task keys / refined proposal of a work skill. */
+  setWork: (patch: Partial<ComposerWork>) => void;
   setScope: (scope: AskScope) => void;
   setIncludeDrafts: (value: boolean) => void;
   setIncludeDeprecated: (value: boolean) => void;
@@ -172,7 +199,8 @@ interface Saved {
 
 /** Files still being read when the page is left are dropped: their upload is cancelled. */
 function settled(draft: ComposerDraft): ComposerDraft {
-  return { ...draft, files: draft.files.filter((file) => file.status !== "reading") };
+  // A draft remembered before M7 has no work state.
+  return { ...draft, work: draft.work ?? EMPTY_WORK, files: draft.files.filter((file) => file.status !== "reading") };
 }
 
 interface UseComposerOptions {
@@ -352,7 +380,14 @@ export function useComposer({ persistKey, initial, defaults, onDiscard }: UseCom
       announcement,
       reading: draft.files.some((file) => file.status === "reading"),
       setText,
-      setSkill: (skill) => update({ skill }),
+      // Another skill never inherits a referenced proposal (a plan's proposal is not a change-set's, and back).
+      setSkill: (skill) =>
+        update(
+          skill?.id === draftRef.current.skill?.id
+            ? { skill }
+            : { skill, work: { ...(draftRef.current.work ?? EMPTY_WORK), proposalId: null } },
+        ),
+      setWork: (patch) => update({ work: { ...(draftRef.current.work ?? EMPTY_WORK), ...patch } }),
       setScope: (scope) => update({ scope }),
       setIncludeDrafts: (includeDrafts) => update({ includeDrafts }),
       setIncludeDeprecated: (includeDeprecated) => update({ includeDeprecated }),
@@ -396,6 +431,8 @@ export function useComposer({ persistKey, initial, defaults, onDiscard }: UseCom
           conversationId: conversationRef.current,
           question: current.text.trim(),
           skill: current.skill,
+          work: current.skill?.work ? (current.work ?? EMPTY_WORK) : null,
+          clientRequestId: current.skill?.work ? newConversationId() : undefined,
           attachments: current.files.flatMap((file) => (file.status === "ready" && file.attachment ? [file.attachment] : [])),
           documents: current.documents,
           selection: current.selection,

@@ -484,6 +484,17 @@ export interface AskRequest {
   selection?: AskSelection | null;
   /** Chat history (v0.7): where the conversation lives — the dialog (default) or a document's assistant panel. */
   origin?: "dialog" | "document";
+  /** M7: what a WORK skill acts on (only with a work skill). References only — the server re-checks every one. */
+  work_context?: AskWorkContext | null;
+}
+
+/** M7 chat work skills (docs/WORK_CHAT_SKILLS.md): the project chosen in the composer (never guessed), optional task
+ * keys of that project, the proposal a follow-up refines (a NEW proposal is created) and one send's idempotency key. */
+export interface AskWorkContext {
+  project_key: string;
+  task_keys?: string[];
+  proposal_id?: string | null;
+  client_request_id?: string | null;
 }
 
 // --- Chat history (docs/API_CONTRACTS.md v0.7): this user's conversations in THIS browser ---
@@ -512,6 +523,8 @@ export interface StoredTurnRequest {
   documents: { id: string; title: string }[];
   attachments: StoredAttachmentRef[];
   selection: { document_id: string; section_anchor: string | null; section?: string | null; lines: number } | null;
+  /** M7: a work skill's project / task keys / proposal reference (absent or null for other turns). */
+  work?: { project_key: string; task_keys: string[]; proposal_id: string | null; client_request_id?: string | null } | null;
 }
 
 export interface StoredTurn {
@@ -574,6 +587,23 @@ export interface AskProposalRef {
   kind: AiProposalKind;
   status: AiProposalStatus;
   graph_link?: string | null;
+}
+
+/** M7: a WORK proposal a chat skill stored for review — a task plan (WAP, opened in the project's «AI план» review) or
+ * a change-set of existing tasks (WCP, opened in the change review). Never a document AI proposal: never fetched from
+ * /api/ai/proposals. `state` is as of the answer — the card re-reads the current one. Nothing was applied. */
+export interface WorkProposalRef {
+  kind: "task_plan" | "task_changes";
+  id: string;
+  project_key: string;
+  state: string;
+  /** Built by the server: /projects/KEY?proposal=WAP-… or /projects/KEY?changes=WCP-… */
+  app_path: string;
+  task_count: number;
+  dependency_count: number;
+  change_count: number;
+  revised_from?: string | null;
+  requires_confirmation: boolean;
 }
 
 /** Why the server consulted the external source (AskResponse.external.trigger). */
@@ -669,6 +699,8 @@ export interface AskResponse {
   skill?: AskSkillRef | null;
   /** UI v2: the proposal a workflow skill created — show it as a card with a link. M5.7: also a drafts_propose step. */
   proposal?: AskProposalRef | null;
+  /** M7: the work proposal a chat work skill stored (task plan or change-set); separate from `proposal`. */
+  work_proposal?: WorkProposalRef | null;
   /** M5.7: authoritative structured observations the answer relies on (`[F1]` markers in `answer`). */
   system_facts?: SystemFact[];
   /** M5.7: the tool steps executed for this answer (what was checked and how it ended). */
@@ -693,6 +725,8 @@ export interface SkillRequires {
   attachment: boolean;
   /** «One of»: a chosen document / selection OR a question of at least 3 characters (API v0.4; absent = false). */
   document_or_question?: boolean;
+  /** M7: a project chosen in the composer (`work_context.project_key`); absent = false. */
+  project?: boolean;
 }
 
 /** GET /api/assistant/skills — the registry, with availability in the current AI mode. */
@@ -707,6 +741,8 @@ export interface AssistantSkill {
   available: boolean;
   /** One Russian line when unavailable (e.g. «ИИ отключён»). */
   unavailable_reason: string | null;
+  /** M7: a work skill (projects and tasks); absent = false. */
+  work?: boolean;
 }
 
 export type AttachmentStatus = "ready" | "error";
@@ -2565,6 +2601,8 @@ export interface WorkProposal {
   issues: ProposalIssue[];
   can_apply: boolean;
   applied_task_keys: string[];
+  /** M7: the proposal this one refines (that one is unchanged). */
+  revised_from?: string | null;
 }
 
 export interface ProposalTaskEdit {
@@ -2596,5 +2634,71 @@ export interface WorkProposalApplyResult {
   created_tasks: WorkTask[];
   created_dependencies: number;
   created_links: number;
+  replayed: boolean;
+}
+
+// --- M7: change-sets of EXISTING tasks (WCP, docs/WORK_CHAT_SKILLS.md) -----------------------------------------------
+
+export type ChangeField = "title" | "description" | "status" | "priority" | "due_date";
+
+/** One field-level operation: `before` is what the SERVER read when the proposal was made, `current` what is there now,
+ * `after` the proposed value. `reason` is the model's note — unverified. */
+export interface TaskChange {
+  operation_id: string;
+  task_id: string | null;
+  task_key: string;
+  task_title: string | null;
+  field: ChangeField;
+  field_label: string;
+  before: string | null;
+  after: string | null;
+  current: string | null;
+  expected_version: number;
+  current_version: number | null;
+  reason: string;
+  included: boolean;
+  state: "ok" | "no_op" | "task_changed" | "task_archived" | "task_unavailable";
+}
+
+export interface WorkChangeProposal {
+  id: string;
+  project_id: string;
+  project_key: string;
+  kind: "task_changes";
+  schema_version: string;
+  status: "suggested" | "applied" | "rejected";
+  state: "ready" | "stale" | "applied" | "rejected";
+  stale_reasons: string[];
+  provider: string;
+  request: string;
+  goal: string;
+  base_plan_revision: number;
+  current_plan_revision: number;
+  created_at: string;
+  expires_at: string;
+  decided_at: string | null;
+  changes: TaskChange[];
+  issues: ProposalIssue[];
+  assumptions: string[];
+  sources: ProposalSourceRef[];
+  can_apply: boolean;
+  applied_operation_ids: string[];
+  applied_task_keys: string[];
+  revised_from?: string | null;
+}
+
+export interface WorkChangeApply {
+  operation_ids: string[];
+  expected_plan_revision: number;
+  client_request_id: string;
+}
+
+export interface WorkChangeApplyResult {
+  proposal_id: string;
+  project_id: string;
+  applied: boolean;
+  plan_revision: number;
+  applied_operations: number;
+  updated_tasks: WorkTask[];
   replayed: boolean;
 }

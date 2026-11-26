@@ -37,6 +37,7 @@ from app.adapters.ai.base import (
     ToolTurnEvent,
     ToolTurnReply,
     ToolTurnRequest,
+    WorkChangeRequest,
     WorkPlanRequest,
 )
 from app.config import is_loopback_host
@@ -387,6 +388,7 @@ class OpenAICompatibleAIProvider:
     supports_template_drafting = True
     # M6 «AI план»: the model-agnostic JSON protocol of work_protocol.py (a proposal; the backend validates everything).
     supports_work_planning = True
+    supports_work_changes = True  # M7: change-set proposals for existing tasks
     # Adaptive RAG: the evidence-gap check through plain chat completion (gap_protocol.py; no JSON mode, no tools).
     supports_gap_assessment = True
     # Adaptive RAG: phrasings of the question for the team search (rewrite_protocol.py), the same plain call.
@@ -603,6 +605,21 @@ class OpenAICompatibleAIProvider:
                     "content": compose(self._instructions.for_task("authoring"), system_prompt(request)),
                 },
                 {"role": "user", "content": build_work_plan_message(request, self._max_context_chars)},
+            ]
+        )
+
+    async def plan_work_changes(self, request: WorkChangeRequest) -> str:
+        """M7: a change-set PROPOSAL for existing tasks, the raw reply; the backend parses and validates it
+        (work_change_protocol.py, app/work/changes.py)."""
+        from app.adapters.ai.work_change_protocol import build_work_change_message, system_prompt
+
+        return await self._post_chat(
+            [
+                {
+                    "role": "system",
+                    "content": compose(self._instructions.for_task("authoring"), system_prompt(request)),
+                },
+                {"role": "user", "content": build_work_change_message(request, self._max_context_chars)},
             ]
         )
 

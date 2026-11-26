@@ -162,6 +162,13 @@ export function requestOf(stored: StoredTurnRequest, conversationId: string, ori
   if (files.length > 0) request.attachment_ids = files;
   if (stored.documents.length > 0) request.context_document_ids = stored.documents.map((doc) => doc.id);
   if (origin === "document") request.origin = "document";
+  // M7: a work turn re-sends its references (the server re-checks them); the same key returns a stored proposal.
+  if (stored.work) {
+    request.work_context = { project_key: stored.work.project_key };
+    if (stored.work.task_keys.length > 0) request.work_context.task_keys = stored.work.task_keys;
+    if (stored.work.proposal_id) request.work_context.proposal_id = stored.work.proposal_id;
+    if (stored.work.client_request_id) request.work_context.client_request_id = stored.work.client_request_id;
+  }
   return request;
 }
 

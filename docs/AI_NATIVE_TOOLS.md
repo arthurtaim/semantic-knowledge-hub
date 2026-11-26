@@ -134,6 +134,15 @@ When the loop stops without a final answer (rounds, budget, a model failure afte
 replies) the answer is **server-composed**: «Не удалось завершить ответ: …», the verified facts with their values
 and what could not be checked — never the model's unvalidated text.
 
+### Seeded calls (M7 `analyze_project`)
+
+An explicit skill may hand the loop calls the SERVER already made (`SeededCall`: read-only `work_inspect` results of
+the chosen project). They are recorded exactly like the model's calls — steps of round 0, facts `F1…`, results the model
+reads — so the answer cites them and the same fact validation applies. In such a turn `drafts_propose` is not offered,
+the knowledge-base pre-retrieval (and with it the query rewrite and the evidence gate) is skipped and no retrieval trace
+is written. `work_inspect` itself is unchanged and stays read-only; there is no work write tool
+(`docs/WORK_CHAT_SKILLS.md`).
+
 ## Evidence
 
 | Claim | Evidence | Server rule |

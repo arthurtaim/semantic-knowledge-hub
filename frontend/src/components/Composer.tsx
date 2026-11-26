@@ -13,7 +13,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, isCancelled } from "../api/client";
-import type { AssistantSkill, SearchResult } from "../api/types";
+import type { AssistantSkill, SearchResult, WorkProject } from "../api/types";
 import { AI_CHIP_LABEL, canAsk } from "../lib/aiMode";
 import {
   ATTACHMENT_ACCEPT,
@@ -28,7 +28,7 @@ import {
 } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
 import { useSession } from "../lib/session";
-import { MAX_CONTEXT_DOCUMENTS, type ComposerController, type ComposerFile, type ComposerMessage } from "../lib/useComposer";
+import { EMPTY_WORK, MAX_CONTEXT_DOCUMENTS, type ComposerController, type ComposerFile, type ComposerMessage } from "../lib/useComposer";
 import { useSkills, type SkillsState } from "../lib/useSkills";
 import { Chip } from "./ui/Chip";
 import { Icon, type IconName } from "./ui/Icon";
@@ -251,11 +251,19 @@ export function Composer({
         selection: draft.selection !== null,
         attachments: draft.files.filter((file) => file.status === "ready").length,
         question: text,
+        project: Boolean((draft.work ?? EMPTY_WORK).projectKey),
       });
+  const work = draft.work ?? EMPTY_WORK;
+  // M7: task keys of a work skill must belong to the chosen project (the server re-checks; this is a hint).
+  const foreignTasks = work.projectKey ? work.taskKeys.filter((key) => !key.startsWith(`${work.projectKey}-`)) : [];
   const hasText = text.trim().length > 0;
   const canSend = searchMode
     ? true
-    : !pending && !composer.reading && missing === null && (hasText || Boolean(draft.skill?.prompt_optional));
+    : !pending &&
+      !composer.reading &&
+      missing === null &&
+      foreignTasks.length === 0 &&
+      (hasText || Boolean(draft.skill?.prompt_optional));
 
   function closePopup(remember = true) {
     if (remember && popup) setDismissed(`${popup.kind}:${popup.start}`);
@@ -492,6 +500,7 @@ export function Composer({
   const listLabel = popup?.kind === "skills" ? "Навыки" : popup?.kind === "documents" ? "Документы" : "Подсказки";
   const hints: ReactNode[] = [];
   if (missing && skill) hints.push(`Навыку «${skill.name}» ${MISSING_INPUT_HINT[missing]}.`);
+  if (foreignTasks.length > 0) hints.push(`Задачи ${foreignTasks.join(", ")} не из проекта ${work.projectKey}: укажите задачи выбранного проекта.`);
   if (!searchMode && draft.scope !== "team" && corporate === "disabled") {
     hints.push("Корпоративные источники (Confluence Data Center) не подключены — ответ будет только по документам команды.");
   }
@@ -559,6 +568,8 @@ export function Composer({
             ) : null}
           </ul>
         ) : null}
+
+        {!searchMode && skill?.work ? <WorkContextRow composer={composer} skill={skill} /> : null}
 
         <label htmlFor={fieldId} className="visually-hidden">
           {searchMode ? "Поиск по базе знаний" : label}
@@ -853,5 +864,96 @@ function ScopeControl({
             : "Корпоративные источники (Confluence Data Center) не подключены."}
       </p>
     </Popover>
+  );
+}
+
+/** Task keys typed in the work row: upper-cased, de-duplicated, at most 20 (the server checks each one). */
+export function parseTaskKeys(value: string): string[] {
+  const keys = value
+    .split(/[\s,;]+/)
+    .map((key) => key.trim().toUpperCase())
+    .filter((key) => /^[A-Z][A-Z0-9]{1,9}-\d{1,9}$/.test(key));
+  return [...new Set(keys)].slice(0, 20);
+}
+
+/**
+ * M7: the project (and tasks) a work skill acts on. The project is CHOSEN by the person — the list never preselects the
+ * first one, even when there is only one. Only projects the reader can see are listed (GET /api/projects); the server
+ * re-checks the choice on every message. A referenced proposal (a follow-up that refines it) is a removable chip.
+ */
+function WorkContextRow({ composer, skill }: { composer: ComposerController; skill: AssistantSkill }) {
+  const id = useId();
+  const work = composer.draft.work ?? EMPTY_WORK;
+  const [projects, setProjects] = useState<WorkProject[] | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tasksText, setTasksText] = useState(work.taskKeys.join(", "));
+  const withTasks = skill.id !== "draft_task_plan";
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .workProjects()
+      .then((list) => alive && setProjects(list.items))
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+
+  const known = projects?.some((p) => p.key === work.projectKey) ?? true;
+  return (
+    <div className="composer__work" role="group" aria-label={`Проект для навыка «${skill.name}»`}>
+      <div className="composer__work-field">
+        <label htmlFor={`${id}-project`}>Проект</label>
+        <select
+          id={`${id}-project`}
+          value={work.projectKey ?? ""}
+          aria-invalid={!work.projectKey || undefined}
+          onChange={(event) => {
+            setTasksText("");
+            composer.setWork({ projectKey: event.target.value || null, taskKeys: [], proposalId: null });
+          }}
+        >
+          <option value="">Выберите проект</option>
+          {work.projectKey && !known ? <option value={work.projectKey}>{work.projectKey}</option> : null}
+          {(projects ?? []).map((project) => (
+            <option key={project.key} value={project.key}>
+              {project.key} — {project.title}
+            </option>
+          ))}
+        </select>
+        {failed ? <span className="composer__work-note">Список проектов не загрузился — ключ проверит сервер.</span> : null}
+      </div>
+      {withTasks ? (
+        <div className="composer__work-field">
+          <label htmlFor={`${id}-tasks`}>Задачи</label>
+          <input
+            id={`${id}-tasks`}
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={work.projectKey ? `необязательно: ${work.projectKey}-6, ${work.projectKey}-8` : "необязательно"}
+            value={tasksText}
+            onChange={(event) => {
+              setTasksText(event.target.value);
+              composer.setWork({ taskKeys: parseTaskKeys(event.target.value) });
+            }}
+          />
+        </div>
+      ) : null}
+      {work.proposalId ? (
+        <Chip
+          tone="skill"
+          icon="edit"
+          onRemove={() => composer.setWork({ proposalId: null })}
+          removeLabel={`Не уточнять предложение ${work.proposalId}`}
+          title="Будет подготовлено НОВОЕ предложение; это останется без изменений"
+        >
+          Уточняю {work.proposalId}
+        </Chip>
+      ) : null}
+    </div>
   );
 }

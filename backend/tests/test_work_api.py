@@ -83,6 +83,14 @@ WORK_ROUTES = {
     ("POST", "/api/work-ai/proposals/{proposal_id}/preview"): Action.propose_work,
     ("POST", "/api/work-ai/proposals/{proposal_id}/apply"): Action.apply_work_proposal,
     ("POST", "/api/work-ai/proposals/{proposal_id}/reject"): Action.propose_work,
+    # M7: refinement (a NEW proposal) and change-sets of existing tasks (apply also checks edit_task in the route)
+    ("POST", "/api/work-ai/proposals/{proposal_id}/revise"): Action.propose_work,
+    ("POST", "/api/work-ai/change-proposals"): Action.propose_work,
+    ("GET", "/api/work-ai/change-proposals/{proposal_id}"): Action.propose_work,
+    ("POST", "/api/work-ai/change-proposals/{proposal_id}/preview"): Action.propose_work,
+    ("POST", "/api/work-ai/change-proposals/{proposal_id}/apply"): Action.apply_work_proposal,
+    ("POST", "/api/work-ai/change-proposals/{proposal_id}/revise"): Action.propose_work,
+    ("POST", "/api/work-ai/change-proposals/{proposal_id}/reject"): Action.propose_work,
 }
 
 

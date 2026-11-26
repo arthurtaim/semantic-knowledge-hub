@@ -27,6 +27,10 @@ TABLE_ORDER = [
     "draft_document",
     "improve_section",
     "suggest_metadata",
+    # M7 chat work skills (REG-01: 10 existing + 3 new)
+    "analyze_project",
+    "draft_task_plan",
+    "propose_task_changes",
 ]
 DESIGN_TEXTS = {
     "answer": ("Ответ по базе знаний", "Отвечает только по документам, с цитатами"),
@@ -65,6 +69,8 @@ def use_internal_api(client: TestClient, content: str) -> list[dict[str, Any]]:
     container.assistant._provider = fake
     container.ai_workflows._ai = fake
     container.authoring._ai = fake
+    container.work_ai._ai = fake  # M7: the chat work skills use the work services' provider
+    container.work_changes._ai = fake
     return sent
 
 
@@ -79,21 +85,26 @@ def test_skill_registry_in_mock_mode(client: TestClient) -> None:
         "draft_document",
         "improve_section",
         "suggest_metadata",
+        "draft_task_plan",
+        "propose_task_changes",
     }
     unavailable = {s: v["unavailable_reason"] for s, v in items.items() if not v["available"]}
-    assert list(unavailable) == ["improve_section"]  # no honest deterministic mock path
+    # no honest deterministic mock path; the work analysis is a server summary, so it stays available
+    assert list(unavailable) == ["improve_section", "draft_task_plan", "propose_task_changes"]
     assert unavailable["improve_section"] and "\n" not in unavailable["improve_section"]
     assert items["compare_with_file"]["requires"] == {
         "document": False,
         "selection": False,
         "attachment": True,
         "document_or_question": False,
+        "project": False,
     }
     assert items["improve_section"]["requires"] == {
         "document": True,
         "selection": True,
         "attachment": False,
         "document_or_question": False,
+        "project": False,
     }
     # «One of»: find_related runs on a document or on a question; only it declares that.
     assert items["find_related"]["requires"] == {
@@ -101,6 +112,7 @@ def test_skill_registry_in_mock_mode(client: TestClient) -> None:
         "selection": False,
         "attachment": False,
         "document_or_question": True,
+        "project": False,
     }
     assert [s for s, v in items.items() if v["requires"]["document_or_question"]] == ["find_related"]
     assert items["answer"]["prompt_optional"] is False and items["summarize"]["prompt_optional"] is True
