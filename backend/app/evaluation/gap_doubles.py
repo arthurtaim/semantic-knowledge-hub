@@ -108,7 +108,7 @@ def oracle_reply(request: GapAssessmentRequest, label: GapLabel | None) -> str:
         return sufficient(*eids)
     known = list(dict.fromkeys(h[0] for h in holders if h))[:5]
     missing = list(label.missing) or ["сведения, о которых спрашивают"]
-    queries = list(label.queries) or [request.question[:120]]
+    queries = list(label.queries) or [" ".join(request.question.split()[:8])]
     return need_external(missing[:3], queries[:2], evidence=known)
 
 
