@@ -1,0 +1,13 @@
+cd backend && ../.venv/bin/python -m app.tools.kb_validate ../fixtures/knowledge --strict-synthetic --json ../reports/knowledge-eval/validation.json
+documents: 83  edges: 375 (typed 85)
+by type: {'architecture': 1, 'dataset': 3, 'decision': 5, 'domain': 9, 'glossary': 2, 'guide': 5, 'integration': 19, 'overview': 1, 'process': 7, 'source': 12, 'standard': 19}
+by status: {'approved': 73, 'deprecated': 3, 'draft': 3, 'in_review': 4}
+edges by type: {'constrains': 7, 'consumes': 8, 'depends_on': 34, 'derived_from': 7, 'describes': 16, 'maps_to': 4, 'produces': 4, 'references': 290, 'supersedes': 2, 'uses_template': 3}
+chain ok  DEMO-SRC-002 → DEMO-INT-001 → DEMO-INT-002 → DEMO-SEM-002 → DEMO-SEM-009 → DEMO-INT-015 
+chain ok  DEMO-SRC-003 → DEMO-INT-004 → DEMO-INT-005 → DEMO-SEM-010 
+chain ok  DEMO-SRC-005 → DEMO-INT-007 → DEMO-SEM-006 → DEMO-SEM-011 
+chain ok  DEMO-GOV-003 → DEMO-INT-003 → DEMO-SEM-009 
+chain ok  DEMO-GOV-009 → DEMO-GOV-001 → DEMO-GOV-011 
+chain ok  DEMO-PROC-002 → DEMO-PROC-007 → DEMO-SEM-004 → DEMO-SEM-009 
+RESULT: OK
+make mock-kb-validate exit=0

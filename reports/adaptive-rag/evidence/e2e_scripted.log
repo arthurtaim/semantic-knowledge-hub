@@ -1,0 +1,38 @@
+(node:50275) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+Running 25 tests using 1 worker
+
+(node:50284) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  -   1 [scripted] › e2e/adaptiveRag.spec.ts:36:1 › adaptive RAG: a gap in the team documents is searched in Confluence and named in words
+  -   2 [scripted] › e2e/adaptiveRag.spec.ts:60:1 › adaptive RAG: sufficient team documents mean no Confluence call
+  ✓   3 [scripted] › e2e/answerMarkdown.spec.ts:37:1 › a Markdown answer renders formatted, with working citation and system-data markers (1.7s)
+  ✓   4 [scripted] › e2e/answerProvenance.spec.ts:55:1 › «Какая у нас модель данных?», then «нам интересны демо-файлы»: answers with one provenance line, no banner (570ms)
+  ✓   5 [scripted] › e2e/answerProvenance.spec.ts:70:1 › «Это реальные данные банка?» — disclosed from the catalog: «По происхождению», named, counted like the API (411ms)
+  ✓   6 [scripted] › e2e/chatHistoryScripted.spec.ts:66:1 › a Markdown answer with markers is restored identically after a reload, without asking again (635ms)
+  ✓   7 [scripted] › e2e/m57.spec.ts:52:1 › F01 «Сколько документов в базе?» — the registry number equals the catalog API, with a marker leading to it (421ms)
+  ✓   8 [scripted] › e2e/m57.spec.ts:79:1 › F02/F03 the follow-up «А сколько из них утверждено?» keeps its referent (sent back as history context) (529ms)
+  ✓   9 [scripted] › e2e/m57.spec.ts:94:1 › F03 «из них» after a filtered question narrows THAT set (tag aris), not the whole catalog (536ms)
+  ✓  10 [scripted] › e2e/m57.spec.ts:122:1 › F29 «в базе и сколько требуют внимания?» — the documents tree's number and rule, not proxies (413ms)
+  ✓  11 [scripted] › e2e/m57.spec.ts:143:1 › F14 composite: a registry fact card AND a verified document citation, visibly apart (398ms)
+  ✓  12 [scripted] › e2e/m57.spec.ts:160:1 › F17 «Что такое RAG?» — a general explanation, labelled «Общие знания, не данные SKH» (395ms)
+  ✓  13 [scripted] › e2e/m57.spec.ts:168:1 › S07/F25 honest states: a refused tool request says what could not be checked — no near matches, no JSON (397ms)
+  ✓  14 [scripted] › e2e/m57.spec.ts:178:1 › F28 a model that fails after a verified step: the verified count stays, labelled, nothing invented (399ms)
+  ✓  15 [scripted] › e2e/m57.spec.ts:186:1 › F15 «Сделай черновик…» — the existing proposal card; nothing is applied until Accept (563ms)
+  ✓  16 [scripted] › e2e/templateStudioAi.spec.ts:29:1 › AI proposes a template → the person edits it → saves a draft → activates it (1.5s)
+  ✓  17 [scripted] › e2e/workAi.spec.ts:60:3 › M6 «AI план» (scripted model) › M6-13/M6-14 review → nothing before «Создать задачи» → the reviewed tasks, dependencies and links exist (1.2s)
+  ✓  18 [scripted] › e2e/workAi.spec.ts:89:3 › M6 «AI план» (scripted model) › M6-15 «Отклонить» creates nothing (960ms)
+  ✓  19 [scripted] › e2e/workAi.spec.ts:97:3 › M6 «AI план» (scripted model) › M6-39 the chat answers about overdue tasks only from work facts, with links to the tasks (407ms)
+(node:50433) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  ✓  20 [scripted-mobile] › e2e/answerMarkdown.spec.ts:92:1 › @mobile a Markdown answer stays inside the phone screen: the table scrolls in its own frame (485ms)
+  ✓  21 [scripted-mobile] › e2e/answerProvenance.spec.ts:84:1 › @mobile the provenance line fits the phone screen (412ms)
+  ✓  22 [scripted-mobile] › e2e/chatHistoryScripted.spec.ts:71:1 › @mobile the restored Markdown answer is the same on a phone (652ms)
+  ✓  23 [scripted-mobile] › e2e/m57.spec.ts:208:1 › @mobile M57 phone: the count card and the follow-up fit without horizontal scroll (557ms)
+  ✓  24 [scripted-mobile] › e2e/templateStudioAi.spec.ts:63:1 › @mobile the AI proposal on a phone: rejecting it creates nothing (868ms)
+  ✓  25 [scripted-mobile] › e2e/workAi.spec.ts:117:3 › M6 «AI план» on a phone (scripted model) › @mobile the review fits 390 px without sideways scrolling (797ms)
+
+  2 skipped
+  23 passed (17.2s)
+exit=0
