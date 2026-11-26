@@ -12,7 +12,9 @@ _IDENT_RE = re.compile(r"(?<![\w-])[A-Za-z0-9]+(?:[_.-][A-Za-z0-9]+)+(?![\w-])")
 _CYRILLIC_RE = re.compile(r"[а-яё]", re.IGNORECASE)
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+(?=[\"«(\[]?[A-ZА-ЯЁ0-9])|\n+")
 
-MAX_QUERY_TERMS = 12
+# Content words of one question that become search terms (function words never do). 12 cut long compound
+# questions in half — the second part was silently not searched (retrieval v2: 16, docs/SEARCH_SYNC_TEMPLATES.md).
+MAX_QUERY_TERMS = 16
 
 _RU_STOPWORDS = (
     "а без более бы был была были было быть в вам вас весь во вот все всего всех вы где да даже для до его ее "
@@ -33,9 +35,8 @@ STOPWORDS = frozenset((_RU_STOPWORDS + " " + _EN_STOPWORDS).split())
 
 # Function words: prepositions, conjunctions, particles, pronouns and auxiliary verb forms (RU + EN), folded (ё → е).
 # Their absence from the evidence says nothing about the topic, so they are never REPORTED as words of a question
-# that the sources lack («Не найдено в документах», `AskResponse.unmatched_terms`). A superset of STOPWORDS used
-# only for that report: retrieval keeps STOPWORDS (which words become search terms is a retrieval change that needs
-# a before/after evaluation, docs/SEARCH_SYNC_TEMPLATES.md).
+# that the sources lack («Не найдено в документах», `AskResponse.unmatched_terms`), and since retrieval v2 they never
+# become search terms either (`analyze_query`; measured before/after in reports/retrieval-quality/).
 _RU_FUNCTION_WORDS = (
     # prepositions
     "близ вдоль вместо вне внутри возле вокруг вследствие из-за из-под изо ко кроме между мимо насчет около ото "
@@ -165,6 +166,23 @@ def stem(term: str) -> str:
     return word
 
 
+_RU_CONSONANTS = frozenset("бвгджзклмнпрстфхцчшщ")
+
+
+def fleeting_vowel_stem(token: str) -> str | None:
+    """A fleeting vowel before the final consonant: the genitive plural «попыток» (попытка), «карточек», «ошибок»,
+    «заявок» → «попытк», «карточк», … and the short adjective «недоступен» (недоступный) → «недоступн» — the stem of
+    every other form of the word. `stem` keeps such a word whole (it ends in a consonant), so «попыток» never
+    matched «попытки». Offered as an ALTERNATIVE spelling (the word itself still matches); words shorter than
+    6 letters («поток», «срок», «нужен») are left alone."""
+    word = fold(token)
+    if len(word) < 6 or not _CYRILLIC_RE.search(word) or stem(word) != word:
+        return None
+    if word[-2:] in ("ок", "ек", "ен") and word[-3] in _RU_CONSONANTS:
+        return word[:-2] + word[-1]  # «-ок»/«-ек» → «-к»; a short adjective «недоступен» → «недоступн»
+    return None
+
+
 @dataclass(frozen=True)
 class QueryTerm:
     original: str  # as written by the user
@@ -212,6 +230,22 @@ def reportable_terms(terms: list[QueryTerm]) -> list[QueryTerm]:
     return [t for t in terms if not is_function_word(t)]
 
 
+def _is_function_token(original: str, token: str) -> bool:
+    """A word that carries no topic (retrieval v2): stop words, prepositions, conjunctions, particles, pronouns,
+    auxiliary verbs (FUNCTION_WORDS) and «кто-то»-like particles. An acronym written in capitals is kept («ИЛИ»
+    is not a pronoun). Such words never become search terms: they do not narrow the search, they only crowd the
+    bounded term list (MAX_QUERY_TERMS) and dilute every coverage ratio computed over the question's terms."""
+    if token in STOPWORDS:
+        return True
+    letters = [ch for ch in original if ch.isalpha()]
+    if len(letters) >= 2 and all(ch.isupper() for ch in letters):
+        return False
+    if token in FUNCTION_WORDS:
+        return True
+    head, _, tail = token.partition("-")
+    return bool(tail) and head in FUNCTION_WORDS and tail in _PARTICLE_SUFFIXES
+
+
 def analyze_query(text: str, *, keep_stopwords: bool = False) -> list[QueryTerm]:
     terms: list[QueryTerm] = []
     seen: set[str] = set()
@@ -234,13 +268,21 @@ def analyze_query(text: str, *, keep_stopwords: bool = False) -> list[QueryTerm]
         token = fold(original)
         if len(token) < 2 and not token.isdigit():
             continue
-        if not keep_stopwords and token in STOPWORDS:
+        if not keep_stopwords and _is_function_token(original, token):
             continue
         stemmed = stem(token)
         if stemmed in seen:
             continue
         seen.add(stemmed)
-        terms.append(QueryTerm(original=original, token=token, stem=stemmed))
+        alternative = fleeting_vowel_stem(token)
+        terms.append(
+            QueryTerm(
+                original=original,
+                token=token,
+                stem=stemmed,
+                alternatives=((alternative,),) if alternative else (),
+            )
+        )
         if len(terms) >= MAX_QUERY_TERMS:
             break
     return terms
