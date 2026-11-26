@@ -618,6 +618,22 @@ class EvidenceGateSummary(BaseModel):
     elapsed_ms: float = 0.0
 
 
+class QueryRewriteSummary(BaseModel):
+    """Adaptive RAG, query rewrite: whether the model rephrased the question for the team search — codes and counts
+    only (never the question or the phrasings). Null when the provider cannot rewrite or the team scope is off."""
+
+    mode: str  # off | absent_terms | always
+    trigger: str | None = None  # absent_terms | no_local_passages | always | null (not needed)
+    called: bool = False
+    model_calls: int = 0
+    repaired: bool = False
+    error: str | None = None
+    queries: int = 0
+    rejected: int = 0
+    added_passages: int = 0  # passages in the context that only the phrasings found
+    elapsed_ms: float = 0.0
+
+
 class AskResponse(BaseModel):
     answer: str
     mode: Literal["mock", "internal_api", "claude_cli", "disabled"]
@@ -634,6 +650,7 @@ class AskResponse(BaseModel):
     external: dict[str, Any] | None = None  # external retrieval summary (called, trigger, calls, cache…)
     # Adaptive RAG (additive): the local-first decision about the external source; null when it was not in scope.
     evidence_gate: EvidenceGateSummary | None = None
+    query_rewrite: QueryRewriteSummary | None = None
     # UI v2: the skill used (null for a plain question) and, for skills built on the AI workflows, the stored
     # proposal the dialog shows as a card with a link (null otherwise). Nothing is ever applied by /ask.
     skill: SkillRef | None = None

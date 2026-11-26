@@ -273,6 +273,13 @@ class Settings(BaseSettings):
     # Ask the model for the optional `known` list (never evidence; only output tokens and a source of format errors).
     # false: the lean prompt without it; replies that still carry it are accepted (backward compatible).
     external_gate_request_known: bool = True
+    # Adaptive RAG, query rewrite (docs/ADAPTIVE_RAG.md §Query rewrite): the model's phrasings of a question asked in
+    # other words than the documents, searched in the same index. absent_terms — when a word of the question is in no
+    # eligible document or nothing was found; always — every question; off. The mock never rewrites.
+    query_rewrite: Literal["off", "absent_terms", "always"] = "absent_terms"
+    query_rewrite_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    query_rewrite_max_queries: int = Field(default=3, ge=1, le=3)
+    query_rewrite_vocabulary: int = Field(default=12, ge=0, le=30)  # document titles shown to the model
     # Discovery memory: query→source links, traces and relevance feedback (never the answer text).
     discovery_enabled: bool = True
     discovery_retention_hours: int = Field(default=24, ge=1, le=24 * 90)

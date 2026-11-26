@@ -150,6 +150,11 @@ Factory = Callable[..., tuple[TestClient, ScriptedGapProvider, MockCorporateConn
 
 @pytest.fixture
 def lf(tmp_path: Path, client_factory: Callable[..., TestClient]) -> Factory:
+    return make_lf_factory(tmp_path, client_factory)
+
+
+def make_lf_factory(tmp_path: Path, client_factory: Callable[..., TestClient]) -> Factory:
+    """The LF mini-corpus and its synthetic Confluence; shared with other test modules (no fixture import)."""
     root = tmp_path / "lf-kb"
     root.mkdir()
     for doc_id, (title, status, body) in LOCAL_DOCS.items():

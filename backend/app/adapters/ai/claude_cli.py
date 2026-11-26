@@ -38,6 +38,7 @@ from app.adapters.ai.base import (
     ContextPassage,
     GapAssessmentRequest,
     ProviderAnswer,
+    QueryRewriteRequest,
     TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
@@ -207,6 +208,8 @@ class ClaudeCodeCLIProvider:
     supports_tools = True
     # Adaptive RAG: the evidence-gap check through the same plain prompt → text run (gap_protocol.py).
     supports_gap_assessment = True
+    # Adaptive RAG: phrasings of the question for the team search (rewrite_protocol.py), the same plain call.
+    supports_query_rewrite = True
 
     def __init__(
         self,
@@ -320,6 +323,14 @@ class ClaudeCodeCLIProvider:
                     result = event.answer
         assert result is not None  # stream_answer always ends with AnswerComplete or raises
         return result
+
+    async def rewrite_query(self, request: QueryRewriteRequest, *, max_chars: int) -> str:
+        """Adaptive RAG: ONE short run with phrasings of the question for the team search; the raw reply."""
+        from app.adapters.ai.rewrite_protocol import build_rewrite_message, rewrite_system_prompt
+
+        return await self._collect(
+            rewrite_system_prompt(), build_rewrite_message(request, max_chars), self._timeout
+        )
 
     async def assess_evidence_gap(self, request: GapAssessmentRequest, *, max_chars: int) -> str:
         """Adaptive RAG: ONE short classification run; the raw reply (the gate parses and validates it)."""

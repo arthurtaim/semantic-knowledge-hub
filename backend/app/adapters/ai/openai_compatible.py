@@ -32,6 +32,7 @@ from app.adapters.ai.base import (
     ConversationTurn,
     GapAssessmentRequest,
     ProviderAnswer,
+    QueryRewriteRequest,
     TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
@@ -388,6 +389,8 @@ class OpenAICompatibleAIProvider:
     supports_work_planning = True
     # Adaptive RAG: the evidence-gap check through plain chat completion (gap_protocol.py; no JSON mode, no tools).
     supports_gap_assessment = True
+    # Adaptive RAG: phrasings of the question for the team search (rewrite_protocol.py), the same plain call.
+    supports_query_rewrite = True
 
     def __init__(
         self,
@@ -496,6 +499,17 @@ class OpenAICompatibleAIProvider:
         ]
         content = await self._post_chat(messages)
         return parse_model_json(content)
+
+    async def rewrite_query(self, request: QueryRewriteRequest, *, max_chars: int) -> str:
+        """Adaptive RAG: ONE short call with phrasings of the question for the team search; the raw reply."""
+        from app.adapters.ai.rewrite_protocol import build_rewrite_message, rewrite_system_prompt
+
+        return await self._post_chat(
+            [
+                {"role": "system", "content": rewrite_system_prompt()},
+                {"role": "user", "content": build_rewrite_message(request, max_chars)},
+            ]
+        )
 
     async def assess_evidence_gap(self, request: GapAssessmentRequest, *, max_chars: int) -> str:
         """Adaptive RAG: ONE short classification call; the raw reply (the gate parses and validates it). The long

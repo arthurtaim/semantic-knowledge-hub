@@ -237,6 +237,7 @@ export function toApiError(err: unknown): ApiError {
 
 /** Adaptive RAG: one short line of what the retrieval is doing (no model output, no queries). */
 export const RETRIEVAL_ACTIVITY: Record<AskStreamRetrievalStep, string> = {
+  rewriting: "Ищу в документах команды другими словами…",
   assessing: "Проверяю, хватает ли сведений в документах команды…",
   external: "Ищу недостающее во внешнем источнике (Confluence)…",
 };

@@ -78,7 +78,7 @@ async def test_the_claude_worker_gets_the_same_contract() -> None:
     provider = ClaudeCodeCLIProvider(worker_url="http://127.0.0.1:8090", transport=claude_transport(recorder))
     raw = await provider.assess_evidence_gap(REQUEST, max_chars=3000)
     assert json.loads(raw)["decision"] == "need_external"  # «лимит» in the scripted double
-    system, prompt = recorder.calls[0]
+    system, prompt = recorder.aux[0]
     assert system.startswith(GAP_MARKER) and "<<<QUESTION>>>" in prompt
 
 
@@ -153,7 +153,7 @@ def test_tool_mode_uses_the_one_gate_decision_and_never_searches_twice(
         gate["policy"] == "semantic-v1" and gate["decision"] == "need_external" and gate["model_calls"] == 1
     )
     assert answer["external"]["searches"] == 1 and connector.calls["search"] == 1
-    gap_calls = [c for c in recorder.calls if c[0].startswith(GAP_MARKER)]
+    gap_calls = [c for c in recorder.aux if c[0].startswith(GAP_MARKER)]
     loop_calls = [c for c in recorder.calls if "Режим системных инструментов SKH" in c[0]]
     assert len(gap_calls) == 1 and loop_calls
     assert "проверка полноты не нашла" in loop_calls[0][1]

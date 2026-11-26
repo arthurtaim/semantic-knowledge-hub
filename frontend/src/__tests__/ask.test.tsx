@@ -236,6 +236,8 @@ describe("Streaming answers", () => {
     await userEvent.click(sendButton());
 
     await send(stream, { type: "status", stage: "retrieving" });
+    await send(stream, { type: "status", stage: "retrieving", step: "rewriting" });
+    expect(await screen.findByText("Ищу в документах команды другими словами…")).toBeInTheDocument();
     await send(stream, { type: "status", stage: "retrieving", step: "assessing" });
     expect(await screen.findByText("Проверяю, хватает ли сведений в документах команды…")).toBeInTheDocument();
     await send(stream, { type: "status", stage: "retrieving", step: "external" });

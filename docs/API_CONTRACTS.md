@@ -474,7 +474,10 @@ EvidenceGateSummary { policy: "semantic-v1" | "lexical-v2",
 GET /api/discovery/stats += { evidence_gate: { policy, ask_known, replies, normalized_replies, normalized: {code: n} } }
 external += { outcome: found | no_match | insufficient_evidence | denied | source_unavailable | null,
               searches: int, focused: bool }
-/ask/stream status += { stage: "retrieving", step: "assessing" | "external" }   (unknown steps: ignore)
+/ask/stream status += { stage: "retrieving", step: "rewriting" | "assessing" | "external" }   (unknown steps: ignore)
+QueryRewriteSummary { mode: off|absent_terms|always, trigger: absent_terms|no_local_passages|always|null, called,
+  model_calls, repaired, error, queries, rejected, added_passages, elapsed_ms }   (AskResponse.query_rewrite; null when
+  the provider cannot rewrite or the team scope is not asked)
 ```
 
 Codes and counts only — never the question, the gap text or the queries. `incomplete: true` caps the confidence at

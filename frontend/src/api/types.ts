@@ -612,6 +612,20 @@ export interface ExternalRetrievalSummary {
   focused?: boolean;
 }
 
+/** Adaptive RAG, query rewrite: the model's phrasings of a question asked in other words than the documents. */
+export interface QueryRewriteSummary {
+  mode: string;
+  trigger: string | null;
+  called: boolean;
+  model_calls: number;
+  repaired: boolean;
+  error: string | null;
+  queries: number;
+  rejected: number;
+  added_passages: number;
+  elapsed_ms: number;
+}
+
 /** Adaptive RAG: how the answer decided whether to consult the external source (codes and counts only). */
 export interface EvidenceGateSummary {
   policy: string;
@@ -649,6 +663,8 @@ export interface AskResponse {
   instructions_version?: string | null;
   external?: ExternalRetrievalSummary | null;
   evidence_gate?: EvidenceGateSummary | null;
+  /** Adaptive RAG: whether the model rephrased the question for the team search (codes and counts only). */
+  query_rewrite?: QueryRewriteSummary | null;
   /** UI v2: the skill used (null for a plain question). */
   skill?: AskSkillRef | null;
   /** UI v2: the proposal a workflow skill created — show it as a card with a link. M5.7: also a drafts_propose step. */
@@ -729,7 +745,7 @@ export interface AskStreamStatusEvent {
   step?: AskStreamRetrievalStep;
 }
 
-export type AskStreamRetrievalStep = "assessing" | "external";
+export type AskStreamRetrievalStep = "rewriting" | "assessing" | "external";
 
 /** M5.7: the backend is about to execute an allowlisted tool the model asked for. */
 export interface AskStreamToolCallEvent {

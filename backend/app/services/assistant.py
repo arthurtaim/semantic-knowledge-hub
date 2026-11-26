@@ -38,6 +38,7 @@ from app.domain.models import (
     EvidenceGateSummary,
     ExcerptPart,
     ExcludedSource,
+    QueryRewriteSummary,
     ScopeStatus,
     SkillRef,
     SystemFact,
@@ -58,6 +59,7 @@ from app.services.evidence_gate import EvidenceGate, GateDecision, GateInput, fo
 from app.services.evidence_gate import local_insufficiency as local_insufficiency
 from app.services.external import ExternalEvidenceService, ExternalRetrieval
 from app.services.knowledge import KnowledgeService
+from app.services.query_rewrite import QueryRewriter, RewriteResult
 from app.services.search import corporate_scope
 
 if TYPE_CHECKING:
@@ -199,6 +201,17 @@ class _Prepared:
     # cid → (Markdown body, section anchor) of a team passage: display of table excerpts only.
     sources: dict[str, tuple[str, str | None]] = field(default_factory=dict)
     gate: GateDecision | None = None  # the local-first decision about the external source (Adaptive RAG)
+    rewrite: RewriteResult | None = (
+        None  # the model's phrasings of the question for the team search (Adaptive RAG)
+    )
+
+
+def _interleave_all(lists: list[list[Any]]) -> list[Any]:
+    """Round-robin merge of several ranked lists (duplicates are dropped later, by document and section)."""
+    merged: list[Any] = []
+    for index in range(max((len(items) for items in lists), default=0)):
+        merged += [items[index] for items in lists if index < len(items)]
+    return merged
 
 
 def _interleave(first: list[Any], second: list[Any]) -> list[Any]:
@@ -230,6 +243,7 @@ class AssistantService:
         discovery: DiscoveryStore | None = None,
         instructions_version: Callable[[], str] = lambda: "-",
         gate: EvidenceGate | None = None,
+        rewriter: QueryRewriter | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._connector = connector
@@ -241,6 +255,8 @@ class AssistantService:
         # Adaptive RAG: decides whether Confluence is consulted for «Оба» (docs/ADAPTIVE_RAG.md). One instance per
         # app: it holds the per-scope rate budget of external searches.
         self._gate = gate or EvidenceGate()
+        # Adaptive RAG: the model's phrasings of a question asked in other words than the documents (§Query rewrite).
+        self._rewriter = rewriter or QueryRewriter()
         self._tool_loop: ToolLoop | None = None
         self._can_propose: Callable[[UserContext], bool] = lambda user: False
 
@@ -602,6 +618,7 @@ class AssistantService:
         budget = self._max_context_chars - sum(len(p.text) for p in extras.attachments)
         seen: set[tuple[str, str]] = set()
         snapshot: KnowledgeSnapshot | None = None
+        rewrite: RewriteResult | None = None
 
         def next_cid() -> str:
             return f"C{len(passages) + 1}"
@@ -618,7 +635,14 @@ class AssistantService:
             snapshot = await self._knowledge.snapshot(user)
             search = self._knowledge.search_provider
             team_filters = SearchFilters(statuses=frozenset(s.value for s in allowed))
-            selected, _ranked = self._knowledge.retrieval.passages(
+            for (
+                term
+            ) in terms:  # first: which words occur in no eligible document (the rewrite trigger, v2 rule)
+                containing = search.matching_document_ids(term, team_filters)
+                frequency.append(len(containing))
+                if containing:
+                    matched_terms.add(term.stem)
+            selected, ranked = self._knowledge.retrieval.passages(
                 snapshot, analysis, team_filters, max_passages=MAX_PASSAGES
             )
             if own is not analysis:
@@ -626,6 +650,41 @@ class AssistantService:
                     snapshot, own, team_filters, max_passages=MAX_PASSAGES
                 )
                 selected = _interleave(own_selected, selected)
+            original_keys = {(p.document.id, p.section_anchor or "") for p in selected}
+            if self._rewriter.enabled_for(self._provider):
+                trigger = self._rewriter.trigger(
+                    own_terms=own.terms, matched=matched_terms, has_passages=bool(selected)
+                )
+                rewrite = RewriteResult(mode=self._rewriter.settings.mode, trigger=None)
+                if trigger is not None:
+                    yield {"type": "status", "stage": "retrieving", "step": "rewriting"}
+                    vocabulary = tuple(
+                        dict.fromkeys(
+                            d.title for h in ranked if (d := snapshot.get(h.document_id)) is not None
+                        )
+                    )
+                    rewrite = await self._rewriter.rewrite(
+                        self._provider,
+                        question=req.question,
+                        referent=req.history[-1].question if req.history else "",
+                        own_terms=own.terms,
+                        matched=set(matched_terms),
+                        vocabulary=vocabulary,
+                        trigger=trigger,
+                    )
+                    # The SAME authorized search (statuses, the reader's snapshot) with each phrasing; the original
+                    # question's passages keep the first places of the merged, bounded selection.
+                    found = [
+                        self._knowledge.retrieval.passages(
+                            snapshot,
+                            self._knowledge.retrieval.analyze(query),
+                            team_filters,
+                            max_passages=MAX_PASSAGES,
+                        )[0]
+                        for query in rewrite.queries
+                    ]
+                    if found:
+                        selected = _interleave_all([selected, *found])
             team_count = 0
             for passage in selected:
                 doc = passage.document
@@ -654,11 +713,8 @@ class AssistantService:
                         suspicious=suspicious,
                     )
                 )
-            for term in terms:
-                containing = search.matching_document_ids(term, team_filters)
-                frequency.append(len(containing))
-                if containing:
-                    matched_terms.add(term.stem)
+                if rewrite is not None and key not in original_keys:
+                    rewrite.added_passages += 1
             eligible = sum(1 for d in snapshot.documents.values() if d.status in allowed)
             excluded = self._excluded_sources(snapshot_docs=snapshot, terms=terms, statuses=excluded_statuses)
             scopes.append(
@@ -860,6 +916,7 @@ class AssistantService:
             index_generation=f"g{self._knowledge.generation}",
             sources=sources,
             gate=gate,
+            rewrite=rewrite,
         )
 
     def _record(
@@ -877,6 +934,8 @@ class AssistantService:
         response.index_generation = prepared.index_generation
         response.instructions_version = self._instructions_version()
         response.external = prepared.external.summary() if prepared.external else None
+        if prepared.rewrite is not None:
+            response.query_rewrite = QueryRewriteSummary.model_validate(prepared.rewrite.summary())
         if prepared.gate is not None:
             response.evidence_gate = EvidenceGateSummary.model_validate(prepared.gate.summary())
             if prepared.gate.incomplete and response.confidence == "supported":

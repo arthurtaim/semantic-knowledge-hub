@@ -248,6 +248,7 @@ def run_case(client: TestClient, case: dict[str, Any], provider: Any, box: dict[
     body = response.json()
     external = body.get("external") or {}
     gate = body.get("evidence_gate") or {}
+    rewrite = body.get("query_rewrite") or {}
     called = bool(external.get("called"))
     after_calls = dict(getattr(connector, "calls", {}))
     prepared = box.get("prepared")
@@ -291,6 +292,12 @@ def run_case(client: TestClient, case: dict[str, Any], provider: Any, box: dict[
             if gate.get("model_calls")
             else None,  # the gap decision call(s) only
             "gate_normalized": list(gate.get("normalized") or []),
+            "rewrite_trigger": rewrite.get("trigger"),
+            "rewrite_model_calls": int(rewrite.get("model_calls") or 0),
+            "rewrite_queries": int(rewrite.get("queries") or 0),
+            "rewrite_added_passages": int(rewrite.get("added_passages") or 0),
+            "rewrite_error": rewrite.get("error"),
+            "rewrite_ms": rewrite.get("elapsed_ms") if rewrite.get("model_calls") else None,
             "repaired": bool(gate.get("repaired")),
             "fallback": gate.get("fallback"),
             "gate_error": gate.get("error"),
@@ -374,6 +381,12 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "repairs": sum(r["repaired"] for r in ok),
         "invalid_decisions": sum(r["decision"] == "invalid" for r in ok),
         "normalized_replies": sum(bool(r.get("gate_normalized")) for r in ok),
+        "rewrite_calls": sum(r.get("rewrite_model_calls", 0) for r in ok),
+        "rewrite_questions": sum(bool(r.get("rewrite_model_calls")) for r in ok),
+        "rewrite_with_added_passages": sum(bool(r.get("rewrite_added_passages")) for r in ok),
+        "rewrite_errors": sum(bool(r.get("rewrite_error")) for r in ok),
+        "rewrite_ms_p50": pct([r["rewrite_ms"] for r in ok if r.get("rewrite_ms") is not None], 50),
+        "rewrite_ms_p95": pct([r["rewrite_ms"] for r in ok if r.get("rewrite_ms") is not None], 95),
         "queries_rejected": sum(r["queries_rejected"] for r in ok),
         "mcp_search": sum(r["mcp_search"] for r in ok),
         "mcp_get": sum(r["mcp_get"] for r in ok),

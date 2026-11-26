@@ -263,6 +263,30 @@ class EvidenceGapAIProvider(Protocol):
     async def assess_evidence_gap(self, request: GapAssessmentRequest, *, max_chars: int) -> str: ...
 
 
+@dataclass(frozen=True)
+class QueryRewriteRequest:
+    """Adaptive RAG, query rewrite (docs/ADAPTIVE_RAG.md §Query rewrite): ONE small call of a possibly weak chat model
+    before the team search — 0–3 short phrasings of the question in the words documents may use (synonyms, full
+    system names). Everything here is DATA; the reply is parsed strictly by app/adapters/ai/rewrite_protocol.py and the
+    phrasings only add candidates to the SAME authorized full-text search (statuses, the reader's snapshot)."""
+
+    question: str
+    referent: str = ""  # the previous question of the dialog: context for pronouns
+    absent_terms: tuple[str, ...] = ()  # words of the question in NO eligible team document (a server fact)
+    vocabulary: tuple[
+        str, ...
+    ] = ()  # titles of the team documents the first search ranked (the reader's own)
+    repair: str = ""  # server note for the single repair attempt after a reply that was not a JSON object
+
+
+class QueryRewritingAIProvider(Protocol):
+    """Optional capability over plain chat completion; returns the raw reply. The mock has none (nothing simulated)."""
+
+    supports_query_rewrite: bool
+
+    async def rewrite_query(self, request: QueryRewriteRequest, *, max_chars: int) -> str: ...
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)

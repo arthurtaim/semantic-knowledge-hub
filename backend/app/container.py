@@ -51,6 +51,7 @@ from app.services.links import LinkService
 from app.services.metadata import MetadataService
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
+from app.services.query_rewrite import QueryRewriter, RewriteSettings
 from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
@@ -452,6 +453,14 @@ def build_container(settings: Settings) -> Container:
                 rate_limit=settings.external_gate_rate_limit,
                 rate_window_seconds=settings.external_gate_rate_window_seconds,
                 ask_known=settings.external_gate_request_known,
+            )
+        ),
+        rewriter=QueryRewriter(
+            RewriteSettings(
+                mode=settings.query_rewrite,
+                timeout_seconds=settings.query_rewrite_timeout_seconds,
+                max_queries=settings.query_rewrite_max_queries,
+                vocabulary=settings.query_rewrite_vocabulary,
             )
         ),
     )

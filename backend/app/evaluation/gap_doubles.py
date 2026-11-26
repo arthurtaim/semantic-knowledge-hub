@@ -25,22 +25,41 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.adapters.ai.base import GapAssessmentRequest
+from app.adapters.ai.base import GapAssessmentRequest, QueryRewriteRequest
 from app.adapters.ai.mock import MockAIProvider
 
 GapScript = Callable[[GapAssessmentRequest], "str | Exception"]
 
 
 class ScriptedGapProvider(MockAIProvider):
-    """The extractive mock + a scripted evidence-gap capability (a test double; never configured in production)."""
+    """The extractive mock + a scripted evidence-gap capability (a test double; never configured in production).
+    With `rewrite`, it also has the query-rewrite capability (QueryRewriteRequest → raw reply)."""
 
     supports_gap_assessment = True
+    supports_query_rewrite = False
 
-    def __init__(self, script: GapScript, *, delay: float = 0.0) -> None:
+    def __init__(
+        self,
+        script: GapScript,
+        *,
+        delay: float = 0.0,
+        rewrite: Callable[[QueryRewriteRequest], str | Exception] | None = None,
+    ) -> None:
         super().__init__()
         self.script = script
         self.delay = delay
         self.calls: list[GapAssessmentRequest] = []
+        self.rewrite_script = rewrite
+        self.rewrite_calls: list[QueryRewriteRequest] = []
+        self.supports_query_rewrite = rewrite is not None
+
+    async def rewrite_query(self, request: QueryRewriteRequest, *, max_chars: int) -> str:
+        self.rewrite_calls.append(request)
+        assert self.rewrite_script is not None
+        reply = self.rewrite_script(request)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
     async def assess_evidence_gap(self, request: GapAssessmentRequest, *, max_chars: int) -> str:
         self.calls.append(request)

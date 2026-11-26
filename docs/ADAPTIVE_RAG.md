@@ -32,6 +32,30 @@ This is deterministic orchestration around ONE model judgement, not an agent and
 `if` on words of the question anywhere in the product code. The model judges meaning («пауза» is the documented
 «задержка»; a flow description without the asked limit is not an answer); the server owns everything else.
 
+### Query rewrite (before the team search)
+
+The team search is lexical (FTS5): a question asked in other words than the documents («шина», «оповещения» for «Event
+Hub», «уведомления») finds nothing, and the answering model never sees the document it would have recognized. The
+query rewrite (`app/services/query_rewrite.py`, protocol `app/adapters/ai/rewrite_protocol.py`) asks the configured
+model ONE short question — 0–3 phrasings in the words documents may use — and searches the SAME authorized index
+(statuses, the reader's snapshot) with each of them; the results are merged round-robin after the original question's
+into the same bounded context (6 passages, 12 000 characters). The model sees the question, the previous question,
+the words of the question that occur in no team document and the titles of the documents the first search ranked —
+never document text; it never answers, and its phrasings are not facts: only text the search then finds can become
+evidence (verified citations as before).
+
+- When (`QUERY_REWRITE`): `absent_terms` (default) — a meaningful word of the question is in no eligible team document,
+  or nothing was found (a server fact, no keyword list); `always`; `off`. The mock never rewrites.
+- Reply `{"queries": [...]}`: ≤ 3 × ≤ 140, strict, ≤ 1 repair for a non-JSON reply; each phrasing is sanitized like a
+  gate query (no URLs, operators stripped, identifiers of the question kept); a phrasing that adds no word to the
+  question is dropped. A slow, failing or malformed reply: the search runs as before (`error` in the trace).
+- Trace `AskResponse.query_rewrite`: `mode`, `trigger`, `called`, `model_calls`, `repaired`, `error`, `queries`,
+  `rejected`, `added_passages` (passages only the phrasings found), `elapsed_ms` — codes and counts only. The stream
+  shows the step «Ищу в документах команды другими словами…» (`step: rewriting`).
+- Changed guarantee: before, a question with no local passage never reached the model on the content-only path; now
+  the QUESTION alone (no document text) may go to the model to be rephrased (`QUERY_REWRITE=off` restores the old
+  behaviour exactly). An answer is still never generated from nothing.
+
 ## 2. Decision (ADR)
 
 **Context.** The production model will be much weaker than Claude Opus: plain chat completion, unreliable with long
@@ -157,6 +181,8 @@ and the sources are the same.
 | `EXTERNAL_GATE_MAX_SEARCHES` | 2 | focused searches per answer (1–2) |
 | `EXTERNAL_GATE_RATE_LIMIT` / `EXTERNAL_GATE_RATE_WINDOW_SECONDS` | 30 / 600 | gate-decided external searches per ACL scope and window (0 = off) |
 | `EXTERNAL_GATE_REQUEST_KNOWN` | true | ask the model for the optional `known` list; `false` — the lean prompt without it (backward compatible) |
+| `QUERY_REWRITE` | `absent_terms` | the model's phrasings for the team search: `absent_terms`, `always`, `off` |
+| `QUERY_REWRITE_TIMEOUT_SECONDS` / `QUERY_REWRITE_MAX_QUERIES` / `QUERY_REWRITE_VOCABULARY` | 10 / 3 / 12 | the rewrite call(s), phrasings searched, document titles shown |
 
 ## 8. Testing without the target model
 
