@@ -11,11 +11,19 @@ Source switch on the Ask page:
 
 | UI | Mode | Behaviour |
 |---|---|---|
-| «Команда» | `local_only` | never calls Confluence |
-| «Оба» | `local_then_external` | calls Confluence only if local evidence is insufficient |
+| «Команда» | `local_only` | never calls Confluence (and never the evidence gate) |
+| «Оба» | `local_then_external` | the local-first evidence gate decides (below) |
 | «Корпоративные» | external | always calls Confluence |
 
-Local sufficiency (`LOCAL_SUFFICIENCY v2`, `app/services/assistant.py::local_insufficiency`) fails with a reason:
+**Since 2026-11-26 the decision for «Оба» is the local-first evidence gate** (`docs/ADAPTIVE_RAG.md`,
+`app/services/evidence_gate.py`): one small decision of the AI provider over bounded cards of the team passages
+(`sufficient` → no call; `need_external` → 1–2 focused queries for the gap; `uncertain` → one probe), validated by
+the server, with a visible fallback. Its trace is `AskResponse.evidence_gate`; the external triggers are
+`evidence_gap`, `model_uncertain`, `decision_invalid`, `no_local_passages` (plus `explicit_request`,
+`external_scope_selected`). Providers without the capability — the offline mock — and `EXTERNAL_GATE=lexical` keep
+the lexical rule below; it is also the fallback of an invalid, late or failed model decision.
+
+Local sufficiency (`LOCAL_SUFFICIENCY v2`, `app/services/evidence_gate.py::local_insufficiency`) fails with a reason:
 
 | Reason | Meaning |
 |---|---|
@@ -34,9 +42,10 @@ The reason is in the answer's `external` block; `local_only` («Команда»
 
 ## Pipeline (`app/services/external.py`)
 
-1. MCP search → up to 10 candidates; restricted pages are excluded by the connector's ACL.
-2. Rank: entity matches ×2, discovery hints from feedback (same ACL scope and intent only), source order
-   on ties. A page marked as a duplicate of an approved team document (`canonical_document_id`) is not a
+1. MCP search → up to 10 candidates; restricted pages are excluded by the connector's ACL. With the gate's focused
+   queries: one search per query (≤ 2), results interleaved and de-duplicated, still ≤ 10 candidates in total.
+2. Rank: entity matches ×2 — against the query a candidate answers best (the question's words without focused
+   queries) — discovery hints from feedback (same ACL scope and the QUESTION's intent only), source order on ties. A page marked as a duplicate of an approved team document (`canonical_document_id`) is not a
    second piece of evidence.
 3. Fetch ≤ 3 pages (concurrency 2, timeout 5 s each, deadline 12 s, circuit breaker after 5 failures for
    60 s) through a bounded LRU cache (100 pages, TTL 24 h) keyed by
@@ -47,6 +56,9 @@ The reason is in the answer's `external` block; `local_only` («Команда»
 5. Known prompt-injection patterns are redacted and reported.
 6. Citations carry `source_kind: confluence_mcp`, `source_id confluence:<instance>:<page>:<version>`,
    `fragment_id`, `content_hash`, `external_status` (`unknown` is said out loud in the answer).
+7. `external.outcome`: `found` · `no_match` · `insufficient_evidence` · `denied` · `source_unavailable`. Without a
+   found fragment the answer says «во внешнем источнике не удалось подтвердить … это не значит, что их там нет» — a
+   bounded search of a partial view never proves absence.
 
 Before reuse (cache hit, query graph, feedback hint) the page is re-checked for access and version:
 revoked, deleted or updated pages invalidate cache entries, traces and graph nodes.
@@ -72,7 +84,8 @@ re-ranks future candidates for the same scope and intent; it never changes a sta
 `EXTERNAL_CACHE_PAGES`, `EXTERNAL_CACHE_TTL_SECONDS`, `EXTERNAL_CONCURRENCY`, `EXTERNAL_TIMEOUT_SECONDS`,
 `EXTERNAL_DEADLINE_SECONDS`, `EXTERNAL_BREAKER_FAILURES`, `EXTERNAL_BREAKER_RESET_SECONDS`,
 `DISCOVERY_ENABLED`, `DISCOVERY_RETENTION_HOURS`, `DISCOVERY_STORE_QUERY_TEXT`, `DISCOVERY_HMAC_KEY_FILE`,
-`CONFLUENCE_MOCK_PAGES_PATH`, `CONFLUENCE_MOCK_STATE_PATH` (see `app/config.py` for bounds).
+`CONFLUENCE_MOCK_PAGES_PATH`, `CONFLUENCE_MOCK_STATE_PATH` (see `app/config.py` for bounds). The evidence gate:
+`EXTERNAL_GATE`, `EXTERNAL_GATE_*` (`docs/ADAPTIVE_RAG.md` §7).
 
 ## Mock scenario controls
 
@@ -85,4 +98,6 @@ cd backend
 ../.venv/bin/python -m app.tools.mock_confluence reset
 ```
 
-Checks: `tests/test_external_rag.py`, eval cases `KX-*` in `fixtures/eval/cases_external_graph.yaml`.
+Checks: `tests/test_external_rag.py`, eval cases `KX-*` in `fixtures/eval/cases_external_graph.yaml`; the gate:
+`tests/test_adaptive_rag.py` (LF-01…LF-26), `tests/test_evidence_gate.py`, `tests/test_gap_protocol.py`,
+`app/evaluation/gate_eval.py` on `fixtures/eval_adaptive/cases.yaml`.
