@@ -321,3 +321,39 @@ def test_the_summary_has_counts_and_codes_but_no_texts() -> None:
     assert summary["decision"] == "need_external" and summary["queries"] == 1 and summary["missing"] == 1
     assert "секретный" not in json.dumps(summary, ensure_ascii=False)
     assert "приёмник" not in json.dumps(summary, ensure_ascii=False)
+
+
+def test_sections_of_one_document_share_one_card_so_more_documents_fit() -> None:
+    """Passages are sections; a card is a DOCUMENT (sections of one document complement each other)."""
+    passages = [
+        passage("C1", "DOC-A", "Поток A описан здесь."),
+        passage("C2", "DOC-B", "Владелец потока — команда B."),
+        passage("C3", "DOC-A", "Поток A запускается в 02:30."),
+        passage("C4", "DOC-C", "Сверка в 03:45."),
+        passage("C5", "DOC-D", "Прочее."),
+        passage("C6", "DOC-E", "Ещё прочее."),
+        passage("C7", "DOC-F", "Загрузка F стартует в 05:10."),
+    ]
+    provider = FakeProvider(decision(evidence_ids=["E1"]))
+    run(gate().decide(provider, USER, gate_input("Когда запускается поток A?", passages)))
+    cards = provider.requests[0].cards
+    assert [c.document_id for c in cards] == ["DOC-A", "DOC-B", "DOC-C", "DOC-D", "DOC-E"]
+    assert "02:30" in cards[0].excerpt and "описан" in cards[0].excerpt
+
+
+def test_a_card_prefers_the_sentence_with_the_rare_words_of_the_question() -> None:
+    """A word in every sentence of the passage («CATIA» in a CATIA document) says little about WHICH sentence answers;
+    the sentence with the question's rarer words («двух сборках») must survive the card limit."""
+    filler = "Деталь CATIA передаётся в каталог с атрибутами CATIA и версией CATIA. "
+    text = filler * 12 + "Правило: у узла не бывает двух родительских сборок одновременно. " + filler * 6
+    excerpt = focus_excerpt(text, analyze_query("Может ли деталь CATIA числиться сразу в двух сборках?"), 300)
+    assert "у узла не бывает двух родительских сборок одновременно" in excerpt
+
+
+def test_a_model_query_that_only_restates_the_question_is_replaced_by_a_clean_query() -> None:
+    long_query = "Какие ограничения принимает система Бета при передаче справочника складов из системы Альфа сегодня"
+    provider = FakeProvider(decision(decision="need_external", missing=["ограничения Бета"], search_queries=[long_query]))
+    result = run(gate().decide(provider, USER, gate_input("Какие ограничения принимает система Бета от системы Альфа?")))
+    assert result.decision == "need_external" and result.search and result.queries_rejected == 1
+    assert result.error == "query_too_long" and len(result.queries) == 1
+    assert len(result.queries[0].split()) <= 8

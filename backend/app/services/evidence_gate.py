@@ -177,26 +177,51 @@ _UNIT_RE = re.compile(r"(?<=[.!?;:])\s+|\n+")
 
 
 def focus_excerpt(text: str, terms: list[QueryTerm], limit: int) -> str:
-    """At most `limit` characters of a passage for a card: the units (lines, sentences) with most question words,
-    each with the unit after it (a value often follows its label), in document order. The whole text if it fits."""
+    """At most `limit` characters of a passage for a card, the whole text if it fits. Units (lines, sentences) are
+    chosen greedily by the question words they ADD, each word weighted by its rarity among the units of this text
+    (a word in every sentence — the document's own subject — says little about which sentence answers), each with
+    the unit after it (a value often follows its label); then the remaining room is filled; document order kept."""
     if len(text) <= limit:
         return text
     units = [u.strip() for u in _UNIT_RE.split(text) if u.strip()]
-    scores = [sum(1 for t in terms if term_matches_text(t, tokenize(u))) for u in units]
+    present = [{i for i, t in enumerate(terms) if term_matches_text(t, tokenize(u))} for u in units]
+    df: dict[int, int] = {}
+    for found in present:
+        for i in found:
+            df[i] = df.get(i, 0) + 1
     chosen: dict[int, str] = {}
     size = 0
-    for index in sorted(range(len(units)), key=lambda i: (-scores[i], i)):
-        if scores[index] == 0:
+
+    def take(j: int) -> bool:
+        nonlocal size
+        if j >= len(units) or j in chosen:
+            return False
+        room = limit - size - (3 if chosen else 0)
+        if room < 20:
+            return False
+        piece = units[j] if len(units[j]) <= room else units[j][: room - 1].rstrip() + "…"
+        chosen[j] = piece
+        size += len(piece) + (3 if len(chosen) > 1 else 0)
+        return True
+
+    covered: set[int] = set()
+    while True:
+        gains = [
+            (sum(1 / df[i] for i in found - covered), -j)
+            for j, found in enumerate(present)
+            if j not in chosen and found - covered
+        ]
+        if not gains:
             break
-        for j in (index, index + 1):
-            if j >= len(units) or j in chosen:
-                continue
-            room = limit - size - (3 if chosen else 0)
-            if room < 20:
-                break
-            piece = units[j] if len(units[j]) <= room else units[j][: room - 1].rstrip() + "…"
-            chosen[j] = piece
-            size += len(piece) + (3 if len(chosen) > 1 else 0)
+        _gain, neg = max(gains)
+        if not take(-neg):
+            break
+        covered |= present[-neg]
+        take(-neg + 1)
+    for j in sorted(range(len(units)), key=lambda j: (-sum(1 / df[i] for i in present[j]), j)):
+        if not present[j]:
+            break
+        take(j)
     if not chosen:
         return text[: limit - 1].rstrip() + "…"
     return " … ".join(chosen[j] for j in sorted(chosen))
@@ -339,7 +364,7 @@ class EvidenceGate:
         if reply is None:
             return self._fallback(result, lexical)
 
-        result.evidence_cids = tuple(mapping[e] for e in reply.evidence_ids)
+        result.evidence_cids = tuple(cid for e in reply.evidence_ids for cid in mapping[e])
         result.missing = tuple(reply.missing)
         entities = [t.original for t in data.own_terms if t.is_entity_like]
         if reply.decision == "sufficient":
@@ -354,15 +379,23 @@ class EvidenceGate:
             reply = replace(reply, decision="uncertain")
 
         queries: list[str] = []
+        unsafe = False
         for raw_query in reply.search_queries:
             safe, why = sanitize_query(raw_query, entities)
             if safe is None:
                 result.queries_rejected += 1
                 result.error = result.error or why
+                unsafe = unsafe or why == "unsafe_query"
             elif safe.casefold() not in {q.casefold() for q in queries}:
                 queries.append(safe)
         if reply.decision == "need_external":
+            if not queries and not unsafe:
+                # A weak model often restates the whole question as its query: the decision and the gap stay the
+                # model's, the search text becomes the server's clean query of the question's own words.
+                derived = self._derived_query(data.own_terms or data.terms)
+                queries = [derived] if derived else []
             if not queries:
+                # Only an address-like «query» (e.g. injected by a document): the decision itself is not trusted.
                 result.decision = "invalid"
                 return self._fallback(result, lexical)
             result.decision, result.reason, result.search = "need_external", "evidence_gap", True
@@ -392,19 +425,32 @@ class EvidenceGate:
 
     def _cards(
         self, team: list[ContextPassage], terms: list[QueryTerm]
-    ) -> tuple[list[EvidenceCard], dict[str, str]]:
+    ) -> tuple[list[EvidenceCard], dict[str, tuple[str, ...]]]:
+        """One card per DOCUMENT (its sections complement each other), in the order of the passages, ≤ 5 cards; an
+        E-id maps back to every passage of its document."""
         s = self.settings
+        documents: dict[str, list[ContextPassage]] = {}
+        for p in team:
+            if p.document_id in documents or len(documents) < max(1, min(s.cards, 5)):
+                documents.setdefault(p.document_id, []).append(p)
         cards: list[EvidenceCard] = []
-        mapping: dict[str, str] = {}
+        mapping: dict[str, tuple[str, ...]] = {}
         budget = s.context_chars
-        for p in team[: max(1, min(s.cards, 5))]:
+        for document_id, sections in documents.items():
             if budget < 80:
                 break
-            excerpt = focus_excerpt(p.text, terms, min(s.card_chars, budget))
+            limit = min(s.card_chars * min(len(sections), 2), budget)
+            excerpt = focus_excerpt("\n".join(p.text for p in sections), terms, limit)
             budget -= len(excerpt)
+            names = list(dict.fromkeys(p.section for p in sections if p.section))
             eid = f"E{len(cards) + 1}"
-            cards.append(EvidenceCard(eid, p.document_id, p.title, p.section, p.status, excerpt))
-            mapping[eid] = p.cid
+            first = sections[0]
+            cards.append(
+                EvidenceCard(
+                    eid, document_id, first.title, " / ".join(names[:3]) or None, first.status, excerpt
+                )
+            )
+            mapping[eid] = tuple(p.cid for p in sections)
         return cards, mapping
 
     @staticmethod
