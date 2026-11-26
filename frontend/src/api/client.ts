@@ -97,6 +97,9 @@ import type {
   ProjectDocuments,
   DocumentTasks,
   WorkPlanCreate,
+  WorkChangeApply,
+  WorkChangeApplyResult,
+  WorkChangeProposal,
   WorkProposal,
   WorkProposalApply,
   WorkProposalApplyResult,
@@ -822,4 +825,22 @@ export const api = {
   workApplyProposal: (id: string, payload: WorkProposalApply) =>
     request<WorkProposalApplyResult>(`/work-ai/proposals/${seg(id)}/apply`, { method: "POST", body: json(payload) }),
   workRejectProposal: (id: string) => request<WorkProposal>(`/work-ai/proposals/${seg(id)}/reject`, { method: "POST" }),
+  /** M7: a NEW proposal from this one + the instruction (this one is unchanged). */
+  workReviseProposal: (id: string, instruction: string, clientRequestId?: string) =>
+    request<WorkProposal>(`/work-ai/proposals/${seg(id)}/revise`, {
+      method: "POST",
+      body: json({ instruction, ...(clientRequestId ? { client_request_id: clientRequestId } : {}) }),
+      timeoutMs: 600_000,
+    }),
+  // M7: change-sets of existing tasks (WCP). Values are never sent: only the chosen operation ids.
+  workChangeProposal: (id: string) => request<WorkChangeProposal>(`/work-ai/change-proposals/${seg(id)}`),
+  workPreviewChanges: (id: string, operationIds: string[]) =>
+    request<WorkChangeProposal>(`/work-ai/change-proposals/${seg(id)}/preview`, {
+      method: "POST",
+      body: json({ operation_ids: operationIds }),
+    }),
+  workApplyChanges: (id: string, payload: WorkChangeApply) =>
+    request<WorkChangeApplyResult>(`/work-ai/change-proposals/${seg(id)}/apply`, { method: "POST", body: json(payload) }),
+  workRejectChanges: (id: string) =>
+    request<WorkChangeProposal>(`/work-ai/change-proposals/${seg(id)}/reject`, { method: "POST" }),
 };

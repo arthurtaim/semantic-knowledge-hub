@@ -8,6 +8,7 @@ import { SidePanel, useSidePanelMode } from "../components/shell/SidePanel";
 import { Button, IconButton } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { TaskCreateSheet } from "../components/work/CreateForms";
+import { WorkChangeSheet } from "../components/work/WorkChanges";
 import { WorkPlanSheet } from "../components/work/WorkPlan";
 import { GanttChart, type GanttHandle } from "../components/work/GanttChart";
 import { GanttControls } from "../components/work/GanttControls";
@@ -101,6 +102,9 @@ export function ProjectPage() {
   const selectedKey = params.get("task");
   const proposalParam = params.get("proposal");
   const proposalId = proposalParam && /^WAP-[0-9a-f]{16}$/.test(proposalParam) ? proposalParam : null;
+  // M7: a change-set of existing tasks the assistant proposed in the chat (`?changes=WCP-…`), reviewed here.
+  const changesParam = params.get("changes");
+  const changesId = changesParam && /^WCP-[0-9a-f]{16}$/.test(changesParam) ? changesParam : null;
   const [planning, setPlanning] = useState(false);
   const phone = useMediaQuery(PHONE);
   const medium = useMediaQuery(MEDIUM);
@@ -588,6 +592,21 @@ export function ProjectPage() {
             say(
               "success",
               `${result.replayed ? "Повтор того же подтверждения: " : ""}создано задач по предложению AI — ${result.created_tasks.length}, зависимостей — ${result.created_dependencies}, связей с документами — ${result.created_links}. Ревизия плана ${result.plan_revision}.`,
+            );
+            void ws.refresh();
+          }}
+        />
+      ) : null}
+      {changesId && project ? (
+        <WorkChangeSheet
+          project={project}
+          canWrite={canWrite}
+          proposalId={changesId}
+          onClose={() => setUrl({ changes: null })}
+          onApplied={(result) => {
+            say(
+              "success",
+              `${result.replayed ? "Повтор того же подтверждения: " : ""}применено изменений — ${result.applied_operations} в задачах: ${result.updated_tasks.map((t) => t.key).join(", ")}. Ревизия плана ${result.plan_revision}.`,
             );
             void ws.refresh();
           }}

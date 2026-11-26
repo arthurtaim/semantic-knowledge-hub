@@ -398,6 +398,15 @@ function ProposalReview({ project, proposalId, assignees, canWrite, onProposal, 
           Провайдер: {proposal.provider} · схема {proposal.schema_version} · ревизия плана {proposal.base_plan_revision}
           {proposal.parent_task_key ? ` · под задачей ${proposal.parent_task_key}` : ""}
         </p>
+        {proposal.revised_from ? (
+          <p className="muted work-plan__meta">
+            Уточнение предложения{" "}
+            <Link to={`?proposal=${encodeURIComponent(proposal.revised_from)}`} className="work-plan__key">
+              {proposal.revised_from}
+            </Link>{" "}
+            — оно не изменено и остаётся доступным.
+          </p>
+        ) : null}
       </section>
 
       <section className="work-plan__block" aria-labelledby={`${id}-src`}>

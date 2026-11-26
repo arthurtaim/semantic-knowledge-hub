@@ -15334,3 +15334,127 @@ input.plan-task__title {
   margin-left: var(--space-2);
   color: var(--text-secondary);
 }
+
+/* --- M7: chat work skills (docs/WORK_CHAT_SKILLS.md) ------------------------------------------------------------- */
+/* The project / tasks a work skill acts on: chosen by the person, above the text of the message. */
+.composer__work {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2) var(--space-3);
+  padding: 2px var(--space-1) var(--space-2);
+}
+
+.composer__work-field {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 12rem;
+  max-width: 22rem;
+}
+
+.composer__work-field label {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.composer__work-field select,
+.composer__work-field input {
+  min-height: 2rem;
+  width: 100%;
+}
+
+.composer__work-note {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+/* The work proposal card in an answer: a link to the review, never an apply button. */
+.ask-work-proposal .ask-proposal__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-weight: 600;
+}
+
+.ask-work-proposal .ask-proposal__meta,
+.ask-work-proposal .ask-proposal__state {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.ask-work-proposal[data-work-state="stale"] .ask-proposal__state,
+.ask-work-proposal[data-work-state="unavailable"] .ask-proposal__state {
+  color: var(--danger-text);
+}
+
+/* The change review: one operation per row — the task, the field, was → will be, notes. */
+.work-changes {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.work-change {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-block);
+}
+
+.work-change--stale {
+  border-style: dashed;
+}
+
+.work-change__body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.work-change__head,
+.work-change__diff,
+.work-change__note,
+.work-change__reason {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.work-change__field {
+  font-weight: 600;
+}
+
+.work-change__diff del {
+  color: var(--text-secondary);
+}
+
+.work-change__diff ins {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.work-change__arrow {
+  margin: 0 var(--space-1);
+}
+
+.work-change__note {
+  font-size: var(--fs-small);
+  color: var(--danger-text);
+}
+
+.work-change__reason {
+  font-size: var(--fs-small);
+}
+
+@media (max-width: 599.98px) {
+  .composer__work-field {
+    max-width: none;
+  }
+}

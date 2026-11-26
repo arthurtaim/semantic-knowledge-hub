@@ -10,6 +10,7 @@ import type {
   SearchScope,
   StoredTurn,
   StoredTurnRequest,
+  WorkProposalRef,
 } from "../api/types";
 import { ASK_ERROR_TITLE, citationLabels, isConflict, scopeLabel, scopeOfSources } from "../lib/assistant";
 import { pluralRu } from "../lib/labels";
@@ -20,6 +21,7 @@ import { AnswerMarkdown } from "./AnswerMarkdown";
 import { AnswerActions, AnswerText, DemoAnswerText, factRefsOf, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
 import { AnswerSources } from "./AnswerSources";
 import { AskProposal } from "./AskProposal";
+import { AskWorkProposal } from "./AskWorkProposal";
 import { ProvenanceLine } from "./Provenance";
 import { ErrorState, Notice } from "./Feedback";
 import { ChecksInsufficient, FailedChecks, SystemFacts } from "./SystemFacts";
@@ -229,6 +231,8 @@ interface AnswerViewProps {
   onAskCorporate: (request: AskRequest) => void;
   /** The document panel: the same rules in less room — no next-step actions, sources without the extras. */
   compact?: boolean;
+  /** M7: refine a work proposal in the chat (a NEW proposal); absent — the card only links to the review. */
+  onRefineWork?: (reference: WorkProposalRef) => void;
 }
 
 /**
@@ -238,7 +242,7 @@ interface AnswerViewProps {
  * corporate and attachments apart. Generated text is labelled «ИИ», the extractive mode «без языковой модели» (a
  * mode, not the content: synthetic sources are said by the provenance line).
  */
-export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, compact = false }: AnswerViewProps) {
+export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, compact = false, onRefineWork }: AnswerViewProps) {
   const session = useSession();
   const question = request.question;
   const insufficient = answer.confidence === "insufficient_evidence";
@@ -246,7 +250,8 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
   // Stable per answer: the Markdown of the text is parsed again only when the answer itself changes.
   const labels = useMemo(() => citationLabels(answer.citations), [answer.citations]);
   const generated = answer.mode === "internal_api" || answer.mode === "claude_cli";
-  const demoExcerpts = answer.mode === "mock" && !answer.proposal;
+  // A server-composed work summary (M7, mock mode) carries system facts, not demo excerpts.
+  const demoExcerpts = answer.mode === "mock" && !answer.proposal && !(answer.system_facts && answer.system_facts.length > 0);
   const facts = useMemo(() => factRefsOf(answer), [answer]);
   const textProps = { citations: answer.citations, labels, turnNo, question, facts, compact, origins: showsSourceOrigins(answer) };
   const showText = !insufficient || Boolean(answer.proposal);
@@ -347,6 +352,7 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
           anchorId={proposalCardId(turnNo)}
         />
       ) : null}
+      {answer.work_proposal ? <AskWorkProposal reference={answer.work_proposal} compact={compact} onRefine={onRefineWork} /> : null}
 
       {insufficient || compact ? null : (
         <AnswerActions
@@ -447,14 +453,17 @@ interface TurnViewProps {
   /** A stored turn without an answer (interrupted, withheld): ask the same again — only on the reader's click. */
   onResend?: () => void;
   compact?: boolean;
+  /** M7: «Уточнить» on a work proposal card. */
+  onRefineWork?: (reference: WorkProposalRef) => void;
 }
 
-export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorporate, compact = false }: TurnViewProps) {
+export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorporate, compact = false, onRefineWork }: TurnViewProps) {
   const running = isRunning(turn);
   const { display } = turn;
   // A quick action names itself in the bubble; its skill chip would only repeat it.
   const skillChip = display.skill && !(display.action && !turn.request.question) ? display.skill : null;
-  const attached = skillChip || display.files.length > 0 || display.documents.length > 0 || display.selection;
+  const work = turn.request.work_context ?? null;
+  const attached = skillChip || work || display.files.length > 0 || display.documents.length > 0 || display.selection;
   const scope = scopeSummary(turn.request);
   const Heading = compact ? "h3" : "h2";
   return (
@@ -467,6 +476,15 @@ export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorpo
               <li>
                 <Chip tone="skill" icon="skill">
                   {skillChip.name}
+                </Chip>
+              </li>
+            ) : null}
+            {work ? (
+              <li>
+                <Chip tone="document" icon="projects" title="Проект навыка (проверяется сервером при каждом сообщении)">
+                  {work.project_key}
+                  {work.task_keys && work.task_keys.length > 0 ? `: ${work.task_keys.join(", ")}` : ""}
+                  {work.proposal_id ? ` · уточнение ${work.proposal_id}` : ""}
                 </Chip>
               </li>
             ) : null}
@@ -543,6 +561,7 @@ export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorpo
           onRefine={onRefine}
           onAskCorporate={(request) => onAskCorporate(request, turn.display)}
           compact={compact}
+          onRefineWork={onRefineWork}
         />
       ) : null}
     </article>
