@@ -68,6 +68,7 @@
      --set ai_base_url=https://<хост>/v1 --set ai_model=<модель> --set ai_allowed_hosts=<хост> \
      --set external_gate=semantic --out ../reports/adaptive-rag/eval --label target_all_n0
    # то же с --noise 120 --label target_all_n120; сравнение: gate_eval --table ../reports/adaptive-rag/eval/*all*.json
+   # и с --set external_gate_request_known=false --label target_lean_all_n0 (промпт без `known`, 07_KNOWN_FIELD.md)
    ```
 
    `configured` не подменяет провайдер; вызовы модели считаются по серверной трассе `evidence_gate.model_calls`.
