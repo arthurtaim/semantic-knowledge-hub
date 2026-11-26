@@ -44,6 +44,7 @@ logger = logging.getLogger("skh.external")
 RENDER_VERSION = "r1"
 POLICY_VERSION = "ext-v1"  # part of the page cache key: cached fragments do not depend on the queries
 MAX_QUERIES = 2
+FOCUSED_PAGE_FRAGMENTS = 3
 T = TypeVar("T")
 
 
@@ -401,8 +402,14 @@ class ExternalEvidenceService:
             page = entry.page
             best: list[tuple[int, Fragment]] = []
             for frag in entry.fragments:
-                text = f"{frag.heading or ''} {frag.text}"
+                # Focused search: a section speaks about its page's subject, named once in the page title; a specific
+                # section («Исключения») need not repeat it to answer the gap.
+                head = f"{page.title} " if result.focused else ""
+                text = f"{head}{frag.heading or ''} {frag.text}"
                 found = [(g, self._matched(g, text)) for g in groups if g]
+                own = f"{frag.heading or ''} {frag.text}"
+                if result.focused and not any(self._matched(g, own) for g in groups):
+                    continue  # only the title matched: boilerplate of the page, not evidence
                 # Relevant when it states at least half of ONE query's words (or names its identifier).
                 if any(
                     len(m) >= max(1, math.ceil(len(g) / 2)) or any(t.is_entity_like for t in m)
@@ -413,7 +420,10 @@ class ExternalEvidenceService:
                 self._reject(result, page, "irrelevant_text")
                 continue
             best.sort(key=lambda item: (-item[0], item[1].fragment_id))
-            for count, frag in best[:2]:
+            if result.focused and len(best) > 2:
+                best = self._covering(best, groups)
+            # A focused search fetches fewer, better pages: one page may give up to 3 fragments (≤ 6 in total).
+            for count, frag in best[: FOCUSED_PAGE_FRAGMENTS if result.focused else 2]:
                 if len(selected) >= self.limits.fragments or budget <= 0:
                     break
                 text = frag.text[: min(1500, budget)]
@@ -441,6 +451,32 @@ class ExternalEvidenceService:
                     )
                 )
         result.fragments = selected
+
+    def _covering(
+        self, best: list[tuple[int, Fragment]], groups: list[list[QueryTerm]]
+    ) -> list[tuple[int, Fragment]]:
+        """Focused search: order a page's relevant fragments so that each next one ADDS the gap's words the earlier
+        ones lack, a word weighted by its rarity among these fragments (the page's subject, named in every section,
+        says little). The question path keeps the plain count order (the A/B baseline)."""
+        terms = list({t.stem: t for g in groups for t in g}.values())
+        present = [
+            {t.stem for t in terms if term_matches_text(t, tokenize(f"{f.heading or ''} {f.text}"))}
+            for _c, f in best
+        ]
+        df: dict[str, int] = {}
+        for found in present:
+            for stem in found:
+                df[stem] = df.get(stem, 0) + 1
+        order: list[int] = []
+        covered: set[str] = set()
+        while len(order) < len(best):
+            remaining = [i for i in range(len(best)) if i not in order]
+            pick = max(
+                remaining, key=lambda i: (sum(1 / df[x] for x in present[i] - covered), len(present[i]), -i)
+            )
+            order.append(pick)
+            covered |= present[pick]
+        return [best[i] for i in order]
 
     def _reject(self, result: ExternalRetrieval, page: CorporatePage, reason: str) -> None:
         self.counters["rejected"] += 1

@@ -103,6 +103,17 @@ PAGES: list[dict[str, Any]] = [
         "body": "<p>Портал Дельта недоступен по субботам с 01:00 до 03:00 (окно обслуживания).</p>",
     },
     {
+        "page_id": "300008",
+        "space": "OPS",
+        "title": "Заморозка изменений справочника складов",
+        "status": "approved",
+        "body": "<p>Служебная страница отдела, правится вручную.</p>"
+        "<h2>Назначение</h2><p>Заморозка изменений справочника складов защищает передачу справочника складов "
+        "в конце квартала.</p><h2>Когда действует</h2><p>Заморозка изменений справочника складов действует в "
+        "последнюю неделю квартала.</p><h2>Исключения</h2><p>Исключение согласует руководитель логистики по "
+        "письменной заявке с планом отката.</p>",
+    },
+    {
         "page_id": "300006",
         "space": "OPS",
         "title": "Окно обслуживания системы Бета",
@@ -585,3 +596,19 @@ def test_uncertain_probes_once_and_never_claims_sufficiency(lf: Factory) -> None
     gate = answer["evidence_gate"]
     assert gate["decision"] == "uncertain" and gate["external_called"] and gate["queries"] == 1
     assert connector.calls["search"] == 1
+
+
+def test_a_focused_search_keeps_the_fragment_that_adds_what_the_others_lack(lf: Factory) -> None:
+    """Two fragments per page: the second must add the gap's words the first lacks («исключение»), not repeat the
+    page's subject («заморозка изменений справочника складов») that every section names."""
+    from app.evaluation.gate_eval import capture_prepared
+
+    reply = need_external(["кто согласует исключение"], ["заморозка изменений справочника складов исключение"])
+    client, _provider, _connector = lf(lambda r: reply)
+    box = capture_prepared(client)
+    ask(client, "Кто разрешает менять справочник складов во время заморозки изменений?")
+    sections = [p for p in box["prepared"].passages if p.document_id == "300008"]
+    page = " ".join(p.text for p in sections)
+    assert "руководитель логистики" in page
+    # a focused search may take up to 3 sections of one page; a preface that only shares the title is not evidence
+    assert len(sections) == 3 and "Служебная страница" not in page
