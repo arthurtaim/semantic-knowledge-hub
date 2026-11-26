@@ -166,6 +166,15 @@ and the sources are the same.
   always-sufficient. `app/evaluation/gate_eval.py` runs them on `fixtures/eval_adaptive/cases.yaml`.
 
 **Weak-model sign-off (required before production on the target model):** run 30–50 independent questions on the
-target model (`AI_PROVIDER=internal_api`, synthetic corpus, explicit approval), record the confusion matrix, JSON
-errors and repairs, needless MCP calls, p95 of the gate call and its cost, and compare with the scripted runs in
-`reports/adaptive-rag/`. Until then: `TARGET_MODEL_NOT_VALIDATED`.
+target model (synthetic corpus, explicit approval), record the confusion matrix, JSON errors and repairs, needless MCP
+calls, p95 of the gate call and its cost, and compare with the scripted runs in `reports/adaptive-rag/`:
+
+```bash
+cd backend
+AI_API_KEY_FILE=/path/to/key ../.venv/bin/python -m app.evaluation.gate_eval --variant configured --split all \
+  --set integration_profile=live_read_only --set ai_provider=internal_api --set ai_base_url=https://<host>/v1 \
+  --set ai_model=<model> --set ai_allowed_hosts=<host> --set external_gate=semantic \
+  --out ../reports/adaptive-rag/eval --label target_all_n0
+```
+
+Until then: `TARGET_MODEL_NOT_VALIDATED`.

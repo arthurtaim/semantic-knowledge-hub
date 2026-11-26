@@ -55,7 +55,9 @@ BOTH = ["team", "corporate"]
 INVISIBLE_PAGES = {"200118", "200119", "200120", "MOCK-1003", "MOCK-9001"}
 INVISIBLE_MARKERS = ("RESTRICTED-MOCK-MARKER", "PRIVATE-SPACE-MOCK-MARKER", "4,2 млн", "38 учётных")
 NON_AUTHORITATIVE = {"draft", "in_review", "deprecated"}
-VARIANTS = ("lexical", "oracle", "weak", "always_external", "always_sufficient")
+# `configured` = the provider the settings configure, unchanged (the sign-off run on the target model, --set ai_*=…);
+# `lexical` is the same code path, named for the offline mock where it means LOCAL_SUFFICIENCY.
+VARIANTS = ("lexical", "configured", "oracle", "weak", "always_external", "always_sufficient")
 
 
 def norm(text: str) -> str:
@@ -166,7 +168,7 @@ def eval_client(noise: int, overrides: dict[str, Any]) -> Iterator[TestClient]:
 
 
 def install_double(client: TestClient, variant: str, cases: list[dict[str, Any]], seed: int) -> Any:
-    if variant == "lexical":
+    if variant in ("lexical", "configured"):
         return None
     from app.evaluation import gap_doubles as d
 
@@ -207,6 +209,13 @@ def capture_prepared(client: TestClient) -> dict[str, Any]:
 
 
 # --- one case ----------------------------------------------------------------------------------------------------------
+def model_calls(provider: Any, before: int, gate: dict[str, Any]) -> int:
+    """Doubles record their gap calls; a configured (real) provider is counted by the server's own trace."""
+    if provider is not None:
+        return len(provider.calls) - before
+    return int(gate.get("model_calls") or 0)
+
+
 def gap_prompt_chars(provider: Any, start: int) -> int:
     if provider is None:
         return 0
@@ -277,7 +286,7 @@ def run_case(client: TestClient, case: dict[str, Any], provider: Any, box: dict[
             "decision": gate.get("decision") or ("need_external" if called else "sufficient"),
             "reason": gate.get("reason") or external.get("trigger") or "local_sufficient",
             "policy": gate.get("policy") or "lexical-legacy",
-            "model_calls": (len(provider.calls) - model_before) if provider is not None else 0,
+            "model_calls": model_calls(provider, model_before, gate),
             "repaired": bool(gate.get("repaired")),
             "fallback": gate.get("fallback"),
             "gate_error": gate.get("error"),

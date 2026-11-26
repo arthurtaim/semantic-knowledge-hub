@@ -75,3 +75,15 @@ def test_aggregates_count_false_and_missed_external_searches() -> None:
         "sufficient→need_external": 1,
         "sufficient→sufficient": 1,
     }
+
+
+def test_a_configured_provider_is_counted_by_the_servers_own_trace() -> None:
+    """Sign-off on the target model: no double records the calls, the answer's evidence_gate does."""
+
+    class Double:
+        calls = ("a", "b", "c")
+
+    assert "configured" in gate_eval.VARIANTS
+    assert gate_eval.model_calls(None, 0, {"model_calls": 2}) == 2
+    assert gate_eval.model_calls(None, 0, {}) == 0
+    assert gate_eval.model_calls(Double(), 1, {"model_calls": 9}) == 2

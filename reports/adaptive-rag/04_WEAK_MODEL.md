@@ -46,8 +46,22 @@
 
 1. Разрешение владельца на opt-in прогон на синтетическом стенде (`AI_PROVIDER=internal_api`, только синтетика).
 2. 30–50 независимых вопросов: эти 40 (`fixtures/eval_adaptive/cases.yaml`) + новые, не виденные при разработке.
-3. Прогон: `python -m app.evaluation.gate_eval --variant lexical --split all` на стенде с целевой моделью (вариант
-   `lexical` берёт настроенный провайдер; при `EXTERNAL_GATE=semantic` и провайдере с capability решает модель).
+3. Прогон в контуре, где доступна модель (синтетический корпус и mock Confluence поднимаются самим инструментом во
+   временной папке; ключ — файлом, не в командной строке):
+
+   ```bash
+   cd backend
+   AI_API_KEY_FILE=/путь/к/ключу ../.venv/bin/python -m app.evaluation.gate_eval --variant configured --split all \
+     --set integration_profile=live_read_only --set ai_provider=internal_api \
+     --set ai_base_url=https://<хост>/v1 --set ai_model=<модель> --set ai_allowed_hosts=<хост> \
+     --set external_gate=semantic --out ../reports/adaptive-rag/eval --label target_all_n0
+   # то же с --noise 120 --label target_all_n120; сравнение: gate_eval --table ../reports/adaptive-rag/eval/*all*.json
+   ```
+
+   `configured` не подменяет провайдер; вызовы модели считаются по серверной трассе `evidence_gate.model_calls`.
+   Проверено только, что такие настройки принимаются (`live_read_only`; профиль `offline` их отклоняет), — сам прогон
+   на модели не выполнялся. Ответы при `internal_api` идут через tool loop, поэтому общая задержка будет больше, чем у
+   двойников.
 4. Записать: матрицу ошибок, долю repair/invalid, лишние MCP-вызовы, p50/p95 вызова ворот, стоимость в токенах;
    сравнить с oracle и weak из этого отчёта.
 5. Пороги приёмки согласовать по baseline (например: ложное «sufficient» при данном контексте ≤ 1 из 20, invalid ≤
