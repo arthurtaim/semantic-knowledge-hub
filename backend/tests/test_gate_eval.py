@@ -87,3 +87,10 @@ def test_a_configured_provider_is_counted_by_the_servers_own_trace() -> None:
     assert gate_eval.model_calls(None, 0, {"model_calls": 2}) == 2
     assert gate_eval.model_calls(None, 0, {}) == 0
     assert gate_eval.model_calls(Double(), 1, {"model_calls": 9}) == 2
+
+
+def test_the_gate_call_latency_is_reported_for_the_sign_off() -> None:
+    rows = [row("sufficient", False, "sufficient", gate_ms=ms) for ms in (100.0, 200.0, 300.0, 4000.0)]
+    rows.append(row("sufficient", False, "sufficient", gate_ms=None))  # no model call (lexical, no passages)
+    agg = gate_eval.aggregate(rows)
+    assert agg["gate_ms_p50"] == 200.0 and agg["gate_ms_p95"] == 4000.0

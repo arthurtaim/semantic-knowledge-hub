@@ -287,6 +287,9 @@ def run_case(client: TestClient, case: dict[str, Any], provider: Any, box: dict[
             "reason": gate.get("reason") or external.get("trigger") or "local_sufficient",
             "policy": gate.get("policy") or "lexical-legacy",
             "model_calls": model_calls(provider, model_before, gate),
+            "gate_ms": gate.get("elapsed_ms")
+            if gate.get("model_calls")
+            else None,  # the gap decision call(s) only
             "repaired": bool(gate.get("repaired")),
             "fallback": gate.get("fallback"),
             "gate_error": gate.get("error"),
@@ -378,6 +381,8 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         if any(r["model_calls"] for r in ok)
         else 0,
+        "gate_ms_p50": pct([r["gate_ms"] for r in ok if r.get("gate_ms") is not None], 50),
+        "gate_ms_p95": pct([r["gate_ms"] for r in ok if r.get("gate_ms") is not None], 95),
         "latency_local_p50": pct(local, 50),
         "latency_local_p95": pct(local, 95),
         "latency_external_p50": pct(ext, 50),
