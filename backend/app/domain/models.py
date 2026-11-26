@@ -614,6 +614,7 @@ class EvidenceGateSummary(BaseModel):
     queries: int = 0
     queries_rejected: int = 0
     incomplete: bool = False
+    normalized: list[str] = Field(default_factory=list)  # e.g. known_truncated — codes only, never content
     elapsed_ms: float = 0.0
 
 

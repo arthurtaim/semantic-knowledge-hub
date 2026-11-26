@@ -325,7 +325,9 @@ class ClaudeCodeCLIProvider:
         """Adaptive RAG: ONE short classification run; the raw reply (the gate parses and validates it)."""
         from app.adapters.ai.gap_protocol import build_gap_message, gap_system_prompt
 
-        return await self._collect(gap_system_prompt(), build_gap_message(request, max_chars), self._timeout)
+        return await self._collect(
+            gap_system_prompt(request.ask_known), build_gap_message(request, max_chars), self._timeout
+        )
 
     async def tool_turn(self, request: ToolTurnRequest) -> AsyncGenerator[ToolTurnEvent, None]:
         """One round of the tool loop. Deltas: the prose of a final answer only (a JSON tool request is held back)."""

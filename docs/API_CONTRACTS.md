@@ -469,7 +469,9 @@ EvidenceGateSummary { policy: "semantic-v1" | "lexical-v2",
   reason: local_sufficient | evidence_gap | model_uncertain | decision_invalid | no_local_passages | explicit_request |
           external_scope_selected | external_budget_exhausted | <LOCAL_SUFFICIENCY v2 code>,
   external_called: bool, model_calls: int, repaired: bool, error: string|null, fallback: string|null,
-  lexical: string|null, cards, evidence, missing, queries, queries_rejected: int, incomplete: bool, elapsed_ms }
+  lexical: string|null, cards, evidence, missing, queries, queries_rejected: int, incomplete: bool,
+  normalized: string[] (e.g. known_truncated), elapsed_ms }
+GET /api/discovery/stats += { evidence_gate: { policy, ask_known, replies, normalized_replies, normalized: {code: n} } }
 external += { outcome: found | no_match | insufficient_evidence | denied | source_unavailable | null,
               searches: int, focused: bool }
 /ask/stream status += { stage: "retrieving", step: "assessing" | "external" }   (unknown steps: ignore)

@@ -451,6 +451,7 @@ def build_container(settings: Settings) -> Container:
                 max_searches=settings.external_gate_max_searches,
                 rate_limit=settings.external_gate_rate_limit,
                 rate_window_seconds=settings.external_gate_rate_window_seconds,
+                ask_known=settings.external_gate_request_known,
             )
         ),
     )

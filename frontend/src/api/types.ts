@@ -629,6 +629,8 @@ export interface EvidenceGateSummary {
   queries: number;
   queries_rejected: number;
   incomplete: boolean;
+  /** What the server normalized in the model's reply (e.g. known_truncated): codes only, never content. */
+  normalized?: string[];
   elapsed_ms: number;
 }
 

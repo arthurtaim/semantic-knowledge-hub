@@ -42,13 +42,15 @@ GAP_PROMPT = f"""{GAP_MARKER}
    В search_queries дай 1–2 коротких поисковых запроса для корпоративной вики (до 8 слов): названия систем, ID и
    термины из вопроса плюс недостающее сведение. Не повторяй вопрос целиком, не пиши ссылок и адресов.
 4. "uncertain" — если не можешь определить.
-5. Не придумывай сведений, которых нет во фрагментах. В known — до 3 сведений из фрагментов, отвечающих на часть
-   вопроса. Не решай только по совпадению слов.
+5. Не придумывай сведений, которых нет во фрагментах.{{known_rule}} Не решай только по совпадению слов.
 Верни ТОЛЬКО один JSON-объект, без пояснений:
-{{"decision": "sufficient|need_external|uncertain", "known": ["..."], "missing": ["..."], "evidence_ids": ["E1"],
+{{"decision": "sufficient|need_external|uncertain",{{known_key}} "missing": ["..."], "evidence_ids": ["E1"],
  "search_queries": ["..."]}}"""
+KNOWN_RULE = " В known — до 3 сведений из фрагментов, отвечающих на часть\n   вопроса."
+KNOWN_KEY = ' "known": ["..."],'
 
 REPAIR_TAIL = "Верни только JSON-объект в указанном формате."
+MAX_KNOWN_CHARS = 160
 MAX_REPLY_CHARS = 4000
 MAX_QUESTION_CHARS = 1000
 MAX_REFERENT_CHARS = 300
@@ -71,7 +73,9 @@ _UNSAFE_RE = re.compile(
 _OPERATOR_RE = re.compile(r"[^\w\s.\-№]")
 
 GapDecisionKind = Literal["sufficient", "need_external", "uncertain"]
-_Known = Annotated[str, StringConstraints(max_length=160)]
+# `known` is never evidence (the server does not use it to decide anything): an over-long item is normalized and cut
+# to MAX_KNOWN_CHARS instead of rejecting the decision; the reply size cap still bounds it.
+_Known = Annotated[str, StringConstraints(max_length=MAX_REPLY_CHARS)]
 _Missing = Annotated[str, StringConstraints(max_length=180)]
 _Eid = Annotated[str, StringConstraints(max_length=64)]
 _Query = Annotated[str, StringConstraints(max_length=MAX_QUERY_CHARS)]
@@ -96,6 +100,8 @@ class GapReply:
     missing: list[str]
     evidence_ids: list[str]
     search_queries: list[str]
+    # What the parser normalized without changing a fact the server uses (codes only, never the content).
+    normalized: tuple[str, ...] = ()
 
 
 class GapProtocolError(ValueError):
@@ -105,10 +111,13 @@ class GapProtocolError(ValueError):
         self.detail = detail
 
 
-def gap_system_prompt() -> str:
+def gap_system_prompt(ask_known: bool = True) -> str:
     """Self-contained and short on purpose: a weak model follows a few rules better than the long runtime policy of
-    the answering prompt (which still governs the answer itself)."""
-    return GAP_PROMPT
+    the answering prompt (which still governs the answer itself). `ask_known=False` leaves `known` out of the
+    requested format (the server never uses it); the parser accepts replies with or without it."""
+    return GAP_PROMPT.replace("{known_rule}", KNOWN_RULE if ask_known else "").replace(
+        "{known_key}", KNOWN_KEY if ask_known else ""
+    )
 
 
 def _escape(text: str) -> str:
@@ -225,12 +234,20 @@ def parse_gap_reply(text: str, card_ids: Collection[str]) -> GapReply:
         if not evidence:
             raise GapProtocolError("schema", "sufficient_without_evidence")
         queries = []  # nothing is searched for a sufficient decision
+    known: list[str] = []
+    truncated = False
+    for item in wire.known:
+        cleaned = _clean(item)
+        if len(cleaned) > MAX_KNOWN_CHARS:
+            cleaned, truncated = cleaned[: MAX_KNOWN_CHARS - 1].rstrip() + "…", True
+        known.append(cleaned)
     return GapReply(
         decision=wire.decision,
-        known=_strings(wire.known),
+        known=_strings(known),
         missing=missing,
         evidence_ids=evidence,
         search_queries=queries,
+        normalized=("known_truncated",) if truncated else (),
     )
 
 

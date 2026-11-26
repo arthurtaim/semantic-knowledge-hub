@@ -504,7 +504,7 @@ class OpenAICompatibleAIProvider:
 
         return await self._post_chat(
             [
-                {"role": "system", "content": gap_system_prompt()},
+                {"role": "system", "content": gap_system_prompt(request.ask_known)},
                 {"role": "user", "content": build_gap_message(request, max_chars)},
             ]
         )

@@ -112,6 +112,7 @@ async def stats(
     return {
         "discovery": store.stats(acl_scope_key(user)) if store else {"enabled": False},
         "external": container.external.stats() if container.external else {"enabled": False},
+        "evidence_gate": container.assistant.gate.stats(),
     }
 
 

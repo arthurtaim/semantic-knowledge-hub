@@ -365,3 +365,28 @@ def test_a_model_query_that_only_restates_the_question_is_replaced_by_a_clean_qu
     assert result.decision == "need_external" and result.search and result.queries_rejected == 1
     assert result.error == "query_too_long" and len(result.queries) == 1
     assert len(result.queries[0].split()) <= 8
+
+
+def test_a_normalized_reply_is_counted_without_its_content() -> None:
+    long_known = "СЕКРЕТНЫЙ-ПРИЗНАК " + "подробность " * 30
+    provider = FakeProvider(decision(evidence_ids=["E1", "E2"], known=[long_known]))
+    g = gate()
+    result = run(
+        g.decide(
+            provider, USER, gate_input("Через какой интерфейс и как часто система A передаёт справочник?")
+        )
+    )
+    assert result.decision == "sufficient" and result.normalized == ("known_truncated",)
+    assert result.summary()["normalized"] == ["known_truncated"]
+    assert g.stats()["normalized_replies"] == 1 and g.stats()["normalized"] == {"known_truncated": 1}
+    dumped = json.dumps([result.summary(), g.stats()], ensure_ascii=False)
+    assert "СЕКРЕТНЫЙ" not in dumped and "подробность" not in dumped
+
+
+def test_the_gate_can_stop_asking_for_known() -> None:
+    provider = FakeProvider(decision(evidence_ids=["E1"]))
+    run(gate(ask_known=False).decide(provider, USER, gate_input("Как часто передаётся справочник?")))
+    assert provider.requests[0].ask_known is False
+    default = FakeProvider(decision(evidence_ids=["E1"]))
+    run(gate().decide(default, USER, gate_input("Как часто передаётся справочник?")))
+    assert default.requests[0].ask_known is True

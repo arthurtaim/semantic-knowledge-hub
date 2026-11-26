@@ -270,6 +270,9 @@ class Settings(BaseSettings):
     # Gate-decided external searches per ACL scope and window (a weak model that always asks for more); 0 = off.
     external_gate_rate_limit: int = Field(default=30, ge=0, le=10_000)
     external_gate_rate_window_seconds: int = Field(default=600, ge=10, le=86_400)
+    # Ask the model for the optional `known` list (never evidence; only output tokens and a source of format errors).
+    # false: the lean prompt without it; replies that still carry it are accepted (backward compatible).
+    external_gate_request_known: bool = True
     # Discovery memory: query→source links, traces and relevance feedback (never the answer text).
     discovery_enabled: bool = True
     discovery_retention_hours: int = Field(default=24, ge=1, le=24 * 90)

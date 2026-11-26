@@ -1,7 +1,7 @@
 """Evidence-gap protocol of the weak-model gate (docs/ADAPTIVE_RAG.md): one compact JSON reply, parsed strictly.
 
-Every malformed shape a small chat model produces is either tolerated WITHOUT changing a fact (a code fence, text
-around the object) or rejected as `syntax` (one bounded repair is allowed) or `schema` (no repair: the decision is
+Every malformed shape a small chat model produces is either tolerated WITHOUT changing a fact the server uses (a code
+fence, text around the object, an over-long `known` item — never evidence — cut to the limit) or rejected as `syntax` (one bounded repair is allowed) or `schema` (no repair: the decision is
 invalid). Nothing here trusts the model: evidence ids must be the server's, queries are sanitized by the server.
 """
 
@@ -183,3 +183,49 @@ def test_the_message_is_bounded_and_the_prompt_is_short() -> None:
 def test_a_repair_note_is_appended_for_the_second_attempt() -> None:
     message = build_gap_message(_request(repair="ответ не был JSON-объектом"), max_chars=4000)
     assert message.rstrip().endswith("Верни только JSON-объект в указанном формате.")
+
+
+# --- `known` is never evidence: an over-long item is normalized, not a reason to reject the decision -----------------
+
+
+def test_a_long_known_item_is_normalized_and_truncated_not_rejected() -> None:
+    long_known = "Система   A передаёт справочник\nчерез интерфейс IF-2 " + "и ещё подробности " * 20
+    decision = parse_gap_reply(reply(known=[long_known, "короткий факт"]), CARDS)
+    assert decision.decision == "need_external" and decision.evidence_ids == ["E1"]
+    assert len(decision.known[0]) <= 160 and decision.known[0].startswith(
+        "Система A передаёт справочник через"
+    )
+    assert "  " not in decision.known[0] and "\n" not in decision.known[0]
+    assert decision.known[1] == "короткий факт"
+    assert decision.normalized == ("known_truncated",)
+    assert parse_gap_reply(reply(), CARDS).normalized == ()
+
+
+@pytest.mark.parametrize(
+    ("fields", "detail"),
+    [
+        ({"known": [123]}, "schema"),  # never converted to a string
+        ({"known": [{"fact": "x"}]}, "schema"),
+        ({"known": ["a", "b", "c", "d"]}, "schema"),  # the item count stays strict
+        ({"known": ["x" * 300], "evidence_ids": ["E7"]}, "unknown_evidence_id"),  # truncation masks nothing
+        ({"known": ["x" * 300], "missing": ["y" * 181]}, "schema"),
+        ({"known": ["x" * 300], "search_queries": ["z" * 141]}, "schema"),
+        ({"known": ["x" * 300], "search_queries": [f"q{i}" for i in range(3)]}, "schema"),
+        ({"known": ["x" * 300], "decision": "maybe"}, "schema"),
+    ],
+)
+def test_a_really_invalid_decision_is_still_rejected_with_a_long_known(
+    fields: dict[str, object], detail: str
+) -> None:
+    with pytest.raises(GapProtocolError) as info:
+        parse_gap_reply(reply(**fields), CARDS)
+    assert info.value.kind == "schema" and info.value.detail.startswith(detail)
+
+
+def test_the_prompt_can_omit_known_and_the_parser_accepts_both_shapes() -> None:
+    assert '"known"' in gap_system_prompt() and "known" in gap_system_prompt(ask_known=True)
+    lean = gap_system_prompt(ask_known=False)
+    assert "known" not in lean and lean.startswith(GAP_MARKER) and len(lean) < len(gap_system_prompt())
+    without = json.dumps({"decision": "sufficient", "evidence_ids": ["E1"]})
+    assert parse_gap_reply(without, CARDS).known == []
+    assert parse_gap_reply(reply(), CARDS).known  # a model that still sends `known` keeps working

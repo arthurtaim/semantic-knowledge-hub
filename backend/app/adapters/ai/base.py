@@ -251,6 +251,7 @@ class GapAssessmentRequest:
     referent: str = ""  # the previous question of the dialog: context for pronouns, never evidence
     absent_terms: tuple[str, ...] = ()  # words of the question in NO eligible team document (a server fact)
     repair: str = ""  # server note for the single repair attempt after a reply that was not a JSON object
+    ask_known: bool = True  # request the optional `known` list (never evidence); EXTERNAL_GATE_REQUEST_KNOWN
 
 
 class EvidenceGapAIProvider(Protocol):

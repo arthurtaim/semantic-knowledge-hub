@@ -290,6 +290,7 @@ def run_case(client: TestClient, case: dict[str, Any], provider: Any, box: dict[
             "gate_ms": gate.get("elapsed_ms")
             if gate.get("model_calls")
             else None,  # the gap decision call(s) only
+            "gate_normalized": list(gate.get("normalized") or []),
             "repaired": bool(gate.get("repaired")),
             "fallback": gate.get("fallback"),
             "gate_error": gate.get("error"),
@@ -372,6 +373,7 @@ def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "model_calls": sum(r["model_calls"] for r in ok),
         "repairs": sum(r["repaired"] for r in ok),
         "invalid_decisions": sum(r["decision"] == "invalid" for r in ok),
+        "normalized_replies": sum(bool(r.get("gate_normalized")) for r in ok),
         "queries_rejected": sum(r["queries_rejected"] for r in ok),
         "mcp_search": sum(r["mcp_search"] for r in ok),
         "mcp_get": sum(r["mcp_get"] for r in ok),

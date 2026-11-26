@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -174,3 +175,18 @@ def test_a_broken_format_is_repaired_once_over_the_wire(
     )
     gate = response.json()["evidence_gate"]
     assert gate["repaired"] and gate["model_calls"] == 2 and gate["decision"] == "sufficient"
+
+
+@pytest.mark.anyio
+async def test_the_lean_prompt_without_known_goes_over_the_wire() -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"decision": "uncertain"}'}}]})
+
+    provider = openai_provider(httpx.MockTransport(handler))
+    await provider.assess_evidence_gap(REQUEST, max_chars=3000)
+    await provider.assess_evidence_gap(replace(REQUEST, ask_known=False), max_chars=3000)
+    assert '"known"' in sent[0]["messages"][0]["content"]
+    assert "known" not in sent[1]["messages"][0]["content"]

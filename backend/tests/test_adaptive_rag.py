@@ -621,3 +621,23 @@ def test_a_focused_search_keeps_the_fragment_that_adds_what_the_others_lack(lf: 
     assert "руководитель логистики" in page
     # a focused search may take up to 3 sections of one page; a preface that only shares the title is not evidence
     assert len(sections) == 3 and "Служебная страница" not in page
+
+
+def test_a_long_known_is_counted_for_operators_and_the_decision_is_kept(lf: Factory) -> None:
+    reply = json.dumps(
+        {
+            "decision": "sufficient",
+            "evidence_ids": ["E1", "E2"],
+            "known": ["ДЛИННЫЙ-ПРИЗНАК " + "сведение " * 40],
+        },
+        ensure_ascii=False,
+    )
+    client, _provider, connector = lf(lambda r: reply)
+    answer = ask(client, "Как часто передаётся справочник складов и кто его владелец?")
+    gate = answer["evidence_gate"]
+    assert gate["decision"] == "sufficient" and gate["normalized"] == ["known_truncated"]
+    assert connector.calls["search"] == 0
+    stats = client.get("/api/discovery/stats").json()["evidence_gate"]
+    assert stats["replies"] == 1 and stats["normalized_replies"] == 1
+    assert stats["normalized"] == {"known_truncated": 1}
+    assert "ДЛИННЫЙ" not in json.dumps([answer, stats], ensure_ascii=False)

@@ -83,7 +83,10 @@ Reply — exactly one JSON object:
 ```
 
 Parsed with Pydantic `extra=forbid`, strict types and the limits above. Tolerated without changing a fact: a code
-fence or text around the object, `null` for an empty list, case-insensitive duplicate queries. Errors:
+fence or text around the object, `null` for an empty list, case-insensitive duplicate queries, and an over-long `known`
+item — `known` is never evidence, so it is whitespace-normalized and cut to 160 characters instead of rejecting the
+decision (code `known_truncated` in `evidence_gate.normalized` and in the operator counters; a non-string item or more
+than 3 items is still a schema error). Errors:
 - **syntax** (not a JSON object: prose, «да/нет», a bare string) → ONE repair request with a short server note;
 - **schema** (unknown key or decision, wrong type, too long, > limits, an id that is not a card of this request,
   `need_external` without `missing`/`search_queries`, `sufficient` without evidence or with `missing`) → invalid, no
@@ -97,7 +100,8 @@ Server checks after parsing:
   identifier of the question missing from a query is prepended (an exact ID is never paraphrased away); duplicates
   collapse; at most `EXTERNAL_GATE_MAX_SEARCHES`. `need_external` with no safe query left is invalid (`unsafe_query`);
 - `known` is never evidence; `missing` reaches the answering model only as DATA («проверка полноты не нашла …; не
-  заполняй пробел догадкой»), never the user.
+  заполняй пробел догадкой»), never the user. `EXTERNAL_GATE_REQUEST_KNOWN=false` drops `known` from the requested
+  format (a shorter prompt and reply); replies that still carry it are accepted.
 
 Providers: `internal_api` (`messages` + `temperature: 0`, no `tools`, no `response_format`) and `claude_cli` (the same
 prompt → text run) implement it; `mock` and `disabled` do not.
@@ -132,7 +136,9 @@ unchanged.
 `AskResponse.evidence_gate` (additive, `EvidenceGateSummary`): `policy`, `decision`, `reason`, `external_called`,
 `model_calls`, `repaired`, `error`, `fallback`, `lexical` (what v2 would say — A/B), `cards`, `evidence`, `missing`,
 `queries`, `queries_rejected`, `incomplete`, `elapsed_ms`. Codes and counts only: the question, the gap text and the
-queries are never in the response, the trace or the logs (`skh.evidence_gate` logs codes). `external` adds
+queries are never in the response, the trace or the logs (`skh.evidence_gate` logs codes). `normalized` lists what
+the parser normalized (`known_truncated`); `GET /api/discovery/stats` → `evidence_gate` counts parsed replies and
+normalized replies per code since the start — counts only, never a reply's content. `external` adds
 `outcome`, `searches`, `focused`. The stream adds `status` events with `stage: retrieving` and `step: assessing |
 external` (the UI shows «Проверяю, хватает ли сведений в документах команды…» / «Ищу недостающее во внешнем
 источнике (Confluence)…»); `/ask` and `/ask/stream` run the same preparation, so the decision, the external calls
@@ -150,6 +156,7 @@ and the sources are the same.
 | `EXTERNAL_GATE_INVALID_FALLBACK` | `lexical` | `lexical` or `local` (§5) |
 | `EXTERNAL_GATE_MAX_SEARCHES` | 2 | focused searches per answer (1–2) |
 | `EXTERNAL_GATE_RATE_LIMIT` / `EXTERNAL_GATE_RATE_WINDOW_SECONDS` | 30 / 600 | gate-decided external searches per ACL scope and window (0 = off) |
+| `EXTERNAL_GATE_REQUEST_KNOWN` | true | ask the model for the optional `known` list; `false` — the lean prompt without it (backward compatible) |
 
 ## 8. Testing without the target model
 

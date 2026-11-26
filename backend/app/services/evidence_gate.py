@@ -112,6 +112,7 @@ class GateSettings:
     max_searches: int = 2  # focused external searches per answer (fetch/fragment limits stay shared)
     rate_limit: int = 30  # gate-decided external searches per ACL scope and window; 0 = unlimited
     rate_window_seconds: int = 600
+    ask_known: bool = True  # request the optional `known` list from the model (never used as evidence)
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,7 @@ class GateDecision:
     cards: int = 0
     queries_rejected: int = 0
     incomplete: bool = False  # a local-only answer whose completeness could not be checked
+    normalized: tuple[str, ...] = ()  # what the parser normalized in the model's reply (codes, never content)
     elapsed_ms: float = 0.0
     warnings: list[str] = field(default_factory=list)
 
@@ -164,6 +166,7 @@ class GateDecision:
             "queries": len(self.queries),
             "queries_rejected": self.queries_rejected,
             "incomplete": self.incomplete,
+            "normalized": list(self.normalized),
             "elapsed_ms": self.elapsed_ms,
         }
 
@@ -231,6 +234,19 @@ class EvidenceGate:
     def __init__(self, settings: GateSettings | None = None) -> None:
         self.settings = settings or GateSettings()
         self._searches: dict[str, deque[float]] = defaultdict(deque)
+        # Diagnostics for operators (GET /api/discovery/stats): counts only, never a reply's content.
+        self._replies = 0
+        self._normalized: dict[str, int] = defaultdict(int)
+        self._normalized_replies = 0
+
+    def stats(self) -> dict[str, Any]:
+        return {
+            "policy": self.policy_label,
+            "ask_known": self.settings.ask_known,
+            "replies": self._replies,
+            "normalized_replies": self._normalized_replies,
+            "normalized": dict(self._normalized),
+        }
 
     # --- policy ---------------------------------------------------------------------------------------------------
     def semantic_for(self, provider: object) -> bool:
@@ -333,7 +349,11 @@ class EvidenceGate:
             t.original for t in reportable_terms([t for t in data.own_terms if t.stem not in data.matched])
         )
         request = GapAssessmentRequest(
-            question=data.question, cards=tuple(cards), referent=data.referent, absent_terms=absent[:6]
+            question=data.question,
+            cards=tuple(cards),
+            referent=data.referent,
+            absent_terms=absent[:6],
+            ask_known=s.ask_known,
         )
         result = GateDecision(
             policy=SEMANTIC_POLICY, decision="invalid", reason="decision_invalid", search=False
@@ -363,6 +383,12 @@ class EvidenceGate:
             result.error = exc.detail
         if reply is None:
             return self._fallback(result, lexical)
+        self._replies += 1
+        if reply.normalized:
+            result.normalized = reply.normalized
+            self._normalized_replies += 1
+            for code in reply.normalized:
+                self._normalized[code] += 1
 
         result.evidence_cids = tuple(cid for e in reply.evidence_ids for cid in mapping[e])
         result.missing = tuple(reply.missing)
