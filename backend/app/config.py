@@ -254,6 +254,22 @@ class Settings(BaseSettings):
     external_deadline_seconds: float = Field(default=12.0, gt=0, le=120)
     external_breaker_failures: int = Field(default=5, ge=1, le=100)
     external_breaker_reset_seconds: float = Field(default=60.0, ge=1, le=3600)
+    # Adaptive RAG (docs/ADAPTIVE_RAG.md): the local-first evidence gate decides whether «Оба» consults Confluence.
+    # semantic: ONE small decision of the AI provider (if it supports it; the mock does not) — lexical: the
+    # deterministic LOCAL_SUFFICIENCY v2 rule (the previous behaviour; A/B and rollback).
+    external_gate: Literal["semantic", "lexical"] = "semantic"
+    external_gate_timeout_seconds: float = Field(default=20.0, gt=0, le=120)  # model call(s), repair included
+    external_gate_cards: int = Field(default=5, ge=1, le=5)  # evidence cards shown to the model
+    external_gate_card_chars: int = Field(default=600, ge=200, le=2000)
+    external_gate_context_chars: int = Field(default=3500, ge=800, le=12_000)
+    external_gate_repair: bool = True  # one repair request after a reply that is not a JSON object
+    # A reply that is invalid, late or failed: lexical — the v2 rule decides (visibly); local — answer locally.
+    # Either way a local-only answer is marked incomplete; sufficiency is never assumed.
+    external_gate_invalid_fallback: Literal["lexical", "local"] = "lexical"
+    external_gate_max_searches: int = Field(default=2, ge=1, le=2)  # focused searches per answer
+    # Gate-decided external searches per ACL scope and window (a weak model that always asks for more); 0 = off.
+    external_gate_rate_limit: int = Field(default=30, ge=0, le=10_000)
+    external_gate_rate_window_seconds: int = Field(default=600, ge=10, le=86_400)
     # Discovery memory: query→source links, traces and relevance feedback (never the answer text).
     discovery_enabled: bool = True
     discovery_retention_hours: int = Field(default=24, ge=1, le=24 * 90)

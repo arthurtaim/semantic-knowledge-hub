@@ -78,6 +78,9 @@ class AnswerOptions:
     # A follow-up: terms that come only from the previous question (the conversation's referent). They help to
     # select passages and sentences, but the user did not ask them now: never reported as missing.
     context_terms: list[QueryTerm] = field(default_factory=list)
+    # Adaptive RAG (docs/ADAPTIVE_RAG.md): what the evidence-gap check found NOT stated in the team documents (the
+    # model's own short descriptions, ≤ 3). DATA for the answering model — never evidence, never shown as a fact.
+    evidence_gap: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -223,6 +226,42 @@ class WorkPlanningAIProvider(Protocol):
     async def plan_work(self, request: WorkPlanRequest) -> str: ...
 
 
+@dataclass(frozen=True)
+class EvidenceCard:
+    """One authorized team passage, shortened for the evidence-gap check. `eid` (E1, E2, …) is the only handle the
+    model may name; the server maps it back to the passage it built the card from."""
+
+    eid: str
+    document_id: str
+    title: str
+    section: str | None
+    status: DocStatus | None
+    excerpt: str  # injection-redacted, bounded
+
+
+@dataclass(frozen=True)
+class GapAssessmentRequest:
+    """Adaptive RAG (docs/ADAPTIVE_RAG.md): ONE small classification call of a possibly weak chat model — do these
+    team excerpts answer the question, and if not, what is missing and what to search for. Everything here is DATA;
+    the reply is parsed strictly by app/adapters/ai/gap_protocol.py and validated by the backend
+    (app/services/evidence_gate.py). The model never searches, fetches or authorizes anything."""
+
+    question: str
+    cards: tuple[EvidenceCard, ...]
+    referent: str = ""  # the previous question of the dialog: context for pronouns, never evidence
+    absent_terms: tuple[str, ...] = ()  # words of the question in NO eligible team document (a server fact)
+    repair: str = ""  # server note for the single repair attempt after a reply that was not a JSON object
+
+
+class EvidenceGapAIProvider(Protocol):
+    """Optional capability over plain chat completion (no native tools, no JSON mode required): internal
+    OpenAI-compatible API, the personal-test Claude CLI worker, a future GigaChat endpoint. Returns the raw reply."""
+
+    supports_gap_assessment: bool
+
+    async def assess_evidence_gap(self, request: GapAssessmentRequest, *, max_chars: int) -> str: ...
+
+
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -345,6 +384,9 @@ class ToolTurnRequest:
     repair: str = ""  # server note: why the previous reply was rejected (at most one repair per answer)
     max_calls: int = 4
     rounds_left: int = 0
+    evidence_gap: tuple[
+        str, ...
+    ] = ()  # AnswerOptions.evidence_gap: what the team documents do not state (data)
 
 
 @dataclass(frozen=True)

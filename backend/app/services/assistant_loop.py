@@ -130,6 +130,7 @@ class ToolLoop:
         history: tuple[ConversationTurn, ...] = (),
         context_note: str = "",
         mode: str = "-",
+        evidence_gap: tuple[str, ...] = (),
     ) -> AsyncGenerator[dict[str, Any] | LoopOutcome, None]:
         limits = self.limits
         available = self._executor.available(ctx)
@@ -165,6 +166,7 @@ class ToolLoop:
                 repair=repair,
                 max_calls=limits.max_calls_per_round,
                 rounds_left=limits.max_rounds - round_no,
+                evidence_gap=evidence_gap,
             )
             yield {
                 "type": "status",

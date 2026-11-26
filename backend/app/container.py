@@ -42,6 +42,7 @@ from app.services.attachments import AttachmentService, AttachmentStore
 from app.services.authoring import AuthoringService
 from app.services.conversations import ConversationLimits, ConversationService, ConversationStore
 from app.services.discovery import DiscoveryStore
+from app.services.evidence_gate import EvidenceGate, GateSettings
 from app.services.external import ExternalEvidenceService, ExternalLimits
 from app.services.graph import GraphService
 from app.services.integrations import IntegrationService
@@ -438,6 +439,20 @@ def build_container(settings: Settings) -> Container:
         external=external,
         discovery=discovery,
         instructions_version=lambda: instructions.version,
+        gate=EvidenceGate(
+            GateSettings(
+                policy=settings.external_gate,
+                timeout_seconds=settings.external_gate_timeout_seconds,
+                cards=settings.external_gate_cards,
+                card_chars=settings.external_gate_card_chars,
+                context_chars=settings.external_gate_context_chars,
+                repair=settings.external_gate_repair,
+                invalid_fallback=settings.external_gate_invalid_fallback,
+                max_searches=settings.external_gate_max_searches,
+                rate_limit=settings.external_gate_rate_limit,
+                rate_window_seconds=settings.external_gate_rate_window_seconds,
+            )
+        ),
     )
     proposal_service = ProposalService(
         store,
