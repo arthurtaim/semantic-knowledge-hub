@@ -134,6 +134,8 @@ const TRIGGER_LABEL: Record<string, string> = {
   no_local_passages: "в документах команды ничего не найдено",
   unmatched_entities: "в документах команды не найдены упомянутые термины",
   low_term_coverage: "недостаточно данных в документах команды",
+  no_single_local_source: "ни один документ команды не отвечает на вопрос целиком",
+  specific_terms_not_covered: "в документах команды нет ключевого слова вопроса",
   external_scope_selected: "выбран поиск по корпоративным источникам",
   explicit_request: "запрошено явно",
 };

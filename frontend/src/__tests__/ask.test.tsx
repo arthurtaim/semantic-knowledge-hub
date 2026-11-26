@@ -497,6 +497,22 @@ async function askExternal() {
 }
 
 describe("Ask: Confluence evidence and the answer graph", () => {
+  it("names the LOCAL_SUFFICIENCY v2 reason in words, not as a code", async () => {
+    const external = externalAnswer.external;
+    if (!external) throw new Error("fixture without an external block");
+    const answer: AskResponse = { ...externalAnswer, external: { ...external, trigger: "specific_terms_not_covered" } };
+    mockApi([streamRoute(...mockEvents(answer))]);
+    renderAt("/ask", "/ask", <AskPage />);
+    await askExternal();
+
+    expect(
+      screen.getByText(
+        "Внешний источник: запрос к Confluence (причина: в документах команды нет ключевого слова вопроса), загружено 2 стр., из кэша 1",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/specific_terms_not_covered/)).not.toBeInTheDocument();
+  });
+
   it("labels Confluence citations with the page version and an unconfirmed status, and links the answer graph", async () => {
     mockApi([streamRoute(...mockEvents(externalAnswer))]);
     renderAt("/ask", "/ask", <AskPage />);

@@ -581,6 +581,8 @@ export type ExternalTrigger =
   | "no_local_passages"
   | "unmatched_entities"
   | "low_term_coverage"
+  | "no_single_local_source"
+  | "specific_terms_not_covered"
   | "external_scope_selected"
   | "explicit_request";
 

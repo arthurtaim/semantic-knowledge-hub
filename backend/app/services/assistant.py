@@ -195,11 +195,27 @@ class _Prepared:
     sources: dict[str, tuple[str, str | None]] = field(default_factory=dict)
 
 
+LOCAL_SUFFICIENCY = "v2"
+# A question word found in at most this share of the eligible documents (and at least one) is what the question is
+# specifically about («лимит», «срок»): a local source that does not contain it is topical, not an answer.
+SPECIFIC_TERM_SHARE = 0.10
+
+
 def local_insufficiency(
-    passages: list[ContextPassage], terms: list[QueryTerm], matched: set[str]
+    passages: list[ContextPassage],
+    terms: list[QueryTerm],
+    matched: set[str],
+    *,
+    frequency: list[int] | None = None,
+    eligible: int = 0,
 ) -> str | None:
-    """Why the team documents alone do not look sufficient (policy LOCAL_SUFFICIENCY v1), or None.
-    Deterministic and explainable: it decides whether the external source is consulted at all."""
+    """Why the team documents alone do not look sufficient (policy LOCAL_SUFFICIENCY v2), or None.
+    Deterministic and explainable: it decides whether the external source is consulted at all.
+
+    `matched`: stems found anywhere in the eligible documents; `frequency[i]`: in how many of the `eligible`
+    documents term i occurs. Evidence is counted per SOURCE DOCUMENT over the passages given to the model (sections
+    of one document complement each other; words scattered over different documents are still not an answer):
+    some document must cover ≥ 2/3 of the question AND every specific (rare) word of it."""
     if not terms:
         return None
     if not passages:
@@ -209,13 +225,20 @@ def local_insufficiency(
         return "unmatched_entities"
     if len(unmatched) * 3 > len(terms):
         return "low_term_coverage"
-    # Words scattered over several documents are not an answer: one passage must cover ≥ 2/3 of the question.
-    best = max(
-        sum(1 for t in terms if term_matches_text(t, tokenize(f"{p.title} {p.section or ''} {p.text}")))
-        for p in passages
-    )
-    if best * 3 < len(terms) * 2:
-        return "no_single_local_passage"
+    by_source: dict[str, set[int]] = {}
+    for p in passages:
+        words = tokenize(f"{p.title} {p.section or ''} {p.text}")
+        by_source.setdefault(p.document_id, set()).update(
+            i for i, t in enumerate(terms) if term_matches_text(t, words)
+        )
+    answering = [found for found in by_source.values() if len(found) * 3 >= len(terms) * 2]
+    if not answering:
+        return "no_single_local_source"
+    if frequency is not None and eligible > 0:
+        limit = max(1, int(eligible * SPECIFIC_TERM_SHARE))
+        specific = {i for i, n in enumerate(frequency[: len(terms)]) if 0 < n <= limit}
+        if not any(specific <= found for found in answering):
+            return "specific_terms_not_covered"
     return None
 
 
@@ -585,6 +608,8 @@ class AssistantService:
         passages: list[ContextPassage] = []
         excluded: list[ExcludedSource] = []
         matched_terms: set[str] = set()
+        frequency: list[int] = []  # per term: eligible team documents that contain it (LOCAL_SUFFICIENCY v2)
+        eligible = 0
         # Attachments have their own (already bounded) budget: they never crowd out the team documents.
         budget = self._max_context_chars - sum(len(p.text) for p in extras.attachments)
         seen: set[tuple[str, str]] = set()
@@ -642,8 +667,11 @@ class AssistantService:
                     )
                 )
             for term in terms:
-                if search.matching_document_ids(term, team_filters):
+                containing = search.matching_document_ids(term, team_filters)
+                frequency.append(len(containing))
+                if containing:
                     matched_terms.add(term.stem)
+            eligible = sum(1 for d in snapshot.documents.values() if d.status in allowed)
             excluded = self._excluded_sources(snapshot_docs=snapshot, terms=terms, statuses=excluded_statuses)
             scopes.append(
                 ScopeStatus(
@@ -661,7 +689,13 @@ class AssistantService:
                 if mode == "external"
                 else "explicit_request"
                 if req.search_external
-                else local_insufficiency(passages, terms, matched_terms)
+                else local_insufficiency(
+                    passages,
+                    terms,
+                    matched_terms,
+                    frequency=frequency if "team" in req.sources else None,
+                    eligible=eligible,
+                )
             )
             if reason is None:
                 scopes.append(
