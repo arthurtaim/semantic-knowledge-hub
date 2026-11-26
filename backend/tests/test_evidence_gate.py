@@ -351,9 +351,17 @@ def test_a_card_prefers_the_sentence_with_the_rare_words_of_the_question() -> No
 
 
 def test_a_model_query_that_only_restates_the_question_is_replaced_by_a_clean_query() -> None:
-    long_query = "Какие ограничения принимает система Бета при передаче справочника складов из системы Альфа сегодня"
-    provider = FakeProvider(decision(decision="need_external", missing=["ограничения Бета"], search_queries=[long_query]))
-    result = run(gate().decide(provider, USER, gate_input("Какие ограничения принимает система Бета от системы Альфа?")))
+    long_query = (
+        "Какие ограничения принимает система Бета при передаче справочника складов из системы Альфа сегодня"
+    )
+    provider = FakeProvider(
+        decision(decision="need_external", missing=["ограничения Бета"], search_queries=[long_query])
+    )
+    result = run(
+        gate().decide(
+            provider, USER, gate_input("Какие ограничения принимает система Бета от системы Альфа?")
+        )
+    )
     assert result.decision == "need_external" and result.search and result.queries_rejected == 1
     assert result.error == "query_too_long" and len(result.queries) == 1
     assert len(result.queries[0].split()) <= 8

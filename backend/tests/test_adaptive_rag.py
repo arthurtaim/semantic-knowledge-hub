@@ -610,7 +610,9 @@ def test_a_focused_search_keeps_the_fragment_that_adds_what_the_others_lack(lf: 
     page's subject («заморозка изменений справочника складов») that every section names."""
     from app.evaluation.gate_eval import capture_prepared
 
-    reply = need_external(["кто согласует исключение"], ["заморозка изменений справочника складов исключение"])
+    reply = need_external(
+        ["кто согласует исключение"], ["заморозка изменений справочника складов исключение"]
+    )
     client, _provider, _connector = lf(lambda r: reply)
     box = capture_prepared(client)
     ask(client, "Кто разрешает менять справочник складов во время заморозки изменений?")
