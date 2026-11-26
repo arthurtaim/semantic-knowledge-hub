@@ -53,6 +53,9 @@ verbatim quote, an implementation task with a subtask, a check and a milestone (
 cycle; «неизвестн» — a dependency on an unknown local id; «галлюцин» — an assignee, dates, an invented source and a
 non-verbatim quote; «сломанный формат» — not JSON; «упади» — the model fails.
 
+Adaptive RAG evidence-gap check (app/adapters/ai/gap_protocol.py), keyed by the QUESTION: «сломанный формат» — prose,
+then valid after the repair note; «требован» / «лимит» — need_external with a short query; otherwise sufficient (E1).
+
 Template Studio «Создать с помощью AI» (app/adapters/ai/template_protocol.py), keyed by the REQUEST text:
 
 | request contains | reply |
@@ -821,8 +824,55 @@ def work_plan_script(prompt: str) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+GAP_STOPWORDS = {
+    "какие",
+    "какой",
+    "какая",
+    "каких",
+    "чего",
+    "как",
+    "что",
+    "для",
+    "при",
+    "через",
+    "или",
+    "есть",
+    "все",
+}
+
+
+def gap_script(prompt: str) -> str:
+    """Adaptive RAG evidence-gap check (app/adapters/ai/gap_protocol.py), keyed by the QUESTION text:
+    «сломанный формат» — prose first, valid JSON after the server's repair note; «требован» / «лимит» — need_external
+    with a short query of the question's content words (identifiers kept by the server); otherwise «sufficient»
+    citing E1 (or «uncertain» without cards)."""
+    match = re.search(r"<<<QUESTION>>>\n(.*?)\n<<<END QUESTION>>>", prompt, re.S)
+    question = match.group(1) if match else ""
+    folded = question.casefold()
+    if "сломанный формат" in folded and "предыдущий ответ отклонён" not in prompt:
+        return "Да, документов достаточно."
+    if "требован" in folded or "лимит" in folded:
+        words = [
+            w for w in re.findall(r"[\w-]+", question) if len(w) > 2 and w.casefold() not in GAP_STOPWORDS
+        ]
+        return json.dumps(
+            {
+                "decision": "need_external",
+                "missing": ["сведения, о которых спрашивают, в документах команды не указаны"],
+                "search_queries": [" ".join(words[:6])],
+                "evidence_ids": ["E1"] if "<<<E1>>>" in prompt else [],
+            },
+            ensure_ascii=False,
+        )
+    if "<<<E1>>>" in prompt:
+        return json.dumps({"decision": "sufficient", "evidence_ids": ["E1"]})
+    return json.dumps({"decision": "uncertain"})
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
+    if "Режим оценки полноты SKH" in system:
+        return gap_script(prompt)
     if "Режим системных инструментов SKH" in system:
         return tool_script(parse_round(system, prompt))
     if "Режим проектирования шаблона SKH" in system:
