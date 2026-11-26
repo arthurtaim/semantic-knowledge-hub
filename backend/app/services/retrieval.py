@@ -12,6 +12,7 @@ ranked below an equally relevant current one, never removed.
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field, replace
@@ -40,6 +41,13 @@ WORDS_CACHE_MAX = 4096  # tokenized documents kept between requests (keyed by id
 BOILERPLATE_MIN_DOCUMENTS = 5
 BOILERPLATE_MIN_SHARE = 0.05
 BOILERPLATE_CACHE_MAX = 16
+# Passage packing v2 (see `passages`): every matching section of the (few) context documents is a candidate. When a
+# document's evidence is completed, a question word already shown from ANOTHER document counts REPEATED_WORD_FACTOR,
+# one the document itself already shows counts CORROBORATION_FACTOR (a second section saying the same is still worth
+# a slot of the best document more than an unrelated word of a weaker one).
+SECTION_CANDIDATES = 400
+REPEATED_WORD_FACTOR = 0.5
+CORROBORATION_FACTOR = 0.25
 
 
 def only_boilerplate(text: str, common: frozenset[str]) -> bool:
@@ -76,6 +84,17 @@ class RankedHit:
             self.reasons.append(reason)
         if field_name and field_name not in self.matched_fields:
             self.matched_fields.append(field_name)
+
+
+@dataclass(frozen=True)
+class _Section:
+    """A candidate section for the assistant's context (passage packing v2)."""
+
+    rank: int  # rank of its document in the retrieval result
+    position: int  # BM25 order among the candidate sections (0 = best)
+    document_id: str
+    chunk: ChunkHit
+    matched: frozenset[int]  # indexes of the question terms the heading or text contains
 
 
 @dataclass(frozen=True)
@@ -300,34 +319,116 @@ class RetrievalService:
         max_documents: int = 4,
         max_passages: int = 6,
     ) -> tuple[list[Passage], list[RankedHit]]:
-        """Cite-ready passages for the assistant: the best sections of the best ELIGIBLE documents,
-        one per document first (diversity), then second sections. `filters` must carry the allowed statuses."""
+        """Cite-ready passages for the assistant from the best ELIGIBLE documents (`filters` carries the allowed
+        statuses). Passage packing v2 (docs/SEARCH_SYNC_TEMPLATES.md «Passage packing v2»):
+
+        * candidates — EVERY section of the context documents that contains a question word (v1 took the 60 best
+          sections of the whole corpus, so a relevant section of a context document could be cut off);
+        * a document the question names by its exact id is the subject: its sections are packed first (both steps
+          below), the other documents only take the slots left;
+        * first, one section per document in document order: its best section by BM25 (diversity);
+        * then the remaining slots, one at a time: the section with the largest gain — the rare-weighted question
+          words it adds to its OWN document's passages (a word already shown from another document counts
+          REPEATED_WORD_FACTOR; a word its document already shows counts CORROBORATION_FACTOR), divided by
+          (1 + document rank). Ties: the document with fewer passages, then rank, then BM25.
+
+        So a question whose parts are answered in different sections of the best document gets those sections
+        (v1 always took the two BM25-best ones). Corpus-wide boilerplate is never a candidate."""
         ranked = self.rank_documents(
             snapshot, analysis, filters, max_documents, expand_graph=False, catalog=False
         )
         if not ranked:
             return [], []
-        chunks: dict[str, list[ChunkHit]] = {}
-        if analysis.terms:
-            for chunk in self._search.search_chunks(analysis.terms, filters, 60):
-                chunks.setdefault(chunk.document_id, []).append(chunk)
         common = self.boilerplate(snapshot)
-        result: list[Passage] = []
-        for round_no in range(2):
-            for rank, hit in enumerate(ranked):
-                doc = snapshot.get(hit.document_id)
-                if doc is None or len(result) >= max_passages:
+        terms = analysis.terms
+        weights = self.term_weights(snapshot, terms, filters)
+        rank_of = {hit.document_id: rank for rank, hit in enumerate(ranked)}
+        candidates: list[_Section] = []
+        if terms:
+            found = self._search.search_chunks(terms, filters, SECTION_CANDIDATES, document_ids=list(rank_of))
+            for position, chunk in enumerate(found):
+                if chunk.document_id not in rank_of or only_boilerplate(chunk.text, common):
                     continue
-                # A section that is only corpus-wide boilerplate (a short banner section matches many words and
-                # outranks content) is skipped: the next section of the same document is offered instead.
-                doc_chunks = [c for c in chunks.get(doc.id, []) if not only_boilerplate(c.text, common)]
-                if round_no < len(doc_chunks):
-                    c = doc_chunks[round_no]
-                    result.append(Passage(doc, c.section, c.section_anchor, c.text, rank))
-                elif not doc_chunks and {"id", "title", "alias"} & set(hit.matched_fields):
-                    # Found by id/title only: quote the opening sections.
-                    sections = [s for s in doc.sections if s.text and not only_boilerplate(s.text, common)]
-                    if round_no < len(sections):
-                        s = sections[round_no]
-                        result.append(Passage(doc, s.heading, s.anchor, s.text, rank))
-        return result[:max_passages], ranked
+                words = tokenize(f"{chunk.section} {chunk.text}")
+                matched = frozenset(i for i, t in enumerate(terms) if term_matches_text(t, words))
+                candidates.append(
+                    _Section(rank_of[chunk.document_id], position, chunk.document_id, chunk, matched)
+                )
+        with_sections = {c.document_id for c in candidates}
+        for rank, hit in enumerate(ranked):
+            doc = snapshot.get(hit.document_id)
+            if (
+                doc is None
+                or doc.id in with_sections
+                or not {"id", "title", "alias"} & set(hit.matched_fields)
+            ):
+                continue
+            # Found by id/title only (no section contains a question word): its opening sections, in order.
+            opening = [s for s in doc.sections if s.text and not only_boilerplate(s.text, common)][:2]
+            for ordinal, s in enumerate(opening):
+                chunk = ChunkHit(doc.id, s.heading, s.anchor, s.text, 0.0, ordinal)
+                candidates.append(_Section(rank, SECTION_CANDIDATES + ordinal, doc.id, chunk, frozenset()))
+
+        chosen: list[_Section] = []
+        shown_by: dict[str, set[int]] = {}  # question words each document's chosen passages contain
+        shown: set[int] = set()
+
+        def take(section: _Section) -> None:
+            chosen.append(section)
+            shown_by.setdefault(section.document_id, set()).update(section.matched)
+            shown.update(section.matched)
+
+        def gain(section: _Section) -> float:
+            own_words = shown_by.get(section.document_id, set())
+            raw = sum(
+                weights[i]
+                * (CORROBORATION_FACTOR if i in own_words else REPEATED_WORD_FACTOR if i in shown else 1.0)
+                for i in section.matched
+            )
+            return round(raw / (1 + section.rank), 6)
+
+        def pack(documents: set[str]) -> None:
+            for rank, hit in enumerate(ranked):  # one section per document first: its BM25-best (diversity)
+                own = [c for c in candidates if c.rank == rank]
+                has_one = any(c.document_id == hit.document_id for c in chosen)
+                if hit.document_id in documents and own and not has_one and len(chosen) < max_passages:
+                    take(min(own, key=lambda c: c.position))
+            while len(chosen) < max_passages:  # then the largest gain, one section at a time
+                remaining = [c for c in candidates if c.document_id in documents and c not in chosen]
+                if not remaining:
+                    break
+                per_document = {d: sum(1 for c in chosen if c.document_id == d) for d in rank_of}
+                take(
+                    max(
+                        remaining, key=lambda c: (gain(c), -per_document[c.document_id], -c.rank, -c.position)
+                    )
+                )
+
+        # A document the question names by its exact id is its subject: its matching sections come first, the other
+        # documents only take the slots left (otherwise lexically similar documents — which mention that id — would
+        # share the context with it and an answer about FLOW-001 could lead with another flow).
+        named = {hit.document_id for hit in ranked if "id" in hit.matched_fields}
+        if named:
+            pack(named)
+        pack(set(rank_of))
+
+        result: list[Passage] = []
+        for section in chosen:
+            doc = snapshot.get(section.document_id)
+            if doc is not None:
+                c = section.chunk
+                result.append(Passage(doc, c.section, c.section_anchor, c.text, section.rank))
+        return result, ranked
+
+    def term_weights(
+        self, snapshot: KnowledgeSnapshot, terms: list[QueryTerm], filters: SearchFilters
+    ) -> list[float]:
+        """Inverse document frequency of every question term within the documents this request may use
+        (corpus statistics of the reader's eligible snapshot, no keyword list): log((N + 1) / (df + 1)) + 1."""
+        if not terms:
+            return []
+        eligible = sum(1 for doc in snapshot.documents.values() if self._passes(doc, filters))
+        return [
+            math.log((eligible + 1) / (len(self._search.matching_document_ids(t, filters)) + 1)) + 1.0
+            for t in terms
+        ]
