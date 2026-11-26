@@ -63,7 +63,7 @@ from app.services.query_rewrite import QueryRewriter, RewriteResult
 from app.services.search import corporate_scope
 
 if TYPE_CHECKING:
-    from app.services.assistant_loop import LoopOutcome, ToolLoop
+    from app.services.assistant_loop import LoopOutcome, SeededCall, ToolLoop
 
 logger = logging.getLogger("skh.assistant")
 
@@ -125,6 +125,12 @@ class AskExtras:
     # What the discovery memory records as the query when attachments are involved: the user's own question
     # only — never words of a file (a header line in `retrieval_text`) or its name. None: the question as is.
     trace_text: str | None = None
+    # M7 `analyze_project`: the server's own read-only inspection of the chosen project, recorded as round 0 of the
+    # tool loop (the answer cites it as [F1]); with it the explicit skill runs in the tool loop.
+    tool_seed: tuple[SeededCall, ...] = ()
+    # False: no knowledge-base retrieval (no rewrite, no evidence gate) and no retrieval trace — the answer is about
+    # work facts, not documents (the model may still search documents with its read-only tools).
+    retrieval: bool = True
 
 
 NO_EXTRAS = AskExtras()
@@ -277,13 +283,18 @@ class AssistantService:
         self._tool_loop = loop
         self._can_propose = can_propose
 
+    @property
+    def tools_available(self) -> bool:
+        """The bounded tool loop is wired and the provider can take part in it (M7: a seeded explicit skill uses it)."""
+        return self._tool_loop is not None and bool(getattr(self._provider, "supports_tools", False))
+
     def tool_mode(self, extras: AskExtras = NO_EXTRAS) -> bool:
         """The tool loop runs for a plain question (or the default skill) when the provider can take part in it.
         Explicit skills keep their own pipelines; the mock provider keeps the content-only answer."""
         return (
             self._tool_loop is not None
             and bool(getattr(self._provider, "supports_tools", False))
-            and (extras.skill is None or extras.skill.id == DEFAULT_SKILL)
+            and (extras.skill is None or extras.skill.id == DEFAULT_SKILL or bool(extras.tool_seed))
             and not extras.compare_terms
         )
 
@@ -291,7 +302,7 @@ class AssistantService:
         prepared = await self._prepare(user, req, extras)
         if self.tool_mode(extras):
             outcome: LoopOutcome | None = None
-            async with contextlib.aclosing(self._tool_events(user, req, prepared)) as loop_events:
+            async with contextlib.aclosing(self._tool_events(user, req, prepared, extras)) as loop_events:
                 async for item in loop_events:
                     if not isinstance(item, dict):
                         outcome = item
@@ -321,7 +332,7 @@ class AssistantService:
             assert prepared is not None
             if self.tool_mode(extras):
                 outcome: LoopOutcome | None = None
-                async with contextlib.aclosing(self._tool_events(user, req, prepared)) as loop_events:
+                async with contextlib.aclosing(self._tool_events(user, req, prepared, extras)) as loop_events:
                     async for item in loop_events:
                         if isinstance(item, dict):
                             yield item
@@ -395,11 +406,14 @@ class AssistantService:
         return json.dumps(items, ensure_ascii=False, default=str)[:3000]
 
     async def _tool_events(
-        self, user: UserContext, req: AskRequest, prepared: _Prepared
+        self, user: UserContext, req: AskRequest, prepared: _Prepared, extras: AskExtras = NO_EXTRAS
     ) -> AsyncGenerator[dict[str, Any] | LoopOutcome, None]:
         assert self._tool_loop is not None
+        # A seeded explicit skill (M7 analyze_project) is read-only: no drafts_propose is offered in it.
         ctx = ToolContext(
-            user=user, allowed_statuses=frozenset(_allowed_statuses(req)), can_propose=self._can_propose(user)
+            user=user,
+            allowed_statuses=frozenset(_allowed_statuses(req)),
+            can_propose=self._can_propose(user) and not extras.tool_seed,
         )
         async with contextlib.aclosing(
             self._tool_loop.run(
@@ -411,6 +425,7 @@ class AssistantService:
                 context_note=await self._context_note(user, req),
                 mode=self._provider.mode,
                 evidence_gap=prepared.options.evidence_gap,
+                seed=extras.tool_seed,
             )
         ) as events:
             async for event in events:
@@ -597,6 +612,22 @@ class AssistantService:
             raise AIProviderError(
                 "assistant_disabled", "Ассистент отключён конфигурацией (AI_PROVIDER=disabled)."
             )
+        if (
+            not extras.retrieval
+        ):  # M7 analyze_project: work facts, no knowledge-base retrieval and no model aux call
+            history = tuple(ConversationTurn(question=t.question, answer=t.answer) for t in req.history)
+            yield _Prepared(
+                terms=[],
+                unmatched=[],
+                passages=list(extras.context),
+                warnings=[],
+                excluded=[],
+                scopes=[],
+                options=AnswerOptions(terms=[], history=history),
+                mode="work",
+                index_generation=f"g{self._knowledge.generation}",
+            )
+            return
         # A follow-up is retrieved twice and the passages are merged: together with the previous question (its referent:
         # «а какие у неё ограничения?») and by its own words (a narrowed or a new subject: «а физическая?»).
         # Concatenation alone let the old terms push the subject of the new words out of the bounded context.
@@ -941,7 +972,9 @@ class AssistantService:
             if prepared.gate.incomplete and response.confidence == "supported":
                 response.confidence = "partial"  # completeness of a local-only answer was not checked
         response.skill = extras.skill
-        if self._discovery is None:
+        if (
+            self._discovery is None or not extras.retrieval
+        ):  # no retrieval → no retrieval trace (M7 work facts)
             return response
         cited = {c.source_id for c in response.citations if c.source_id}
         links: dict[str, SourceLink] = {}

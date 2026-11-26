@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.adapters.ai.base import AIProviderError, ai_error_status
 from app.api.deps import get_container
 from app.api.multipart import MultipartError, read_form
+from app.api.work import work_principal
 from app.authz import Action, ensure_allowed, require
 from app.container import Container
 from app.domain.models import (
@@ -22,7 +23,7 @@ from app.domain.models import (
     AskResponse,
     UserContext,
 )
-from app.domain.skills import SkillInfo
+from app.domain.skills import SKILL_BY_ID, SkillInfo
 from app.errors import ApiError
 from app.services.attachments import AttachmentInfo, valid_conversation_id
 from app.services.conversations import (
@@ -34,17 +35,27 @@ from app.services.conversations import (
     valid_browser_id,
 )
 from app.services.skills import AskPlan
+from app.services.work_skills import global_actions
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 FORM_OVERHEAD_BYTES = 64 * 1024  # multipart headers and the small conversation_id field
 
 
-async def _plan(container: Container, user: UserContext, payload: AskRequest) -> AskPlan:
+async def _plan(container: Container, user: UserContext, payload: AskRequest, request: Request) -> AskPlan:
     """Permission and input checks that must fail as HTTP errors (also before a stream starts)."""
     if "corporate" in payload.sources:
         ensure_allowed(container.policy, user, Action.read_corporate)
-    plan = await container.skills.plan(user, payload)
+    skill = SKILL_BY_ID.get(payload.skill_id or "")
+    principal = None
+    if skill is not None and skill.is_work:
+        # M7: the global Actions of a work skill BEFORE anything else (view_tasks | propose_work [+ edit_task]), and
+        # the work principal from THE builder the work API uses (exposure marker, documents) — the project gate is
+        # applied by the skill with the chosen project, before any model call.
+        for action in global_actions(skill):
+            ensure_allowed(container.policy, user, action)
+        principal = await work_principal(request, container, user)
+    plan = await container.skills.plan(user, payload, principal)
     if plan.creates_proposal:  # a skill built on the AI workflows stores a proposal
         ensure_allowed(container.policy, user, Action.create_proposal)
     return plan
@@ -65,7 +76,7 @@ async def ask(
     """Without the UI v2 fields this is the plain grounded answer, exactly as before. With `skill_id` the
     skill runs on top of the existing pipelines; draft skills return a proposal reference, never apply.
     With `conversation_id` and `X-SKH-Browser` the completed turn is stored in the chat history (v0.7)."""
-    plan = await _plan(container, user, payload)
+    plan = await _plan(container, user, payload, request)
     history = container.conversations
     turn = history.begin(user, browser_id(request), plan)
     try:
@@ -120,7 +131,7 @@ async def ask_stream(
     connection cancels the generation (the CLI worker kills the process). Input errors (unknown or unavailable
     skill, foreign attachment, …) are HTTP errors before the stream starts. The chat history (v0.7) stores the
     `final` answer (or the `error`); a stream closed before either is an interrupted turn."""
-    plan = await _plan(container, user, payload)
+    plan = await _plan(container, user, payload, request)
     turn = container.conversations.begin(user, browser_id(request), plan)
 
     async def body() -> AsyncIterator[bytes]:
@@ -144,11 +155,15 @@ async def ask_stream(
 
 @router.get("/skills", response_model=list[SkillInfo])
 async def skills(
+    request: Request,
     container: Annotated[Container, Depends(get_container)],
     user: Annotated[UserContext, Depends(require(Action.ask_assistant))],
 ) -> list[SkillInfo]:
-    """The skill registry with availability in the current AI mode (the UI never hard-codes the list)."""
-    return container.skills.catalog()
+    """The skill registry with availability in the current AI mode (the UI never hard-codes the list). Work skills
+    (M7) also say whether the work module is on and this reader may view / propose at all (read-only exposure → not
+    available, with the reason); per-project rights are checked when a project is chosen."""
+    principal = await work_principal(request, container, user, with_documents=False)
+    return container.skills.catalog(principal)
 
 
 def _invalid(field: str) -> ApiError:

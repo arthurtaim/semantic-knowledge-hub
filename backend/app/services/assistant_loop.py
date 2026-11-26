@@ -64,6 +64,18 @@ class ToolLoopLimits:
     transcript_chars: int = 24000  # all tool results of one answer; beyond it no more tools are offered
 
 
+@dataclass(frozen=True)
+class SeededCall:
+    """A read-only call the SERVER already made for an explicit skill before the first model round (M7
+    `analyze_project`: the chosen project's plan summary). It is recorded exactly like a model's call — a step, its
+    fact, a result the model reads — so the answer cites it as [F1] and the same fact validation applies. Never a write:
+    only results of the read-only executor are seeded."""
+
+    name: str
+    arguments: dict[str, Any]
+    result: ToolResult
+
+
 @dataclass
 class LoopOutcome:
     final: ParsedFinal | None
@@ -131,6 +143,7 @@ class ToolLoop:
         context_note: str = "",
         mode: str = "-",
         evidence_gap: tuple[str, ...] = (),
+        seed: tuple[SeededCall, ...] = (),
     ) -> AsyncGenerator[dict[str, Any] | LoopOutcome, None]:
         limits = self.limits
         available = self._executor.available(ctx)
@@ -143,6 +156,35 @@ class ToolLoop:
             str, str
         ] = {}  # canonical (tool, arguments) -> call id: an identical call is not re-run
         deadline = self._clock() + limits.budget_seconds
+        if seed:  # the server's own read-only calls of an explicit skill: round 0, before the model
+            seeded: list[ToolExchangeEntry] = []
+            for call in seed:
+                call_id = f"T{len(outcome.steps) + 1}"
+                started = self._clock()
+                key = json.dumps([call.name, call.arguments], ensure_ascii=False, sort_keys=True, default=str)
+                executed[key] = call_id
+                yield {
+                    "type": "tool_call",
+                    "call_id": call_id,
+                    "round": 0,
+                    "tool": call.name,
+                    "operation": _operation_hint(call.arguments),
+                }
+                step = self._record(outcome, call.result, call_id, 0, started)
+                yield {"type": "tool_result", "call_id": call_id, "step": step.model_dump(mode="json")}
+                result_json = bounded_json(call.result.payload, limits.result_chars)
+                transcript += len(result_json)
+                seeded.append(
+                    ToolExchangeEntry(
+                        call_id=call_id,
+                        name=call.name,
+                        arguments_json=json.dumps(call.arguments, ensure_ascii=False, default=str)[
+                            :MAX_ARGUMENTS_ECHO
+                        ],
+                        result_json=result_json,
+                    )
+                )
+            exchanges.append(ToolExchange(round=0, entries=tuple(seeded)))
 
         for round_no in range(1, limits.max_rounds + 1):
             remaining = deadline - self._clock()

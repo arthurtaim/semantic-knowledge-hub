@@ -12,12 +12,13 @@ POST /api/assistant/ask {question?, skill_id?, conversation_id?, attachment_ids[
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.adapters.ai.base import ContextPassage
 from app.adapters.knowledge.base import KnowledgeSnapshot
@@ -42,8 +43,10 @@ from app.domain.skills import (
     SKILLS,
     SkillDefinition,
     SkillInfo,
+    WorkSkillState,
     skill_info,
     unavailable_reason,
+    work_denied,
 )
 from app.domain.text import QueryTerm, term_matches_text, tokenize
 from app.errors import ApiError
@@ -65,6 +68,10 @@ from app.services.attachments import (
     select_fragments,
 )
 from app.services.knowledge import KnowledgeService
+
+if TYPE_CHECKING:
+    from app.services.work_skills import WorkAsk, WorkChatSkills
+    from app.work.permissions import WorkPrincipal
 
 logger = logging.getLogger("skh.skills")
 
@@ -101,6 +108,8 @@ class AskPlan:
     attachments: tuple[StoredAttachment, ...]
     documents: tuple[DocumentRecord, ...]
     selection: ResolvedSelection | None
+    # M7: the resolved work target of a work skill (project, tasks, referenced proposal); None for other skills.
+    work: WorkAsk | None = None
 
     @property
     def subject(self) -> DocumentRecord | None:
@@ -136,13 +145,24 @@ class AssistantSkillService:
         self._workflows = workflows
         self._attachments = attachments
         self._knowledge = knowledge
+        self._work: WorkChatSkills | None = None
 
-    def catalog(self) -> list[SkillInfo]:
+    def attach_work(self, work: WorkChatSkills) -> None:
+        """M7: the chat work skills (wired by the container: the work services are built after this one)."""
+        self._work = work
+
+    def _work_state(self, principal: WorkPrincipal | None) -> WorkSkillState:
+        return self._work.state(principal) if self._work is not None else WorkSkillState()
+
+    def catalog(self, principal: WorkPrincipal | None = None) -> list[SkillInfo]:
         provider = self._assistant.provider
-        return [skill_info(s, provider.mode, provider.supports_authoring) for s in SKILLS]
+        work = self._work_state(principal)
+        return [skill_info(s, provider.mode, provider.supports_authoring, work) for s in SKILLS]
 
     # --- server-side checks ------------------------------------------------------------------------------------
-    async def plan(self, user: UserContext, req: AskRequest) -> AskPlan:
+    async def plan(
+        self, user: UserContext, req: AskRequest, principal: WorkPrincipal | None = None
+    ) -> AskPlan:
         provider = self._assistant.provider
         if provider.mode == "disabled":
             raise ApiError(
@@ -151,9 +171,21 @@ class AssistantSkillService:
         skill = SKILL_BY_ID.get(req.skill_id or DEFAULT_SKILL)
         if skill is None:
             raise ApiError(422, "skill_unknown", "Такого навыка нет.", {"skill_id": req.skill_id})
-        reason = unavailable_reason(skill, provider.mode, provider.supports_authoring)
+        work_state = self._work_state(principal) if skill.is_work else None
+        denied = work_denied(skill, work_state) if skill.is_work else None
+        if (
+            denied is not None
+        ):  # M7: the module / the reader's rights before the provider (403 like the work API)
+            status, code, message = denied
+            raise ApiError(status, code, message, {"skill_id": skill.id})
+        reason = unavailable_reason(skill, provider.mode, provider.supports_authoring, work_state)
         if reason is not None:
             raise ApiError(503, "skill_unavailable", reason, {"skill_id": skill.id})
+        work: WorkAsk | None = None
+        if skill.is_work:  # the project / tasks / proposal BEFORE attachments, documents or any model call
+            if self._work is None or principal is None:
+                raise ApiError(503, "skill_unavailable", "Модуль задач недоступен.", {"skill_id": skill.id})
+            work = await asyncio.to_thread(self._work.resolve, skill, principal, req.work_context)
         attachments = (
             self._attachments.resolve(user, req.conversation_id, req.attachment_ids)
             if req.attachment_ids
@@ -195,6 +227,7 @@ class AssistantSkillService:
             attachments=tuple(attachments),
             documents=tuple(documents),
             selection=selection,
+            work=work,
         )
 
     @staticmethod
@@ -525,6 +558,9 @@ class AssistantSkillService:
 
     async def run(self, user: UserContext, plan: AskPlan) -> AskResponse:
         self._log(plan)
+        if plan.skill.is_work:
+            assert self._work is not None  # plan() refused a work skill without it
+            return await self._work.run(user, plan)
         if plan.skill.runner == "ask":
             request, extras = self._ask_inputs(plan)
             return await self._assistant.ask(user, request, extras)
@@ -533,6 +569,12 @@ class AssistantSkillService:
     async def run_stream(self, user: UserContext, plan: AskPlan) -> AsyncGenerator[dict[str, Any], None]:
         """NDJSON events as /ask/stream always sends them. A workflow skill has no text deltas."""
         self._log(plan)
+        if plan.skill.is_work:
+            assert self._work is not None
+            async with contextlib.aclosing(self._work.run_stream(user, plan)) as work_events:
+                async for event in work_events:
+                    yield event
+            return
         if plan.skill.runner == "ask":
             request, extras = self._ask_inputs(plan)
             async with contextlib.aclosing(self._assistant.ask_stream(user, request, extras)) as events:

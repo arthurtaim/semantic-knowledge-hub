@@ -876,6 +876,8 @@ class WorkProposalOut(BaseModel):
     issues: list[ProposalIssue]
     can_apply: bool
     applied_task_keys: list[str]
+    # M7 (additive): the proposal this one refines (a refinement is a NEW proposal; that one is unchanged).
+    revised_from: str | None = None
 
 
 class ProposalTaskEdit(_Request):
@@ -928,6 +930,21 @@ class WorkProposalApply(WorkProposalEdits):
     client_request_id: ClientRequestId
 
 
+class WorkProposalRevise(_Request):
+    """M7: refine a stored task-plan proposal → a NEW proposal (the refined one is never changed or applied)."""
+
+    instruction: Annotated[str, Field(min_length=3, max_length=PLAN_REQUEST_MAX)]
+    client_request_id: ClientRequestId | None = None
+
+    @field_validator("instruction")
+    @classmethod
+    def _instruction(cls, value: str) -> str:
+        value = _clean_text(value).strip()
+        if len(value) < 3:
+            raise ValueError("instruction is too short")
+        return value
+
+
 class WorkProposalApplyResult(BaseModel):
     proposal_id: str
     project_id: str
@@ -936,4 +953,146 @@ class WorkProposalApplyResult(BaseModel):
     created_tasks: list[TaskOut]
     created_dependencies: int
     created_links: int
+    replayed: bool = False
+
+
+# --- M7: change-set proposals for EXISTING tasks (WCP, docs/WORK_CHAT_SKILLS.md) ---------------------------------------
+# v1 allowlist: the plan dates (start / end), the lock, dependencies, hierarchy, the assignee and archiving are NOT
+# change-set fields — they stay in the Work UI (Gantt schedule preview, task card), never «done» by a proposal.
+ChangeField = Literal["title", "description", "status", "priority", "due_date"]
+CHANGE_FIELDS: tuple[str, ...] = ("title", "description", "status", "priority", "due_date")
+CHANGE_FIELD_LABELS: dict[str, str] = {
+    "title": "Название",
+    "description": "Описание",
+    "status": "Статус",
+    "priority": "Приоритет",
+    "due_date": "Срок",
+}
+CHANGE_TASKS_MAX = 20
+CHANGE_OPERATIONS_MAX = 40
+CHANGE_CONTEXT_TASKS = 60  # active tasks offered to the model when no task is named
+CHANGE_REQUEST_MAX = 2000
+TaskKeyField = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9]{1,9}-\d{1,9}$")]
+OperationId = Annotated[str, Field(pattern=r"^op\d{1,3}$")]
+
+
+class WorkChangeCreate(_Request):
+    """«Предложить изменения задач»: a change-set PROPOSAL for existing tasks of ONE project. Nothing is written to
+    tasks. `task_keys` narrows the tasks the model may touch (otherwise keys named in the request, otherwise the
+    project's active tasks, bounded)."""
+
+    project_id: EntityId
+    request: Annotated[str, Field(min_length=3, max_length=CHANGE_REQUEST_MAX)]
+    task_keys: Annotated[list[TaskKeyField], Field(max_length=CHANGE_TASKS_MAX)] = Field(default_factory=list)
+    document_ids: Annotated[list[DocumentIdField], Field(max_length=PLAN_DOCUMENTS_MAX)] = Field(
+        default_factory=list
+    )
+    client_request_id: ClientRequestId | None = None
+
+    @field_validator("request")
+    @classmethod
+    def _request(cls, value: str) -> str:
+        value = _clean_text(value).strip()
+        if len(value) < 3:
+            raise ValueError("request is too short")
+        return value
+
+    @field_validator("task_keys", mode="before")
+    @classmethod
+    def _keys(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return list(dict.fromkeys(v.strip().upper() if isinstance(v, str) else v for v in value))
+        return value
+
+
+class TaskChangeOut(BaseModel):
+    """One field-level operation. `before` is what the SERVER read when the proposal was made, `current` what is there
+    now; `after` is the proposed value (validated like a task edit). `reason` is the model's note — unverified."""
+
+    operation_id: str
+    task_id: str | None  # null when the reader cannot see the task now (nothing about it is revealed)
+    task_key: str
+    task_title: str | None
+    field: ChangeField
+    field_label: str
+    before: str | None
+    after: str | None
+    current: str | None = None
+    expected_version: int
+    current_version: int | None = None
+    reason: str = ""
+    included: bool = True
+    # ok · no_op (the value is already there) · task_changed (edited since) · task_archived · task_unavailable
+    state: Literal["ok", "no_op", "task_changed", "task_archived", "task_unavailable"] = "ok"
+
+
+class WorkChangeProposalOut(BaseModel):
+    id: str
+    project_id: str
+    project_key: str
+    kind: Literal["task_changes"] = "task_changes"
+    schema_version: str
+    status: Literal["suggested", "applied", "rejected"]
+    # ready: may be applied · stale: something it was based on changed (stale_reasons) — prepare a new one
+    state: Literal["ready", "stale", "applied", "rejected"]
+    stale_reasons: list[
+        str
+    ]  # plan_changed · task_changed · task_archived · task_unavailable · source_* · expired
+    provider: str
+    request: str
+    goal: str
+    base_plan_revision: int
+    current_plan_revision: int
+    created_at: datetime
+    expires_at: datetime
+    decided_at: datetime | None
+    changes: list[TaskChangeOut]
+    issues: list[ProposalIssue]
+    assumptions: list[str]
+    sources: list[ProposalSourceRef]
+    can_apply: bool
+    applied_operation_ids: list[str] = Field(default_factory=list)
+    applied_task_keys: list[str] = Field(default_factory=list)
+    revised_from: str | None = None
+
+
+class WorkChangeSelection(_Request):
+    """The operations a person keeps (the others are dropped). Values are never sent: they are the stored ones."""
+
+    operation_ids: Annotated[list[OperationId], Field(max_length=CHANGE_OPERATIONS_MAX)]
+
+    @model_validator(mode="after")
+    def _distinct(self) -> WorkChangeSelection:
+        if len(self.operation_ids) != len(set(self.operation_ids)):
+            raise ValueError("an operation may appear only once")
+        return self
+
+
+class WorkChangeApply(WorkChangeSelection):
+    expected_plan_revision: Annotated[int, Field(ge=1)]
+    client_request_id: ClientRequestId
+
+
+class WorkChangeRevise(_Request):
+    """Refine a stored change-set → a NEW change-set (the refined one is never changed or applied)."""
+
+    instruction: Annotated[str, Field(min_length=3, max_length=CHANGE_REQUEST_MAX)]
+    client_request_id: ClientRequestId | None = None
+
+    @field_validator("instruction")
+    @classmethod
+    def _instruction(cls, value: str) -> str:
+        value = _clean_text(value).strip()
+        if len(value) < 3:
+            raise ValueError("instruction is too short")
+        return value
+
+
+class WorkChangeApplyResult(BaseModel):
+    proposal_id: str
+    project_id: str
+    applied: bool
+    plan_revision: int
+    applied_operations: int
+    updated_tasks: list[TaskOut]
     replayed: bool = False

@@ -766,3 +766,40 @@ def decide_proposal(
         ),
     )
     return cursor.rowcount == 1
+
+
+# --- M7: change-set proposals for existing tasks ------------------------------------------------------------------
+def insert_change_proposal(conn: sqlite3.Connection, row: Mapping[str, Any]) -> None:
+    columns = ", ".join(row)
+    placeholders = ", ".join(f":{k}" for k in row)
+    conn.execute(f"INSERT INTO work_task_change_proposals ({columns}) VALUES ({placeholders})", dict(row))
+
+
+def get_change_proposal(conn: sqlite3.Connection, proposal_id: str) -> Row | None:
+    row: Row | None = conn.execute(
+        "SELECT * FROM work_task_change_proposals WHERE id = ?", (proposal_id,)
+    ).fetchone()
+    return row
+
+
+def decide_change_proposal(
+    conn: sqlite3.Connection,
+    proposal_id: str,
+    status: str,
+    actor: str,
+    at: str,
+    result: Mapping[str, Any] | None,
+) -> bool:
+    """suggested → applied | rejected, once (compare-and-set on the status)."""
+    cursor = conn.execute(
+        "UPDATE work_task_change_proposals SET status = ?, decided_by = ?, decided_at = ?, result_json = ? "
+        "WHERE id = ? AND status = 'suggested'",
+        (
+            status,
+            actor,
+            at,
+            json.dumps(result, ensure_ascii=False) if result is not None else None,
+            proposal_id,
+        ),
+    )
+    return cursor.rowcount == 1

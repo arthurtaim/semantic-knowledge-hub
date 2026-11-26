@@ -215,6 +215,40 @@ class WorkPlanRequest:
     existing_tasks: tuple[tuple[str, str], ...]  # (key, title) of active tasks, for de-duplication only
     references: tuple[AuthoringReference, ...]
     max_tasks: int = 20
+    # M7 refinement (additive; None = a new plan, the prompt is unchanged): the person's instruction and the PREVIOUS
+    # proposal's server-validated plan (JSON) — DATA; the reply is a complete new plan, validated like any other.
+    refinement: str | None = None
+    previous_plan: str | None = None
+
+
+@dataclass(frozen=True)
+class WorkChangeTask:
+    """One existing task as the change-set model sees it (M7): bounded, sanitized DATA. No id, version, assignee or
+    actor — the model names a task only by its key from this list."""
+
+    key: str
+    title: str
+    status: str
+    priority: str
+    due_date: str | None
+    description: str = ""  # a short, injection-redacted excerpt
+
+
+@dataclass(frozen=True)
+class WorkChangeRequest:
+    """M7 «Предложить изменения задач» (docs/WORK_CHAT_SKILLS.md): a change-set PROPOSAL for existing tasks of ONE
+    project. The request, the tasks and the documents are DATA; the reply is the model's raw text, parsed strictly by
+    app/adapters/ai/work_change_protocol.py and validated by the backend (app/work/changes.py). The provider never
+    changes, stores or applies anything."""
+
+    project_key: str
+    project_title: str
+    request: str
+    tasks: tuple[WorkChangeTask, ...]
+    references: tuple[AuthoringReference, ...] = ()
+    # Refinement (additive): the previous change-set's operations (JSON) the request adjusts — DATA.
+    previous: str | None = None
+    max_changes: int = 40
 
 
 class WorkPlanningAIProvider(Protocol):
@@ -224,6 +258,15 @@ class WorkPlanningAIProvider(Protocol):
     supports_work_planning: bool
 
     async def plan_work(self, request: WorkPlanRequest) -> str: ...
+
+
+class WorkChangeAIProvider(Protocol):
+    """Optional capability (M7, same model-agnostic JSON protocol style as plan_work). A provider without it (mock,
+    disabled) proposes no task changes."""
+
+    supports_work_changes: bool
+
+    async def plan_work_changes(self, request: WorkChangeRequest) -> str: ...
 
 
 @dataclass(frozen=True)

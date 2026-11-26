@@ -524,6 +524,48 @@ class AskSelection(BaseModel):
 AttachmentId = Annotated[str, Field(pattern=ATTACHMENT_ID_PATTERN)]
 DocumentRef = Annotated[str, Field(min_length=1, max_length=128)]
 
+# --- M7: chat work skills (docs/WORK_CHAT_SKILLS.md) ------------------------------------------------------------
+WORK_PROJECT_KEY_PATTERN = r"^[A-Z][A-Z0-9]{1,9}$"
+WORK_TASK_KEY_PATTERN = r"^[A-Z][A-Z0-9]{1,9}-\d{1,9}$"
+# A task-plan proposal (WAP, M6 «AI план») or a change-set of existing tasks (WCP, M7).
+WORK_PROPOSAL_ID_PATTERN = r"^(WAP|WCP)-[0-9a-f]{16}$"
+WORK_CLIENT_REQUEST_ID_PATTERN = r"^[A-Za-z0-9._:-]{8,80}$"
+MAX_WORK_CONTEXT_TASKS = 20
+
+
+def _upper_key(value: Any) -> Any:
+    return value.strip().upper() if isinstance(value, str) else value
+
+
+class AskWorkContext(BaseModel):
+    """What a work skill acts on, chosen by the person in the composer (M7). Only REFERENCES — never an access grant:
+    the server resolves the project and every task in the reader's own scope on every request (an unknown and a hidden
+    one are the same 404), and a referenced proposal must be the reader's own. There is no user, role, version or
+    `may_write` field: those are the server's."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    project_key: Annotated[str, Field(pattern=WORK_PROJECT_KEY_PATTERN)] | None = None
+    task_keys: Annotated[
+        list[Annotated[str, Field(pattern=WORK_TASK_KEY_PATTERN)]], Field(max_length=MAX_WORK_CONTEXT_TASKS)
+    ] = Field(default_factory=list)
+    # A proposal the follow-up refines (a NEW proposal is created; the referenced one is never changed or applied).
+    proposal_id: Annotated[str, Field(pattern=WORK_PROPOSAL_ID_PATTERN)] | None = None
+    # Idempotency of one send: a retry with the same id returns the proposal already stored, never a second one.
+    client_request_id: Annotated[str, Field(pattern=WORK_CLIENT_REQUEST_ID_PATTERN)] | None = None
+
+    @field_validator("project_key", mode="before")
+    @classmethod
+    def _project(cls, value: Any) -> Any:
+        return _upper_key(value)
+
+    @field_validator("task_keys", mode="before")
+    @classmethod
+    def _tasks(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return list(dict.fromkeys(_upper_key(v) for v in value))
+        return value
+
 
 class AskRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -548,6 +590,8 @@ class AskRequest(BaseModel):
     # panel of a document (its document is the selection's or the first chosen one). Labels the stored
     # conversation only; the answer does not depend on it.
     origin: Literal["dialog", "document"] = "dialog"
+    # M7 (additive): the project / tasks / proposal a WORK skill acts on. Only with a work skill.
+    work_context: AskWorkContext | None = None
 
     @model_validator(mode="after")
     def _question_and_conversation(self) -> AskRequest:
@@ -556,6 +600,8 @@ class AskRequest(BaseModel):
             raise ValueError("question must have at least 3 characters for this skill")
         if self.attachment_ids and not self.conversation_id:
             raise ValueError("attachment_ids require conversation_id")
+        if self.work_context is not None and not (skill is not None and skill.is_work):
+            raise ValueError("work_context is accepted only with a work skill")
         return self
 
 
@@ -574,6 +620,24 @@ class ProposalRef(BaseModel):
     kind: str
     status: str
     graph_link: str | None = None
+
+
+class WorkProposalRef(BaseModel):
+    """M7: a WORK proposal a chat skill created — a task plan (WAP, GET /api/work-ai/proposals/{id}) or a change-set
+    of existing tasks (WCP, GET /api/work-ai/change-proposals/{id}). Separate from `ProposalRef` (document AI
+    proposals): a different store, lifecycle and review screen. Counts and state are read from the STORED proposal at
+    answer time (the UI re-reads the current state); `app_path` is built by the server. Nothing was applied."""
+
+    kind: Literal["task_plan", "task_changes"]
+    id: str
+    project_key: str
+    state: str  # ready | stale | applied | rejected — at answer time
+    app_path: str
+    task_count: int = 0  # task_plan: proposed tasks
+    dependency_count: int = 0  # task_plan: proposed FS dependencies
+    change_count: int = 0  # task_changes: proposed field changes
+    revised_from: str | None = None  # the proposal this one refines (that one is unchanged)
+    requires_confirmation: bool = True
 
 
 class AnswerProvenance(BaseModel):
@@ -655,6 +719,8 @@ class AskResponse(BaseModel):
     # proposal the dialog shows as a card with a link (null otherwise). Nothing is ever applied by /ask.
     skill: SkillRef | None = None
     proposal: ProposalRef | None = None
+    # M7 (additive): a work proposal (task plan or change-set) a chat work skill stored for review; null otherwise.
+    work_proposal: WorkProposalRef | None = None
     # M5.7 (additive; docs/AI_NATIVE_TOOLS.md): authoritative structured observations the answer relies on
     # ([F1] markers in `answer`), the tool steps that were executed, whether the text relies on the model's general
     # knowledge (never internal evidence), and the referent a follow-up question can use.

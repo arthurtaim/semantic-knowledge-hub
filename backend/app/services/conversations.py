@@ -119,6 +119,17 @@ class StoredSelection(BaseModel):
     lines: int = 0
 
 
+class StoredWorkContext(BaseModel):
+    """M7: what a work skill acted on — REFERENCES only (keys and a proposal id, never titles or task data). Shown
+    back as chips; a follow-up re-sends them and the server re-checks every one."""
+
+    project_key: str
+    task_keys: list[str] = Field(default_factory=list)
+    proposal_id: str | None = None
+    # The send's idempotency key: re-sending an interrupted turn returns the proposal it may already have stored.
+    client_request_id: str | None = None
+
+
 def _team_scope() -> list[SearchScope]:
     return ["team"]
 
@@ -133,6 +144,7 @@ class StoredTurnRequest(BaseModel):
     documents: list[StoredDocumentRef] = Field(default_factory=list)
     attachments: list[StoredAttachmentRef] = Field(default_factory=list)
     selection: StoredSelection | None = None
+    work: StoredWorkContext | None = None  # M7 (additive): older turns have none
 
 
 class StoredTurnError(BaseModel):
@@ -635,7 +647,7 @@ def _request_of(plan: AskPlan) -> dict[str, Any]:
     req = plan.request
     skill = plan.skill_ref
     selection = plan.selection
-    return {
+    stored: dict[str, Any] = {
         "question": req.question,
         "skill": skill.model_dump() if skill else None,
         "sources": list(req.sources),
@@ -653,6 +665,14 @@ def _request_of(plan: AskPlan) -> dict[str, Any]:
         if selection
         else None,
     }
+    if plan.work is not None:  # M7: only work turns carry it (older / other turns keep their stored shape)
+        stored["work"] = {
+            "project_key": plan.work.target.project_key,
+            "task_keys": list(plan.work.target.task_keys),
+            "proposal_id": plan.work.proposal_id,
+            "client_request_id": plan.work.client_request_id,
+        }
+    return stored
 
 
 class ConversationService:

@@ -1058,30 +1058,9 @@ class SystemToolExecutor:
     async def _work_inspect(self, ctx: ToolContext, args: WorkInspectArgs, ref: str) -> ToolResult:
         if self._work is None or not self._work.offered(ctx.user):
             raise ToolFailure("denied", "forbidden", "Модуль задач недоступен для этого запроса.")
-        try:
-            snapshot = await self._knowledge.snapshot(ctx.user)
-            documents = DocumentScope.from_snapshot(snapshot, self._knowledge.generation_label(snapshot))
-        except RepositoryUnavailableError:
-            documents = DocumentScope.unavailable()  # tasks stay readable; linked documents are not named
-        result = await asyncio.to_thread(self._work.inspect, ctx.user, args, documents)
-        fact = self._fact(
-            ref=ref,
-            tool=WORK_TOOL,
-            operation=result.operation,
-            label=result.label,
-            source="skh_work",
-            generation=None,  # work facts carry their plan revision in the filters, not a knowledge generation
-            value=result.value,
-            unit=result.unit,
-            effective_filters=result.effective_filters,
-            definition=result.definition,
-            items=result.items,
-            truncated=result.truncated,
+        return await work_inspect_result(
+            self._work, self._knowledge, ctx.user, args, ref=ref, as_of=self._clock()
         )
-        payload: dict[str, Any] = {**self._provenance(fact), **result.payload, "read_only": True}
-        if result.definition:
-            payload["definition"] = result.definition
-        return ToolResult(WORK_TOOL, result.operation, "ok", payload, fact=fact, result_count=result.value)
 
     # --- drafts_propose (P1): a proposal through the existing M5.6.3 workflow -----------------------------------
     async def _propose(self, ctx: ToolContext, args: DraftsProposeArgs, ref: str) -> ToolResult:
@@ -1145,3 +1124,50 @@ class SystemToolExecutor:
             ),
             result_count=applicable,
         )
+
+
+async def work_inspect_result(
+    inspector: WorkInspector,
+    knowledge: KnowledgeService,
+    user: UserContext,
+    args: WorkInspectArgs,
+    *,
+    ref: str,
+    as_of: datetime,
+) -> ToolResult:
+    """ONE read of work facts → a typed `skh_work` SystemFact + the bounded model-visible payload. Used by the
+    `work_inspect` tool of the M5.7 loop AND by the M7 `analyze_project` skill (the server's own inspection of the
+    chosen project) — so both produce exactly the same facts. Read-only; the reader's own projects and documents."""
+    try:
+        snapshot = await knowledge.snapshot(user)
+        documents = DocumentScope.from_snapshot(snapshot, knowledge.generation_label(snapshot))
+    except RepositoryUnavailableError:
+        documents = DocumentScope.unavailable()  # tasks stay readable; linked documents are not named
+    result = await asyncio.to_thread(inspector.inspect, user, args, documents)
+    fact = SystemFact(
+        ref=ref,
+        tool=WORK_TOOL,
+        operation=result.operation,
+        label=result.label,
+        source="skh_work",
+        generation=None,  # work facts carry their plan revision in the filters, not a knowledge generation
+        as_of=as_of,
+        value=result.value,
+        unit=result.unit,
+        effective_filters=result.effective_filters,
+        definition=result.definition,
+        items=result.items,
+        truncated=result.truncated,
+    )
+    payload: dict[str, Any] = {
+        "fact_id": fact.ref,
+        "scope": fact.access_scope,
+        "source": fact.source,
+        "generation": fact.generation,
+        "as_of": fact.as_of.isoformat(timespec="seconds"),
+        **result.payload,
+        "read_only": True,
+    }
+    if result.definition:
+        payload["definition"] = result.definition
+    return ToolResult(WORK_TOOL, result.operation, "ok", payload, fact=fact, result_count=result.value)

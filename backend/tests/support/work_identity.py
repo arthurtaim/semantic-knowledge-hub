@@ -53,4 +53,8 @@ def enable_membership(client: TestClient) -> ServerSideTestIdentity:
     inspector = getattr(loop.executor, "_work", None) if loop is not None else None
     if inspector is not None:
         inspector._may_view = lambda user: container.policy.allows(user, Action.view_tasks)
+    chat = getattr(container.skills, "_work", None)  # M7 chat work skills: the same replacement
+    if chat is not None:
+        chat._policy = container.policy
+        chat._inspector._may_view = lambda user: container.policy.allows(user, Action.view_tasks)
     return identity

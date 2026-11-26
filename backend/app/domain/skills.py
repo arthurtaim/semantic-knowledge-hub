@@ -16,8 +16,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 SkillAccess = Literal["read", "draft"]
-# How a skill runs: through the grounded ask pipeline, or through one M5.6.3 workflow (AiWorkflowService).
-SkillRunner = Literal["ask", "workflow"]
+# How a skill runs: through the grounded ask pipeline, through one M5.6.3 workflow (AiWorkflowService), or — M7 chat
+# work skills (docs/WORK_CHAT_SKILLS.md) — over the M6 work module: `work_read` reads facts (WorkInspector),
+# `work_plan` creates a task-plan PROPOSAL (WorkAiService, WAP), `work_change` a change-set PROPOSAL for existing
+# tasks (WorkChangeService, WCP). No runner applies anything: tasks change only through an explicit review UI.
+SkillRunner = Literal["ask", "workflow", "work_read", "work_plan", "work_change"]
+WORK_RUNNERS: frozenset[str] = frozenset({"work_read", "work_plan", "work_change"})
 
 AI_DISABLED_REASON = "ИИ отключён"
 
@@ -39,6 +43,28 @@ class SkillDefinition:
     needs_authoring: bool = False  # the provider must support draft_document
     # None: the deterministic mock provider serves the skill honestly (verbatim / rule-based output).
     mock_unavailable_reason: str | None = None
+    # M7: a project chosen explicitly (`AskRequest.work_context.project_key`) — never guessed by the server.
+    requires_project: bool = False
+    needs_work_planning: bool = False  # the provider must support plan_work (M6 «AI план»)
+    needs_work_changes: bool = False  # the provider must support plan_work_changes (M7 change-set)
+
+    @property
+    def is_work(self) -> bool:
+        return self.runner in WORK_RUNNERS
+
+
+@dataclass(frozen=True)
+class WorkSkillState:
+    """What the server knows about the work module for THIS request before a project is chosen (M7): the module is
+    on, the global policy and the work gate let this principal view / propose, the provider's capabilities. Per-project
+    rights (membership roles) are checked again on every request with the chosen project."""
+
+    enabled: bool = False
+    may_view: bool = False
+    may_propose: bool = False
+    read_only_reason: str | None = None
+    supports_planning: bool = False
+    supports_changes: bool = False
 
 
 SKILLS: tuple[SkillDefinition, ...] = (
@@ -141,6 +167,41 @@ SKILLS: tuple[SkillDefinition, ...] = (
         requires_document=True,
         prompt_optional=True,
     ),
+    # --- M7: chat work skills over the M6 work module (docs/WORK_CHAT_SKILLS.md) -----------------------------------
+    SkillDefinition(
+        id="analyze_project",
+        name="Проанализировать проект",
+        description="Разберёт сроки, просрочки, ожидания и вехи проекта по данным модуля задач; ничего не меняет",
+        access="read",
+        runner="work_read",
+        builds_on=("work_inspect",),
+        prompt_optional=True,
+        requires_project=True,
+    ),
+    SkillDefinition(
+        id="draft_task_plan",
+        name="Составить план задач",
+        description="Подготовит предложение новых задач по документам; задачи создаются только после вашей "
+        "проверки в проекте",
+        access="draft",
+        runner="work_plan",
+        builds_on=("work_plan",),
+        requires_project=True,
+        needs_work_planning=True,
+        mock_unavailable_reason="Нет языковой модели (режим mock): план задач не готовится.",
+    ),
+    SkillDefinition(
+        id="propose_task_changes",
+        name="Предложить изменения задач",
+        description="Предложит новые статус, приоритет, срок или текст существующих задач; применяется только "
+        "после вашего подтверждения",
+        access="draft",
+        runner="work_change",
+        builds_on=("work_changes",),
+        requires_project=True,
+        needs_work_changes=True,
+        mock_unavailable_reason="Нет языковой модели (режим mock): изменения задач не предлагаются.",
+    ),
 )
 SKILL_BY_ID: dict[str, SkillDefinition] = {s.id: s for s in SKILLS}
 DEFAULT_SKILL = "answer"
@@ -152,6 +213,8 @@ class SkillRequires(BaseModel):
     attachment: bool = False
     # «One of»: a chosen document / selection OR a question (≥ 3 characters). Additive: false for older skills.
     document_or_question: bool = False
+    # M7 (additive): a project chosen in the composer (`work_context.project_key`); the server never picks one.
+    project: bool = False
 
 
 class SkillInfo(BaseModel):
@@ -165,21 +228,58 @@ class SkillInfo(BaseModel):
     prompt_optional: bool
     available: bool
     unavailable_reason: str | None = None
+    # M7 (additive): the skill works over the work module (projects and tasks), not over documents only.
+    work: bool = False
 
 
-def unavailable_reason(skill: SkillDefinition, mode: str, supports_authoring: bool) -> str | None:
-    """Why the skill cannot run with the current AI mode (None: available)."""
+def _work_reason(skill: SkillDefinition, work: WorkSkillState | None) -> str | None:
+    state = work or WorkSkillState()
+    if not state.enabled:
+        return "Модуль задач отключён."
+    if skill.runner == "work_read":
+        return None if state.may_view else "Нет прав на просмотр задач."
+    if not state.may_propose:
+        return state.read_only_reason or "Нет прав предлагать изменения задач."
+    if skill.needs_work_planning and not state.supports_planning:
+        return "Провайдер ИИ не поддерживает планирование задач."
+    if skill.needs_work_changes and not state.supports_changes:
+        return "Провайдер ИИ не поддерживает предложения изменений задач."
+    return None
+
+
+def work_denied(skill: SkillDefinition, work: WorkSkillState | None) -> tuple[int, str, str] | None:
+    """A work skill refused for the module or the reader's rights — (HTTP status, code, message) — checked BEFORE the
+    provider: a read-only exposure or a missing right is 403 like the work API, a disabled module 503."""
+    state = work or WorkSkillState()
+    if not state.enabled:
+        return 503, "feature_unavailable", "Модуль задач отключён."
+    if skill.runner == "work_read":
+        return None if state.may_view else (403, "forbidden", "Нет прав на просмотр задач.")
+    if not state.may_propose:
+        return 403, "forbidden", state.read_only_reason or "Нет прав предлагать изменения задач."
+    return None
+
+
+def unavailable_reason(
+    skill: SkillDefinition, mode: str, supports_authoring: bool, work: WorkSkillState | None = None
+) -> str | None:
+    """Why the skill cannot run with the current AI mode (and, for a work skill, the work module and the reader's
+    rights before a project is chosen); None: available."""
     if mode == "disabled":
         return AI_DISABLED_REASON
     if mode == "mock" and skill.mock_unavailable_reason:
         return skill.mock_unavailable_reason
     if skill.needs_authoring and not supports_authoring:
         return "Провайдер ИИ не поддерживает подготовку черновиков."
+    if skill.is_work:
+        return _work_reason(skill, work)
     return None
 
 
-def skill_info(skill: SkillDefinition, mode: str, supports_authoring: bool) -> SkillInfo:
-    reason = unavailable_reason(skill, mode, supports_authoring)
+def skill_info(
+    skill: SkillDefinition, mode: str, supports_authoring: bool, work: WorkSkillState | None = None
+) -> SkillInfo:
+    reason = unavailable_reason(skill, mode, supports_authoring, work)
     return SkillInfo(
         id=skill.id,
         name=skill.name,
@@ -190,8 +290,10 @@ def skill_info(skill: SkillDefinition, mode: str, supports_authoring: bool) -> S
             selection=skill.requires_selection,
             attachment=skill.requires_attachment,
             document_or_question=skill.requires_document_or_question,
+            project=skill.requires_project,
         ),
         prompt_optional=skill.prompt_optional,
         available=reason is None,
         unavailable_reason=reason,
+        work=skill.is_work,
     )

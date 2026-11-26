@@ -56,7 +56,9 @@ from app.services.search import SearchService
 from app.services.skills import AssistantSkillService
 from app.services.template_hub import TemplateHubService
 from app.services.template_studio import TemplateStudioService
+from app.services.work_skills import WorkChatSkills
 from app.work.ai import WorkAiService
+from app.work.changes import WorkChangeService
 from app.work.db import WorkDatabase
 from app.work.inspect import WorkInspector
 from app.work.permissions import WorkAccessMode, build_gate
@@ -100,6 +102,7 @@ class Container:
     template_studio: TemplateStudioService
     work: WorkService
     work_ai: WorkAiService
+    work_changes: WorkChangeService
     conversations: ConversationService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
@@ -505,6 +508,21 @@ def build_container(settings: Settings) -> Container:
     # the disabled provider have none, so the feature says it is unavailable instead of faking a plan).
     work_ai = WorkAiService(work, knowledge, ai)
     work.ai_planning = work_ai.available
+    # M7: change-set proposals for existing tasks (same optional-capability rule as «AI план») and the chat work skills
+    # over the SAME work services; one WorkInspector serves the `work_inspect` tool and `analyze_project` alike.
+    work_changes = WorkChangeService(work, knowledge, ai)
+    work_inspector = WorkInspector(work, may_view=lambda user: policy.allows(user, Action.view_tasks))
+    skills.attach_work(
+        WorkChatSkills(
+            work=work,
+            work_ai=work_ai,
+            changes=work_changes,
+            inspector=work_inspector,
+            knowledge=knowledge,
+            assistant=assistant_service,
+            policy=policy,
+        )
+    )
     conversations = ConversationService(
         ConversationStore(
             settings.app_state_file,
@@ -533,7 +551,7 @@ def build_container(settings: Settings) -> Container:
                     templates=template_hub,
                     workflows=ai_workflows,
                     # M6: read-only work facts; the global policy decides who may view tasks at all.
-                    work=WorkInspector(work, may_view=lambda user: policy.allows(user, Action.view_tasks)),
+                    work=work_inspector,
                 ),
                 tool_limits(settings),
             ),
@@ -577,6 +595,7 @@ def build_container(settings: Settings) -> Container:
         template_studio=template_studio,
         work=work,
         work_ai=work_ai,
+        work_changes=work_changes,
         conversations=conversations,
         discovery=discovery,
         external=external,

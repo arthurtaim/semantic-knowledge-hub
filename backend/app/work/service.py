@@ -45,6 +45,8 @@ from app.work.db import WorkDatabase
 from app.work.directory import AssigneeDirectory
 from app.work.links import DocumentScope, document_ref, is_approved, is_deprecated, link_state
 from app.work.models import (
+    CHANGE_CONTEXT_TASKS,
+    CHANGE_TASKS_MAX,
     MAX_DEPENDENCIES_PER_PROJECT,
     MAX_DEPTH,
     MAX_TASKS_PER_PROJECT,
@@ -93,6 +95,7 @@ from app.work.models import (
     TaskStatus,
     TaskUpdate,
     WorkCapabilities,
+    WorkChangeApplyResult,
     WorkFeatures,
     WorkIdentity,
     WorkLimits,
@@ -323,6 +326,55 @@ class ProposalView:
 
 
 @dataclass(frozen=True)
+class ChatTarget:
+    """The project (and tasks) a chat work skill acts on, resolved in the reader's scope (M7)."""
+
+    project_id: str
+    project_key: str
+    project_title: str
+    plan_revision: int
+    archived: bool
+    task_keys: tuple[str, ...] = ()  # canonical keys of the chosen tasks, all in this project
+    task_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ChangeContext:
+    """What «Предложить изменения задач» may show the model (M7), after the gate: ONE project's tasks — the named ones,
+    or the active ones when none is named (bounded). Server-read values and versions; never another project's data."""
+
+    project_id: str
+    project_key: str
+    project_title: str
+    plan_revision: int
+    tasks: tuple[dict[str, Any], ...]  # id, key, title, description, status, priority, due_date, version
+    named: bool  # the tasks were named (explicitly or by key in the request)
+
+
+@dataclass(frozen=True)
+class ChangeView:
+    """The current state a stored change-set is shown and checked against (after the `propose_work` gate)."""
+
+    project_key: str
+    plan_revision: int
+    may_apply: bool
+    tasks: dict[str, dict[str, Any]]  # task id → the current row (missing: not visible / gone)
+
+
+@dataclass(frozen=True)
+class TaskFieldChanges:
+    """The re-validated fields of ONE task to write, with the version they were computed from."""
+
+    task_id: str
+    expected_version: int
+    fields: dict[str, Any]
+    operation_ids: tuple[str, ...]
+
+
+TASK_KEY_IN_TEXT = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,9})\b")
+
+
+@dataclass(frozen=True)
 class PlannedTask:
     """One task of a reviewed, re-validated AI plan, ready to be written (dates computed by the server)."""
 
@@ -367,6 +419,8 @@ class WorkService:
         self._after_schedule_write: Callable[[str], None] | None = None
         # The same seam for applying an AI task plan (after each created task, inside the transaction).
         self._after_plan_write: Callable[[str], None] | None = None
+        # M7: the same seam for applying a change-set (after each updated task, inside the transaction).
+        self._after_change_write: Callable[[str], None] | None = None
         # Step 5: whether «AI план» can work at all here (the configured AIProvider supports work planning); set by
         # the container. Shown as `features.ai_proposals`; the server still checks the gate on every request.
         self.ai_planning = False
@@ -2308,6 +2362,54 @@ class WorkService:
                 anchor=anchor,
             )
 
+    def may(self, principal: WorkPrincipal, action: Action) -> bool:
+        """Whether the work gate lets this principal do `action` at all, before a project is chosen (the skill catalog,
+        M7). Membership mode: any real identity (its project role is checked per request); otherwise the single
+        operator outside read-only exposure. Never a grant: every request re-checks with the project."""
+        if self.gate.mode == WorkAccessMode.disabled:
+            return False
+        if self.gate.role_based():
+            return not principal.user.is_demo
+        return self.gate.allows(principal, action, None)
+
+    def chat_target(
+        self,
+        principal: WorkPrincipal,
+        project_ref: str,
+        actions: tuple[Action, ...],
+        task_refs: Sequence[str] = (),
+        *,
+        writable: bool = False,
+    ) -> ChatTarget:
+        """The project (and tasks) a chat work skill acts on (M7), resolved in the READER's scope BEFORE any model call:
+        an unknown and an invisible project are the same 404; each of `actions` passes the project gate (403 in
+        read-only exposure); `writable` refuses an archived project (409); every task must be in THIS project (404 —
+        never another project's task, never its title)."""
+        with self.db.read() as conn:
+            project, role = self._project_for(conn, principal, project_ref, actions[0])
+            for action in actions[1:]:
+                self.gate.check(principal, action, role)
+            if writable:
+                self._require_open(project)
+            keys: list[str] = []
+            ids: list[str] = []
+            for ref in task_refs:
+                task = self._lookup_task(conn, ref)
+                if task is None or task["project_id"] != project["id"]:
+                    raise _not_found("Задача не найдена в этом проекте.")
+                if task["id"] not in ids:
+                    keys.append(f"{project['key']}-{task['number']}")
+                    ids.append(task["id"])
+            return ChatTarget(
+                project_id=project["id"],
+                project_key=project["key"],
+                project_title=project["title"],
+                plan_revision=int(project["plan_revision"]),
+                archived=project["status"] == ProjectStatus.archived.value,
+                task_keys=tuple(keys),
+                task_ids=tuple(ids),
+            )
+
     def proposal_view(
         self, principal: WorkPrincipal, project_id: str, parent_task_id: str | None
     ) -> ProposalView:
@@ -2551,6 +2653,218 @@ class WorkService:
                 len(created),
                 len(plan.dependencies),
                 links,
+                revision_now,
+            )
+            return out
+
+    # --- M7: change-set proposals for existing tasks -------------------------------------------------------------
+    def change_context(
+        self, principal: WorkPrincipal, project_ref: str, task_refs: Sequence[str], request_text: str
+    ) -> ChangeContext:
+        """The tasks a change-set may touch, BEFORE any model call: the `propose_work` AND `edit_task` gate (read-only
+        → 403), an open project (archived → 409), tasks named explicitly or by key in the request (each must be an
+        active task of THIS project: 404 / 409), otherwise the project's active tasks — at most CHANGE_CONTEXT_TASKS
+        (more → 422: name the tasks; the model never guesses among hundreds)."""
+        with self.db.read() as conn:
+            project, role = self._project_for(conn, principal, project_ref, Action.propose_work)
+            self.gate.check(principal, Action.edit_task, role)
+            self._require_open(project)
+            refs = list(task_refs) or [
+                key
+                for key in TASK_KEY_IN_TEXT.findall(request_text.upper())
+                if key.split("-", 1)[0] == project["key"]
+            ]
+            rows: list[RowLike] = []
+            if refs:
+                for ref in dict.fromkeys(refs):
+                    task = self._lookup_task(conn, ref)
+                    if task is None or task["project_id"] != project["id"]:
+                        raise _not_found("Задача не найдена в этом проекте.")
+                    if task["archived_at"] is not None:
+                        raise ApiError(
+                            409,
+                            "conflict",
+                            "Задача в архиве — изменения для неё не предлагаются; сначала восстановите её.",
+                            {"reason": "task_archived"},
+                        )
+                    rows.append(task)
+                if len(rows) > CHANGE_TASKS_MAX:
+                    raise ApiError(
+                        422,
+                        "invalid_request",
+                        f"Не больше {CHANGE_TASKS_MAX} задач в одном предложении изменений.",
+                        {"reason": "too_many_tasks"},
+                    )
+            else:
+                rows = list(store.project_tasks(conn, project["id"]))
+                if not rows:
+                    raise ApiError(
+                        422, "work_tasks_required", "В проекте нет активных задач — изменять нечего."
+                    )
+                if len(rows) > CHANGE_CONTEXT_TASKS:
+                    raise ApiError(
+                        422,
+                        "work_tasks_required",
+                        f"В проекте больше {CHANGE_CONTEXT_TASKS} задач: укажите ключи задач, которые нужно "
+                        f"изменить (например, {project['key']}-1).",
+                        {"reason": "too_many_tasks"},
+                    )
+            return ChangeContext(
+                project_id=project["id"],
+                project_key=project["key"],
+                project_title=project["title"],
+                plan_revision=int(project["plan_revision"]),
+                tasks=tuple(
+                    {
+                        "id": r["id"],
+                        "key": f"{project['key']}-{r['number']}",
+                        "title": str(r["title"]),
+                        "description": str(r["description"] or ""),
+                        "status": str(r["status"]),
+                        "priority": str(r["priority"]),
+                        "due_date": r["due_date"],
+                        "version": int(r["version"]),
+                    }
+                    for r in rows
+                ),
+                named=bool(refs),
+            )
+
+    def change_view(self, principal: WorkPrincipal, project_id: str, task_ids: Iterable[str]) -> ChangeView:
+        """The project and the CURRENT rows of a change-set's tasks, from one snapshot (after the `propose_work` gate)."""
+        with self.db.read() as conn:
+            project, role = self._project_for(conn, principal, project_id, Action.propose_work)
+            tasks: dict[str, dict[str, Any]] = {}
+            for task_id in dict.fromkeys(task_ids):
+                row = store.get_task(conn, task_id)
+                if row is not None and row["project_id"] == project["id"]:
+                    tasks[task_id] = {**dict(row), "key": f"{project['key']}-{row['number']}"}
+            return ChangeView(
+                project_key=project["key"],
+                plan_revision=int(project["plan_revision"]),
+                may_apply=project["status"] != ProjectStatus.archived.value
+                and self.gate.allows(principal, Action.apply_work_proposal, role)
+                and self.gate.allows(principal, Action.edit_task, role),
+                tasks=tasks,
+            )
+
+    def apply_task_change_set(
+        self,
+        principal: WorkPrincipal,
+        proposal_id: str,
+        *,
+        client_request_id: str,
+        request_hash: str,
+        prepare: Callable[[sqlite3.Row, sqlite3.Row, dict[str, sqlite3.Row]], list[TaskFieldChanges]],
+    ) -> WorkChangeApplyResult:
+        """Apply a reviewed change-set in ONE write transaction (M7): owner → `apply_work_proposal` + `edit_task` gate →
+        idempotent replay → open project, proposal still `suggested` → `prepare` re-validates it against the CURRENT
+        rows (plan revision, every task version, expiry, sources, values; 409 / 422) → each task updated ONCE (one
+        version bump, however many of its fields change), one audit event per task, ONE plan-revision bump, the
+        proposal marked `applied` with its result. Any error rolls EVERYTHING back (tasks, audit, revision, status);
+        a replay with the same `client_request_id` returns the first result and writes nothing."""
+        with self.db.write() as conn:
+            row = store.get_change_proposal(conn, proposal_id)
+            if row is None or row["actor_id"] != principal.user.user_id:
+                raise _not_found("Предложение не найдено.")  # proposals are personal
+            project, role = self._project_for(conn, principal, row["project_id"], Action.apply_work_proposal)
+            self.gate.check(principal, Action.edit_task, role)
+            scope = f"change_apply:{proposal_id}"
+            replay = self._replay(conn, scope, principal, client_request_id, request_hash)
+            if replay is not None:
+                return WorkChangeApplyResult.model_validate({**replay, "replayed": True})
+            self._require_open(project)
+            if row["status"] != "suggested":
+                raise ApiError(
+                    409,
+                    "proposal_stale",
+                    "Предложение уже применено или отклонено — подготовьте новое.",
+                    {"reason": f"already_{row['status']}"},
+                )
+            task_ids = [str(op["task_id"]) for op in json.loads(row["operations_json"])]
+            current = {
+                tid: task
+                for tid in dict.fromkeys(task_ids)
+                if (task := store.get_task(conn, tid)) is not None and task["project_id"] == project["id"]
+            }
+            changes = prepare(row, project, current)
+            if not changes:
+                raise ApiError(
+                    422,
+                    "proposal_invalid",
+                    "Не выбрано ни одного изменения (или все выбранные значения уже стоят).",
+                    {"reason": "nothing_to_apply"},
+                )
+            at = self._now_iso()
+            updated: list[str] = []
+            for change in changes:
+                task = current[change.task_id]
+                if not store.update_task(
+                    conn, change.task_id, change.expected_version, change.fields, principal.user.user_id, at
+                ):
+                    raise ApiError(
+                        409,
+                        "proposal_stale",
+                        "Задача изменена после подготовки предложения — подготовьте новое.",
+                        {"reason": "task_changed"},
+                    )
+                self._audit(
+                    conn,
+                    principal,
+                    operation="task_updated",
+                    entity_type="task",
+                    entity_id=change.task_id,
+                    project_id=project["id"],
+                    task_id=change.task_id,
+                    changes={**_diff(task, change.fields), "proposal_id": proposal_id},
+                    correlation_id=proposal_id,
+                    at=at,
+                )
+                updated.append(change.task_id)
+                if self._after_change_write is not None:
+                    self._after_change_write(change.task_id)
+            revision_now, project = self._bump_and_read(conn, project["id"])
+            operation_ids = [op for change in changes for op in change.operation_ids]
+            keys = [f"{project['key']}-{_must(store.get_task(conn, t))['number']}" for t in updated]
+            if not store.decide_change_proposal(
+                conn,
+                proposal_id,
+                "applied",
+                principal.user.user_id,
+                at,
+                {"operation_ids": operation_ids, "task_keys": keys, "plan_revision": revision_now},
+            ):
+                raise ApiError(
+                    409, "proposal_stale", "Предложение уже применено.", {"reason": "already_applied"}
+                )
+            self._audit(
+                conn,
+                principal,
+                operation="change_proposal_applied",
+                entity_type="proposal",
+                entity_id=proposal_id,
+                project_id=project["id"],
+                changes={"tasks": len(updated), "operations": len(operation_ids)},
+                correlation_id=proposal_id,
+                at=at,
+            )
+            ctx = self._ctx(conn, project, principal)
+            out = WorkChangeApplyResult(
+                proposal_id=proposal_id,
+                project_id=project["id"],
+                applied=True,
+                plan_revision=revision_now,
+                applied_operations=len(operation_ids),
+                updated_tasks=[self._task_out(_must(store.get_task(conn, t)), ctx) for t in updated],
+            )
+            self._remember(
+                conn, scope, principal, client_request_id, request_hash, out.model_dump(mode="json")
+            )
+            logger.info(
+                "work change-set applied project=%s tasks=%d operations=%d plan_revision=%s",
+                project["key"],
+                len(updated),
+                len(operation_ids),
                 revision_now,
             )
             return out
