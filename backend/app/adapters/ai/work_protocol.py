@@ -32,21 +32,24 @@ WORK_PLAN_PROMPT = f"""{MARKER}
 3. Подзадачу укажи через parent_local_id (local_id другой предложенной задачи). Зависимости — только окончание →
    начало (FS) между предложенными задачами: {{"predecessor": "t1", "successor": "t2"}}; без циклов, без зависимостей
    между задачей и её родителем.
-4. Не назначай исполнителей и не ставь даты: исполнителей выбирает человек, даты рассчитывает сервер (Пн–Пт).
+4. Не назначай исполнителей. Даты не придумывай. Если человек В ЗАПРОСЕ назвал срок или даты задачи, укажи
+   due_quote / start_quote / end_quote — дословный фрагмент запроса; если назван старт всего плана — plan_start_quote
+   в корне ответа. Даты рассчитывает сервер (Пн–Пт).
 5. Опирайся только на переданные документы. Для каждой задачи укажи sources: [{{"document_id": "ID из списка",
    "quote": "дословная цитата из документа, до 200 символов"}}]. Нет опоры в документах — sources пустой, а допущение
    опиши в assumptions. Не называй документ утверждённым, если его статус не approved.
 6. Не дублируй существующие задачи проекта.
 Верни СТРОГО один JSON-объект без пояснений вокруг:
 {{"goal": "...", "tasks": [{{"local_id": "t1", "title": "...", "description": "...", "estimate_workdays": 2,
- "priority": "medium", "milestone": false, "parent_local_id": null, "sources": [{{"document_id": "...",
- "quote": "..."}}]}}], "dependencies": [{{"predecessor": "t1", "successor": "t2"}}], "assumptions": ["..."],
- "warnings": ["..."]}}"""
+ "priority": "medium", "milestone": false, "parent_local_id": null, "due_quote": null, "start_quote": null,
+ "end_quote": null, "sources": [{{"document_id": "...", "quote": "..."}}]}}], "dependencies": [{{"predecessor": "t1",
+ "successor": "t2"}}], "plan_start_quote": null, "assumptions": ["..."], "warnings": ["..."]}}"""
 
 MAX_TASKS = 30
 MAX_DEPENDENCIES = 60
 MAX_SOURCES_PER_TASK = 3
 MAX_REFERENCE_CHARS = 9000
+MAX_DATE_QUOTE = 120
 _DELIMITER_RE = re.compile(r"<<<|>>>")
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 # Keys the model must NOT set: noted as ignored, never used.
@@ -83,6 +86,10 @@ class RawTask:
     ignored: list[str] = field(
         default_factory=list
     )  # "assignee" | "dates" | "task_id" the model tried to set
+    # Verbatim fragments of the person's request naming a date (the server verifies and parses them; never values).
+    due_quote: str | None = None
+    start_quote: str | None = None
+    end_quote: str | None = None
 
 
 @dataclass
@@ -93,6 +100,7 @@ class WorkPlanReply:
     assumptions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     truncated: bool = False
+    plan_start_quote: str | None = None  # a verbatim fragment naming the start of the whole plan
 
 
 def _escape(text: str) -> str:
@@ -175,6 +183,11 @@ def _load(text: str) -> Any:
 
 def _text(value: Any, limit: int) -> str:
     return " ".join(value.split())[:limit] if isinstance(value, str) else ""
+
+
+def _quote(value: Any) -> str | None:
+    """A date quote: a short string or nothing (any other type is ignored — the date is simply not taken)."""
+    return _text(value, MAX_DATE_QUOTE) or None
 
 
 def _estimate(value: Any) -> int | None:
@@ -273,6 +286,9 @@ def _parse_work_plan(text: str) -> WorkPlanReply:
                 ignored=sorted(
                     {v for k, v in _FORBIDDEN_TASK_KEYS.items() if item.get(k) not in (None, "", [])}
                 ),
+                due_quote=_quote(item.get("due_quote")),
+                start_quote=_quote(item.get("start_quote")),
+                end_quote=_quote(item.get("end_quote")),
             )
         )
     if not tasks:
@@ -305,4 +321,5 @@ def _parse_work_plan(text: str) -> WorkPlanReply:
         assumptions=strings("assumptions"),
         warnings=strings("warnings"),
         truncated=len(raw_tasks) > MAX_TASKS,
+        plan_start_quote=_quote(data.get("plan_start_quote")),
     )

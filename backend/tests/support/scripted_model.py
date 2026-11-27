@@ -87,10 +87,13 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Literal
 
 import httpx
+
+from app.domain.ru_dates import find_dates
 
 Transport = Literal["openai", "claude"]
 MARKER = "<<<EVIDENCE>>>"
@@ -862,8 +865,27 @@ def work_plan_script(prompt: str) -> str:
                 else []
             ),
         ]
+    # Dates the person named: the model QUOTES fragments (request + refinement); the server verifies and parses them.
+    plan_start: str | None = None
+    found = find_dates(f"{request}\n{refinement.group(1) if refinement else ''}", date(2026, 11, 27))
+    if "старт плана" in q:
+        starts = [f for f in found if f.role == "start"]
+        if starts:
+            plan_start = starts[0].fragment
+            found = [f for f in found if f is not starts[0]]
+    if tasks:
+        for f in found:
+            key = {"due": "due_quote", "start": "start_quote", "end": "end_quote"}[f.role]
+            if f.role == "due" and "только окончание" in q:
+                key = "end_quote"
+            tasks[0][key] = f.fragment
+        if "выдумай дату" in q:
+            tasks[0]["due_quote"] = "до 9 декабря"
+        if "голая дата" in q:
+            tasks[0]["due_date"] = "2026-12-05"
     payload = {
         "goal": request[:120],
+        "plan_start_quote": plan_start,
         "tasks": tasks,
         "dependencies": deps,
         "assumptions": [

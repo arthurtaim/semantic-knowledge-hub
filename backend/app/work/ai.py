@@ -45,6 +45,7 @@ from app.adapters.ai.work_protocol import WorkPlanReply, parse_work_plan
 from app.adapters.knowledge.base import KnowledgeSnapshot, RepositoryUnavailableError
 from app.adapters.search.base import SearchFilters
 from app.domain.models import DocStatus, DocumentRecord
+from app.domain.ru_dates import DateRole, find_dates, is_past, quote_in_text
 from app.errors import ApiError
 from app.services.assistant import prepare_passage_text, quote_is_verbatim
 from app.work import store
@@ -53,6 +54,7 @@ from app.work.calendar import (
     add_workdays,
     fs_earliest_start,
     in_supported_range,
+    is_workday,
     last_workday,
     next_workday,
 )
@@ -99,6 +101,11 @@ ISSUE_TEXT: dict[str, str] = {
     "truncated": "Модель предложила больше задач, чем допустимо: лишние отброшены.",
     "dates_out_of_range": f"С этой даты начала задача закончилась бы после {MAX_YEAR} года — выберите более "
     "раннее начало: применить такой план нельзя.",
+    "date_unverified": "Дата не найдена в вашем запросе — отброшена.",
+    "date_past": "Дата в прошлом — проверьте.",
+    "date_weekend": "Начало или окончание приходится на выходной — проверьте.",
+    "date_conflict": "Закреплённые даты противоречат друг другу или зависимости — проверьте.",
+    "start_needs_estimate": "Начало названо, но нет оценки — задача без дат: укажите оценку.",
 }
 BLOCKING_ISSUES = frozenset({"dates_out_of_range"})
 
@@ -155,6 +162,11 @@ class StoredTask:
     parent: str | None
     sources: list[dict[str, Any]] = field(default_factory=list)  # {document_id, revision, quote, verified}
     duplicate_of: str | None = None
+    # Dates the person named in the request (verified quotes; ISO). fixed_* pin the task; fixed_end is its last day.
+    due_date: str | None = None
+    fixed_start: str | None = None
+    fixed_end: str | None = None
+    quotes: dict[str, str] = field(default_factory=dict)  # role → the verified quote (kept for a refinement)
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -167,6 +179,10 @@ class StoredTask:
             "parent": self.parent,
             "sources": self.sources,
             "duplicate_of": self.duplicate_of,
+            "due_date": self.due_date,
+            "fixed_start": self.fixed_start,
+            "fixed_end": self.fixed_end,
+            "quotes": self.quotes,
         }
 
     @classmethod
@@ -181,6 +197,10 @@ class StoredTask:
             parent=data.get("parent"),
             sources=list(data.get("sources") or []),
             duplicate_of=data.get("duplicate_of"),
+            due_date=data.get("due_date"),
+            fixed_start=data.get("fixed_start"),
+            fixed_end=data.get("fixed_end"),
+            quotes=dict(data.get("quotes") or {}),
         )
 
 
@@ -228,6 +248,9 @@ def validate_plan(
     references: dict[str, DocumentRecord],
     existing: dict[str, str],
     anchor_depth: int,
+    *,
+    date_text: str = "",
+    today: date | None = None,
 ) -> tuple[list[StoredTask], list[tuple[str, str]], list[ProposalIssue]]:
     """Server-side checks of the model's plan. Structural errors (ids, hierarchy, DAG) reject the WHOLE proposal
     (422, nothing stored, M6-16); content problems become review issues and are neutralised (M6-33): an unknown source
@@ -302,6 +325,8 @@ def validate_plan(
             sources=sources,
             duplicate_of=duplicate,
         )
+        if today is not None:
+            _named_dates(tasks[raw.local_id], raw, date_text, today, issues)
     # hierarchy
     for task in tasks.values():
         if task.parent is None:
@@ -345,6 +370,61 @@ def validate_plan(
             cycle=cycle,
         )
     return list(tasks.values()), deps, issues
+
+
+def quoted_date(quote: str | None, role: DateRole, date_text: str, today: date) -> tuple[date | None, bool]:
+    """A date the model QUOTED from the person's text: (value, verified). The quote must be a fragment of the text and
+    name exactly one date of that role (or one date at all); the value is always the server's own parse."""
+    if not quote:
+        return None, True
+    if not quote_in_text(quote, date_text):
+        return None, False
+    found = find_dates(quote, today)
+    of_role = [f for f in found if f.role == role]
+    pick = of_role[0] if len(of_role) == 1 else (found[0] if len(found) == 1 else None)
+    return (pick.value, True) if pick is not None else (None, False)
+
+
+def _named_dates(
+    task: StoredTask, raw: Any, date_text: str, today: date, issues: list[ProposalIssue]
+) -> None:
+    """Design 2026-11-27 §5.6: a due date, a pinned period, a pinned start (+ estimate), an end alone = a due date, a
+    milestone on its single date. Unverifiable quotes are dropped with an issue; past and weekend dates are kept and
+    flagged."""
+    values: dict[str, date | None] = {}
+    for role, quote in (("due", raw.due_quote), ("start", raw.start_quote), ("end", raw.end_quote)):
+        value, verified = quoted_date(quote, role, date_text, today)  # type: ignore[arg-type]
+        if not verified:
+            issues.append(_issue("date_unverified", task.local_id))
+        values[role] = value
+        if value is not None and quote:
+            task.quotes[role] = quote
+    due, start, end = values["due"], values["start"], values["end"]
+    fixed: tuple[date, date] | None = None
+    if task.milestone and (start or end or due):
+        point = start or end or due
+        assert point is not None
+        fixed = (point, point)
+    elif start and end:
+        if start <= end:
+            fixed = (start, end)
+        else:
+            issues.append(_issue("date_conflict", task.local_id))
+    elif start:
+        last = last_workday(start, add_workdays(start, task.estimate)) if task.estimate else None
+        if last is not None:
+            fixed = (start, last)
+        else:
+            issues.append(_issue("start_needs_estimate", task.local_id))
+    elif end and due is None:
+        due = end
+    task.due_date = due.isoformat() if due else None
+    if fixed is not None:
+        task.fixed_start, task.fixed_end = fixed[0].isoformat(), fixed[1].isoformat()
+        if not (is_workday(fixed[0]) and is_workday(fixed[1])):
+            issues.append(_issue("date_weekend", task.local_id))
+    if any(d is not None and is_past(d, today) for d in (due, *(fixed or ()))):
+        issues.append(_issue("date_past", task.local_id))
 
 
 # --- materialising a stored plan (edits + server-side dates, pure) -----------------------------------------------
@@ -428,10 +508,17 @@ def materialize(
             end_exclusive=dates.get(t.local_id, (None, None))[1],
             last_day=_last_day(dates.get(t.local_id), t.milestone),
             included=included[t.local_id],
+            due_date=_iso(by_id[t.local_id].due_date),
+            fixed_start=_iso(by_id[t.local_id].fixed_start),
+            fixed_end=_iso(by_id[t.local_id].fixed_end),
         )
         for t in stored
     ]
     return Materialized(tasks=tasks, dependencies=deps, issues=issues, start=start)
+
+
+def _iso(value: str | None) -> date | None:
+    return date.fromisoformat(value) if value else None
 
 
 def _last_day(interval: tuple[date | None, date | None] | None, milestone: bool) -> date | None:
@@ -620,6 +707,7 @@ class WorkAiService:
                         "priority": t.priority,
                         "milestone": t.milestone,
                         "parent_local_id": t.parent,
+                        **{f"{role}_quote": quote for role, quote in t.quotes.items()},
                         "sources": [
                             {"document_id": src["document_id"], "quote": src["quote"]}
                             for src in t.sources
@@ -721,9 +809,20 @@ class WorkAiService:
             logger.info("work ai plan failed project=%s code=%s", ctx.project_key, exc.code)
             raise ApiError(ai_error_status(exc.code), exc.code, exc.message) from exc
         existing = {title.casefold(): key for key, title in ctx.existing}
+        date_text = f"{request_text}\n{refinement or ''}"
         stored, deps, issues = validate_plan(
-            reply, {d.id.lower(): d for d in docs}, existing, ctx.anchor[2] if ctx.anchor else 0
+            reply,
+            {d.id.lower(): d for d in docs},
+            existing,
+            ctx.anchor[2] if ctx.anchor else 0,
+            date_text=date_text,
+            today=ctx.today,
         )
+        suggested, verified = quoted_date(reply.plan_start_quote, "start", date_text, ctx.today)
+        if not verified:
+            issues.append(_issue("date_unverified"))
+        if suggested is not None and start_date is None:
+            start_date = suggested  # the person named the start of the plan and chose none in the form
         now = self._now()
         seed = f"{now.isoformat()}{principal.request_id}{request_text}{refinement or ''}{revised_from or ''}"
         proposal_id = f"WAP-{hashlib.sha256(seed.encode()).hexdigest()[:16]}"
@@ -747,7 +846,11 @@ class WorkAiService:
                 ensure_ascii=False,
             ),
             "plan_json": json.dumps(
-                {"tasks": [t.as_json() for t in stored], "dependencies": [list(d) for d in deps]},
+                {
+                    "tasks": [t.as_json() for t in stored],
+                    "dependencies": [list(d) for d in deps],
+                    "suggested_start": suggested.isoformat() if suggested else None,
+                },
                 ensure_ascii=False,
             ),
             "issues_json": json.dumps([i.model_dump() for i in issues], ensure_ascii=False),
@@ -937,6 +1040,7 @@ class WorkAiService:
             and not any(i.code in BLOCKING_ISSUES for i in built.issues),
             applied_task_keys=list((result.get("task_keys") or {}).values()),
             revised_from=row["revised_from"],
+            suggested_start=_iso(json.loads(row["plan_json"]).get("suggested_start")),
         )
 
     def get(self, principal: WorkPrincipal, proposal_id: str) -> WorkProposalOut:
