@@ -202,7 +202,9 @@ export function ItemInspector({ batchId, itemId, templates, locked, onChanged, o
                   {suggestion ? (
                     <span className="onb-origin">
                       {ORIGIN_LABEL[suggestion.origin] ?? suggestion.origin}
-                      {suggestion.evidence[0]?.snippet ? ` · «${suggestion.evidence[0].snippet}»` : ""}
+                      {suggestion.evidence[0]?.snippet && suggestion.evidence[0].snippet !== ORIGIN_LABEL[suggestion.origin]
+                        ? ` · «${suggestion.evidence[0].snippet}»`
+                        : ""}
                     </span>
                   ) : (
                     <span className="onb-origin onb-origin--missing">не определено</span>

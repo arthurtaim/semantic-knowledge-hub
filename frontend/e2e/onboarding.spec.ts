@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { crc32 } from "node:zlib";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
@@ -98,6 +100,19 @@ test.describe("M8 «Массовый импорт» (scripted stack)", () => {
     await panel.getByRole("button", { name: "Сохранить решения" }).click();
     await expect(panel.getByRole("status")).toContainText("Решения сохранены");
 
+    // model suggestions for the hostile file (scripted model, OB-11): offered for acceptance, nothing applied or created
+    const hostileBox = page.getByRole("checkbox", { name: "Выбрать «hostile.md»" });
+    await hostileBox.check();
+    await page.getByRole("button", { name: "Подсказки ИИ для выбранных" }).click();
+    await expect(page.getByText(/Подсказки ИИ готовы/)).toBeVisible({ timeout: 30_000 });
+    await hostileBox.uncheck();
+    await page.getByRole("button", { name: "hostile.md" }).click();
+    const hostile = page.getByRole("region", { name: "Файл hostile.md" });
+    await expect(hostile.getByRole("button", { name: "Принять" }).first()).toBeVisible();
+    await expect(hostile.getByText(/Подсказки модели: \d+/)).toBeVisible();
+    await expect(hostile.getByText("по правилам · «тип шаблона»")).toBeVisible(); // the model's type is offered, not applied
+    expect((await drafts(page.request)).length).toBe(before);
+
     // an explicit selection, a side-effect-free check, then ONE confirm
     await page.locator("tr", { hasText: "valid.md" }).getByRole("checkbox").check();
     await page.locator("tr", { hasText: "profile.md" }).first().getByRole("checkbox").check();
@@ -120,6 +135,24 @@ test.describe("M8 «Массовый импорт» (scripted stack)", () => {
     await page.reload();
     await expect(page.locator("tr", { hasText: "valid.md" }).getByText("Черновик создан")).toBeVisible();
     await expect(page.locator("tr", { hasText: "hostile.md" }).getByRole("checkbox")).not.toBeChecked();
+  });
+
+  test("a folder upload keeps the relative paths (OB-02)", async ({ page }) => {
+    const root = test.info().outputPath("kb-folder");
+    mkdirSync(join(root, "sub"), { recursive: true });
+    writeFileSync(join(root, "a.md"), `# Папка А ${unique}\nтекст\n`);
+    writeFileSync(join(root, "sub", "b.md"), `# Папка Б ${unique}\nтекст\n`);
+    await page.goto("/documents/onboarding");
+    await page.setInputFiles("#onb-folder", root);
+    await expect(page).toHaveURL(/batch=[0-9a-f]{32}/, { timeout: 30_000 });
+    const id = new URL(page.url()).searchParams.get("batch");
+    const batch = (await (await page.request.get(`/api/onboarding/batches/${id}`, { headers: HEADERS })).json()) as {
+      source_kind: string;
+      items: { path: string; parse_status: string }[];
+    };
+    expect(batch.source_kind).toBe("folder");
+    expect(batch.items.map((i) => i.path).sort()).toEqual(["kb-folder/a.md", "kb-folder/sub/b.md"]);
+    expect(batch.items.every((i) => i.parse_status === "parsed")).toBe(true);
   });
 
   test("a corrupt archive is refused with a clear message and leaves no batch", async ({ page }) => {

@@ -73,6 +73,7 @@ const DETAIL: OnboardingItemDetail = {
   diagnostics: [{ severity: "warning", code: "extracted_text", message: "Проверьте текст.", field: null }],
   fields: [
     { field: "title", value: "Synthetic dataset profile", origin: "parser", confidence: null, evidence: [{ file: "profile.md", line: null, snippet: "заголовок первого уровня", document_id: null }], needs_review: true, note: "" },
+    { field: "tags", value: ["demo"], origin: "frontmatter", confidence: null, evidence: [{ file: "profile.md", line: null, snippet: "из YAML файла", document_id: null }], needs_review: false, note: "" },
     { field: "owner", value: "data-team", origin: "model", confidence: 0.6, evidence: [{ file: "profile.md", line: null, snippet: "Владелец: data-team", document_id: null }], needs_review: true, note: "" },
   ],
   candidate_links: [
@@ -164,6 +165,7 @@ describe("Массовый импорт", () => {
     const panel = await screen.findByRole("region", { name: "Файл profile.md" });
     expect(within(panel).getByText(/из текста · «заголовок первого уровня»/)).toBeInTheDocument();
     expect(within(panel).getByText(/Проверьте текст/)).toBeInTheDocument();
+    expect(within(panel).getByText("из YAML файла")).toBeInTheDocument(); // the origin is not repeated as its own quote
     expect(within(panel).getByText("Синтетический текст")).toBeInTheDocument();
     expect(within(panel).getByRole("checkbox", { name: /SEM-STD-001/ })).not.toBeChecked();
     expect((within(panel).getByLabelText("Владелец") as HTMLInputElement).value).toBe("");  // not applied by itself
