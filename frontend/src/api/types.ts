@@ -2611,6 +2611,11 @@ export interface ProposedTask {
   end_exclusive: string | null;
   last_day: string | null;
   included: boolean;
+  /** Design 2026-11-27: a due date the person named in the request (never moves the Gantt). */
+  due_date?: string | null;
+  /** Dates the person named: the task is pinned to them (fixed_end = its last working day). */
+  fixed_start?: string | null;
+  fixed_end?: string | null;
 }
 
 export interface WorkProposal {
@@ -2642,6 +2647,8 @@ export interface WorkProposal {
   applied_task_keys: string[];
   /** M7: the proposal this one refines (that one is unchanged). */
   revised_from?: string | null;
+  /** The plan start the person named in the request (prefills «Плановое начало»). */
+  suggested_start?: string | null;
 }
 
 export interface ProposalTaskEdit {
@@ -2652,6 +2659,10 @@ export interface ProposalTaskEdit {
   priority?: TaskPriority;
   estimate_workdays?: number;
   assignee_id?: string | null;
+  /** Design 2026-11-27: the due date (null clears it). */
+  due_date?: string | null;
+  /** Drop the dates named in the request: the task is scheduled like any other. */
+  unpin_dates?: boolean;
 }
 
 export interface WorkProposalEdits {
