@@ -33,6 +33,7 @@ from app.adapters.ai.base import (
     GapAssessmentRequest,
     ProviderAnswer,
     QueryRewriteRequest,
+    TaskDraftRequest,
     TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
@@ -389,6 +390,7 @@ class OpenAICompatibleAIProvider:
     # M6 «AI план»: the model-agnostic JSON protocol of work_protocol.py (a proposal; the backend validates everything).
     supports_work_planning = True
     supports_work_changes = True  # M7: change-set proposals for existing tasks
+    supports_task_drafts = True  # «Создать задачу»: a task draft from the person's phrase
     # Adaptive RAG: the evidence-gap check through plain chat completion (gap_protocol.py; no JSON mode, no tools).
     supports_gap_assessment = True
     # Adaptive RAG: phrasings of the question for the team search (rewrite_protocol.py), the same plain call.
@@ -605,6 +607,18 @@ class OpenAICompatibleAIProvider:
                     "content": compose(self._instructions.for_task("authoring"), system_prompt(request)),
                 },
                 {"role": "user", "content": build_work_plan_message(request, self._max_context_chars)},
+            ]
+        )
+
+    async def draft_task(self, request: TaskDraftRequest) -> str:
+        """«Создать задачу»: suggestions for ONE task card, the raw reply; app/work/drafts.py parses and verifies it
+        (task_draft_protocol.py)."""
+        from app.adapters.ai.task_draft_protocol import build_task_draft_message, system_prompt
+
+        return await self._post_chat(
+            [
+                {"role": "system", "content": compose(self._instructions.for_task("authoring"), system_prompt())},
+                {"role": "user", "content": build_task_draft_message(request)},
             ]
         )
 
