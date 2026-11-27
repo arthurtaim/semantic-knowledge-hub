@@ -332,7 +332,7 @@ def test_mock_corpus_is_separate_from_the_curated_base() -> None:
     assert "200118" not in seen  # restricted to another user
 
 
-# --- LOCAL_SUFFICIENCY v2 (reports/retrieval-quality/) ---------------------------------------------------------
+# --- LOCAL_SUFFICIENCY v2 (reports/README.md) ---------------------------------------------------------
 LIMIT_QUESTION = "Какой лимит размера пакета выгрузки CATIA?"
 
 

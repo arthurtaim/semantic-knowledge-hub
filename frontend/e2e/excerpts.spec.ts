@@ -44,7 +44,7 @@ test("R2-01 a table excerpt: rows under «Источники», « — » in the
   await meaningful.goto(ask("Как часто запускается поток из ARIS в каталог и что будет при сбое?"));
   const line = meaningful.locator(".answer").last().locator(".answer__unsupported");
   // Retrieval v2: the frequency part IS answered («каждые 6 часов»); only the failure part has no evidence. (v1 named
-  // «часто» because the function word «будет» diluted the coverage — reports/retrieval-quality/04_TEST_RESULTS.md.)
+  // «часто» because the function word «будет» diluted the coverage — reports/README.md)
   await expect(line).toContainText("Не найдено в документах: «сбое»");
   await expect(line).not.toContainText("будет");
 });

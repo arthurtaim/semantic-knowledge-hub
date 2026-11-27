@@ -1,6 +1,6 @@
 """Minimal Confluence **Data Center** REST client (`/rest/api`, not the Cloud v2 API).
 
-Endpoints (Confluence Server/Data Center REST API, see docs/REFERENCES.md): space, content by id,
+Endpoints (Confluence Server/Data Center REST API, see docs/README.md): space, content by id,
 content by space+title, content properties, create page (with `metadata.properties`), update page
 (version + 1). Only GETs are retried; a POST/PUT that timed out may have been applied and is never
 repeated here — the publication service inspects the page first. Tokens and bodies are never logged.

@@ -37,7 +37,7 @@ v1 (until 2026-11-26) counted coverage per single passage (`no_single_local_pass
 a description of the right flow without the asked value («какой лимит пакета?») was judged sufficient, while two
 sections of the one answering document were not. A word that occurs in NO team document (df = 0) only counts towards
 `low_term_coverage`: without semantic matching it cannot be told whether it is the subject the team never documented
-or a paraphrase of a documented word («пауза» for «задержка») — `reports/retrieval-quality/05_REMAINING_RISKS.md`.
+or a paraphrase of a documented word («пауза» for «задержка») — `reports/README.md`.
 The reason is in the answer's `external` block; `local_only` («Команда») never consults Confluence.
 
 ## Pipeline (`app/services/external.py`)

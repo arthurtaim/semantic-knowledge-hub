@@ -1,6 +1,0 @@
-machine: macOS-26.5.2-arm64-arm-64bit · python 3.12.15 · tasks=200 repeat=20
-list 200 tasks                       p50=     2.5 ms   p95=     2.6 ms
-gantt snapshot (200 tasks)           p50=     3.5 ms   p95=     3.6 ms
-schedule preview (chain shift)       p50=     2.6 ms   p95=     2.8 ms
-preview + apply (chain shift)        p50=     6.6 ms   p95=     6.8 ms
-edit one task (PATCH)                p50=     1.5 ms   p95=     1.6 ms

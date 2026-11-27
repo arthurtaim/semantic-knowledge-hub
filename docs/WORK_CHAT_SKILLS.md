@@ -159,7 +159,7 @@ POST /api/assistant/ask(/stream) {skill_id, question, context_document_ids[], wo
 `backend/tests/test_work_chat_skills.py` (реестр, права, проекты, анализ, WAP, уточнение, поток, история),
 `test_work_changes.py` (WCP: атомарность, устаревание, параллельное применение, сбой посреди записи, идемпотентность,
 миграция v3→v4), `test_work_change_protocol.py` (строгий разбор), `frontend/src/__tests__/workChat.test.tsx`,
-`frontend/e2e/workChat.spec.ts` (сценарии STORY-01/02/03/04/07, телефон 375 px). Отчёт: `reports/chat-work-skills/`.
+`frontend/e2e/workChat.spec.ts` (сценарии STORY-01/02/03/04/07, телефон 375 px). Отчёт: `reports/README.md`.
 
 ## 11. Чего нет (сознательно)
 
@@ -200,4 +200,4 @@ ADR-049.
   плана срок можно поправить, закрепление — снять.
 - **Проверки:** `backend/tests/test_ru_dates.py`, `test_task_intent.py`, `test_task_draft_protocol.py`,
   `test_task_drafts.py`, `test_chat_create_task.py`, `test_work_plan_dates.py`; `frontend/src/__tests__/createTask.test.tsx`,
-  `workPlanDates.test.tsx`; `frontend/e2e/createTask.spec.ts`. Отчёт: `reports/chat-create-task/`.
+  `workPlanDates.test.tsx`; `frontend/e2e/createTask.spec.ts`. Отчёт: `reports/README.md`.

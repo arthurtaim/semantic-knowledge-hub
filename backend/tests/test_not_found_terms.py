@@ -76,7 +76,7 @@ def test_identifiers_and_acronyms_are_never_function_words() -> None:
 
 
 def test_function_words_are_not_search_terms() -> None:
-    """Retrieval v2 (evaluated before/after, reports/retrieval-quality/): function words no longer become search
+    """Retrieval v2 (evaluated before/after, reports/README.md): function words no longer become search
     terms — they crowded the bounded term list and diluted every coverage ratio. The report filter is unchanged."""
     assert STOPWORDS < FUNCTION_WORDS
     tokens = [t.token for t in analyze_query("Кто владелец потока, через который идут данные?")]

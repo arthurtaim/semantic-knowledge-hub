@@ -30,7 +30,7 @@ rolls back and the previous generation keeps serving.
 
 1. **Query analysis** (`app/domain/text.py`): normalisation, RU stemming; identifiers
    (`DEMO_VALIDATION_LIMIT`, `owner_role_code`) are kept as exact phrases; stems of ≤3 characters match
-   whole tokens only. Retrieval v2 (2026-11-26, `reports/retrieval-quality/`): **function words** (stop words,
+   whole tokens only. Retrieval v2 (2026-11-26, `reports/README.md`): **function words** (stop words,
    prepositions, conjunctions, particles, pronouns such as «какими», «откуда», «который», auxiliary verbs —
    `FUNCTION_WORDS`) never become search terms, an acronym in capitals is kept; up to **16** content words per
    question (`MAX_QUERY_TERMS`; 12 cut the second part of long compound questions); a word with a **fleeting
@@ -70,7 +70,7 @@ boilerplate — a body line repeated in ≥ 5 documents and > 5 % of the reader'
 cached per snapshot; e.g. the banner every synthetic document opens with) — is never a candidate. Passages are
 verbatim sections with their document id, anchor and revision; the order is deterministic. A follow-up question is
 pre-retrieved by its own words and together with the previous question, merged round-robin
-(`AssistantService._prepare`). Measured before/after and per-case flips: `reports/retrieval-quality/03_BEFORE_AFTER.md`;
+(`AssistantService._prepare`). Measured before/after and per-case flips: `reports/README.md`;
 a developer trace of one case through every stage: `python -m app.evaluation.retrieval_trace` (refuses holdout cases).
 
 Eval case fields for the assistant (`app/evaluation/knowledge_eval.py`): `history` (earlier questions of a
