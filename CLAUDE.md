@@ -42,6 +42,8 @@ M6: native Work Management — projects/tasks/FS scheduling/identity gate, task�
 `work_inspect` (read-only M5.7 tool) and typed «AI план» proposals in `backend/app/work/` (`docs/WORK_MANAGEMENT.md`).
 M7: chat work skills (analyze / plan WAP / change-set WCP of existing tasks, schema v4) over the same work services;
 the chat never applies — a person confirms in the project review (`docs/WORK_CHAT_SKILLS.md`).
+«Создать задачу» (2026-11-27): a task-draft card from a chat phrase (auto-started by a rule); the card's button creates the
+task via the regular task API; dates enter tasks only from verified quotes of the request (`WORK_CHAT_SKILLS.md` §12).
 Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
 AI service; no embeddings, vector DB, LLM re-ranker or orchestration framework by default. Claude Code is the
 current developer agent, GigaCode the future one — never couple app logic to either, never assume a
