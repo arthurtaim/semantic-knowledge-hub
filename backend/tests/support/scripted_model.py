@@ -1089,6 +1089,9 @@ def task_draft_script(prompt: str) -> str:
         ),
         None,
     )
+    if not assignee and (named := re.search(r"на\s+([А-ЯЁ][а-яё]{2,})", request)):
+        assignee = named.group(1)  # a person outside the list: a hint the server cannot resolve
+        title = title.replace(named.group(0), " ")
     if assignee:
         for part in assignee.replace("(демо)", "").split():
             title = re.sub(rf"(?:на\s+)?{re.escape(part[:5])}[а-яё]*", " ", title, flags=re.I)
