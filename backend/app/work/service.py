@@ -389,6 +389,8 @@ class PlannedTask:
     start: date | None
     end: date | None
     sources: tuple[tuple[str, str], ...]  # (canonical document id, revision) — verified sources to link
+    due: date | None = None  # a due date the person named (never moves the Gantt)
+    locked: bool = False  # pinned to the dates the person named
 
 
 @dataclass(frozen=True)
@@ -2463,6 +2465,7 @@ class WorkService:
             for planned in plan.tasks:  # the same bound as a direct create (audit CODE-005), before any write
                 check_work_date(planned.start, "start_date")
                 check_work_date(planned.end, "end_exclusive")
+                check_work_date(planned.due, "due_date")
             ctx = self._ctx(conn, project)
             depth = ctx.depth(plan.anchor_id) if plan.anchor_id else 0
             if plan.anchor_id is not None:
@@ -2511,9 +2514,9 @@ class WorkService:
                     "estimate_workdays": task.estimate,
                     "start_date": _iso(task.start),
                     "end_exclusive": _iso(task.end),
-                    "due_date": None,
+                    "due_date": _iso(task.due),
                     "is_milestone": int(task.milestone),
-                    "date_locked": 0,
+                    "date_locked": 1 if task.locked else 0,
                     "sort_order": number * 1024,
                     "is_demo": 0,
                     "created_by": principal.user.user_id,

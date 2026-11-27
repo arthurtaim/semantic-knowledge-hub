@@ -897,6 +897,8 @@ class ProposalTaskEdit(_Request):
     priority: TaskPriority | None = None
     estimate_workdays: Annotated[int, Field(ge=0, le=PLAN_ESTIMATE_MAX)] | None = None
     assignee_id: AssigneeId | None = None  # chosen from the directory; validated like any assignment
+    due_date: date | None = None  # design 2026-11-27: the due date (present-and-null clears it)
+    unpin_dates: bool = False  # drop the dates named in the request: the task is scheduled like any other
 
     @field_validator("title")
     @classmethod

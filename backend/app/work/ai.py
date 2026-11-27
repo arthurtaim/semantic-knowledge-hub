@@ -52,6 +52,7 @@ from app.work import store
 from app.work.calendar import (
     MAX_YEAR,
     add_workdays,
+    count_workdays,
     fs_earliest_start,
     in_supported_range,
     is_workday,
@@ -464,6 +465,11 @@ def materialize(
                 )
             if "assignee_id" in edit.model_fields_set:
                 assignees[edit.local_id] = edit.assignee_id
+            if "due_date" in edit.model_fields_set:
+                check_work_date(edit.due_date, "due_date")
+                task.due_date = edit.due_date.isoformat() if edit.due_date else None
+            if edit.unpin_dates:
+                task.fixed_start = task.fixed_end = None
         dropped = {(d.predecessor, d.successor) for d in edits.excluded_dependencies}
         unknown = dropped - set(deps)
         if unknown:
@@ -530,9 +536,12 @@ def _last_day(interval: tuple[date | None, date | None] | None, milestone: bool)
 def plan_dates(
     tasks: list[StoredTask], deps: list[tuple[str, str]], start: date | None
 ) -> tuple[dict[str, tuple[date | None, date | None]], list[ProposalIssue]]:
-    """Forward FS pass on the Mon–Fri calendar from `start` (Kahn, proposal order for ties). No start → nothing is
-    scheduled; no estimate → unscheduled; an unscheduled predecessor leaves its successors unscheduled too."""
-    if start is None:
+    """Forward FS pass on the Mon–Fri calendar from `start` (Kahn, proposal order for ties). No estimate → unscheduled;
+    an unscheduled predecessor leaves its successors unscheduled too. A task PINNED to the dates the person named keeps
+    them with or without a start, and its successors follow it (design 2026-11-27 §5.6); a pinned task that starts
+    before its predecessor ends is kept and flagged `date_conflict`. No start and nothing pinned → nothing scheduled."""
+    pinned = {t.local_id for t in tasks if t.fixed_start and t.fixed_end}
+    if start is None and not pinned:
         return {}, []
     order = {t.local_id: i for i, t in enumerate(tasks)}
     preds: dict[str, list[str]] = defaultdict(list)
@@ -546,32 +555,43 @@ def plan_dates(
     by_id = {t.local_id: t for t in tasks}
     dates: dict[str, tuple[date | None, date | None]] = {}
     issues: list[ProposalIssue] = []
-    base = next_workday(start)
+    base = next_workday(start) if start is not None else None
     while ready:
         local = ready.pop(0)
         task = by_id[local]
-        earliest = base
+        after_preds: date | None = None
         blocked = False
         for p in preds[local]:
             _start, p_end = dates.get(p, (None, None))
             if p_end is None:
                 blocked = True
                 break
-            earliest = max(earliest, fs_earliest_start(p_end))
-        if blocked:
+            candidate = fs_earliest_start(p_end)
+            after_preds = candidate if after_preds is None else max(after_preds, candidate)
+        earliest = max((d for d in (base, after_preds) if d is not None), default=None)
+        if local in pinned:
+            first = date.fromisoformat(str(task.fixed_start))
+            last = date.fromisoformat(str(task.fixed_end))
+            dates[local] = (first, first) if task.milestone else (first, _exclusive_end(first, last))
+            if not blocked and after_preds is not None and first < after_preds:
+                issues.append(_issue("date_conflict", local))
+        elif blocked:
             dates[local] = (None, None)
-            issues.append(_issue("predecessor_unscheduled", local, severity="info"))
+            if start is not None:
+                issues.append(_issue("predecessor_unscheduled", local, severity="info"))
+        elif earliest is None:
+            dates[local] = (None, None)  # no plan start and no scheduled predecessor
         elif task.milestone:
             dates[local] = (earliest, earliest)
         elif task.estimate is None:
             dates[local] = (None, None)
         else:
             dates[local] = (earliest, add_workdays(earliest, task.estimate))
-        first, end = dates[local]
+        first_day, end = dates[local]
         if (
-            first is not None
+            first_day is not None
             and end is not None
-            and not (in_supported_range(first) and in_supported_range(end))
+            and not (in_supported_range(first_day) and in_supported_range(end))
         ):
             dates[local] = (None, None)  # its successors become «predecessor_unscheduled»
             issues.append(_issue("dates_out_of_range", local))
@@ -581,6 +601,11 @@ def plan_dates(
                 ready.append(nxt)
                 ready.sort(key=order.__getitem__)
     return dates, issues
+
+
+def _exclusive_end(first: date, last: date) -> date:
+    """The M6 exclusive end of a task occupying the working days from `first` to `last` (both included)."""
+    return add_workdays(first, max(1, count_workdays(first, last + timedelta(days=1))))
 
 
 # --- the service --------------------------------------------------------------------------------------------------
@@ -1108,6 +1133,8 @@ class WorkAiService:
                         assignee_id=t.assignee_id,
                         start=t.start_date,
                         end=t.end_exclusive,
+                        due=t.due_date,
+                        locked=t.fixed_start is not None,
                         sources=tuple(
                             (s.document_id, s.revision)
                             for s in t.sources
