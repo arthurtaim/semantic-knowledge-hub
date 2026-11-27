@@ -701,6 +701,8 @@ export interface AskResponse {
   proposal?: AskProposalRef | null;
   /** M7: the work proposal a chat work skill stored (task plan or change-set); separate from `proposal`. */
   work_proposal?: WorkProposalRef | null;
+  /** «Создать задачу» (design 2026-11-27): a task draft for a card; nothing was written. */
+  task_draft?: TaskDraft | null;
   /** M5.7: authoritative structured observations the answer relies on (`[F1]` markers in `answer`). */
   system_facts?: SystemFact[];
   /** M5.7: the tool steps executed for this answer (what was checked and how it ended). */
@@ -2051,6 +2053,43 @@ export interface WorkCapabilities {
   };
   /** Feature flags the later stages switch on (document links, AI proposals); CPM stays off (no fake path). */
   features: { critical_path: boolean; comments: boolean; document_links: boolean; ai_proposals: boolean; lag: boolean };
+}
+
+/** «Создать задачу» (design 2026-11-27 §5.3): where a draft value came from. */
+export type TaskDraftField = "project" | "title" | "description" | "priority" | "assignee" | "due_date" | "start_date" | "end_date";
+export type TaskDraftOrigin = "request" | "assistant" | "composer" | "default";
+
+export interface TaskDraftIssue {
+  field: TaskDraftField | null;
+  code: string;
+  message: string;
+}
+
+export interface TaskDraftDocument {
+  document_id: string;
+  title: string;
+  revision: string;
+}
+
+/** ONE task's fields from the person's phrase; the person creates the task from the card (regular task API). */
+export interface TaskDraft {
+  project_key: string | null;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  assignee_id: string | null;
+  /** A name from the phrase that matched no selectable assignee. */
+  assignee_hint: string | null;
+  due_date: string | null;
+  start_date: string | null;
+  /** The last day, inclusive (the card sends `end_exclusive`). */
+  end_date: string | null;
+  origin: Partial<Record<TaskDraftField, TaskDraftOrigin>>;
+  missing: ("project" | "title")[];
+  issues: TaskDraftIssue[];
+  documents: TaskDraftDocument[];
+  auto_started: boolean;
+  client_request_id: string;
 }
 
 export interface AssigneeRef {

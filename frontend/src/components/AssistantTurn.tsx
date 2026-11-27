@@ -21,6 +21,7 @@ import { AnswerMarkdown } from "./AnswerMarkdown";
 import { AnswerActions, AnswerText, DemoAnswerText, factRefsOf, InsufficientEvidence, splitServerNotes, SupportBadge } from "./AnswerParts";
 import { AnswerSources } from "./AnswerSources";
 import { AskProposal } from "./AskProposal";
+import { AskTaskDraft } from "./AskTaskDraft";
 import { AskWorkProposal } from "./AskWorkProposal";
 import { ProvenanceLine } from "./Provenance";
 import { ErrorState, Notice } from "./Feedback";
@@ -233,6 +234,8 @@ interface AnswerViewProps {
   compact?: boolean;
   /** M7: refine a work proposal in the chat (a NEW proposal); absent — the card only links to the review. */
   onRefineWork?: (reference: WorkProposalRef) => void;
+  /** «Ответить как обычно» on an auto-started task draft: the same question as a plain answer. */
+  onAnswerNormally?: (request: AskRequest) => void;
 }
 
 /**
@@ -242,7 +245,16 @@ interface AnswerViewProps {
  * corporate and attachments apart. Generated text is labelled «ИИ», the extractive mode «без языковой модели» (a
  * mode, not the content: synthetic sources are said by the provenance line).
  */
-export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, compact = false, onRefineWork }: AnswerViewProps) {
+export function AnswerView({
+  answer,
+  request,
+  turnNo,
+  onRefine,
+  onAskCorporate,
+  compact = false,
+  onRefineWork,
+  onAnswerNormally,
+}: AnswerViewProps) {
   const session = useSession();
   const question = request.question;
   const insufficient = answer.confidence === "insufficient_evidence";
@@ -353,6 +365,15 @@ export function AnswerView({ answer, request, turnNo, onRefine, onAskCorporate, 
         />
       ) : null}
       {answer.work_proposal ? <AskWorkProposal reference={answer.work_proposal} compact={compact} onRefine={onRefineWork} /> : null}
+      {answer.task_draft ? (
+        <AskTaskDraft
+          draft={answer.task_draft}
+          compact={compact}
+          onAnswerNormally={
+            onAnswerNormally ? () => onAnswerNormally({ ...request, skill_id: "answer", work_context: undefined }) : undefined
+          }
+        />
+      ) : null}
 
       {insufficient || compact ? null : (
         <AnswerActions
@@ -455,9 +476,21 @@ interface TurnViewProps {
   compact?: boolean;
   /** M7: «Уточнить» on a work proposal card. */
   onRefineWork?: (reference: WorkProposalRef) => void;
+  /** «Ответить как обычно»: run the same question as a plain answer (a new turn). */
+  onAnswerNormally?: (request: AskRequest, display: TurnDisplay) => void;
 }
 
-export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorporate, compact = false, onRefineWork }: TurnViewProps) {
+export function TurnView({
+  turn,
+  turnNo,
+  onRetry,
+  onResend,
+  onRefine,
+  onAskCorporate,
+  compact = false,
+  onRefineWork,
+  onAnswerNormally,
+}: TurnViewProps) {
   const running = isRunning(turn);
   const { display } = turn;
   // A quick action names itself in the bubble; its skill chip would only repeat it.
@@ -560,6 +593,7 @@ export function TurnView({ turn, turnNo, onRetry, onResend, onRefine, onAskCorpo
           turnNo={turnNo}
           onRefine={onRefine}
           onAskCorporate={(request) => onAskCorporate(request, turn.display)}
+          onAnswerNormally={onAnswerNormally ? (request) => onAnswerNormally(request, { ...turn.display, skill: null }) : undefined}
           compact={compact}
           onRefineWork={onRefineWork}
         />
