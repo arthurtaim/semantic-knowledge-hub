@@ -55,6 +55,21 @@ const SERVER_FIELD: Record<string, Key> = {
 
 type LinkState = { document_id: string; title: string; state: "pending" | "linked" | "failed" };
 
+/** The card field a 422 of the task API belongs to: `details.field` when the server names it, otherwise by code and
+ * reason exactly as the task API sends them (`invalid_assignee`; `invalid_date_range` with `no_workdays`,
+ * `end_before_start`, `partial`, …). */
+function fieldOf(err: ApiError, values: Values): Key | null {
+  const named = SERVER_FIELD[String(err.details.field ?? "")];
+  if (named) return named;
+  if (err.code === "invalid_assignee") return "assignee";
+  if (err.code === "invalid_date_range") {
+    const reason = String(err.details.reason ?? "");
+    if (reason === "partial") return values.start ? "end" : "start";
+    if (["no_workdays", "end_before_start", "duration_mismatch", "duration_zero"].includes(reason)) return "end";
+  }
+  return null;
+}
+
 interface AskTaskDraftProps {
   draft: TaskDraft;
   compact?: boolean;
@@ -134,9 +149,11 @@ export function AskTaskDraft({ draft, compact = false, onAnswerNormally }: AskTa
     const results = await Promise.all(
       targets.map(async (target, index): Promise<LinkState> => {
         try {
+          // the key follows the document's place in the DRAFT (stable across retries of a subset)
+          const place = draft.documents.findIndex((d) => d.document_id === target.document_id);
           await api.workLinkDocument(task.id, {
             document_id: target.document_id,
-            client_request_id: `${draft.client_request_id}-link-${index}`,
+            client_request_id: `${draft.client_request_id}-link-${place >= 0 ? place : index}`,
           });
           return { ...target, state: "linked" };
         } catch {
@@ -173,7 +190,7 @@ export function AskTaskDraft({ draft, compact = false, onAnswerNormally }: AskTa
       if (targets.length > 0) await linkDocuments(task, targets);
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
-        const key = SERVER_FIELD[String(err.details.field ?? "")];
+        const key = fieldOf(err, values);
         if (key) setFieldErrors({ [key]: err.message });
         else setProblem(err.message);
       } else if (err instanceof ApiError && err.status === 403) {

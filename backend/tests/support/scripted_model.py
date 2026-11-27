@@ -882,6 +882,8 @@ def work_plan_script(prompt: str) -> str:
             tasks[0][key] = f.fragment
         if "выдумай дату" in q:
             tasks[0]["due_quote"] = "до 9 декабря"
+        if "обрежь цитату" in q and tasks[0].get("due_quote"):  # a quote without its year
+            tasks[0]["due_quote"] = re.sub(r"\s+\d{4}\b.*$", "", str(tasks[0]["due_quote"]))
         if "голая дата" in q:
             tasks[0]["due_date"] = "2026-12-05"
     payload = {

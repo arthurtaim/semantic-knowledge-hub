@@ -51,6 +51,7 @@ from app.services.assistant import prepare_passage_text, quote_is_verbatim
 from app.work import store
 from app.work.calendar import (
     MAX_YEAR,
+    MIN_YEAR,
     add_workdays,
     count_workdays,
     fs_earliest_start,
@@ -107,6 +108,7 @@ ISSUE_TEXT: dict[str, str] = {
     "date_weekend": "Начало или окончание приходится на выходной — проверьте.",
     "date_conflict": "Закреплённые даты противоречат друг другу или зависимости — проверьте.",
     "start_needs_estimate": "Начало названо, но нет оценки — задача без дат: укажите оценку.",
+    "date_out_of_range": f"Дата вне допустимого диапазона ({MIN_YEAR}–{MAX_YEAR}) — отброшена.",
 }
 BLOCKING_ISSUES = frozenset({"dates_out_of_range"})
 
@@ -383,7 +385,12 @@ def quoted_date(quote: str | None, role: DateRole, date_text: str, today: date) 
     found = find_dates(quote, today)
     of_role = [f for f in found if f.role == role]
     pick = of_role[0] if len(of_role) == 1 else (found[0] if len(found) == 1 else None)
-    return (pick.value, True) if pick is not None else (None, False)
+    if pick is None:
+        return None, False
+    # the quote must not change what the WHOLE text says («до 5 декабря» cut out of «до 5 декабря 2027»)
+    if pick.value not in {f.value for f in find_dates(date_text, today)}:
+        return None, False
+    return pick.value, True
 
 
 def _named_dates(
@@ -397,6 +404,9 @@ def _named_dates(
         value, verified = quoted_date(quote, role, date_text, today)  # type: ignore[arg-type]
         if not verified:
             issues.append(_issue("date_unverified", task.local_id))
+        if value is not None and not in_supported_range(value):
+            issues.append(_issue("date_out_of_range", task.local_id))
+            value = None
         values[role] = value
         if value is not None and quote:
             task.quotes[role] = quote
@@ -421,9 +431,13 @@ def _named_dates(
         due = end
     task.due_date = due.isoformat() if due else None
     if fixed is not None:
-        task.fixed_start, task.fixed_end = fixed[0].isoformat(), fixed[1].isoformat()
         if not (is_workday(fixed[0]) and is_workday(fixed[1])):
             issues.append(_issue("date_weekend", task.local_id))
+        first = next_workday(fixed[0])  # a task starts on a working day (the M6 canonical form)
+        # a period of weekend days only has nothing to pin
+        fixed = None if first > fixed[1] and not task.milestone else (first, max(first, fixed[1]))
+    if fixed is not None:
+        task.fixed_start, task.fixed_end = fixed[0].isoformat(), fixed[1].isoformat()
     if any(d is not None and is_past(d, today) for d in (due, *(fixed or ()))):
         issues.append(_issue("date_past", task.local_id))
 

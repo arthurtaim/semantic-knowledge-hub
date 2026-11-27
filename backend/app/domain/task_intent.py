@@ -56,15 +56,18 @@ _LATIN_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]*$")
 _PREFIX_RE = re.compile(r"^\s*(?:задача\s*:|новая\s+задача(?![а-яё]))\s*[:—–-]?\s*", re.IGNORECASE)
 
 
-def _trigger_end(text: str) -> int | None:
-    """The offset right after the trigger phrase, or None when the text does not ask to create one task."""
+_TASK_KEY_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{1,9}-\d+$")
+
+
+def trigger_span(text: str) -> tuple[int, int] | None:
+    """(start, end) of the trigger phrase, or None when the text does not ask to create ONE new task."""
     stripped = text.strip()
     if not stripped or stripped.endswith("?"):
         return None
     if len([line for line in stripped.splitlines() if line.strip()]) > 1:
         return None
     if m := _PREFIX_RE.match(text):
-        return m.end()
+        return len(text) - len(text.lstrip()), m.end()
     tokens = list(_TOKEN_RE.finditer(text))
     words = [t[0].lower() for t in tokens]
     if not words or words[0] in _QUESTION_WORDS or words[:2] == ["можно", "ли"]:
@@ -74,18 +77,20 @@ def _trigger_end(text: str) -> int | None:
             continue
         for j in range(i + 1, min(len(words), i + 2 + _MAX_FILLERS)):
             if words[j] == "задачу":
-                return tokens[j].end()
+                if j + 1 < len(tokens) and _TASK_KEY_RE.match(tokens[j + 1][0]):
+                    return None  # «поставь задачу RAG-12 на ревью» is about an EXISTING task
+                return tokens[i].start(), tokens[j].end()
             if words[j] not in _FILLERS and not _LATIN_RE.match(tokens[j][0]):
                 break
     return None
 
 
 def looks_like_create_task(question: str) -> bool:
-    return _trigger_end(question) is not None
+    return trigger_span(question) is not None
 
 
 def strip_trigger(question: str) -> str:
     """The text after the trigger phrase («Создай задачу: X» → «X»); the whole text when there is no trigger."""
-    end = _trigger_end(question)
-    rest = question if end is None else question[end:]
+    span = trigger_span(question)
+    rest = question if span is None else question[span[1] :]
     return rest.strip().lstrip(":—–-,").strip()

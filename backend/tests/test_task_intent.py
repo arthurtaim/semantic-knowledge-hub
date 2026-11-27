@@ -59,3 +59,8 @@ def test_strip_trigger() -> None:
     assert strip_trigger("Заведите, пожалуйста, задачу на проверку DQ") == "на проверку DQ"
     assert strip_trigger("Новая задача — ревью схемы") == "ревью схемы"
     assert strip_trigger("обновить витрину") == "обновить витрину"
+
+
+def test_a_task_key_after_the_verb_is_not_a_new_task() -> None:
+    assert not looks_like_create_task("Поставь задачу RAG-12 на ревью")
+    assert looks_like_create_task("поставь задачу Анне")

@@ -92,12 +92,16 @@ _RELATIVE = (
     r"(?:сегодня|послезавтра|завтра|"
     rf"через\s+(?:{_COUNT}\s+)?(?:рабоч(?:ий|их|его)\s+)?(?:дн(?:я|ей)|день|недел[юиь]|недель))"
 )
-_DATE = (
+# Unambiguous forms are dates anywhere; a weekday word («среда» is also «environment») and a short «dd.mm» («3.12» is
+# also a version) are dates only right after a marker (design review 2026-11-27).
+_SHORT_NUM = r"(?<![\d.])(?:0[1-9]|[12]\d|3[01])\.(?:0[1-9]|1[0-2])(?![\d.]*\d)"  # «05.12»: two digits each
+_UNAMBIGUOUS = (
     r"(?:\d{4}-\d{2}-\d{2}"
-    r"|(?<![\d.])\d{1,2}\.(?:0[1-9]|1[0-2])(?:\.(?:\d{4}|\d{2}))?(?![\d.]*\d)"  # two-digit month: «2.1» is a version
+    r"|(?<![\d.])\d{1,2}\.(?:0[1-9]|1[0-2])\.(?:\d{4}|\d{2})(?![\d.]*\d)"
     rf"|\d{{1,2}}\s+{_MONTH}(?:\s+\d{{4}})?(?:\s*г(?:ода|\.)?)?"
-    rf"|{_RELATIVE}|{_WEEKDAY})"
+    rf"|{_RELATIVE})"
 )
+_DATE = rf"(?:{_UNAMBIGUOUS}|{_SHORT_NUM}|{_WEEKDAY})"  # after a marker
 _B = r"(?<![А-Яа-яЁёA-Za-z0-9])"  # a word start (Cyrillic-aware)
 _E = r"(?![А-Яа-яЁёA-Za-z0-9])"
 
@@ -111,7 +115,14 @@ _START_RE = re.compile(
     rf"{_B}(?:начиная\s+с|начать(?:\s+с)?|стартовать(?:\s+с)?|старт(?:\s+с)?|с)\s+(?P<d>{_DATE}){_E}",
     re.IGNORECASE,
 )
-_PLAIN_RE = re.compile(rf"{_B}(?P<d>{_DATE}){_E}", re.IGNORECASE)
+# «в пятницу», «на среду», «по четверг»: a weekday in the accusative only («в среде» is a place, not a day)
+_ON_WEEKDAY_RE = re.compile(
+    r"(?<![А-Яа-яЁёA-Za-z0-9])(?:в|во|на|по)\s+"
+    r"(?P<d>понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)(?![А-Яа-яЁёA-Za-z0-9])",
+    re.IGNORECASE,
+)
+_PLAIN_RE = re.compile(rf"{_B}(?P<d>{_UNAMBIGUOUS}){_E}", re.IGNORECASE)
+_VERSION_BEFORE_RE = re.compile(r"(?:верси[яиюей]|v)\s*$", re.IGNORECASE)
 _LEADING_MARKER_RE = re.compile(
     r"^(?:не\s+позднее|начиная\s+с|начать(?:\s+с)?|стартовать(?:\s+с)?|срок(?:ом)?|дедлайн|до|по|к|с|в|на)"
     r"(?:\s*[:—-]\s*|\s+)",
@@ -232,10 +243,17 @@ def find_dates(text: str, today: date) -> list[FoundDate]:
         fragment = m[0]
         found.append((m.start(), FoundDate("start", start, fragment)))
         found.append((m.start() + 1, FoundDate("end", end, fragment)))
-    for pattern, role in ((_DUE_RE, "due"), (_START_RE, "start"), (_PLAIN_RE, "due")):
+    for pattern, role in (
+        (_DUE_RE, "due"),
+        (_START_RE, "start"),
+        (_ON_WEEKDAY_RE, "due"),
+        (_PLAIN_RE, "due"),
+    ):
         for m in pattern.finditer(text):
             if not free(*m.span()):
                 continue
+            if re.fullmatch(_SHORT_NUM, m["d"]) and _VERSION_BEFORE_RE.search(text[: m.start()]):
+                continue  # «до версии 10.12» is a version
             value = parse_date_phrase(m["d"], today)
             if value is None:
                 continue

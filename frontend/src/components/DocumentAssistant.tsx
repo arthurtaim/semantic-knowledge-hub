@@ -480,6 +480,7 @@ export function DocumentAssistantPanel({
                     composer.focus();
                   }}
                   onAskCorporate={(request, display) => void conversation.run(request, display)}
+                  onAnswerNormally={(request, display) => void conversation.run(request, display)}
                 />
               ))}
             </div>

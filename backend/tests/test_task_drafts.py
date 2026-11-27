@@ -188,3 +188,21 @@ async def test_documents_only_visible_ones_with_revision(app: TestClient) -> Non
     assert doc is not None
     draft = await _draft(app, "создай задачу по документу", documents=(doc,), model=False)
     assert [(d.document_id, d.revision) for d in draft.documents] == [(doc.id, doc.revision)]
+
+
+# --- review fixes -------------------------------------------------------------------------------------------------
+@pytest.mark.anyio
+async def test_fallback_title_keeps_the_subject(app: TestClient) -> None:
+    urgent = await _draft(app, "создай задачу проверить срочные платежи", model=False)
+    assert (urgent.title, urgent.priority) == ("Проверить срочные платежи", "critical")
+    keyed = await _draft(app, "создай задачу обновить rag индекс", model=False)
+    assert (keyed.title, keyed.project_key) == ("Обновить rag индекс", "RAG")
+    before = await _draft(app, "Для витрины продаж создай задачу проверить качество", model=False)
+    assert "витрины продаж" in before.title and "проверить качество" in before.title.casefold()
+
+
+@pytest.mark.anyio
+async def test_engineering_words_are_not_dates(app: TestClient) -> None:
+    draft = await _draft(app, "создай задачу развернуть витрину в тестовой среде", model=False)
+    assert draft.due_date is None
+    assert draft.title == "Развернуть витрину в тестовой среде"

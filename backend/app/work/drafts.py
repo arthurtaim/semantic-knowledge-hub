@@ -34,7 +34,7 @@ from app.domain.models import (
     TaskDraftOrigin,
 )
 from app.domain.ru_dates import DateRole, find_dates, is_past, quote_in_text
-from app.domain.task_intent import strip_trigger
+from app.domain.task_intent import trigger_span
 from app.errors import ApiError
 from app.work.ai import quoted_date
 from app.work.calendar import in_supported_range, is_workday
@@ -190,7 +190,7 @@ class TaskDraftService:
             origin["assignee"] = "request"
 
         # priority: the phrase's words win; otherwise the model's
-        priority, priority_fragment = self._priority(question)
+        priority, _priority_words = self._priority(question)
         if priority is not None:
             origin["priority"] = "request"
         elif reply and reply.priority in {"low", "medium", "high", "critical"}:
@@ -215,13 +215,11 @@ class TaskDraftService:
             if role in ("start", "end") and not is_workday(value):
                 issues.append(_issue("date_weekend", field))
 
-        # title and description
-        fallback = strip_trigger(question)
-        for fragment in [f.fragment for f in found] + [
-            project_fragment,
-            assignee_fragment,
-            priority_fragment,
-        ]:
+        # title and description: the phrase without the trigger, the dates, «в проекте KEY» and the assignee — the
+        # words before the trigger stay (they are often the subject); priority words stay too («срочные платежи»)
+        span = trigger_span(question)
+        fallback = f"{question[: span[0]]} {question[span[1] :]}" if span else question
+        for fragment in [f.fragment for f in found] + [project_fragment, assignee_fragment]:
             if fragment:
                 fallback = fallback.replace(fragment, " ")
         title = (reply.title if reply and reply.title else "") or _cut_title(fallback)
@@ -302,14 +300,15 @@ class TaskDraftService:
         for key, title in projects:
             m = re.search(rf"(?:в\s+проект[еа]?\s+)?(?<![\w-]){re.escape(key)}(?![\w-])", text, re.IGNORECASE)
             if m:
-                hits[key] = m[0]
+                # only «в проекте KEY» leaves the title; a bare key may be part of the subject («обновить rag индекс»)
+                hits[key] = m[0] if "проект" in m[0].casefold() else ""
                 continue
             if len(title) >= 4 and _norm(title) in _norm(text):
                 start = _norm(text).index(_norm(title))
                 hits[key] = text[start : start + len(title)]
         if len(hits) == 1:
             key, fragment = next(iter(hits.items()))
-            return key, "request", fragment
+            return key, "request", fragment or None
         return None, None, None
 
     @staticmethod

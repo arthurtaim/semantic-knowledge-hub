@@ -233,3 +233,25 @@ def test_apply_creates_due_and_locked_dates(ai_client: Factory) -> None:  # noqa
     assert task["start_date"] == "2026-12-01"
     assert last_workday(date(2026, 12, 1), date.fromisoformat(task["end_exclusive"])) == date(2026, 12, 4)
     assert task["due_date"] == "2026-12-05"
+
+
+# --- review fixes -------------------------------------------------------------------------------------------------
+def test_a_partial_quote_cannot_change_the_year(ai_client: Factory) -> None:  # noqa: F811
+    proposal = _proposal(
+        _client(ai_client), "Подготовь задачи по архитектуре до 5 декабря 2027, обрежь цитату"
+    )
+    assert _first(proposal)["due_date"] is None
+    assert "date_unverified" in _codes(proposal, _first(proposal)["local_id"])
+
+
+def test_a_pinned_weekend_start_moves_to_a_workday(ai_client: Factory) -> None:  # noqa: F811
+    proposal = _proposal(_client(ai_client), "Подготовь задачи: загрузка с 5 по 9 декабря")
+    task = _first(proposal)
+    assert (task["fixed_start"], task["fixed_end"]) == ("2026-12-07", "2026-12-09")
+    assert "date_weekend" in _codes(proposal, task["local_id"])
+
+
+def test_an_out_of_range_due_date_is_dropped(ai_client: Factory) -> None:  # noqa: F811
+    proposal = _proposal(_client(ai_client), "Подготовь задачи по архитектуре к 01.01.2150")
+    assert _first(proposal)["due_date"] is None
+    assert "date_out_of_range" in _codes(proposal, _first(proposal)["local_id"])

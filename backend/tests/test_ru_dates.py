@@ -73,3 +73,26 @@ def test_quote_in_text_is_whitespace_and_case_insensitive() -> None:
 def test_version_numbers_are_not_dates() -> None:
     assert find_dates("обнови документ до версии 2.1", TODAY) == []
     assert find_dates("релиз 1.10.3 и схема v2", TODAY) == []
+
+
+# --- review fixes: ordinary words, versions and short dates are not dates without a marker ------------------------
+@pytest.mark.parametrize(
+    "text",
+    [
+        "развернуть витрину в тестовой среде",
+        "настроить переменные среды",
+        "обновить Python до 3.12",
+        "перейти на версию 1.10",
+        "отчёт 05.12",
+        "собрать данные в пятнице",
+    ],
+)
+def test_ordinary_words_and_versions_are_not_dates(text: str) -> None:
+    assert find_dates(text, TODAY) == []
+
+
+def test_weekdays_and_short_dates_need_a_marker() -> None:
+    assert [(f.role, f.value) for f in find_dates("сделать к среде", TODAY)] == [("due", date(2026, 12, 2))]
+    assert [(f.role, f.value) for f in find_dates("сдать в пятницу", TODAY)] == [("due", date(2026, 12, 4))]
+    assert [(f.role, f.value) for f in find_dates("отчёт до 05.12", TODAY)] == [("due", date(2026, 12, 5))]
+    assert [(f.role, f.value) for f in find_dates("отчёт 05.12.2026", TODAY)] == [("due", date(2026, 12, 5))]

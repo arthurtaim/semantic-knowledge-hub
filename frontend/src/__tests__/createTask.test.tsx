@@ -132,22 +132,73 @@ describe("task-draft card", () => {
     expect(await screen.findByText(/Связь с документом «Стандарт» добавлена/)).toBeInTheDocument();
   });
 
-  it("shows server errors at the field or as a clear message", async () => {
+  it("shows the server's real 422 errors at their field, and 403 as a clear message", async () => {
+    // shapes exactly as the task API sends them (no `details.field` for these)
     routes([
       {
         path: "/api/projects/RAG/tasks",
         method: "POST",
         status: 422,
-        body: { code: "invalid_date_range", message: "Начало в выходной.", request_id: "t", details: { field: "start_date" } },
+        body: { code: "invalid_date_range", message: "В интервале нет ни одного рабочего дня (Пн–Пт).", request_id: "t", details: { reason: "no_workdays" } },
       },
     ]);
-    show(draft({ start_date: "2026-12-05", end_date: "2026-12-07" }));
+    show(draft({ start_date: "2026-12-05", end_date: "2026-12-06" }));
     await userEvent.click(await screen.findByRole("button", { name: "Создать задачу" }));
-    expect(await screen.findByText("Начало в выходной.")).toBeInTheDocument();
+    const weekend = await screen.findByText("В интервале нет ни одного рабочего дня (Пн–Пт).");
+    expect(weekend.closest(".ask-task-draft__field")).toHaveTextContent("Окончание");
+    vi.restoreAllMocks();
+    routes([
+      {
+        path: "/api/projects/RAG/tasks",
+        method: "POST",
+        status: 422,
+        body: { code: "invalid_assignee", message: "Исполнитель не найден среди доступных.", request_id: "t", details: { assignee_id: "ghost" } },
+      },
+    ]);
+    await userEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
+    const assignee = await screen.findByText("Исполнитель не найден среди доступных.");
+    expect(assignee.closest(".ask-task-draft__field")).toHaveTextContent("Исполнитель");
     vi.restoreAllMocks();
     routes([{ path: "/api/projects/RAG/tasks", method: "POST", status: 403, body: { code: "forbidden", message: "x", request_id: "t" } }]);
     await userEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
     expect(await screen.findByText("Нет прав на создание задач в этом проекте.")).toBeInTheDocument();
+  });
+
+  it("a retried link of the second document does not reuse the first document's key", async () => {
+    const keys = new Map<string, string>();
+    let failB = true;
+    routes([
+      { path: "/api/projects/RAG/tasks", method: "POST", status: 201, body: CREATED },
+      {
+        path: "/api/tasks/t-7/links",
+        method: "POST",
+        respond: (init) => {
+          const body = JSON.parse(String(init?.body)) as { document_id: string; client_request_id: string };
+          const seen = keys.get(body.client_request_id);
+          if (seen && seen !== body.document_id) {
+            return new Response(JSON.stringify({ code: "conflict", message: "key reused", request_id: "t" }), { status: 409 });
+          }
+          if (body.document_id === "DOC-B" && failB) {
+            failB = false;
+            return new Response(JSON.stringify({ code: "unavailable", message: "x", request_id: "t" }), { status: 503 });
+          }
+          keys.set(body.client_request_id, body.document_id);
+          return new Response(JSON.stringify({ id: `l-${body.document_id}` }), { status: 201, headers: { "Content-Type": "application/json" } });
+        },
+      },
+    ]);
+    show(
+      draft({
+        documents: [
+          { document_id: "DOC-A", title: "Документ А", revision: "r1" },
+          { document_id: "DOC-B", title: "Документ Б", revision: "r1" },
+        ],
+      }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Создать задачу" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Добавить связь" }));
+    expect(await screen.findByText(/Связь с документом «Документ Б» добавлена/)).toBeInTheDocument();
+    expect(screen.getByText(/Связь с документом «Документ А» добавлена/)).toBeInTheDocument();
   });
 
   it("offers «Ответить как обычно» only when the skill started by itself", async () => {
