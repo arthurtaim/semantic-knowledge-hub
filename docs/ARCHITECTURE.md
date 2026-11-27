@@ -167,3 +167,11 @@ Local: `docker compose` or documented `uvicorn` and Vite commands, localhost bin
   stored, never evidence); cancellation closes the stream down to the worker, which kills the process group.
 - Fail closed: explicit `CLAUDE_CLI_PERSONAL_USE_ACK`, `local_demo` only, never in `offline`, worker URL loopback
   or a single-label Docker service name. Details and the GigaCode path: `docs/CLAUDE_CODE_CLI_INTEGRATION.md`.
+
+## 12. M8 bulk knowledge onboarding
+
+«Массовый импорт» (`backend/app/services/onboarding/`, `docs/KNOWLEDGE_ONBOARDING.md`, ADR-050) is a staging layer in
+front of the existing draft lifecycle, not a second one: ingest (bounded, in memory) → per-file `import_preview` →
+batch-level duplicates / conflicts / UPDATE detection → person's decisions → one explicit idempotent confirm that calls
+`ProposalService` (`origin=import`). Canonical knowledge, FTS5 and the graph change only after review + merge + sync.
+Optional model suggestions go through the vendor-neutral `onboarding_protocol.py` and are verified by the server.

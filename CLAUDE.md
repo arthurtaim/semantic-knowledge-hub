@@ -15,7 +15,7 @@ UI language is Russian by default; code, API and identifiers are English. Read `
 
 ## 2. Repository layout
 - `backend/app` — FastAPI: `api/` routes, `services/` (knowledge, retrieval, assistant, graph, external,
-  discovery, authoring, proposals, publications), `adapters/` (knowledge local/GitLab, search SQLite FTS5,
+  discovery, authoring, proposals, publications, onboarding), `adapters/` (knowledge local/GitLab, search SQLite FTS5,
   AI mock/internal API/Claude CLI, Confluence MCP/mock/REST), `domain/` (schema, models, templates,
   template registry, dictionary, instructions), `document_templates/` (+ `history/`), `search_dictionary/`,
   `assistant_instructions/` (runtime policy of the in-app assistant), `evaluation/`, `tools/`.
@@ -45,6 +45,8 @@ M7: chat work skills (analyze / plan WAP / change-set WCP of existing tasks, sch
 the chat never applies — a person confirms in the project review (`docs/WORK_CHAT_SKILLS.md`).
 «Создать задачу» (2026-11-27): a task-draft card from a chat phrase (auto-started by a rule); the card's button creates the
 task via the regular task API; dates enter tasks only from verified quotes of the request (`WORK_CHAT_SKILLS.md` §12).
+M8 «Массовый импорт»: ZIP/folder/files → actor-bound staging batch → review → ONE explicit idempotent confirm into
+ordinary `origin=import` drafts; model suggestions quote-verified and person-applied (`docs/KNOWLEDGE_ONBOARDING.md`).
 Stack: FastAPI + Python 3.12, React + TypeScript + Vite, SQLite FTS5, Docker Compose. No default outbound
 AI service; no embeddings, vector DB, LLM re-ranker or orchestration framework by default. Claude Code is the
 current developer agent, GigaCode the future one — never couple app logic to either, never assume a
