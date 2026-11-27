@@ -130,6 +130,7 @@ export function defaultCrumbs(pathname: string, askAvailable: boolean): Crumb[] 
   if (pathname === "/documents") return [{ label: "Документы" }];
   if (pathname === "/documents/new") return [DOCS, { label: "Новый документ" }];
   if (pathname === "/documents/import") return [DOCS, { label: "Новый документ", to: "/documents/new" }, { label: "Импорт Markdown" }];
+  if (pathname === "/documents/onboarding") return [DOCS, { label: "Массовый импорт" }];
   if (pathname.startsWith("/documents/")) return [DOCS, { label: "Документ" }];
   if (pathname === "/graph") return [{ label: "Карта знаний" }];
   if (pathname === "/templates") return [{ label: "Шаблоны" }];
@@ -157,7 +158,12 @@ export function documentTitle(pathname: string, askAvailable: boolean): string {
 
 /** A document page (not «Новый документ» or the import): it centres its own text column and docks a right panel. */
 function isDocumentPage(pathname: string): boolean {
-  return /^\/documents\/[^/]+$/.test(pathname) && pathname !== "/documents/new" && pathname !== "/documents/import";
+  return (
+    /^\/documents\/[^/]+$/.test(pathname) &&
+    pathname !== "/documents/new" &&
+    pathname !== "/documents/import" &&
+    pathname !== "/documents/onboarding"
+  );
 }
 
 /**

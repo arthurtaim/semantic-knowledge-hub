@@ -15564,3 +15564,265 @@ input.plan-task__title {
   font-size: var(--fs-small);
   color: var(--accent-text);
 }
+
+/* M8 «Массовый импорт» (docs/KNOWLEDGE_ONBOARDING.md) */
+.onboarding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  max-width: 1400px;
+}
+
+.onb-title {
+  margin: 0;
+}
+
+.onb-section-title {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.onb-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.onb-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  color: var(--text-secondary);
+  font-size: var(--fs-small);
+}
+
+.onb-step__no {
+  font-weight: 600;
+}
+
+.onb-step--current {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.onb-step--done {
+  background: var(--accent-wash);
+}
+
+.onb-drop {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius-block);
+}
+
+.onb-drop--over {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.onb-drop__actions,
+.onb-bulk,
+.onb-plan__actions,
+.onb-inspector__actions,
+.onb-cancel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.onb-drop__limits,
+.onb-file__path,
+.onb-origin,
+.onb-evidence,
+.onb-links__note {
+  font-size: var(--fs-small);
+}
+
+.onb-file__path {
+  display: block;
+}
+
+.onb-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.onb-layout--open {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+}
+
+.onb-table-wrap {
+  overflow-x: auto;
+}
+
+.onb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+
+.onb-table th,
+.onb-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.onb-row--open {
+  background: var(--accent-wash);
+}
+
+.onb-status {
+  font-weight: 600;
+}
+
+.onb-status--invalid,
+.onb-status--draft_failed,
+.onb-fail {
+  color: var(--danger);
+}
+
+.onb-status--draft_created {
+  color: var(--accent-text);
+}
+
+.onb-needs,
+.onb-dup {
+  display: block;
+  color: var(--text-secondary);
+}
+
+.onb-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-block);
+  min-width: 0;
+}
+
+.onb-inspector__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.onb-inspector__title {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.onb-inspector__sub {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-small);
+}
+
+.onb-inspector__path {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.onb-diagnostics,
+.onb-links,
+.onb-model ul {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--fs-small);
+}
+
+.onb-diag--error {
+  color: var(--danger);
+}
+
+.onb-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.onb-field:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.onb-field input,
+.onb-field select,
+.onb-field textarea {
+  width: 100%;
+  min-width: 0;
+}
+
+.onb-origin {
+  color: var(--text-secondary);
+}
+
+.onb-origin--missing {
+  color: var(--accent-text);
+}
+
+.onb-model li,
+.onb-links li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 4px;
+}
+
+.onb-evidence {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.onb-preview {
+  max-height: 420px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-2);
+}
+
+.onb-preview--plain {
+  white-space: pre-wrap;
+  font-family: inherit;
+}
+
+.onb-summary p,
+.onb-plan p,
+.onb-result p {
+  margin: 0 0 var(--space-1);
+}
+
+.onb-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 900px) {
+  .onboarding {
+    padding: var(--space-3);
+  }
+
+  .onb-layout--open,
+  .onb-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

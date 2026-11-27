@@ -2752,3 +2752,216 @@ export interface WorkChangeApplyResult {
   updated_tasks: WorkTask[];
   replayed: boolean;
 }
+
+// --- M8 knowledge onboarding (docs/KNOWLEDGE_ONBOARDING.md) -----------------------------------------------------
+export type OnboardingBatchState = "uploaded" | "parsed" | "review" | "confirmed" | "partially_confirmed" | "rejected" | "expired";
+export type OnboardingParseStatus = "pending" | "parsed" | "invalid" | "unsupported" | "duplicate" | "conflict";
+export type OnboardingItemStatus = OnboardingParseStatus | "reviewed" | "skipped" | "draft_created" | "draft_failed";
+export type OnboardingOperation = "create" | "update" | "skip";
+export type OnboardingFieldOrigin = "frontmatter" | "parser" | "heuristic" | "model" | "user" | "system";
+export type OnboardingAiState = "none" | "done" | "failed" | "unavailable" | "skipped";
+
+export interface OnboardingEvidence {
+  file: string;
+  line: number | null;
+  snippet: string;
+  document_id: string | null;
+}
+
+export interface OnboardingField {
+  field: string;
+  value: unknown;
+  origin: OnboardingFieldOrigin;
+  confidence: number | null;
+  evidence: OnboardingEvidence[];
+  needs_review: boolean;
+  note: string;
+}
+
+export interface OnboardingLink {
+  link_id: string;
+  link_kind: "wikilink" | "related_id" | "mention" | "similar";
+  target_document_id: string;
+  target_title: string | null;
+  target_item_id: string | null;
+  resolve_state: "resolved" | "in_batch" | "missing" | "ambiguous";
+  evidence: OnboardingEvidence;
+  selected_by_user: boolean;
+  status: "candidate";
+  bound_to_entity_graph: false;
+}
+
+export interface OnboardingDiagnostic {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  field: string | null;
+}
+
+export interface OnboardingDuplicate {
+  kind: "exact_hash" | "same_id" | "same_path" | "existing_content" | "similar_title" | "open_draft";
+  item_id: string | null;
+  document_id: string | null;
+  message: string;
+}
+
+export interface OnboardingOutcome {
+  state: "draft_created" | "draft_failed";
+  proposal_id: string | null;
+  document_id: string | null;
+  operation: "create" | "update" | null;
+  code: string | null;
+  message: string | null;
+}
+
+export interface OnboardingExistingDoc {
+  document_id: string;
+  title: string;
+  revision: string;
+  status: string;
+}
+
+export interface OnboardingItem {
+  item_id: string;
+  path: string;
+  display_name: string;
+  size: number;
+  media_type: string;
+  parser: string;
+  parse_status: OnboardingParseStatus;
+  status: OnboardingItemStatus;
+  proposed_operation: OnboardingOperation;
+  document_id: string | null;
+  title: string;
+  template_id: string | null;
+  doc_type: string | null;
+  existing_doc: OnboardingExistingDoc | null;
+  duplicates: OnboardingDuplicate[];
+  errors: number;
+  warnings: number;
+  links: number;
+  needs_review: boolean;
+  excluded: boolean;
+  ai_state: OnboardingAiState;
+  revision: number;
+  outcome: OnboardingOutcome | null;
+}
+
+export interface OnboardingDecisions {
+  excluded: boolean;
+  operation: OnboardingOperation | null;
+  fields: Record<string, unknown>;
+  selected_links: string[] | null;
+  reviewed: boolean;
+}
+
+export interface OnboardingItemDetail extends OnboardingItem {
+  checksum_sha256: string;
+  diagnostics: OnboardingDiagnostic[];
+  fields: OnboardingField[];
+  candidate_links: OnboardingLink[];
+  decisions: OnboardingDecisions;
+  body_preview: string;
+  preview_html: string;
+  diff: DiffLine[] | null;
+  diff_stats: { additions: number; deletions: number } | null;
+  ai_note: string | null;
+}
+
+export interface OnboardingCounts {
+  total: number;
+  parsed: number;
+  invalid: number;
+  unsupported: number;
+  duplicate: number;
+  conflict: number;
+  updates: number;
+  excluded: number;
+  draft_created: number;
+  draft_failed: number;
+}
+
+export interface OnboardingBatch {
+  batch_id: string;
+  state: OnboardingBatchState;
+  source_kind: "zip" | "files" | "folder";
+  created_at: string;
+  expires_at: string;
+  file_count: number;
+  bytes_total: number;
+  revision: number;
+  counts: OnboardingCounts;
+  items: OnboardingItem[];
+  ai_available: boolean;
+  index_unchanged: boolean;
+}
+
+export interface OnboardingBatchListItem {
+  batch_id: string;
+  state: OnboardingBatchState;
+  created_at: string;
+  expires_at: string;
+  file_count: number;
+  counts: OnboardingCounts;
+}
+
+export interface OnboardingCapabilities {
+  formats: string[];
+  parsers: Record<string, "available" | "unavailable">;
+  upload_mb: number;
+  expanded_mb: number;
+  max_files: number;
+  file_mb: number;
+  ttl_hours: number;
+  ai_available: boolean;
+  ai_items_per_batch: number;
+}
+
+export interface OnboardingItemPatch {
+  expected_revision: number;
+  excluded?: boolean;
+  operation?: OnboardingOperation;
+  fields?: Record<string, unknown>;
+  selected_links?: string[];
+  reviewed?: boolean;
+}
+
+export interface OnboardingPlanned {
+  item_id: string;
+  path: string;
+  operation: "create" | "update";
+  document_id: string | null;
+  title: string;
+  template_id: string | null;
+  related_ids: string[];
+  errors: OnboardingDiagnostic[];
+}
+
+export interface OnboardingPreview {
+  batch_id: string;
+  revision: number;
+  fingerprint: string;
+  planned: OnboardingPlanned[];
+  blocked: OnboardingPlanned[];
+  skipped: OnboardingItem[];
+  creates: number;
+  updates: number;
+  index_unchanged: boolean;
+}
+
+export interface OnboardingConfirmResult {
+  batch_id: string;
+  state: OnboardingBatchState;
+  outcomes: Record<string, OnboardingOutcome>;
+  created: number;
+  failed: number;
+  replayed: boolean;
+}
+
+export interface OnboardingSuggestResult {
+  batch_id: string;
+  revision: number;
+  states: Record<string, OnboardingAiState>;
+  note: string | null;
+}
+

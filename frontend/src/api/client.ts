@@ -1,4 +1,12 @@
 import type {
+  OnboardingBatch,
+  OnboardingBatchListItem,
+  OnboardingCapabilities,
+  OnboardingConfirmResult,
+  OnboardingItemDetail,
+  OnboardingItemPatch,
+  OnboardingPreview,
+  OnboardingSuggestResult,
   AiDraftRequest,
   AiDraftResponse,
   AiMode,
@@ -719,6 +727,33 @@ export const api = {
   /** Creates a DRAFT (origin `import`); approved only through the usual review and merge. */
   importDocument: (payload: ImportCreateRequest) =>
     request<ProposalDetail>("/documents/import", { method: "POST", body: json(payload) }),
+
+  // --- M8 knowledge onboarding: a staged batch; drafts only on an explicit confirm -------------------------------
+  onboardingCapabilities: () => request<OnboardingCapabilities>("/onboarding/capabilities"),
+  onboardingBatches: () => request<OnboardingBatchListItem[]>("/onboarding/batches"),
+  /** One ZIP or several files; a file name may carry its folder path (`webkitRelativePath`). Analysed at once. */
+  onboardingUpload: (files: { file: Blob; path: string }[], sourceKind: "zip" | "files" | "folder", options: { signal?: AbortSignal } = {}) => {
+    const form = new FormData();
+    form.append("source_kind", sourceKind);
+    for (const entry of files) form.append("files", entry.file, entry.path);
+    return request<OnboardingBatch>("/onboarding/batches", { method: "POST", body: form, signal: options.signal, timeoutMs: 180_000 });
+  },
+  onboardingBatch: (batchId: string) => request<OnboardingBatch>(`/onboarding/batches/${seg(batchId)}`),
+  onboardingItem: (batchId: string, itemId: string) =>
+    request<OnboardingItemDetail>(`/onboarding/batches/${seg(batchId)}/items/${seg(itemId)}`),
+  onboardingPatchItem: (batchId: string, itemId: string, payload: OnboardingItemPatch) =>
+    request<OnboardingItemDetail>(`/onboarding/batches/${seg(batchId)}/items/${seg(itemId)}`, { method: "PATCH", body: json(payload) }),
+  onboardingSuggest: (batchId: string, itemIds: string[]) =>
+    request<OnboardingSuggestResult>(`/onboarding/batches/${seg(batchId)}/suggest`, {
+      method: "POST",
+      body: json({ item_ids: itemIds }),
+      timeoutMs: 300_000,
+    }),
+  onboardingPreview: (batchId: string, itemIds: string[]) =>
+    request<OnboardingPreview>(`/onboarding/batches/${seg(batchId)}/preview`, { method: "POST", body: json({ item_ids: itemIds }) }),
+  onboardingConfirm: (batchId: string, payload: { expected_revision: number; fingerprint: string; item_ids: string[]; idempotency_key: string }) =>
+    request<OnboardingConfirmResult>(`/onboarding/batches/${seg(batchId)}/confirm`, { method: "POST", body: json(payload) }),
+  onboardingCancel: (batchId: string) => request<OnboardingBatch>(`/onboarding/batches/${seg(batchId)}/cancel`, { method: "POST" }),
 
   // --- M5.6.3: AI proposals (evidence + explicit Accept/Reject; nothing is applied without Accept) ---
   /** Long timeout: a Claude Code CLI provider may take minutes; `signal` cancels. */
