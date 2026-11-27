@@ -756,6 +756,10 @@ class ProposalService:
 
     # --- commands ----------------------------------------------------------------------------------
     async def create(self, user: UserContext, payload: DraftCreate) -> ProposalDetail:
+        if payload.client_request_id:
+            existing = self._store.find_client_request(user.user_id, payload.client_request_id)
+            if existing is not None:  # a retried request: the same draft, never a second one
+                return await self._detail(existing, user)
         doc = await self._document(payload.document_id, user)
         if payload.base_revision != doc.revision:
             raise ApiError(
@@ -792,6 +796,7 @@ class ProposalService:
                 "created_at": now,
                 "updated_at": now,
                 "branch_name": self._publisher.branch_for(proposal_id, doc.id),
+                "client_request_id": payload.client_request_id,
             }
         )
         self._store.audit(user.user_id, "created", proposal_id, doc.id, doc.revision, S.draft.value)

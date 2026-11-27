@@ -49,6 +49,9 @@ from app.services.integrations import IntegrationService
 from app.services.knowledge import KnowledgeService
 from app.services.links import LinkService
 from app.services.metadata import MetadataService
+from app.services.onboarding.ingest import IngestLimits
+from app.services.onboarding.service import OnboardingService
+from app.services.onboarding.store import OnboardingStore
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
 from app.services.query_rewrite import QueryRewriter, RewriteSettings
@@ -105,6 +108,7 @@ class Container:
     work_ai: WorkAiService
     work_changes: WorkChangeService
     work_drafts: TaskDraftService
+    onboarding: OnboardingService
     conversations: ConversationService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
@@ -484,6 +488,21 @@ def build_container(settings: Settings) -> Container:
     graph_service = GraphService(knowledge, templates.graph_entries)
     link_service = LinkService(knowledge)
     metadata_service = MetadataService(knowledge, authoring, repository)
+    onboarding = OnboardingService(
+        OnboardingStore(settings.app_state_file),
+        knowledge=knowledge,
+        metadata=metadata_service,
+        proposals=proposal_service,
+        limits=IngestLimits(
+            upload_bytes=settings.onboarding_upload_mb * 1024 * 1024,
+            expanded_bytes=settings.onboarding_expanded_mb * 1024 * 1024,
+            max_files=settings.onboarding_max_files,
+            file_bytes=settings.onboarding_file_mb * 1024 * 1024,
+            max_ratio=settings.onboarding_max_ratio,
+        ),
+        ttl_hours=settings.onboarding_ttl_hours,
+        ai_items=settings.onboarding_ai_items,
+    )
     ai_workflows = AiWorkflowService(
         store=AiProposalStore(settings.app_state_file),
         ai=ai,
@@ -601,6 +620,7 @@ def build_container(settings: Settings) -> Container:
         work_ai=work_ai,
         work_changes=work_changes,
         work_drafts=work_drafts,
+        onboarding=onboarding,
         conversations=conversations,
         discovery=discovery,
         external=external,

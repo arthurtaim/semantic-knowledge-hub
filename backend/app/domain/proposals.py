@@ -95,6 +95,8 @@ class DraftCreate(BaseModel):
     proposed_content: str = Field(min_length=1, max_length=MAX_PROPOSED_CHARS)
     reason: str = Field(min_length=3, max_length=2000)
     origin: ProposalOrigin = "manual"
+    # Idempotency (M8, additive): a repeated request with the same key (same author) returns the draft created.
+    client_request_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,64}$")
 
 
 class NewDocumentMetadata(BaseModel):

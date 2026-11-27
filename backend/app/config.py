@@ -148,6 +148,17 @@ class Settings(BaseSettings):
     # Assistant attachments (UI v2): how long the extracted text of a file attached to a conversation is kept.
     # Limits (10 files per conversation, 20 MB each) are fixed by docs/ui-v2/specs/02_ASSISTANT.md §3.
     attachments_ttl_hours: int = Field(default=24, ge=1, le=24 * 7)
+    # M8 knowledge onboarding (docs/KNOWLEDGE_ONBOARDING.md): bounded batch upload of a ZIP / folder / files, staged
+    # as extracted TEXT in the app-state SQLite until the person confirms drafts or the TTL ends.
+    onboarding_upload_mb: int = Field(
+        default=20, ge=1, le=200
+    )  # the whole request (ZIP or files), compressed
+    onboarding_expanded_mb: int = Field(default=100, ge=1, le=1000)  # all files after unpacking
+    onboarding_max_files: int = Field(default=200, ge=1, le=2000)
+    onboarding_file_mb: int = Field(default=10, ge=1, le=100)  # one file
+    onboarding_max_ratio: int = Field(default=50, ge=2, le=1000)  # compression ratio of one ZIP entry
+    onboarding_ttl_hours: int = Field(default=72, ge=1, le=24 * 30)
+    onboarding_ai_items: int = Field(default=20, ge=0, le=200)  # model suggestions per batch (bounded calls)
     # Assistant chat history (docs/API_CONTRACTS.md v0.7, docs/SECURITY.md «Chat history»): completed turns of a
     # conversation per user AND browser (`X-SKH-Browser`) in the app-state SQLite. A convenience scope, not
     # authentication. Oldest conversations / turns are pruned beyond the limits; nothing older than the retention.
