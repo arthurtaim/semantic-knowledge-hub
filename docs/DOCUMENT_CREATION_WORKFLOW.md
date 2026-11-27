@@ -3,7 +3,7 @@
 Статус: реализовано. Проверено локально (pytest, Vitest, Playwright `frontend/e2e/authoring.spec.ts`) и на
 тестовых дублях GitLab и Confluence (`backend/tests/support/*_mock.py`, профиль `integration_mock`). С реальным
 GitLab **не проверялось** (`docs/M4_M5_INTEGRATION_READINESS.md`). Соответствие сценариев E2E-13…22 тестам —
-`docs/TEST_PLAN.md`.
+`docs/DEVELOPMENT.md` («Тесты и проверки»).
 
 Связанные документы: шаблоны — `docs/DOCUMENT_TEMPLATES.md`; AI-помощник — `docs/AI_AUTHORING_CONTRACT.md`;
 GitLab — `docs/GITLAB_KNOWLEDGE_WORKFLOW.md`; публикация — `docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`;

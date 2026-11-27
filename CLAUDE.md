@@ -23,7 +23,8 @@ UI language is Russian by default; code, API and identifiers are English. Read `
 - `frontend/src` — React + TypeScript + Vite (one stylesheet `styles/app.css`).
 - `fixtures/knowledge` (83 synthetic docs: 9 core SEM-* at the top, DEMO-* in sub-folders),
   `fixtures/eval` (gold cases), `fixtures/knowledge_updates` (mutable sync snapshots),
-  `fixtures/confluence_mock` (synthetic Confluence corpus), `deploy/`, `docs/`, `reports/knowledge-eval/`.
+  `fixtures/confluence_mock` (synthetic Confluence corpus), `deploy/`, `docs/` (index `docs/README.md`; running, tests,
+  configuration — `docs/DEVELOPMENT.md`), `reports/` (stage summary `reports/README.md`; `knowledge-eval/` outputs).
 
 ## 3. Architecture map (read the docs before changing a part)
 Markdown + YAML (`docs/DOCUMENT_SCHEMA.md`, `docs/MOCK_KNOWLEDGE_BASE.md`) → KnowledgeRepository →

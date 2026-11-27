@@ -272,7 +272,7 @@ separate labelled step.
 ## 6. UI v2 — the new interface (phases A–F, 2026-11-24)
 
 Task: the UI v2 handoff (kept in git history); specs `docs/ui-v2/specs/01_VISUAL_SYSTEM.md`, `02_ASSISTANT.md`, `03_SCREENS.md`,
-`04_KNOWLEDGE_GRAPH.md`; mockups `docs/ui-v2/screens/design/`. Branch `feature/ui-v2-workspace`. Routes, existing API
+`04_KNOWLEDGE_GRAPH.md`; mockups `docs/ui-v2/screens/design — in git history, 64e9c32/`. Branch `feature/ui-v2-workspace`. Routes, existing API
 contracts and the AI rules (`02_ASSISTANT.md` §6) are unchanged; the only new endpoints are those of `02_ASSISTANT.md`
 §5 (the review round added only optional parameters and fields, §6.8). New dependencies: `@fontsource/inter` (frontend); `pypdf`, `python-docx`, `openpyxl` (backend, attachments);
 `python-multipart` (backend, the attachment upload parser — allowed by the owner in the review round, §6.8).
@@ -654,7 +654,7 @@ screen, ribbon, chat framework or debug view; mock mode is unchanged (it does no
   status line names the running check («Проверяю каталог…», «Ищу в документах…», «Смотрю граф связей…», «Смотрю
   шаблоны…», «Готовлю предложение…»).
 - Tokens only (no new colour), one primary button per view kept (the cards have none), 1440 / 390 and both themes
-  checked on screenshots (`reports/m57/TEST_RESULTS.md`).
+  checked on screenshots (`reports/README.md`).
 
 ### 6.11 «Публикации» — the list of publication jobs (2026-11-24)
 
@@ -1107,8 +1107,8 @@ the panel heading (the page `/tasks/:key` has it as H1).
 
 ## Планировщик v2: проект, Гант, список (2026-11-25)
 
-The owner's task `docs/ui-v2/planner/TASK.md` with the spec `docs/ui-v2/planner/specs/PLANNER_V2.md`, the mockups
-`docs/ui-v2/planner/screens/design/plan-0*.png` and the reference logic of `design-source/PlanGantt.dc.html`
+The owner's task `docs/ui-v2/planner/TASK.md` (in git history, 64e9c32) with the spec `docs/ui-v2/planner/specs/PLANNER_V2.md`, the mockups
+`docs/ui-v2/planner/screens/design/plan-0*.png` and the reference logic of `design-source/PlanGantt.dc.html, in git history 64e9c32`
 (`renderVals()`: its rules were ported, not its markup). Frontend only: the API, the data model, the server's planner and
 the «предпросмотр → применить» flow are unchanged. Branch `feature/planner-v2`, one commit per slice.
 

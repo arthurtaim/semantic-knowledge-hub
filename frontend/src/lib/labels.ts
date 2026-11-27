@@ -26,7 +26,7 @@ import type {
   UnresolvedReason,
 } from "../api/types";
 
-/** Navigation order of knowledge sections (docs/UX.md: Product, Architecture, Domain, …). */
+/** Navigation order of knowledge sections (docs/PRODUCT.md: Product, Architecture, Domain, …). */
 export const TYPE_ORDER: DocType[] = [
   "overview",
   "architecture",

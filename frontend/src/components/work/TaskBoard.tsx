@@ -15,7 +15,7 @@ import { AssigneeName, PriorityMark, TaskStatusMark } from "./WorkBits";
  * Planner v2 (docs/ui-v2/planner/specs/PLANNER_V2.md §5): the shared page frame, the shared status shapes in the column
  * headings; how to move a card is told in «Вид» (BoardViewMenu) and, for a screen reader, as each card's description.
  *
- * Remediation B2 (audit SYS-010, reports/remediation/03_PERFORMANCE.md): a 1000-card board was ≈ 46 000 DOM nodes, a
+ * Remediation B2 (audit SYS-010, reports/README.md): a 1000-card board was ≈ 46 000 DOM nodes, a
  * 350 ms first render and ≈ 180 ms per move (every card re-rendered). Now each column renders a WINDOW of its cards —
  * the first BOARD_WINDOW, then BOARD_WINDOW more when the column's end comes into view or on «Показать ещё» (focus
  * goes to the first new card); the count in the heading and `aria-setsize` / `aria-posinset` stay the whole column's.

@@ -1,4 +1,4 @@
-"""Adaptive RAG evaluation (docs/ADAPTIVE_RAG.md, reports/adaptive-rag/): the external-search DECISION and what it
+"""Adaptive RAG evaluation (docs/ADAPTIVE_RAG.md, reports/README.md): the external-search DECISION and what it
 brings, per case, on the same synthetic corpus, for different code versions and model doubles. Offline, no LLM.
 
     cd backend

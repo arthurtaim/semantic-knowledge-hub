@@ -1,6 +1,6 @@
 """Minimal GitLab REST v4 client: explicit host, bounded retries, no secrets in errors or logs.
 
-API references (docs/REFERENCES.md): repository tree/files, commits, branches, merge requests.
+API references (docs/README.md): repository tree/files, commits, branches, merge requests.
 """
 
 from __future__ import annotations

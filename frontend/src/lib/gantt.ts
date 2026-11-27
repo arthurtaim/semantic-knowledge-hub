@@ -5,7 +5,7 @@ import { formatDay, fromDay, isoWeekday, toDay } from "./work";
 /*
  * Planner v2 — the Gantt's geometry without any UI (docs/ui-v2/planner/specs/PLANNER_V2.md §3): zoom levels and
  * «Вписать», the adaptive two-row scale, where a bar's label goes, how a Finish-to-Start arrow is routed and which
- * arrows are drawn. The rules are ported from the mockup's `renderVals()` (design-source/PlanGantt.dc.html), not its
+ * arrows are drawn. The rules are ported from the mockup's `renderVals()` (design-source/PlanGantt.dc.html, in git history 64e9c32), not its
  * markup. Everything works on whole day numbers (lib/work.ts `toDay`) and on pixels of the chart's content box.
  *
  * Text widths come from a `TextMeasure` (canvas `measureText` with a cache per font in the app; a fixed width per

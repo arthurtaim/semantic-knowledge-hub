@@ -36,7 +36,7 @@ STOPWORDS = frozenset((_RU_STOPWORDS + " " + _EN_STOPWORDS).split())
 # Function words: prepositions, conjunctions, particles, pronouns and auxiliary verb forms (RU + EN), folded (ё → е).
 # Their absence from the evidence says nothing about the topic, so they are never REPORTED as words of a question
 # that the sources lack («Не найдено в документах», `AskResponse.unmatched_terms`), and since retrieval v2 they never
-# become search terms either (`analyze_query`; measured before/after in reports/retrieval-quality/).
+# become search terms either (`analyze_query`; measured before/after in reports/README.md).
 _RU_FUNCTION_WORDS = (
     # prepositions
     "близ вдоль вместо вне внутри возле вокруг вследствие из-за из-под изо ко кроме между мимо насчет около ото "

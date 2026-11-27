@@ -2,7 +2,7 @@
 
 Status: implemented on `feat/skh-local-first-adaptive-rag` (2026-11-26). Release gate for the corporate target model:
 **`TARGET_MODEL_NOT_VALIDATED`** — the decision step was validated with deterministic scripted doubles only.
-Measurements: `reports/adaptive-rag/`.
+Measurements: `reports/README.md`.
 
 ## 1. What it does
 
@@ -200,7 +200,7 @@ and the sources are the same.
 
 **Weak-model sign-off (required before production on the target model):** run 30–50 independent questions on the
 target model (synthetic corpus, explicit approval), record the confusion matrix, JSON errors and repairs, needless MCP
-calls, p95 of the gate call and its cost, and compare with the scripted runs in `reports/adaptive-rag/`:
+calls, p95 of the gate call and its cost, and compare with the scripted runs in `reports/README.md`:
 
 ```bash
 cd backend

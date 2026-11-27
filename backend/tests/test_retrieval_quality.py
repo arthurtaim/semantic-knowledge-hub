@@ -1,8 +1,8 @@
-"""Retrieval quality v2 (reports/retrieval-quality/): query analysis, passage packing and local sufficiency.
+"""Retrieval quality v2 (reports/README.md): query analysis, passage packing and local sufficiency.
 
 Every test builds its OWN small synthetic corpus, independent of the gold evaluation suite, and checks the evidence
 itself (which section, which fact, which trigger) — not just that something was returned. The tests marked
-«v1 failed» fail on the code before retrieval v2 (verified on f4ea26e, reports/retrieval-quality/04_TEST_RESULTS.md).
+«v1 failed» fail on the code before retrieval v2 (verified on f4ea26e, reports/README.md).
 """
 
 from __future__ import annotations

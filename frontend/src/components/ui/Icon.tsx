@@ -2,7 +2,7 @@ import type { ReactElement } from "react";
 
 /*
  * Line icons of the visual system (docs/ui-v2/specs/01_VISUAL_SYSTEM.md, «Icon»): 24-unit paths taken from
- * the UI v2 mockups (docs/ui-v2/screens/design), drawn at 16 px with a 1.75 stroke in `currentColor`. A few shell icons
+ * the UI v2 mockups (docs/ui-v2/screens/design — in git history, 64e9c32), drawn at 16 px with a 1.75 stroke in `currentColor`. A few shell icons
  * (menu, sidebar, home, theme) are drawn in the same style. Decorative by default (`aria-hidden`): the control
  * that holds an icon carries the accessible name.
  */

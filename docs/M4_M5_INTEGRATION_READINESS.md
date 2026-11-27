@@ -175,7 +175,7 @@ merge_requests, rest, authentication) 2026-11-22; поведение закре�
 
 ### Confluence Data Center REST API (`/rest/api`, не Cloud v2)
 Адаптер: `backend/app/adapters/confluence_rest/client.py`. Сверено с официальной документацией Confluence
-Server/Data Center REST (`docs/REFERENCES.md`); закреплено тестами `test_publications.py` на stateful
+Server/Data Center REST (`docs/README.md`); закреплено тестами `test_publications.py` на stateful
 Confluence-mock. **На реальном Confluence DC не проверялось.**
 
 | Операция | Запрос | Обработка |

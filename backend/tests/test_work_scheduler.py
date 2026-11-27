@@ -256,4 +256,4 @@ def test_long_chain_of_1000_tasks_is_linear_and_exact() -> None:
     elapsed = time.perf_counter() - started
     assert len(result.operations) == n - 1
     assert result.operations[-1].after.start_date == shift_workdays(MON, n - 1)  # one working day each
-    assert elapsed < 5.0, elapsed  # generous bound; the measured value is in reports/m6/
+    assert elapsed < 5.0, elapsed  # generous bound; the measured value is in reports/README.md
