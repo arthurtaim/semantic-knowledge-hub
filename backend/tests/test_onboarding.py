@@ -153,6 +153,22 @@ def test_ob07_malformed_yaml_is_a_per_file_diagnostic_with_a_repair_path(client:
     assert by_path(batch)["ok.md"]["status"] == "parsed"  # the other file is unaffected
 
 
+def test_ob07_invalid_yaml_naming_an_existing_id_warns_that_a_new_document_would_be_created(
+    client: TestClient,
+) -> None:
+    """The YAML is unusable (no `tags`), so the declared SEM-ARCH-001 is not used: the person is told so explicitly
+    instead of silently getting a NEW document next to the existing one."""
+    broken = "---\nid: SEM-ARCH-001\ntitle: Правка\ntype: architecture\nstatus: draft\nowner: demo-team\n---\n# Правка\nтекст\n"
+    batch = batch_of(client, {"arch.md": broken})
+    item = batch["items"][0]
+    assert item["proposed_operation"] == "create"
+    detail = client.get(f"/api/onboarding/batches/{batch['batch_id']}/items/{item['item_id']}").json()
+    warning = next(d for d in detail["diagnostics"] if d["code"] == "declared_id_not_used")
+    assert (
+        warning["severity"] == "warning" and "SEM-ARCH-001" in warning["message"] and warning["field"] == "id"
+    )
+
+
 # --- OB-03, OB-04, OB-05, OB-19, OB-20: hostile and unsupported input ------------------------------------------
 @pytest.mark.parametrize(
     ("data", "code"),

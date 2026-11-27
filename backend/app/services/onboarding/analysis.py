@@ -19,7 +19,7 @@ from app.domain.onboarding import (
     FieldSuggestion,
 )
 from app.domain.proposals import MAX_PROPOSED_CHARS
-from app.domain.schema import parse_document
+from app.domain.schema import FrontmatterError, load_frontmatter, parse_document, split_frontmatter
 from app.domain.wikilinks import extract_wikilinks
 from app.errors import ApiError
 from app.services.metadata import ImportPreviewRequest, MetadataService
@@ -159,6 +159,7 @@ async def analyze_file(
         template_doc_type = tpl.doc_type.value if tpl is not None else None
     item.analysis = {
         "document_id": str(meta["id"]) if meta.get("id") else None,
+        "declared_id": None if meta or not preview.has_frontmatter else _declared_id(text),
         "title": preview.title,
         "template_id": template_id,
         "doc_type": str(meta.get("type") or template_doc_type or "") or None,
@@ -208,6 +209,15 @@ def _empty(path: str, diagnostics: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _declared_id(text: str) -> str | None:
+    """The `id` a file's frontmatter names even when the YAML as a whole is unusable (to warn, never to act on)."""
+    try:
+        raw = load_frontmatter(split_frontmatter(text)[0]).get("id")
+    except FrontmatterError:
+        return None
+    return str(raw) if raw and ID_CANDIDATE_RE.fullmatch(str(raw)) else None
+
+
 def resolve_batch(items: list[ItemAnalysis], snapshot: KnowledgeSnapshot, open_create_ids: set[str]) -> None:
     """Batch-level: UPDATE of existing documents, duplicates and conflicts, relation candidates (in place)."""
     by_hash: dict[str, ItemAnalysis] = {}
@@ -230,6 +240,17 @@ def resolve_batch(items: list[ItemAnalysis], snapshot: KnowledgeSnapshot, open_c
             continue
         by_hash[item.checksum] = item
         doc_id = a["document_id"]
+        declared = a.get("declared_id")
+        if not doc_id and declared and snapshot.get(declared) is not None:
+            a["diagnostics"].append(
+                _diag(
+                    "warning",
+                    "declared_id_not_used",
+                    f"В файле указан ID {declared} существующего документа, но YAML некорректен: будет создан НОВЫЙ "
+                    f"документ. Чтобы предложить изменение {declared}, исправьте YAML и загрузите файл снова.",
+                    "id",
+                )
+            )
         if doc_id:
             existing = snapshot.get(doc_id)
             if existing is not None:
