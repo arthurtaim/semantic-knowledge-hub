@@ -15458,3 +15458,109 @@ input.plan-task__title {
     max-width: none;
   }
 }
+
+/* «Создать задачу» (design 2026-11-27): the task-draft card in the chat — fields in two columns, one on a phone */
+.ask-task-draft .ask-proposal__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  font-weight: 600;
+}
+
+.ask-task-draft__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.ask-task-draft__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ask-task-draft__field label {
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.ask-task-draft__field input,
+.ask-task-draft__field select,
+.ask-task-draft__field textarea {
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--radius-control);
+}
+
+.ask-task-draft__field:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.ask-task-draft__field--missing input,
+.ask-task-draft__field--missing select {
+  outline: 2px solid var(--accent-wash-border);
+  outline-offset: 1px;
+}
+
+.ask-task-draft__origin {
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.ask-task-draft__hint {
+  font-size: var(--fs-small);
+  color: var(--accent-text);
+}
+
+.ask-task-draft__error,
+.ask-task-draft__problem {
+  font-size: var(--fs-small);
+  color: var(--danger);
+}
+
+.ask-task-draft__problem {
+  margin: var(--space-2) 0 0;
+}
+
+.ask-task-draft__note {
+  margin: 0;
+  font-size: var(--fs-small);
+  color: var(--text-secondary);
+}
+
+.ask-task-draft__links,
+.ask-task-draft__issues {
+  margin: var(--space-2) 0 0;
+  font-size: var(--fs-small);
+}
+
+.ask-task-draft__issues {
+  padding-left: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.ask-task-draft__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+@media (max-width: 640px) {
+  .ask-task-draft__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Design 2026-11-27: the dates a person named in a task-plan request (pinned period) */
+.plan-task__pin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-small);
+  color: var(--accent-text);
+}

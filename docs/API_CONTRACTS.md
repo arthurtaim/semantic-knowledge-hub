@@ -796,3 +796,33 @@ All additive; requests without the new fields behave exactly as before.
   `502 ai_invalid_response` (wrong reply types, nothing stored), `422 proposal_invalid` (`nothing_to_propose`,
   `nothing_to_apply`, `unknown_operation`, `invalid_value`), `409 proposal_stale`, `409 conflict`
   (`idempotency_key_reused`).
+
+## Implemented contract (v0.10, «Создать задачу» + dates from the request — `docs/WORK_CHAT_SKILLS.md` §12)
+
+All changes are additive.
+
+- Skill `create_task` («Создать задачу», `access: draft`, `work: true`, `requires.project: false`); available in mock
+  mode, unavailable with `AI_PROVIDER=disabled`, without the global `create_task` Action, or in a read-only exposure.
+  `work_context` for it takes only `project_key` (+ `client_request_id`); a chosen project passes the same gate as the
+  task API before any model call (`404` unknown = hidden, `403` read-only, `409 project_archived`); `task_keys` or
+  `proposal_id` → `422 work_context_invalid`.
+- Auto-start: `POST /api/assistant/ask(/stream)` WITHOUT `skill_id`, without attachments, whose question asks to create
+  ONE task («создай / заведи / добавь / поставь / оформи … задачу …», «задача: …», «новая задача …»; never a question,
+  plural or a multi-line list) runs `create_task` when this reader may use it; otherwise it is a plain answer. An
+  explicit `skill_id` (also `answer`) disables it.
+- `AskResponse.task_draft: TaskDraft | null` — `{project_key|null, title, description, priority, assignee_id|null,
+  assignee_hint|null, due_date|null, start_date|null, end_date|null (inclusive), origin: {field → request|assistant|
+  composer|default}, missing: [project|title], issues: [{field|null, code, message}], documents: [{document_id, title,
+  revision}], auto_started, client_request_id}`. Nothing is written: the card creates the task with
+  `POST /api/projects/{key}/tasks` (`end_exclusive` = end + 1 day, the same `client_request_id`) and links the checked
+  documents with `POST /api/tasks/{id}/links` (the server records the revision it sees). Draft issue codes:
+  `date_unverified`, `date_conflict`, `date_past`, `date_weekend`, `date_out_of_range`, `dates_reversed`,
+  `project_conflict`, `project_unknown`, `assignee_ambiguous`, `assignee_conflict`, `assistant_unparsed`,
+  `assistant_unavailable`.
+- Task-plan proposals (WAP): `ProposedTask.due_date`, `fixed_start`, `fixed_end` (dates the person named; a pinned task
+  keeps them, `fixed_end` = its last working day); `WorkProposalOut.suggested_start` (the named plan start; it becomes
+  `start_date` when the person chose none). `ProposalTaskEdit.due_date` (null clears) and `unpin_dates`. Apply writes
+  `due_date` and, for a pinned task, `start_date`/`end_exclusive` with `date_locked = true`. New issue codes:
+  `date_unverified`, `date_past`, `date_weekend`, `date_conflict`, `start_needs_estimate`. The model protocol returns
+  only verbatim quotes (`due_quote`, `start_quote`, `end_quote`, `plan_start_quote`); bare date values stay ignored
+  (`dates_ignored`).

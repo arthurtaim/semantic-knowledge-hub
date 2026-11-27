@@ -45,6 +45,7 @@ from app.services.assistant_loop import SeededCall
 from app.services.assistant_tools import ToolResult, work_inspect_result
 from app.work.ai import Idempotency, WorkAiService, request_hash
 from app.work.changes import WorkChangeService
+from app.work.drafts import TaskDraftService
 from app.work.inspect import WorkInspector
 from app.work.models import WorkChangeCreate, WorkPlanCreate
 from app.work.permissions import WorkAccessMode, WorkPrincipal
@@ -68,6 +69,11 @@ ATTACHMENT_NOTE = (
     "Вложение не является документом базы знаний: план опирается только на документы базы. Чтобы опереться на "
     "конкретный документ, выберите его через «@»."
 )
+TASK_DRAFT_READY = "Проверьте черновик задачи и нажмите «Создать задачу». Задача создаётся только кнопкой."
+TASK_DRAFT_MISSING = (
+    "Черновик задачи готов, но не хватает: {fields}. Заполните карточку и нажмите «Создать задачу»."
+)
+_MISSING_FIELD = {"project": "проект", "title": "название"}
 _STATE_WORDS = {
     "ready": "готово к проверке",
     "stale": "устарело",
@@ -81,14 +87,21 @@ class WorkAsk:
     """The resolved work target of one chat turn (server-side; never from the client)."""
 
     principal: WorkPrincipal
-    target: ChatTarget
+    target: ChatTarget | None  # None only for create_task without a chosen project
     proposal_id: str | None
     client_request_id: str | None
+
+    @property
+    def project(self) -> ChatTarget:
+        assert self.target is not None  # every runner but `work_task` resolves a project before the model
+        return self.target
 
 
 def _action_of(skill: SkillDefinition) -> tuple[Action, ...]:
     if skill.runner == "work_read":
         return (Action.view_tasks,)
+    if skill.runner == "work_task":
+        return (Action.create_task,)
     if skill.runner == "work_change":
         return (Action.propose_work, Action.edit_task)
     return (Action.propose_work,)
@@ -110,6 +123,7 @@ class WorkChatSkills:
         knowledge: KnowledgeService,
         assistant: AssistantService,
         policy: AuthorizationPolicy,
+        drafts: TaskDraftService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._work = work
@@ -119,6 +133,7 @@ class WorkChatSkills:
         self._knowledge = knowledge
         self._assistant = assistant
         self._policy = policy
+        self._drafts = drafts
         self._clock = clock
 
     # --- availability (the skill catalog) ------------------------------------------------------------------------
@@ -133,13 +148,19 @@ class WorkChatSkills:
         may_propose = self._policy.allows(user, Action.propose_work) and self._work.may(
             principal, Action.propose_work
         )
+        may_create = (
+            self._drafts is not None
+            and self._policy.allows(user, Action.create_task)
+            and self._work.may(principal, Action.create_task)
+        )
         return WorkSkillState(
             enabled=True,
             may_view=may_view,
             may_propose=may_propose,
-            read_only_reason=self._work.gate.reason(principal) if not may_propose else None,
+            read_only_reason=self._work.gate.reason(principal) if not (may_propose and may_create) else None,
             supports_planning=self._work_ai.available,
             supports_changes=self._changes.available,
+            may_create=may_create,
         )
 
     # --- server-side checks before any model call ----------------------------------------------------------------
@@ -148,6 +169,8 @@ class WorkChatSkills:
     ) -> WorkAsk:
         """Runs in a worker thread (SQLite reads). Raises the HTTP errors of the work API (404 / 403 / 409 / 422)."""
         context = ctx or AskWorkContext()
+        if skill.runner == "work_task":
+            return self._resolve_task(principal, context)
         if not context.project_key:
             raise ApiError(
                 422,
@@ -185,6 +208,25 @@ class WorkChatSkills:
             client_request_id=context.client_request_id,
         )
 
+    def _resolve_task(self, principal: WorkPrincipal, context: AskWorkContext) -> WorkAsk:
+        """create_task: the project is optional (chosen in the card); a chosen one passes the same gate as the task
+        API — unknown = hidden (404), read-only (403), archived (409) — before any model call."""
+        if context.proposal_id is not None or context.task_keys:
+            raise ApiError(
+                422,
+                "work_context_invalid",
+                "Навык «Создать задачу» не уточняет предложения и не работает с выбранными задачами.",
+                {"skill_id": "create_task"},
+            )
+        target = (
+            self._work.chat_target(principal, context.project_key, (Action.create_task,), writable=True)
+            if context.project_key
+            else None
+        )
+        return WorkAsk(
+            principal=principal, target=target, proposal_id=None, client_request_id=context.client_request_id
+        )
+
     def _proposal_project(self, principal: WorkPrincipal, proposal_id: str) -> str:
         if proposal_id.startswith("WAP-"):
             return str(self._work_ai._row(principal, proposal_id)["project_id"])
@@ -197,10 +239,12 @@ class WorkChatSkills:
         logger.info(
             "chat work skill=%s project=%s tasks=%d proposal=%s",
             plan.skill.id,
-            work.target.project_key,
-            len(work.target.task_keys),
+            work.target.project_key if work.target else "-",
+            len(work.target.task_keys) if work.target else 0,
             work.proposal_id or "-",
         )
+        if plan.skill.runner == "work_task":
+            return await self._task_draft(plan, work)
         if plan.skill.runner == "work_read":
             return await self._analyze(user, plan, work)
         if plan.skill.runner == "work_plan":
@@ -224,7 +268,9 @@ class WorkChatSkills:
                     yield event
             return
         yield {"type": "status", "stage": "retrieving", "step": "work"}
-        if plan.skill.runner != "work_read":
+        if plan.skill.runner != "work_read" and (
+            plan.skill.runner != "work_task" or (self._drafts is not None and self._drafts.uses_model)
+        ):
             yield {"type": "status", "stage": "generating", "provider": self._assistant.provider.mode}
         try:
             response = await self.run(user, plan)
@@ -249,10 +295,10 @@ class WorkChatSkills:
         """The server's own read-only inspection of the chosen project (+ the chosen tasks): exactly the facts the
         `work_inspect` tool returns. None when the project's plan cannot be read now."""
         calls: list[WorkInspectArgs] = [
-            WorkInspectArgs(operation="get_project_schedule", project=work.target.project_key)
+            WorkInspectArgs(operation="get_project_schedule", project=work.project.project_key)
         ]
         calls += [
-            WorkInspectArgs(operation="get_task", task=key) for key in work.target.task_keys[:MAX_TASK_FACTS]
+            WorkInspectArgs(operation="get_task", task=key) for key in work.project.task_keys[:MAX_TASK_FACTS]
         ]
         seeded: list[SeededCall] = []
         for args in calls:
@@ -281,7 +327,7 @@ class WorkChatSkills:
     def _analysis_inputs(
         self, plan: AskPlan, work: WorkAsk, seed: list[SeededCall]
     ) -> tuple[AskRequest, AskExtras]:
-        key = work.target.project_key
+        key = work.project.project_key
         question = plan.request.question.strip() or (
             "Проанализируй состояние проекта: сроки, просрочки, ожидания предшественников, задачи без дат и вехи."
         )
@@ -360,23 +406,23 @@ class WorkChatSkills:
             return None
         payload = {
             "skill": plan.skill.id,
-            "project": work.target.project_id,
+            "project": work.project.project_id,
             "question": plan.request.question,
             "documents": [d.id for d in plan.documents],
-            "tasks": list(work.target.task_keys),
+            "tasks": list(work.project.task_keys),
             "proposal": work.proposal_id,
         }
         return Idempotency(scope=scope, key=work.client_request_id, request_hash=request_hash(payload))
 
     async def _task_plan(self, plan: AskPlan, work: WorkAsk) -> AskResponse:
-        idempotency = self._idempotency(plan, work, f"chat_plan:{work.target.project_id}")
+        idempotency = self._idempotency(plan, work, f"chat_plan:{work.project.project_id}")
         if work.proposal_id is not None:
             out = await self._work_ai.revise(
                 work.principal, work.proposal_id, plan.request.question.strip(), idempotency=idempotency
             )
         else:
             body = WorkPlanCreate(
-                project_id=work.target.project_id,
+                project_id=work.project.project_id,
                 request=plan.request.question.strip(),
                 document_ids=[d.id for d in plan.documents],
             )
@@ -430,18 +476,49 @@ class WorkChatSkills:
             ),
         )
 
+    # --- create_task (design 2026-11-27) -------------------------------------------------------------------------
+    async def _task_draft(self, plan: AskPlan, work: WorkAsk) -> AskResponse:
+        """A task DRAFT for the card: nothing is written; the person creates the task with the regular task API."""
+        if self._drafts is None:
+            raise _work_unavailable()
+        documents = list(plan.documents)
+        if plan.selection is not None and plan.selection.document not in documents:
+            documents.append(plan.selection.document)
+        draft = await self._drafts.draft(
+            work.principal,
+            plan.request.question.strip(),
+            project_key=work.target.project_key if work.target else None,
+            documents=documents,
+            auto_started=plan.auto_started,
+        )
+        answer = (
+            TASK_DRAFT_READY
+            if not draft.missing
+            else TASK_DRAFT_MISSING.format(fields=", ".join(_MISSING_FIELD[m] for m in draft.missing))
+        )
+        return AskResponse(
+            answer=answer,
+            mode=self._assistant.provider.mode,
+            confidence="partial",
+            citations=[],
+            warnings=[],
+            instructions_version=self._assistant.instructions_version,
+            skill=plan.skill_ref,
+            task_draft=draft,
+        )
+
     # --- propose_task_changes ------------------------------------------------------------------------------------
     async def _task_changes(self, plan: AskPlan, work: WorkAsk) -> AskResponse:
-        idempotency = self._idempotency(plan, work, f"chat_changes:{work.target.project_id}")
+        idempotency = self._idempotency(plan, work, f"chat_changes:{work.project.project_id}")
         if work.proposal_id is not None:
             out = await self._changes.revise(
                 work.principal, work.proposal_id, plan.request.question.strip(), idempotency=idempotency
             )
         else:
             body = WorkChangeCreate(
-                project_id=work.target.project_id,
+                project_id=work.project.project_id,
                 request=plan.request.question.strip(),
-                task_keys=list(work.target.task_keys),
+                task_keys=list(work.project.task_keys),
                 document_ids=[d.id for d in plan.documents],
             )
             out = await self._changes.propose(work.principal, body, idempotency=idempotency)

@@ -701,6 +701,8 @@ export interface AskResponse {
   proposal?: AskProposalRef | null;
   /** M7: the work proposal a chat work skill stored (task plan or change-set); separate from `proposal`. */
   work_proposal?: WorkProposalRef | null;
+  /** «Создать задачу» (design 2026-11-27): a task draft for a card; nothing was written. */
+  task_draft?: TaskDraft | null;
   /** M5.7: authoritative structured observations the answer relies on (`[F1]` markers in `answer`). */
   system_facts?: SystemFact[];
   /** M5.7: the tool steps executed for this answer (what was checked and how it ended). */
@@ -2053,6 +2055,43 @@ export interface WorkCapabilities {
   features: { critical_path: boolean; comments: boolean; document_links: boolean; ai_proposals: boolean; lag: boolean };
 }
 
+/** «Создать задачу» (design 2026-11-27 §5.3): where a draft value came from. */
+export type TaskDraftField = "project" | "title" | "description" | "priority" | "assignee" | "due_date" | "start_date" | "end_date";
+export type TaskDraftOrigin = "request" | "assistant" | "composer" | "default";
+
+export interface TaskDraftIssue {
+  field: TaskDraftField | null;
+  code: string;
+  message: string;
+}
+
+export interface TaskDraftDocument {
+  document_id: string;
+  title: string;
+  revision: string;
+}
+
+/** ONE task's fields from the person's phrase; the person creates the task from the card (regular task API). */
+export interface TaskDraft {
+  project_key: string | null;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  assignee_id: string | null;
+  /** A name from the phrase that matched no selectable assignee. */
+  assignee_hint: string | null;
+  due_date: string | null;
+  start_date: string | null;
+  /** The last day, inclusive (the card sends `end_exclusive`). */
+  end_date: string | null;
+  origin: Partial<Record<TaskDraftField, TaskDraftOrigin>>;
+  missing: ("project" | "title")[];
+  issues: TaskDraftIssue[];
+  documents: TaskDraftDocument[];
+  auto_started: boolean;
+  client_request_id: string;
+}
+
 export interface AssigneeRef {
   id: string;
   display_name: string;
@@ -2572,6 +2611,11 @@ export interface ProposedTask {
   end_exclusive: string | null;
   last_day: string | null;
   included: boolean;
+  /** Design 2026-11-27: a due date the person named in the request (never moves the Gantt). */
+  due_date?: string | null;
+  /** Dates the person named: the task is pinned to them (fixed_end = its last working day). */
+  fixed_start?: string | null;
+  fixed_end?: string | null;
 }
 
 export interface WorkProposal {
@@ -2603,6 +2647,8 @@ export interface WorkProposal {
   applied_task_keys: string[];
   /** M7: the proposal this one refines (that one is unchanged). */
   revised_from?: string | null;
+  /** The plan start the person named in the request (prefills «Плановое начало»). */
+  suggested_start?: string | null;
 }
 
 export interface ProposalTaskEdit {
@@ -2613,6 +2659,10 @@ export interface ProposalTaskEdit {
   priority?: TaskPriority;
   estimate_workdays?: number;
   assignee_id?: string | null;
+  /** Design 2026-11-27: the due date (null clears it). */
+  due_date?: string | null;
+  /** Drop the dates named in the request: the task is scheduled like any other. */
+  unpin_dates?: boolean;
 }
 
 export interface WorkProposalEdits {

@@ -39,6 +39,7 @@ from app.adapters.ai.base import (
     GapAssessmentRequest,
     ProviderAnswer,
     QueryRewriteRequest,
+    TaskDraftRequest,
     TemplateDraftRequest,
     ToolTurnEvent,
     ToolTurnReply,
@@ -205,6 +206,7 @@ class ClaudeCodeCLIProvider:
     # M6 «AI план»: the model-agnostic JSON protocol of work_protocol.py (a proposal; the backend validates everything).
     supports_work_planning = True
     supports_work_changes = True  # M7: change-set proposals for existing tasks
+    supports_task_drafts = True  # «Создать задачу»: a task draft from the person's phrase
     # M5.7: tool loop through the constrained text envelope. The CLI keeps every tool disabled (the worker flags are
     # unchanged): SKH tools are executed by the backend, never by the CLI (docs/AI_NATIVE_TOOLS.md).
     supports_tools = True
@@ -409,6 +411,17 @@ class ClaudeCodeCLIProvider:
         return await self._collect(
             compose(self._instructions.for_task("authoring"), system_prompt(request)),
             build_work_plan_message(request, self._max_context_chars),
+            self._draft_timeout,
+        )
+
+    async def draft_task(self, request: TaskDraftRequest) -> str:
+        """«Создать задачу»: suggestions for ONE task card, the raw reply; app/work/drafts.py parses and verifies it
+        (task_draft_protocol.py)."""
+        from app.adapters.ai.task_draft_protocol import build_task_draft_message, system_prompt
+
+        return await self._collect(
+            compose(self._instructions.for_task("authoring"), system_prompt()),
+            build_task_draft_message(request),
             self._draft_timeout,
         )
 

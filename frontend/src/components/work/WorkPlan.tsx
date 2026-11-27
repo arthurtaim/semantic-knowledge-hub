@@ -477,6 +477,7 @@ function ProposalReview({ project, proposalId, assignees, canWrite, onProposal, 
             <div className="field">
               <label htmlFor={`${id}-start`}>Плановое начало</label>
               <input id={`${id}-start`} type="date" min={WORK_DATE_MIN} max={WORK_DATE_MAX} value={start ?? ""} disabled={!canWrite || !ready} onChange={(e) => setStart(e.target.value || null)} />
+              {proposal.suggested_start && start === proposal.suggested_start ? <span className="field__hint">из вашего запроса</span> : null}
             </div>
             <Button size="sm" onClick={() => void preview()} disabled={busy !== null || !ready}>
               {busy === "preview" ? "Считаем…" : "Пересчитать сроки"}
@@ -573,6 +574,8 @@ function PlanTaskRow({
   const priority = edit.priority ?? task.priority;
   const estimate = edit.estimate_workdays ?? task.estimate_workdays;
   const assignee = edit.assignee_id !== undefined ? edit.assignee_id : task.assignee_id;
+  const due = edit.due_date !== undefined ? edit.due_date : (task.due_date ?? null);
+  const pinned = Boolean(task.fixed_start && task.fixed_end);
   const plan = formatPlan({ start_date: task.start_date, last_day: task.last_day, is_milestone: task.is_milestone, scheduled: Boolean(task.start_date) }, task.start_date);
   return (
     <li className={`plan-task${included ? "" : " plan-task--dropped"}${parentTitle ? " plan-task--child" : ""}`} data-local-id={task.local_id}>
@@ -613,6 +616,19 @@ function PlanTaskRow({
           />
         </div>
         <div className="field">
+          <label htmlFor={`${id}-due`}>Срок</label>
+          <input
+            id={`${id}-due`}
+            type="date"
+            min={WORK_DATE_MIN}
+            max={WORK_DATE_MAX}
+            value={due ?? ""}
+            disabled={!editable}
+            onChange={(e) => onEdit({ due_date: e.target.value || null })}
+          />
+          {task.due_date && edit.due_date === undefined ? <span className="field__hint">из вашего запроса</span> : null}
+        </div>
+        <div className="field">
           <label htmlFor={`${id}-as`}>Исполнитель</label>
           <select id={`${id}-as`} value={assignee ?? ""} disabled={!editable} onChange={(e) => onEdit({ assignee_id: e.target.value || null })}>
             <option value="">Не назначен</option>
@@ -620,6 +636,24 @@ function PlanTaskRow({
           </select>
         </div>
       </div>
+      {pinned ? (
+        edit.unpin_dates ? (
+          <p className="plan-task__pin">Закрепление снято — даты рассчитаются от планового начала.</p>
+        ) : (
+          <p className="plan-task__pin">
+            Даты закреплены (из вашего запроса):{" "}
+            {formatPlan(
+              { start_date: task.fixed_start ?? null, last_day: task.fixed_end ?? null, is_milestone: task.is_milestone, scheduled: true },
+              task.fixed_start ?? null,
+            )}
+            {editable ? (
+              <button type="button" className="button button--link" onClick={() => onEdit({ unpin_dates: true })}>
+                Снять закрепление
+              </button>
+            ) : null}
+          </p>
+        )
+      ) : null}
       <p className="plan-task__plan">
         <Icon name="clock" size={12} /> {task.start_date ? plan : estimate === null ? "Без дат: нет оценки" : "Без дат: не выбрано начало"}
         {task.start_date && !task.is_milestone && task.estimate_workdays ? ` · ${pluralWorkdays(task.estimate_workdays)}` : ""}

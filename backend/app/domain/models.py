@@ -640,6 +640,51 @@ class WorkProposalRef(BaseModel):
     requires_confirmation: bool = True
 
 
+TaskDraftField = Literal[
+    "project", "title", "description", "priority", "assignee", "due_date", "start_date", "end_date"
+]
+TaskDraftOrigin = Literal["request", "assistant", "composer", "default"]
+
+
+class TaskDraftIssue(BaseModel):
+    """A server remark on a task draft (an unverified date, a past date, an unparsed model reply, …)."""
+
+    field: TaskDraftField | None = None
+    code: str
+    message: str
+
+
+class TaskDraftDocument(BaseModel):
+    """A document of the request's context the new task will be linked to (visible to the reader; the revision it
+    saw — the link itself records the revision the server sees at link time)."""
+
+    document_id: str
+    title: str
+    revision: str
+
+
+class TaskDraft(BaseModel):
+    """«Создать задачу» (design 2026-11-27): ONE task's fields from the person's phrase, for a card in the chat. Nothing
+    was written: the person edits the card and creates the task with the regular task API (`POST
+    /api/projects/{key}/tasks`). Every value carries its origin; a date is only ever the server's parse of the phrase."""
+
+    project_key: str | None = None
+    title: str = ""
+    description: str = ""
+    priority: Literal["low", "medium", "high", "critical"] = "medium"
+    assignee_id: str | None = None
+    assignee_hint: str | None = None  # a name from the phrase that matched no selectable assignee
+    due_date: date | None = None
+    start_date: date | None = None
+    end_date: date | None = None  # the last day, inclusive (the card sends `end_exclusive`)
+    origin: dict[TaskDraftField, TaskDraftOrigin] = Field(default_factory=dict)
+    missing: list[Literal["project", "title"]] = Field(default_factory=list)
+    issues: list[TaskDraftIssue] = Field(default_factory=list)
+    documents: list[TaskDraftDocument] = Field(default_factory=list)
+    auto_started: bool = False
+    client_request_id: str = ""
+
+
 class AnswerProvenance(BaseModel):
     """Origin of the evidence an answer ACTUALLY relies on: its validated citations and the documents named by its
     system facts — never every retrieved passage, never «some document of the catalog is demo». Counts are distinct
@@ -721,6 +766,8 @@ class AskResponse(BaseModel):
     proposal: ProposalRef | None = None
     # M7 (additive): a work proposal (task plan or change-set) a chat work skill stored for review; null otherwise.
     work_proposal: WorkProposalRef | None = None
+    # «Создать задачу» (additive): a task draft for a card; nothing was written.
+    task_draft: TaskDraft | None = None
     # M5.7 (additive; docs/AI_NATIVE_TOOLS.md): authoritative structured observations the answer relies on
     # ([F1] markers in `answer`), the tool steps that were executed, whether the text relies on the model's general
     # knowledge (never internal evidence), and the referent a follow-up question can use.

@@ -38,6 +38,7 @@ from app.domain.models import (
 )
 from app.domain.provenance import apply_provenance
 from app.domain.skills import (
+    CREATE_TASK_SKILL,
     DEFAULT_SKILL,
     SKILL_BY_ID,
     SKILLS,
@@ -110,6 +111,8 @@ class AskPlan:
     selection: ResolvedSelection | None
     # M7: the resolved work target of a work skill (project, tasks, referenced proposal); None for other skills.
     work: WorkAsk | None = None
+    # create_task started by the server from the phrase (design 2026-11-27 §5.2), not chosen by the person.
+    auto_started: bool = False
 
     @property
     def subject(self) -> DocumentRecord | None:
@@ -161,7 +164,12 @@ class AssistantSkillService:
 
     # --- server-side checks ------------------------------------------------------------------------------------
     async def plan(
-        self, user: UserContext, req: AskRequest, principal: WorkPrincipal | None = None
+        self,
+        user: UserContext,
+        req: AskRequest,
+        principal: WorkPrincipal | None = None,
+        *,
+        auto_task: bool = False,
     ) -> AskPlan:
         provider = self._assistant.provider
         if provider.mode == "disabled":
@@ -171,6 +179,15 @@ class AssistantSkillService:
         skill = SKILL_BY_ID.get(req.skill_id or DEFAULT_SKILL)
         if skill is None:
             raise ApiError(422, "skill_unknown", "Такого навыка нет.", {"skill_id": req.skill_id})
+        auto_started = False
+        if auto_task and req.skill_id is None and self._work is not None and principal is not None:
+            # «создай задачу …» without a chosen skill: create_task when THIS reader may use it; otherwise a plain answer
+            candidate = SKILL_BY_ID[CREATE_TASK_SKILL]
+            state = self._work_state(principal)
+            if work_denied(candidate, state) is None and (
+                unavailable_reason(candidate, provider.mode, provider.supports_authoring, state) is None
+            ):
+                skill, auto_started = candidate, True
         work_state = self._work_state(principal) if skill.is_work else None
         denied = work_denied(skill, work_state) if skill.is_work else None
         if (
@@ -221,13 +238,14 @@ class AssistantSkillService:
             )
         return AskPlan(
             skill=skill,
-            explicit_skill=req.skill_id is not None,
+            explicit_skill=req.skill_id is not None or auto_started,
             request=req,
             snapshot=snapshot,
             attachments=tuple(attachments),
             documents=tuple(documents),
             selection=selection,
             work=work,
+            auto_started=auto_started,
         )
 
     @staticmethod

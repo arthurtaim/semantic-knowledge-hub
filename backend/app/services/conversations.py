@@ -665,7 +665,9 @@ def _request_of(plan: AskPlan) -> dict[str, Any]:
         if selection
         else None,
     }
-    if plan.work is not None:  # M7: only work turns carry it (older / other turns keep their stored shape)
+    # M7: only work turns with a chosen project carry it (older / other turns keep their stored shape; create_task
+    # without a project has nothing to restore)
+    if plan.work is not None and plan.work.target is not None:
         stored["work"] = {
             "project_key": plan.work.target.project_key,
             "task_keys": list(plan.work.target.task_keys),

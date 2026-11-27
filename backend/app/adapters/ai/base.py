@@ -270,6 +270,27 @@ class WorkChangeAIProvider(Protocol):
 
 
 @dataclass(frozen=True)
+class TaskDraftRequest:
+    """«Создать задачу» (design 2026-11-27 §5.3): the fields of ONE task from the person's phrase. The phrase is DATA;
+    the reply is the model's raw text, parsed strictly by app/adapters/ai/task_draft_protocol.py and verified by
+    app/work/drafts.py: a date is only ever a QUOTE of the phrase, a project or an assignee only a hint the server
+    matches against what the reader may use. The provider never creates or stores anything."""
+
+    request: str
+    today: str  # ISO date, for the model's reading of «завтра»; the server parses every date itself
+    projects: tuple[tuple[str, str], ...]  # (key, title) the reader may create tasks in
+    assignees: tuple[str, ...]  # display names of the selectable assignees
+
+
+class TaskDraftAIProvider(Protocol):
+    """Optional capability: a provider without it (mock, disabled) drafts from the server's own extraction only."""
+
+    supports_task_drafts: bool
+
+    async def draft_task(self, request: TaskDraftRequest) -> str: ...
+
+
+@dataclass(frozen=True)
 class EvidenceCard:
     """One authorized team passage, shortened for the evidence-gap check. `eid` (E1, E2, …) is the only handle the
     model may name; the server maps it back to the passage it built the card from."""

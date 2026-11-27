@@ -24,6 +24,7 @@ from app.domain.models import (
     UserContext,
 )
 from app.domain.skills import SKILL_BY_ID, SkillInfo
+from app.domain.task_intent import looks_like_create_task
 from app.errors import ApiError
 from app.services.attachments import AttachmentInfo, valid_conversation_id
 from app.services.conversations import (
@@ -55,7 +56,18 @@ async def _plan(container: Container, user: UserContext, payload: AskRequest, re
         for action in global_actions(skill):
             ensure_allowed(container.policy, user, action)
         principal = await work_principal(request, container, user)
-    plan = await container.skills.plan(user, payload, principal)
+    auto_task = (
+        principal is None
+        and payload.skill_id is None
+        and not payload.attachment_ids
+        and looks_like_create_task(payload.question)
+        and container.policy.allows(user, Action.create_task)
+    )
+    if (
+        auto_task
+    ):  # «создай задачу …»: the plan may switch to create_task when this reader may use it (no 403 here)
+        principal = await work_principal(request, container, user)
+    plan = await container.skills.plan(user, payload, principal, auto_task=auto_task)
     if plan.creates_proposal:  # a skill built on the AI workflows stores a proposal
         ensure_allowed(container.policy, user, Action.create_proposal)
     return plan

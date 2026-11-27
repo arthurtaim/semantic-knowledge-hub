@@ -21,7 +21,7 @@ import { defineConfig, devices } from "@playwright/test";
 const withGitLabStack = !process.env.E2E_SKIP_GITLAB_STACK;
 const scriptedUrl = process.env.E2E_SCRIPTED_URL;
 const SCRIPTED_SPECS =
-  /(m57|answerMarkdown|answerProvenance|templateStudioAi|chatHistoryScripted|workAi|adaptiveRag|workChat)\.spec\.ts$/;
+  /(m57|answerMarkdown|answerProvenance|templateStudioAi|chatHistoryScripted|workAi|adaptiveRag|workChat|createTask)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./e2e",

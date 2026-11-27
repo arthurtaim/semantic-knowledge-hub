@@ -754,3 +754,41 @@ describe("Document assistant panel: chat history", () => {
   });
 });
 
+describe("«Создать задачу» in the document panel", () => {
+  it("an auto-started task draft offers «Ответить как обычно» there too", async () => {
+    const draft = {
+      project_key: null,
+      title: "Проверить раздел 3",
+      description: "",
+      priority: "medium" as const,
+      assignee_id: null,
+      assignee_hint: null,
+      due_date: null,
+      start_date: null,
+      end_date: null,
+      origin: { title: "request" as const },
+      missing: ["project" as const],
+      issues: [],
+      documents: [{ document_id: DOC_ID, title: "Архитектура", revision: "r1" }],
+      auto_started: true,
+      client_request_id: "0123456789abcdef0123456789abcdef",
+    };
+    const calls = mockApi(
+      routes([
+        streamOf({ ...supportedAnswer, citations: [], skill: { id: "create_task", name: "Создать задачу", access: "draft" }, task_draft: draft }),
+        { path: /^\/api\/projects(\?.*)?$/, body: { items: [], total: 0 } },
+        { path: /^\/api\/work\/assignees/, body: [] },
+      ]),
+    );
+    renderDocument("internal_api");
+    await loaded();
+    await userEvent.click(toggle());
+    const field = within(panel()).getByRole("textbox", { name: "Вопрос по документу" });
+    await userEvent.type(field, "создай задачу проверить раздел 3{Enter}");
+    await userEvent.click(await within(panel()).findByRole("button", { name: "Ответить как обычно" }));
+    await waitFor(() => expect(calls.filter((c) => c.method === "POST" && c.url === STREAM)).toHaveLength(2));
+    const second = calls.filter((c) => c.method === "POST" && c.url === STREAM)[1]?.body as Record<string, unknown>;
+    expect(second.skill_id).toBe("answer");
+    expect(second.question).toBe("создай задачу проверить раздел 3");
+  });
+});

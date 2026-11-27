@@ -887,7 +887,8 @@ function WorkContextRow({ composer, skill }: { composer: ComposerController; ski
   const [projects, setProjects] = useState<WorkProject[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [tasksText, setTasksText] = useState(work.taskKeys.join(", "));
-  const withTasks = skill.id !== "draft_task_plan";
+  // the task plan and «Создать задачу» work with a project, not with chosen tasks
+  const withTasks = skill.id !== "draft_task_plan" && skill.id !== "create_task";
 
   useEffect(() => {
     let alive = true;

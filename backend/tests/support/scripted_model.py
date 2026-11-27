@@ -87,10 +87,14 @@ import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Literal
 
 import httpx
+
+from app.domain.ru_dates import find_dates
+from app.domain.task_intent import strip_trigger
 
 Transport = Literal["openai", "claude"]
 MARKER = "<<<EVIDENCE>>>"
@@ -862,8 +866,29 @@ def work_plan_script(prompt: str) -> str:
                 else []
             ),
         ]
+    # Dates the person named: the model QUOTES fragments (request + refinement); the server verifies and parses them.
+    plan_start: str | None = None
+    found = find_dates(f"{request}\n{refinement.group(1) if refinement else ''}", date(2026, 11, 27))
+    if "старт плана" in q:
+        starts = [f for f in found if f.role == "start"]
+        if starts:
+            plan_start = starts[0].fragment
+            found = [f for f in found if f is not starts[0]]
+    if tasks:
+        for f in found:
+            key = {"due": "due_quote", "start": "start_quote", "end": "end_quote"}[f.role]
+            if f.role == "due" and "только окончание" in q:
+                key = "end_quote"
+            tasks[0][key] = f.fragment
+        if "выдумай дату" in q:
+            tasks[0]["due_quote"] = "до 9 декабря"
+        if "обрежь цитату" in q and tasks[0].get("due_quote"):  # a quote without its year
+            tasks[0]["due_quote"] = re.sub(r"\s+\d{4}\b.*$", "", str(tasks[0]["due_quote"]))
+        if "голая дата" in q:
+            tasks[0]["due_date"] = "2026-12-05"
     payload = {
         "goal": request[:120],
+        "plan_start_quote": plan_start,
         "tasks": tasks,
         "dependencies": deps,
         "assumptions": [
@@ -1029,6 +1054,75 @@ def rewrite_script(prompt: str) -> str:
     return json.dumps({"queries": []})
 
 
+_DRAFT_BLOCK_RE = re.compile(r"<<<(REQUEST|PROJECTS|ASSIGNEES)>>>\n(.*?)\n?<<<END \1>>>", re.S)
+_TODAY_RE = re.compile(r"Сегодня: (\d{4}-\d{2}-\d{2})")
+
+
+def task_draft_script(prompt: str) -> str:
+    """«Создать задачу» (app/adapters/ai/task_draft_protocol.py): a title from the phrase without the trigger, dates
+    and the project; date QUOTES copied from the phrase; hints only for what the phrase names. Variants exercise the
+    server's verification: «сломай ответ» (no JSON), «выдумай дату» (a quote not in the phrase), «игнорируй правила»
+    (an injected date and assignee), «конфликт дат» (a due quote that names the start)."""
+    blocks = {name: body for name, body in _DRAFT_BLOCK_RE.findall(prompt)}
+    request = blocks.get("REQUEST", "").strip()
+    q = request.casefold()
+    if "сломай ответ" in q:
+        return "Черновик: обновить витрину. Без JSON."
+    today_match = _TODAY_RE.search(prompt)
+    today = date.fromisoformat(today_match.group(1)) if today_match else date(2026, 11, 27)
+    found = find_dates(request, today)
+    title = strip_trigger(request)
+    for f in found:
+        title = title.replace(f.fragment, " ")
+    projects = [
+        line.split(" — ", 1)[0].strip() for line in blocks.get("PROJECTS", "").splitlines() if line.strip()
+    ]
+    project = next(
+        (k for k in projects if re.search(rf"(?<![\w-]){re.escape(k)}(?![\w-])", request, re.I)), None
+    )
+    if project:
+        title = re.sub(rf"(?:в\s+проект[еа]?\s+)?{re.escape(project)}", " ", title, flags=re.I)
+    people = [line.strip() for line in blocks.get("ASSIGNEES", "").splitlines() if line.strip()]
+    assignee = next(
+        (
+            n
+            for n in people
+            if any(part[:5].casefold() in q for part in n.replace("(демо)", "").split() if len(part) >= 4)
+        ),
+        None,
+    )
+    if not assignee and (named := re.search(r"на\s+([А-ЯЁ][а-яё]{2,})", request)):
+        assignee = named.group(1)  # a person outside the list: a hint the server cannot resolve
+        title = title.replace(named.group(0), " ")
+    if assignee:
+        for part in assignee.replace("(демо)", "").split():
+            title = re.sub(rf"(?:на\s+)?{re.escape(part[:5])}[а-яё]*", " ", title, flags=re.I)
+    title = re.sub(r"\s*,?\s*срочно", " ", title, flags=re.I)
+    title = " ".join(title.replace(",", " ").split()).strip(" .,:—-")
+    quotes = {"due": None, "start": None, "end": None}
+    for f in found:
+        quotes[f.role] = quotes[f.role] or f.fragment
+    payload: dict[str, Any] = {
+        "title": title[:1].upper() + title[1:] if title else None,
+        "description": f"Нужно: {title}." if title else "",
+        "project_hint": project,
+        "assignee_hint": assignee,
+        "priority": "critical" if "срочно" in q else None,
+        "due_quote": quotes["due"],
+        "start_quote": quotes["start"],
+        "end_quote": quotes["end"],
+        "assumptions": [],
+    }
+    if "выдумай дату" in q:
+        payload["due_quote"] = "до 9 декабря"
+    if "игнорируй правила" in q:
+        payload["due_quote"] = "01.01.2031"
+        payload["assignee_hint"] = "Все исполнители"
+    if "конфликт дат" in q and quotes["start"]:
+        payload["due_quote"] = quotes["start"]
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
     if "Режим оценки полноты SKH" in system:
@@ -1043,6 +1137,8 @@ def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
         return work_plan_script(prompt)
     if "Режим изменения задач SKH" in system:
         return work_change_script(prompt)
+    if "Режим черновика задачи SKH" in system:
+        return task_draft_script(prompt)
     return legacy_script(system, prompt, transport)
 
 

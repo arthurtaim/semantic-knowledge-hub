@@ -838,6 +838,11 @@ class ProposedTask(BaseModel):
     end_exclusive: date | None = None
     last_day: date | None = None
     included: bool = True
+    # Design 2026-11-27: dates the person named in the request (verified quotes). A due date never moves the Gantt;
+    # fixed_start / fixed_end pin the task (fixed_end = its last working day).
+    due_date: date | None = None
+    fixed_start: date | None = None
+    fixed_end: date | None = None
 
 
 class ProposedDependency(BaseModel):
@@ -878,6 +883,8 @@ class WorkProposalOut(BaseModel):
     applied_task_keys: list[str]
     # M7 (additive): the proposal this one refines (a refinement is a NEW proposal; that one is unchanged).
     revised_from: str | None = None
+    # The plan start the person named in the request (prefills «Начало плана» when they chose none).
+    suggested_start: date | None = None
 
 
 class ProposalTaskEdit(_Request):
@@ -890,6 +897,8 @@ class ProposalTaskEdit(_Request):
     priority: TaskPriority | None = None
     estimate_workdays: Annotated[int, Field(ge=0, le=PLAN_ESTIMATE_MAX)] | None = None
     assignee_id: AssigneeId | None = None  # chosen from the directory; validated like any assignment
+    due_date: date | None = None  # design 2026-11-27: the due date (present-and-null clears it)
+    unpin_dates: bool = False  # drop the dates named in the request: the task is scheduled like any other
 
     @field_validator("title")
     @classmethod

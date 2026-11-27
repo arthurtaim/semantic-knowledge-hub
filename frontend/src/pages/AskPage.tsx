@@ -506,6 +506,7 @@ function DialogView({ conversationId, named, initial, reopened, prefill, scopePa
                   onRefine={refine}
                   onRefineWork={refineWork}
                   onAskCorporate={(request, display) => void run(request, display)}
+                  onAnswerNormally={(request, display) => void run(request, display)}
                 />
               );
             })}

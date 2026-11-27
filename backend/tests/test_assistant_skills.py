@@ -31,6 +31,8 @@ TABLE_ORDER = [
     "analyze_project",
     "draft_task_plan",
     "propose_task_changes",
+    # create a task from the chat (design 2026-11-27)
+    "create_task",
 ]
 DESIGN_TEXTS = {
     "answer": ("Ответ по базе знаний", "Отвечает только по документам, с цитатами"),
@@ -71,6 +73,7 @@ def use_internal_api(client: TestClient, content: str) -> list[dict[str, Any]]:
     container.authoring._ai = fake
     container.work_ai._ai = fake  # M7: the chat work skills use the work services' provider
     container.work_changes._ai = fake
+    container.work_drafts._ai = fake
     return sent
 
 
@@ -87,9 +90,11 @@ def test_skill_registry_in_mock_mode(client: TestClient) -> None:
         "suggest_metadata",
         "draft_task_plan",
         "propose_task_changes",
+        "create_task",
     }
     unavailable = {s: v["unavailable_reason"] for s, v in items.items() if not v["available"]}
-    # no honest deterministic mock path; the work analysis is a server summary, so it stays available
+    # no honest deterministic mock path; the work analysis is a server summary and create_task drafts from the server's
+    # own extraction, so both stay available
     assert list(unavailable) == ["improve_section", "draft_task_plan", "propose_task_changes"]
     assert unavailable["improve_section"] and "\n" not in unavailable["improve_section"]
     assert items["compare_with_file"]["requires"] == {
