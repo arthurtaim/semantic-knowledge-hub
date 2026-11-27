@@ -20,8 +20,9 @@ SkillAccess = Literal["read", "draft"]
 # work skills (docs/WORK_CHAT_SKILLS.md) — over the M6 work module: `work_read` reads facts (WorkInspector),
 # `work_plan` creates a task-plan PROPOSAL (WorkAiService, WAP), `work_change` a change-set PROPOSAL for existing
 # tasks (WorkChangeService, WCP). No runner applies anything: tasks change only through an explicit review UI.
-SkillRunner = Literal["ask", "workflow", "work_read", "work_plan", "work_change"]
-WORK_RUNNERS: frozenset[str] = frozenset({"work_read", "work_plan", "work_change"})
+# `work_task` (design 2026-11-27) drafts ONE new task for a card; the person creates it with the regular task API.
+SkillRunner = Literal["ask", "workflow", "work_read", "work_plan", "work_change", "work_task"]
+WORK_RUNNERS: frozenset[str] = frozenset({"work_read", "work_plan", "work_change", "work_task"})
 
 AI_DISABLED_REASON = "ИИ отключён"
 
@@ -65,6 +66,7 @@ class WorkSkillState:
     read_only_reason: str | None = None
     supports_planning: bool = False
     supports_changes: bool = False
+    may_create: bool = False  # create_task (design 2026-11-27): the global policy and the work gate allow it
 
 
 SKILLS: tuple[SkillDefinition, ...] = (
@@ -202,9 +204,19 @@ SKILLS: tuple[SkillDefinition, ...] = (
         needs_work_changes=True,
         mock_unavailable_reason="Нет языковой модели (режим mock): изменения задач не предлагаются.",
     ),
+    SkillDefinition(
+        id="create_task",
+        name="Создать задачу",
+        description="Подготовит черновик задачи из вашей фразы; задачу создаёте вы кнопкой в карточке",
+        access="draft",
+        runner="work_task",
+        builds_on=("work_task",),
+        requires_project=False,  # the project may be chosen in the card
+    ),
 )
 SKILL_BY_ID: dict[str, SkillDefinition] = {s.id: s for s in SKILLS}
 DEFAULT_SKILL = "answer"
+CREATE_TASK_SKILL = "create_task"  # auto-started by the server on «создай задачу …» (design 2026-11-27 §5.2)
 
 
 class SkillRequires(BaseModel):
@@ -238,6 +250,8 @@ def _work_reason(skill: SkillDefinition, work: WorkSkillState | None) -> str | N
         return "Модуль задач отключён."
     if skill.runner == "work_read":
         return None if state.may_view else "Нет прав на просмотр задач."
+    if skill.runner == "work_task":
+        return None if state.may_create else state.read_only_reason or "Нет прав на создание задач."
     if not state.may_propose:
         return state.read_only_reason or "Нет прав предлагать изменения задач."
     if skill.needs_work_planning and not state.supports_planning:
@@ -255,6 +269,9 @@ def work_denied(skill: SkillDefinition, work: WorkSkillState | None) -> tuple[in
         return 503, "feature_unavailable", "Модуль задач отключён."
     if skill.runner == "work_read":
         return None if state.may_view else (403, "forbidden", "Нет прав на просмотр задач.")
+    if skill.runner == "work_task":
+        reason = state.read_only_reason or "Нет прав на создание задач."
+        return None if state.may_create else (403, "forbidden", reason)
     if not state.may_propose:
         return 403, "forbidden", state.read_only_reason or "Нет прав предлагать изменения задач."
     return None

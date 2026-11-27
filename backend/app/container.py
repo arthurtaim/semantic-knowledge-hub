@@ -60,6 +60,7 @@ from app.services.work_skills import WorkChatSkills
 from app.work.ai import WorkAiService
 from app.work.changes import WorkChangeService
 from app.work.db import WorkDatabase
+from app.work.drafts import TaskDraftService
 from app.work.inspect import WorkInspector
 from app.work.permissions import WorkAccessMode, build_gate
 from app.work.seed import seed_demo, seed_demo_links
@@ -103,6 +104,7 @@ class Container:
     work: WorkService
     work_ai: WorkAiService
     work_changes: WorkChangeService
+    work_drafts: TaskDraftService
     conversations: ConversationService
     discovery: DiscoveryStore | None = None
     external: ExternalEvidenceService | None = None
@@ -511,12 +513,14 @@ def build_container(settings: Settings) -> Container:
     # M7: change-set proposals for existing tasks (same optional-capability rule as «AI план») and the chat work skills
     # over the SAME work services; one WorkInspector serves the `work_inspect` tool and `analyze_project` alike.
     work_changes = WorkChangeService(work, knowledge, ai)
+    work_drafts = TaskDraftService(work, ai)
     work_inspector = WorkInspector(work, may_view=lambda user: policy.allows(user, Action.view_tasks))
     skills.attach_work(
         WorkChatSkills(
             work=work,
             work_ai=work_ai,
             changes=work_changes,
+            drafts=work_drafts,
             inspector=work_inspector,
             knowledge=knowledge,
             assistant=assistant_service,
@@ -596,6 +600,7 @@ def build_container(settings: Settings) -> Container:
         work=work,
         work_ai=work_ai,
         work_changes=work_changes,
+        work_drafts=work_drafts,
         conversations=conversations,
         discovery=discovery,
         external=external,

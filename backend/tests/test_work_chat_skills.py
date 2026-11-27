@@ -55,6 +55,7 @@ def chat(client_factory: Callable[..., TestClient]) -> Factory:
         container.assistant._provider = provider
         container.work_ai._ai = provider
         container.work_changes._ai = provider
+        container.work_drafts._ai = provider
         container.work.ai_planning = container.work_ai.available
         return client, recorder
 
@@ -96,7 +97,7 @@ def doc_file(client: TestClient, doc_id: str) -> Path:
 def test_reg01_three_work_skills_in_the_catalog_with_a_model(chat: Factory) -> None:
     client, _ = chat()
     items = {s["id"]: s for s in client.get("/api/assistant/skills").json()}
-    assert len(items) == 13
+    assert len(items) == 14  # + create_task (design 2026-11-27)
     for skill_id, name, access in (
         ("analyze_project", "Проанализировать проект", "read"),
         ("draft_task_plan", "Составить план задач", "draft"),

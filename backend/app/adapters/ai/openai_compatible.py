@@ -617,7 +617,10 @@ class OpenAICompatibleAIProvider:
 
         return await self._post_chat(
             [
-                {"role": "system", "content": compose(self._instructions.for_task("authoring"), system_prompt())},
+                {
+                    "role": "system",
+                    "content": compose(self._instructions.for_task("authoring"), system_prompt()),
+                },
                 {"role": "user", "content": build_task_draft_message(request)},
             ]
         )
