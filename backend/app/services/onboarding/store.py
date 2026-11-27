@@ -136,6 +136,14 @@ class OnboardingStore:
             conn.execute("UPDATE onboarding_batches SET revision = revision + 1 WHERE id = ?", (batch_id,))
             return True
 
+    def set_ai(self, batch_id: str, item_id: str, ai: dict[str, Any]) -> None:
+        """Model suggestions of an item (never its decisions: the item revision does not move)."""
+        with self._tx() as conn:
+            conn.execute(
+                "UPDATE onboarding_items SET ai_json = ? WHERE batch_id = ? AND id = ?",
+                (json.dumps(ai, ensure_ascii=False, default=str), batch_id, item_id),
+            )
+
     def set_outcome(self, batch_id: str, item_id: str, outcome: dict[str, Any]) -> None:
         with self._tx() as conn:
             conn.execute(

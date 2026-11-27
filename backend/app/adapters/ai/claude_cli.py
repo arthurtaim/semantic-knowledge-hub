@@ -37,6 +37,7 @@ from app.adapters.ai.base import (
     AuthoringRequest,
     ContextPassage,
     GapAssessmentRequest,
+    OnboardingSuggestRequest,
     ProviderAnswer,
     QueryRewriteRequest,
     TaskDraftRequest,
@@ -207,6 +208,7 @@ class ClaudeCodeCLIProvider:
     supports_work_planning = True
     supports_work_changes = True  # M7: change-set proposals for existing tasks
     supports_task_drafts = True  # «Создать задачу»: a task draft from the person's phrase
+    supports_onboarding_suggestions = True  # M8: suggestions for an uploaded file
     # M5.7: tool loop through the constrained text envelope. The CLI keeps every tool disabled (the worker flags are
     # unchanged): SKH tools are executed by the backend, never by the CLI (docs/AI_NATIVE_TOOLS.md).
     supports_tools = True
@@ -411,6 +413,16 @@ class ClaudeCodeCLIProvider:
         return await self._collect(
             compose(self._instructions.for_task("authoring"), system_prompt(request)),
             build_work_plan_message(request, self._max_context_chars),
+            self._draft_timeout,
+        )
+
+    async def suggest_onboarding(self, request: OnboardingSuggestRequest) -> str:
+        """M8: suggestions for ONE uploaded file, the raw reply; app/services/onboarding/suggest.py verifies it."""
+        from app.adapters.ai.onboarding_protocol import build_message, system_prompt
+
+        return await self._collect(
+            compose(self._instructions.for_task("authoring"), system_prompt()),
+            build_message(request),
             self._draft_timeout,
         )
 

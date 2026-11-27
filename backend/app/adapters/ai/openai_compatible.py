@@ -31,6 +31,7 @@ from app.adapters.ai.base import (
     ContextPassage,
     ConversationTurn,
     GapAssessmentRequest,
+    OnboardingSuggestRequest,
     ProviderAnswer,
     QueryRewriteRequest,
     TaskDraftRequest,
@@ -391,6 +392,7 @@ class OpenAICompatibleAIProvider:
     supports_work_planning = True
     supports_work_changes = True  # M7: change-set proposals for existing tasks
     supports_task_drafts = True  # «Создать задачу»: a task draft from the person's phrase
+    supports_onboarding_suggestions = True  # M8: suggestions for an uploaded file
     # Adaptive RAG: the evidence-gap check through plain chat completion (gap_protocol.py; no JSON mode, no tools).
     supports_gap_assessment = True
     # Adaptive RAG: phrasings of the question for the team search (rewrite_protocol.py), the same plain call.
@@ -607,6 +609,20 @@ class OpenAICompatibleAIProvider:
                     "content": compose(self._instructions.for_task("authoring"), system_prompt(request)),
                 },
                 {"role": "user", "content": build_work_plan_message(request, self._max_context_chars)},
+            ]
+        )
+
+    async def suggest_onboarding(self, request: OnboardingSuggestRequest) -> str:
+        """M8: suggestions for ONE uploaded file, the raw reply; app/services/onboarding/suggest.py verifies it."""
+        from app.adapters.ai.onboarding_protocol import build_message, system_prompt
+
+        return await self._post_chat(
+            [
+                {
+                    "role": "system",
+                    "content": compose(self._instructions.for_task("authoring"), system_prompt()),
+                },
+                {"role": "user", "content": build_message(request)},
             ]
         )
 

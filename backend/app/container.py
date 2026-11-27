@@ -52,6 +52,7 @@ from app.services.metadata import MetadataService
 from app.services.onboarding.ingest import IngestLimits
 from app.services.onboarding.service import OnboardingService
 from app.services.onboarding.store import OnboardingStore
+from app.services.onboarding.suggest import OnboardingSuggester
 from app.services.proposals import ProposalService, ProposalStore
 from app.services.publications import PublicationService, PublicationStore
 from app.services.query_rewrite import QueryRewriter, RewriteSettings
@@ -503,6 +504,7 @@ def build_container(settings: Settings) -> Container:
         ttl_hours=settings.onboarding_ttl_hours,
         ai_items=settings.onboarding_ai_items,
     )
+    onboarding.suggester = OnboardingSuggester(ai, authoring.registry)
     ai_workflows = AiWorkflowService(
         store=AiProposalStore(settings.app_state_file),
         ai=ai,

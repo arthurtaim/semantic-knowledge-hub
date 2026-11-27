@@ -96,6 +96,14 @@ class OnboardingService:
         self._parse_limits = AttachmentLimits(file_bytes=limits.file_bytes)
         self.suggester: Any = None  # set by the container: OnboardingSuggester (model suggestions), optional
 
+    @property
+    def knowledge(self) -> KnowledgeService:
+        return self._knowledge
+
+    @property
+    def store(self) -> OnboardingStore:
+        return self._store
+
     # --- capabilities --------------------------------------------------------------------------------------
     @property
     def ai_available(self) -> bool:
@@ -341,15 +349,18 @@ class OnboardingService:
         a = json.loads(row["analysis_json"])
         d = self._decisions(row)
         fields = [FieldSuggestion.model_validate(f) for f in a.get("fields") or []]
+        ai = json.loads(row["ai_json"] or "{}")
+        fields += [
+            FieldSuggestion.model_validate(s) for s in ai.get("suggestions") or []
+        ]  # never applied by itself
         for name, value in d.fields.items():  # the person's edits are values of origin `user`
-            fields = [f for f in fields if f.field != name]
+            fields = [f for f in fields if f.field != name or f.origin == "model"]
             fields.append(FieldSuggestion(field=name, value=value, origin="user", needs_review=False))
         links = [CandidateLink.model_validate(link) for link in a.get("links") or []]
         if d.selected_links is not None:  # the person decided: exactly these
             chosen = set(d.selected_links)
             for link in links:
                 link.selected_by_user = link.link_id in chosen
-        ai = json.loads(row["ai_json"] or "{}")
         summary = self._summary(row)
         return ItemDetail(
             **summary.model_dump(),
@@ -458,11 +469,10 @@ class OnboardingService:
     def _value(a: dict[str, Any], d: ItemDecisions, name: str) -> Any:
         if name in d.fields:
             return d.fields[name]
-        for f in a.get("fields") or []:
-            if f["field"] == name:
+        for f in a.get("fields") or []:  # deterministic suggestions; a model's one counts only once accepted
+            if f["field"] == name and f["origin"] != "model":
                 return f["value"]
-        ai = a.get("ai_fields") or {}
-        return ai.get(name)
+        return None
 
     async def _plan(self, user: UserContext, batch_id: str, item_ids: list[str]) -> BatchPreview:
         row = self._open_batch(user, batch_id)
