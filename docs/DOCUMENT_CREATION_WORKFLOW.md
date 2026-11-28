@@ -7,7 +7,8 @@ GitLab **не проверялось** (`docs/M4_M5_INTEGRATION_READINESS.md`). 
 
 Связанные документы: шаблоны — `docs/DOCUMENT_TEMPLATES.md`; AI-помощник — `docs/AI_AUTHORING_CONTRACT.md`;
 GitLab — `docs/GITLAB_KNOWLEDGE_WORKFLOW.md`; публикация — `docs/CONFLUENCE_PUBLISHING_ARCHITECTURE.md`;
-API — `docs/API_CONTRACTS.md` (v0.3).
+API — `docs/API_CONTRACTS.md` (v0.3). Много файлов сразу (ZIP, папка) — «Массовый импорт»,
+`docs/KNOWLEDGE_ONBOARDING.md` (M8): он создаёт такие же черновики и дальше идёт по этому же пути.
 
 ## 1. Сквозной путь
 

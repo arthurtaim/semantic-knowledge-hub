@@ -2,7 +2,7 @@
 
 These are proposed MVP HTTP contracts. Claude Code may refine field details but must document changes, keep tests consistent and preserve adapter boundaries. All routes prefixed `/api`.
 
-**Current implemented contract: v0.5 (v0.4 + M5.7 system facts and tool steps)** — see the last sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
+**Current implemented contract: v0.11 (… + M8 bulk import)** — see the last sections. Earlier sections describe the original proposal and the v0.1/v0.2 refinements, which remain valid unless v0.3 says otherwise. The served schema is `GET /api/openapi.json`.
 
 ## 1. Health and integrations
 - `GET /api/health` -> `{ "status": "ok", "mode": "local_demo" }` (no secrets).
@@ -826,3 +826,46 @@ All changes are additive.
   `date_unverified`, `date_past`, `date_weekend`, `date_conflict`, `start_needs_estimate`. The model protocol returns
   only verbatim quotes (`due_quote`, `start_quote`, `end_quote`, `plan_start_quote`); bare date values stay ignored
   (`dates_ignored`).
+
+## Implemented contract (v0.11, M8 bulk import «Массовый импорт» — `docs/KNOWLEDGE_ONBOARDING.md`)
+
+All changes are additive; the single-file import (`/api/metadata/import-preview`, `/api/drafts/import`) is unchanged.
+Every route requires `create_proposal` (a reader gets `403`); a batch belongs to its author — another user's batch is
+`404 batch_not_found`. `batch_id` is 32 hex characters, `item_id` 16. Nothing here changes the catalog, the FTS index,
+the graph or GitLab: drafts are created through the existing `ProposalService` and become knowledge only after review,
+merge and sync (`BatchOut.index_unchanged = true`).
+
+| Route | Body | Success | Errors |
+|---|---|---|---|
+| `GET /api/onboarding/capabilities` | — | `{formats[], parsers{markdown,text,pdf,docx: available\|unavailable}, upload_mb, expanded_mb, max_files, file_mb, ttl_hours, ai_available, ai_items_per_batch}` | — |
+| `POST /api/onboarding/batches` | multipart: `files` parts (filename = relative path; one `.zip` part = an archive), `source_kind` = `zip\|folder\|files` | `201 BatchOut` | `413 upload_too_large\|too_many_files\|archive_too_large\|archive_ratio_exceeded`, `422 upload_empty\|archive_corrupt\|archive_encrypted` (no batch stored) |
+| `GET /api/onboarding/batches` | — | `[BatchListItem {batch_id, state, created_at, expires_at, file_count, counts}]` (own, newest first) | — |
+| `GET /api/onboarding/batches/{batch_id}` | — | `BatchOut` | `404` |
+| `GET /api/onboarding/batches/{batch_id}/items/{item_id}` | — | `ItemDetail` | `404 item_not_found` |
+| `PATCH /api/onboarding/batches/{batch_id}/items/{item_id}` | `ItemPatch {expected_revision, excluded?, operation?, fields?, selected_links?, reviewed?}` | `200 ItemDetail` (revision + 1) | `409 stale_revision\|item_confirmed\|batch_closed`, `410 staging_expired`, `422 item_not_importable\|operation_invalid\|update_fields_locked\|field_not_editable\|field_invalid\|link_unknown\|link_unresolved` |
+| `POST /api/onboarding/batches/{batch_id}/suggest` | `{item_ids (1–10)}` | `SuggestResult {batch_id, revision, states{item_id: done\|failed\|skipped\|unavailable}, note}` (no model → every file `unavailable`) | `422 item_unknown`, `409`, `410` |
+| `POST /api/onboarding/batches/{batch_id}/preview` | `{item_ids}` | `BatchPreview {batch_id, revision, fingerprint, planned[PlannedItem], blocked[PlannedItem with errors], skipped[ItemSummary], creates, updates, index_unchanged}` — no side effects | `422 item_unknown`, `409`, `410` |
+| `POST /api/onboarding/batches/{batch_id}/confirm` | `{expected_revision, fingerprint, item_ids, idempotency_key (8–64)}` | `ConfirmResult {batch_id, state, outcomes{item_id: DraftOutcome{state, proposal_id, document_id, operation, code, message}}, created, failed, replayed}` | `409 stale_revision\|fingerprint_mismatch\|idempotency_key_reused`, `422 selection_invalid`, `410` |
+| `POST /api/onboarding/batches/{batch_id}/cancel` | — | `BatchOut` (`state = rejected`, staged text dropped; created drafts stay) | `409 batch_closed` |
+
+- `BatchOut`: `{batch_id, state: uploaded|parsed|review|confirmed|partially_confirmed|rejected|expired, source_kind,
+  created_at, expires_at, file_count, bytes_total, revision, counts{total, parsed, invalid, unsupported, duplicate,
+  conflict, updates, excluded, draft_created, draft_failed}, items[ItemSummary], ai_available, index_unchanged}`.
+- `ItemSummary`: `{item_id, path, display_name, size, media_type, parser, parse_status: parsed|invalid|unsupported|
+  duplicate|conflict, status (+ reviewed|skipped|draft_created|draft_failed), proposed_operation: create|update|skip,
+  document_id, title, template_id, doc_type, existing_doc{document_id, title, revision, status}|null,
+  duplicates[DuplicateRef{kind: exact_hash|existing_content|same_id|open_draft|similar_title, ...}], errors, warnings,
+  links, needs_review, excluded, ai_state, revision, outcome}`.
+- `ItemDetail` adds `checksum_sha256, diagnostics[{severity, code, field, message}], fields[FieldSuggestion{field,
+  value, origin: frontmatter|parser|heuristic|model|user|system, confidence, evidence[{file, line, snippet,
+  document_id}], needs_review, note}], candidate_links[CandidateLink], decisions, body_preview, preview_html, diff,
+  diff_stats, ai_note`. Model suggestions are listed with `origin: model` and never fill a field by themselves.
+- `CandidateLink`: `{link_id, link_kind: wikilink|related_id|mention|similar, target_document_id, target_title,
+  target_item_id, resolve_state: resolved|in_batch|missing|ambiguous, evidence, selected_by_user, status: "candidate",
+  bound_to_entity_graph: false}`. Selected links become the draft's `related_ids`.
+- Drafts: `DraftCreate.client_request_id` (optional, `^[A-Za-z0-9_-]{8,64}$`) makes `POST /api/drafts` (operation
+  `update`) idempotent like the create paths; the import uses `onb-<batch16>-<item16>` per file, `origin = import`.
+- Diagnostic codes (per file, never a request error): `unsafe_path`, `path_collision`, `special_file`,
+  `nested_archive`, `file_too_large`, `unsupported_format`, `parser_unavailable`, `parse_failed`, `binary_content`,
+  `executable_content`, `empty_file`, `encoding_guessed`, `extracted_text`, `invalid_yaml`, `yaml_repair`,
+  `existing_document`, `declared_id_not_used`, `template_section_missing`.

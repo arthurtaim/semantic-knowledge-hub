@@ -22,6 +22,7 @@ from app.api import (
     knowledge,
     links,
     metadata,
+    onboarding,
     publications,
     system,
     template_apply,
@@ -122,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         discovery.router,
         links.router,
         metadata.router,
+        onboarding.router,
         template_studio.router,  # before templates.router: `/api/templates/studio/...` is not a template id
         templates.router,
         template_apply.router,

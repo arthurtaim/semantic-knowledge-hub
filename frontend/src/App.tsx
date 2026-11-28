@@ -14,6 +14,7 @@ import { ExplorerPage } from "./pages/ExplorerPage";
 import { GraphPage } from "./pages/GraphPage";
 import { HomePage } from "./pages/HomePage";
 import { ImportPage } from "./pages/ImportPage";
+import { KnowledgeOnboardingPage } from "./pages/KnowledgeOnboardingPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { ProjectPage } from "./pages/ProjectPage";
@@ -52,6 +53,7 @@ export function App() {
           <Route path="/documents" element={<ExplorerPage />} />
           <Route path="/documents/new" element={<DocumentCreatePage />} />
           <Route path="/documents/import" element={<ImportPage />} />
+          <Route path="/documents/onboarding" element={<KnowledgeOnboardingPage />} />
           <Route path="/documents/:id" element={<DocumentPage />} />
           <Route path="/graph" element={<GraphPage />} />
           <Route path="/templates" element={<TemplatesPage />} />

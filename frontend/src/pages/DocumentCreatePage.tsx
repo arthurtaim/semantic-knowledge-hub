@@ -208,7 +208,7 @@ function NewDocumentFlow({ onCreated, onTemplateApplied }: NewDocumentFlowProps)
       <AuthoringRoute states={{ type: "current" }} />
       <p className="authoring__alt">
         Есть готовый текст в Markdown? <Link to="/documents/import">Импортировать Markdown</Link> — метаданные (YAML)
-        писать не нужно. Все шаблоны с описанием и примерами — в разделе <Link to="/templates">Шаблоны</Link>.
+        писать не нужно. Много файлов или ZIP-архив — <Link to="/documents/onboarding">массовый импорт</Link>. Все шаблоны с описанием и примерами — в разделе <Link to="/templates">Шаблоны</Link>.
       </p>
       <BlankStart defaultType={blank.data?.default_type ?? "guide"} onStart={startBlank} />
       {templateStart ?? (

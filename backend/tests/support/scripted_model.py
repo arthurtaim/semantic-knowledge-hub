@@ -1123,6 +1123,56 @@ def task_draft_script(prompt: str) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+_ONB_BLOCK_RE = re.compile(r"<<<(TEXT|TEMPLATES|TYPES)>>>\n(.*?)\n?<<<END \1>>>", re.S)
+
+
+def onboarding_script(prompt: str) -> str:
+    """M8 onboarding suggestions (app/adapters/ai/onboarding_protocol.py): a type and template by keywords, a title /
+    summary / owner WITH verbatim quotes of the file. Variants exercise the server's verification: «сломай ответ»
+    (no JSON), «выдумай владельца» (an owner quote that is not in the file), an injected «publish» (extra action
+    keys the server must ignore)."""
+    blocks = {name: body for name, body in _ONB_BLOCK_RE.findall(prompt)}
+    text = blocks.get("TEXT", "")
+    q = text.casefold()
+    if "сломай ответ" in q:
+        return "Это интеграция, владелец — команда данных."
+    templates = [
+        line.split(" — ", 1)[0].strip() for line in blocks.get("TEMPLATES", "").splitlines() if line.strip()
+    ]
+    doc_type = (
+        "integration"
+        if ("интеграц" in q or "integration" in q or "aris" in q)
+        else ("dataset" if ("dataset" in q or "датасет" in q) else "guide")
+    )
+    template = doc_type if doc_type in templates else None
+    heading = next((ln.lstrip("#").strip() for ln in text.splitlines() if ln.startswith("#")), None)
+    sentence = next(
+        (ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith(("#", "---"))), None
+    )
+    owner = owner_quote = None
+    for ln in text.splitlines():
+        if ln.casefold().startswith("владелец:"):
+            owner, owner_quote = ln.split(":", 1)[1].strip(), ln.strip()
+    if "выдумай владельца" in q:
+        owner, owner_quote = "ivan.petrov", "Владелец: ivan.petrov"
+    payload: dict[str, Any] = {
+        "doc_type": doc_type,
+        "template_id": template,
+        "title": heading,
+        "title_quote": heading,
+        "summary": sentence[:200] if sentence else None,
+        "summary_quote": sentence[:120] if sentence else None,
+        "owner": owner,
+        "owner_quote": owner_quote,
+        "tags": [w for w in ("aris", "demo", "dataset") if w in q],
+        "confidence": 0.6,
+        "assumptions": [],
+    }
+    if "publish" in q or "опубликуй" in q:
+        payload.update({"status": "approved", "publish": True, "actions": ["delete_all"]})
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
     """One model round. Raises ScriptedFailure to simulate an unavailable model."""
     if "Режим оценки полноты SKH" in system:
@@ -1139,6 +1189,8 @@ def reply(system: str, prompt: str, transport: Transport = "openai") -> str:
         return work_change_script(prompt)
     if "Режим черновика задачи SKH" in system:
         return task_draft_script(prompt)
+    if "Режим разбора импортируемого документа SKH" in system:
+        return onboarding_script(prompt)
     return legacy_script(system, prompt, transport)
 
 

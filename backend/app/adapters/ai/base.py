@@ -291,6 +291,27 @@ class TaskDraftAIProvider(Protocol):
 
 
 @dataclass(frozen=True)
+class OnboardingSuggestRequest:
+    """M8 onboarding (docs/KNOWLEDGE_ONBOARDING.md): suggestions for ONE uploaded file. The text is DATA; the reply is
+    parsed strictly by app/adapters/ai/onboarding_protocol.py and every value is verified by the server (a title,
+    a summary or an owner only with a verbatim quote of the file; a type / template only from the given lists)."""
+
+    filename: str
+    text: str
+    doc_types: tuple[str, ...]
+    templates: tuple[tuple[str, str], ...]  # (id, title) of active templates
+    tags: tuple[str, ...]  # existing tags of the reader's base
+
+
+class OnboardingAIProvider(Protocol):
+    """Optional capability: without it (mock, disabled) onboarding stays deterministic and says so."""
+
+    supports_onboarding_suggestions: bool
+
+    async def suggest_onboarding(self, request: OnboardingSuggestRequest) -> str: ...
+
+
+@dataclass(frozen=True)
 class EvidenceCard:
     """One authorized team passage, shortened for the evidence-gap check. `eid` (E1, E2, …) is the only handle the
     model may name; the server maps it back to the passage it built the card from."""
