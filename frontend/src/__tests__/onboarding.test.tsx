@@ -179,6 +179,21 @@ describe("Массовый импорт", () => {
     expect(await within(panel).findByText(/Файл уже изменили в другой вкладке/)).toBeInTheDocument();
   });
 
+  it("a file whose draft failed can still be fixed and saved", async () => {
+    const failed = { ...DETAIL, outcome: { state: "draft_failed" as const, proposal_id: null, document_id: null, operation: "create" as const, code: "template_not_active", message: "Шаблон не активен." } };
+    mockApi([
+      ...base,
+      { path: new RegExp(`/api/onboarding/batches/${BATCH}$`), body: batch() },
+      { path: /\/items\/aaaaaaaaaaaaaaaa$/, body: failed },
+    ]);
+    renderRoutes(`/documents/onboarding?batch=${BATCH}`, ROUTES);
+    await userEvent.click(await screen.findByRole("button", { name: "profile.md" }));
+    const panel = await screen.findByRole("region", { name: "Файл profile.md" });
+    expect(within(panel).getByText(/Черновик не создан: Шаблон не активен/)).toBeInTheDocument();
+    expect(within(panel).getByLabelText("Название")).toBeEnabled();
+    expect(within(panel).getByRole("button", { name: "Сохранить решения" })).toBeEnabled();
+  });
+
   it("an expired batch says so and allows nothing", async () => {
     mockApi([...base, { path: new RegExp(`/api/onboarding/batches/${BATCH}$`), body: batch({ state: "expired" }) }]);
     renderRoutes(`/documents/onboarding?batch=${BATCH}`, ROUTES);

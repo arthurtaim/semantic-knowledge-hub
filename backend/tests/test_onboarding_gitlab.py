@@ -49,6 +49,8 @@ def test_ob17_a_confirmed_file_becomes_knowledge_only_after_merge_and_sync(gitla
     # a draft: no document, no search hit, no new index generation, no GitLab write yet
     assert client.get("/api/documents/DEMO-ONB-001").status_code == 404
     assert client.get("/api/search", params={"q": MARKER}).json()["items"] == []
+    assert client.get("/api/search", params={"q": MARKER, "include_drafts": "true"}).json()["items"] == []
+    assert client.get("/api/graph/nodes/doc:DEMO-ONB-001/neighbors").status_code == 404  # no graph node yet
     assert client.get("/api/index/status").json()["generation"] == generation
     assert gitlab.state.mrs == [] and list(gitlab.state.branches) == ["main"]
     # the ordinary review flow
@@ -56,7 +58,7 @@ def test_ob17_a_confirmed_file_becomes_knowledge_only_after_merge_and_sync(gitla
     submitted = client.post(f"/api/drafts/{proposal_id}/submit")
     assert submitted.status_code == 200, submitted.text
     assert (
-        client.get("/api/search", params={"q": MARKER}).json()["items"] == []
+        client.get("/api/search", params={"q": MARKER, "include_drafts": "true"}).json()["items"] == []
     )  # an open MR is not knowledge
     merged = TestClient(gitlab.mock, base_url=BASE_URL).post("/__mock__/merge-requests/1/merge")
     assert merged.status_code == 200, merged.text

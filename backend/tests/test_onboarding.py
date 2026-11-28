@@ -417,17 +417,40 @@ def test_ob15_the_same_key_with_another_selection_is_refused(client: TestClient)
 def test_ob16_another_user_sees_nothing_and_a_reader_cannot_stage(client: TestClient) -> None:
     batch = batch_of(client, {"profile.md": NO_YAML})
     container = client.app.state.container  # type: ignore[attr-defined]
+    owner_identity = container.identity
     identity = ServerSideTestIdentity()
     container.identity = identity
     identity.current = UserContext(user_id="other.person", display_name="Other", roles=[], is_demo=True)
-    for method, path in (
-        ("get", f"/api/onboarding/batches/{batch['batch_id']}"),
-        ("get", f"/api/onboarding/batches/{batch['batch_id']}/items/{batch['items'][0]['item_id']}"),
-        ("post", f"/api/onboarding/batches/{batch['batch_id']}/cancel"),
-    ):
-        response = getattr(client, method)(path)
-        assert response.status_code == 404 and "profile" not in response.text
+    base, item_id = f"/api/onboarding/batches/{batch['batch_id']}", batch["items"][0]["item_id"]
+    attempts: list[tuple[str, str, dict[str, Any] | None]] = [
+        ("GET", base, None),
+        ("GET", f"{base}/items/{item_id}", None),
+        ("PATCH", f"{base}/items/{item_id}", {"expected_revision": 1, "excluded": True}),
+        ("POST", f"{base}/suggest", {"item_ids": [item_id]}),
+        ("POST", f"{base}/preview", {"item_ids": [item_id]}),
+        (
+            "POST",
+            f"{base}/confirm",
+            {
+                "expected_revision": 1,
+                "fingerprint": "f" * 64,
+                "item_ids": [item_id],
+                "idempotency_key": "other-0001",
+            },
+        ),
+        ("POST", f"{base}/cancel", None),
+    ]
+    for method, path, body in attempts:
+        response = client.request(method, path, json=body)
+        assert response.status_code == 404 and "profile" not in response.text, (method, path, response.text)
     assert client.get("/api/onboarding/batches").json() == []
+    container.identity = owner_identity  # back to the owner: nothing was changed by the other user
+    owner_view = client.get(base).json()
+    assert (
+        owner_view["state"] != "rejected"
+        and owner_view["items"][0]["excluded"] is False
+        and drafts(client) == 0
+    )
 
     class ReaderOnly:
         name = "reader_only"
@@ -608,3 +631,178 @@ def test_model_suggestions_are_bounded_per_batch(ai: Callable[..., TestClient]) 
     ids = [i["item_id"] for i in batch["items"]]
     result = suggest(client, batch, ids)
     assert sorted(result["states"].values()) == ["done", "skipped"] and "Лимит" in (result["note"] or "")
+
+
+# --- final review fixes: ingestion -------------------------------------------------------------------------------
+def _legacy_named_zip(names: dict[str, bytes]) -> bytes:
+    """A ZIP whose entry names are raw bytes WITHOUT the UTF-8 flag (Windows Explorer: cp866; some tools: UTF-8)."""
+    placeholders = {f"{chr(65 + n)}" * len(raw): raw for n, raw in enumerate(names)}
+    data = zip_bytes({p: f"# {p[:1]}\nтекст\n" for p in placeholders})
+    for placeholder, raw in placeholders.items():
+        data = data.replace(placeholder.encode("ascii"), raw)
+    return data
+
+
+def test_cyrillic_entry_names_without_the_utf8_flag_are_readable(client: TestClient) -> None:
+    data = _legacy_named_zip({"Регламент загрузки.md".encode("cp866"): b"", "Отчёт.md".encode(): b""})
+    response = upload(client, data)
+    assert response.status_code == 201, response.text
+    assert sorted(i["path"] for i in response.json()["items"]) == ["Отчёт.md", "Регламент загрузки.md"]
+
+
+def test_a_docx_uploaded_as_a_file_is_one_item_not_an_archive(client: TestClient) -> None:
+    docx = zip_bytes({"[Content_Types].xml": "<Types/>", "word/document.xml": "<w:document/>"})
+    response = client.post(
+        "/api/onboarding/batches",
+        files=[("files", ("report.docx", docx, "application/octet-stream"))],
+        data={"source_kind": "files"},
+    )
+    assert response.status_code == 201, response.text
+    assert [i["path"] for i in response.json()["items"]] == ["report.docx"]
+
+
+def test_several_archives_share_one_expanded_size_budget() -> None:
+    from app.errors import ApiError
+    from app.services.onboarding.ingest import MIB, Ingested, IngestLimits, read_zip
+
+    limits = IngestLimits(expanded_bytes=MIB)
+    out, seen = Ingested(source_kind="files"), {}
+    read_zip(zip_bytes({"a.md": "a" * (600 * 1024)}), limits, out, seen)
+    with pytest.raises(ApiError) as refused:  # the second archive is refused BEFORE it is decompressed
+        read_zip(zip_bytes({"b.md": "b" * (600 * 1024)}), limits, out, seen)
+    assert refused.value.code == "archive_too_large"
+
+
+def test_system_junk_files_are_skipped_and_do_not_count(client_factory: Callable[..., TestClient]) -> None:
+    client = client_factory(onboarding_max_files=1)
+    data = zip_bytes(
+        {
+            "a.md": "# A\nтекст\n",
+            "__MACOSX/._a.md": b"\x00\x05\x16\x07",
+            ".DS_Store": b"\x00\x00",
+            "x/Thumbs.db": b"\x00",
+        }
+    )
+    response = upload(client, data)
+    assert response.status_code == 201, response.text
+    assert [i["path"] for i in response.json()["items"]] == ["a.md"]
+    folder = client.post(
+        "/api/onboarding/batches",
+        files=[
+            ("files", ("kb/.DS_Store", b"\x00", "application/octet-stream")),
+            ("files", ("kb/b.md", b"# B\n", "text/markdown")),
+        ],
+        data={"source_kind": "folder"},
+    )
+    assert folder.status_code == 201, folder.text
+    assert [i["path"] for i in folder.json()["items"]] == ["kb/b.md"]
+
+
+# --- final review fixes: decisions on a file with valid YAML ------------------------------------------------------
+RICH_YAML = """---
+id: DEMO-INT-902
+title: Synthetic rich metadata
+type: integration
+status: draft
+owner: demo-team
+version: "2.3"
+synthetic: true
+tags: [demo]
+related_ids: [SEM-ARCH-001]
+relations:
+  depends_on: [SEM-STD-001]
+---
+# Synthetic rich integration
+Demo-only text. См. [[SEM-STD-001]].
+"""
+
+
+def _decide(client: TestClient, batch: dict[str, Any], item_id: str, **body: Any) -> dict[str, Any]:
+    url = f"/api/onboarding/batches/{batch['batch_id']}/items/{item_id}"
+    detail = client.get(url).json()
+    response = client.patch(url, json={"expected_revision": detail["revision"], **body})
+    assert response.status_code == 200, response.text
+    return response.json()  # type: ignore[no-any-return]
+
+
+def _confirmed_draft(client: TestClient, batch: dict[str, Any], item_id: str) -> dict[str, Any]:
+    plan = preview(client, batch, [item_id])
+    outcome = confirm(client, batch["batch_id"], plan, [item_id]).json()["outcomes"][item_id]
+    assert outcome["state"] == "draft_created", outcome
+    return client.get(f"/api/drafts/{outcome['proposal_id']}").json()  # type: ignore[no-any-return]
+
+
+def test_an_edit_keeps_the_files_own_yaml_relations_version_and_flags(client: TestClient) -> None:
+    batch = batch_of(client, {"rich.md": RICH_YAML})
+    item_id = batch["items"][0]["item_id"]
+    _decide(client, batch, item_id, fields={"owner": "data-team"}, reviewed=True)
+    content = _confirmed_draft(client, batch, item_id)["proposed_content"]
+    assert "owner: data-team" in content
+    assert "depends_on" in content and "SEM-STD-001" in content  # typed relations survive
+    assert "version: '2.3'" in content or 'version: "2.3"' in content
+    assert "synthetic: true" in content and "DEMO-INT-902" in content
+
+
+def test_unticking_a_yaml_related_id_removes_it_from_the_draft(client: TestClient) -> None:
+    batch = batch_of(client, {"valid.md": VALID})
+    item_id = batch["items"][0]["item_id"]
+    detail = _decide(client, batch, item_id, selected_links=[])  # the person unticks SEM-ARCH-001
+    assert not any(link["selected_by_user"] for link in detail["candidate_links"])
+    plan = preview(client, batch, [item_id])
+    assert plan["planned"][0]["related_ids"] == []
+    assert "SEM-ARCH-001" not in _confirmed_draft(client, batch, item_id)["proposed_content"].split("---")[1]
+
+
+# --- final review fixes: cancel and expiry really drop the staged text ---------------------------------------------
+@pytest.mark.parametrize("close", ["cancel", "expire"])
+def test_a_closed_batch_keeps_no_staged_text(client: TestClient, close: str) -> None:
+    arch = client.get("/api/documents/SEM-ARCH-001").json()
+    batch = batch_of(client, {"secret.md": NO_YAML, "arch.md": arch["raw"] + "\nСекретная правка.\n"})
+    container = client.app.state.container  # type: ignore[attr-defined]
+    if close == "cancel":
+        assert client.post(f"/api/onboarding/batches/{batch['batch_id']}/cancel").status_code == 200
+    else:
+        container.onboarding._store.expire(time.time() + 365 * 24 * 3600)
+    for item in batch["items"]:
+        detail = client.get(f"/api/onboarding/batches/{batch['batch_id']}/items/{item['item_id']}").json()
+        assert detail["body_preview"] == "" and detail["preview_html"] == "" and detail["diff"] is None
+    for row in container.onboarding._store.items(batch["batch_id"]):
+        assert row["content"] is None
+        assert (
+            "Demo-only dataset" not in row["analysis_json"] and "Секретная правка" not in row["analysis_json"]
+        )
+
+
+# --- final review fixes: a model quote must SUPPORT the value, not merely exist ------------------------------------
+def test_a_model_value_needs_a_quote_that_contains_it() -> None:
+    from app.adapters.ai.onboarding_protocol import OnboardingReply
+    from app.services.onboarding.suggest import OnboardingSuggester
+
+    class _Registry:
+        def get(self, _id: str) -> None:
+            return None
+
+    text = "# Synthetic dataset profile\nВладелец: data-team. Demo-only dataset contains model_code and loaded_at.\n"
+    reply = OnboardingReply(
+        title="Synthetic dataset profile",
+        title_quote="Synthetic dataset profile",
+        owner="security-team",
+        owner_quote="Demo-only",  # present in the file, but says nothing about the owner
+        summary="Датасет с кодом модели",
+        summary_quote="Demo",  # too short to support a summary
+    )
+    kept = {
+        s.field: s.value
+        for s in OnboardingSuggester(object(), _Registry()).verify(reply, "p.md", text, set())
+    }  # type: ignore[arg-type]
+    assert kept == {"title": "Synthetic dataset profile"}
+    honest = OnboardingReply(owner="data-team", owner_quote="Владелец: data-team")
+    assert [
+        s.value for s in OnboardingSuggester(object(), _Registry()).verify(honest, "p.md", text, set())
+    ] == ["data-team"]  # type: ignore[arg-type]
+
+
+def test_clearing_the_type_means_by_template_and_is_accepted(client: TestClient) -> None:
+    batch = batch_of(client, {"profile.md": NO_YAML})
+    detail = _decide(client, batch, batch["items"][0]["item_id"], fields={"type": None, "owner": "data-team"})
+    assert {f["field"]: f["value"] for f in detail["fields"] if f["origin"] == "user"}["owner"] == "data-team"

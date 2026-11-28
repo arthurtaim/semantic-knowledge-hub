@@ -99,12 +99,12 @@ class OnboardingStore:
             ]
             for batch_id in ids:
                 conn.execute("UPDATE onboarding_batches SET state = 'expired' WHERE id = ?", (batch_id,))
-                conn.execute("UPDATE onboarding_items SET content = NULL WHERE batch_id = ?", (batch_id,))
+                _scrub_items(conn, batch_id)
             return len(ids)
 
     def drop_content(self, batch_id: str) -> None:
         with self._tx() as conn:
-            conn.execute("UPDATE onboarding_items SET content = NULL WHERE batch_id = ?", (batch_id,))
+            _scrub_items(conn, batch_id)
 
     # --- items -----------------------------------------------------------------------------------------------
     def items(self, batch_id: str) -> list[sqlite3.Row]:
@@ -172,3 +172,32 @@ class OnboardingStore:
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+
+_KEPT_FIELDS = ("title", "type", "template_id")
+
+
+def _scrub(analysis: dict[str, Any]) -> dict[str, Any]:
+    """What a CLOSED batch keeps: paths, titles, ids, statuses, counts and outcomes. The staged text, its preview,
+    the diff against a document, every quote of the file and model suggestions are dropped."""
+    for key in ("body", "body_preview", "preview_html", "diff", "diff_stats"):
+        analysis.pop(key, None)
+    analysis["fields"] = [
+        {**f, "evidence": []} for f in analysis.get("fields") or [] if f.get("field") in _KEPT_FIELDS
+    ]
+    for link in analysis.get("links") or []:
+        if isinstance(link.get("evidence"), dict):
+            link["evidence"] = {**link["evidence"], "snippet": "", "line": None}
+    return analysis
+
+
+def _scrub_items(conn: sqlite3.Connection, batch_id: str) -> None:
+    rows = conn.execute(
+        "SELECT id, analysis_json FROM onboarding_items WHERE batch_id = ?", (batch_id,)
+    ).fetchall()
+    for row in rows:
+        analysis = _scrub(json.loads(row["analysis_json"] or "{}"))
+        conn.execute(
+            "UPDATE onboarding_items SET content = NULL, analysis_json = ?, ai_json = '{}' WHERE batch_id = ? AND id = ?",
+            (json.dumps(analysis, ensure_ascii=False), batch_id, row["id"]),
+        )

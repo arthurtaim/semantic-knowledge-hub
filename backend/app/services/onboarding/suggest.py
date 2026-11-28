@@ -21,8 +21,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger("skh.onboarding.ai")
 
 
-def _quoted(value: str | None, quote: str | None, text: str) -> bool:
-    return bool(value and quote and quote_in_text(quote, text))
+MIN_SUMMARY_QUOTE = 20  # characters of a normalized quote that may support a (paraphrased) summary
+
+
+def _quoted(name: str, value: str | None, quote: str | None, text: str) -> bool:
+    """The quote is a fragment of the file AND supports the value: a title / owner must appear inside its quote,
+    a summary needs a quote long enough to be evidence."""
+    if not (value and quote and quote_in_text(quote, text)):
+        return False
+    if name == "summary":
+        return len(normalize_quote(quote)) >= MIN_SUMMARY_QUOTE
+    return normalize_quote(value) in normalize_quote(quote)
 
 
 class OnboardingSuggester:
@@ -73,7 +82,7 @@ class OnboardingSuggester:
             ("summary", reply.summary, reply.summary_quote),
             ("owner", reply.owner, reply.owner_quote),
         ):
-            if _quoted(value, quote, text):
+            if _quoted(name, value, quote, text):
                 add(name, value, quote)
         words = set(normalize_quote(text).split())
         tags = [t for t in reply.tags if t in vocabulary or normalize_quote(t) in words]

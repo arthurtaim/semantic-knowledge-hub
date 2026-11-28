@@ -124,32 +124,63 @@ def _too_many(limits: IngestLimits) -> ApiError:
     return ApiError(413, "too_many_files", f"В пакете больше {limits.max_files} файлов: разделите его.")
 
 
+_JUNK_NAMES = frozenset({".ds_store", "thumbs.db", "desktop.ini"})
+
+
+def is_system_junk(raw: str) -> bool:
+    """Files an OS adds by itself (Finder `__MACOSX/` and `._*`, `.DS_Store`, `Thumbs.db`, `desktop.ini`): skipped
+    silently — they are not documents and must not use up the file cap."""
+    parts = raw.replace("\\", "/").split("/")
+    base = parts[-1].casefold()
+    return parts[0] == "__MACOSX" or base in _JUNK_NAMES or base.startswith("._")
+
+
+def entry_name(info: zipfile.ZipInfo) -> str:
+    """The entry name; without the UTF-8 flag a non-ASCII name is re-decoded as UTF-8, else cp866 (Windows Explorer
+    writes OEM code pages; Python reads such names as cp437 mojibake)."""
+    if info.flag_bits & 0x800:
+        return info.filename
+    try:
+        raw = info.orig_filename.encode("cp437")
+    except UnicodeEncodeError:
+        return info.filename
+    if raw.isascii():
+        return info.filename
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("cp866")
+
+
 def read_zip(data: bytes, limits: IngestLimits, out: Ingested, seen: dict[str, str]) -> None:
-    """Entries of one uploaded ZIP into `out`. Archive-level problems are 4xx; entry-level ones are refused items."""
+    """Entries of one uploaded ZIP into `out`. Archive-level problems are 4xx; entry-level ones are refused items.
+    The expanded-size budget is shared with everything already in `out` (several archives in one upload)."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = archive.infolist()
     except (zipfile.BadZipFile, zipfile.LargeZipFile, ValueError, EOFError) as exc:
         raise ApiError(422, "archive_corrupt", "Архив повреждён или это не ZIP.") from exc
-    entries = [i for i in infos if not i.is_dir()]
+    entries = [i for i in infos if not i.is_dir() and not is_system_junk(entry_name(i))]
     if not entries:
         raise ApiError(422, "upload_empty", "В архиве нет файлов.")
     if any(i.flag_bits & 0x1 for i in entries):
         raise ApiError(422, "archive_encrypted", "Архив зашифрован: загрузите архив без пароля.")
     if len(entries) + len(out.files) > limits.max_files:
         raise _too_many(limits)
+    already = out.bytes_total
     declared = sum(i.file_size for i in entries)
-    if declared > limits.expanded_bytes:
+    if already + declared > limits.expanded_bytes:
         raise ApiError(
             413,
             "archive_too_large",
             f"После распаковки больше {limits.expanded_bytes // MIB} МБ: разделите архив.",
         )
-    expanded = 0
+    expanded = already
     for info in entries:
+        name = entry_name(info)
         mode = (info.external_attr >> 16) & 0xFFFF
         if stat.S_IFMT(mode) and not stat.S_ISREG(mode):  # type bits present and not a regular file
-            label = display_path(info.filename)
+            label = display_path(name)
             kind = "символическая ссылка" if stat.S_ISLNK(mode) else "специальный файл"
             out.files.append(_refuse(label, "special_file", f"Запрещено: {kind}."))
             continue
@@ -166,7 +197,7 @@ def read_zip(data: bytes, limits: IngestLimits, out: Ingested, seen: dict[str, s
         if info.file_size > limits.file_bytes:
             out.files.append(
                 _refuse(
-                    display_path(info.filename),
+                    display_path(name),
                     "file_too_large",
                     f"Файл больше {limits.file_bytes // MIB} МБ.",
                 )
@@ -190,8 +221,9 @@ def read_zip(data: bytes, limits: IngestLimits, out: Ingested, seen: dict[str, s
             raise ApiError(
                 413, "archive_too_large", f"После распаковки больше {limits.expanded_bytes // MIB} МБ."
             )
-        _add(out, seen, info.filename, bytes(buf), limits)
+        _add(out, seen, name, bytes(buf), limits)
 
 
-def is_zip(name: str | None, data: bytes) -> bool:
-    return data.startswith(b"PK\x03\x04") or bool(name and name.casefold().endswith(".zip"))
+def is_zip(name: str | None) -> bool:
+    """An uploaded part is an archive only by its `.zip` name: DOCX (and other OOXML) files are ZIPs inside too."""
+    return bool(name and name.casefold().endswith(".zip"))

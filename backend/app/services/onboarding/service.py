@@ -24,6 +24,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import yaml
+
 from app.domain.models import DocType, UserContext
 from app.domain.onboarding import (
     EDITABLE_FIELDS,
@@ -47,6 +49,7 @@ from app.domain.onboarding import (
     SuggestResult,
 )
 from app.domain.proposals import DraftCreate, NewDocumentDraftCreate, NewDocumentMetadata
+from app.domain.schema import load_frontmatter, split_frontmatter
 from app.errors import ApiError
 from app.services.attachments import AttachmentLimits
 from app.services.knowledge import KnowledgeService
@@ -193,15 +196,15 @@ class OnboardingService:
     def ingest_upload(self, parts: list[Any], source_kind: str) -> Ingested:
         """Form parts → files; a ZIP part is unpacked (bounded), every other part is one file (its name may carry
         the folder path the browser reported)."""
-        from app.services.onboarding.ingest import _add, is_zip
+        from app.services.onboarding.ingest import _add, is_system_junk, is_zip
 
         out = Ingested(source_kind=source_kind)
         seen: dict[str, str] = {}
-        files = [p for p in parts if p.filename is not None]
+        files = [p for p in parts if p.filename is not None and not is_system_junk(p.filename)]
         if not files or all(not p.data for p in files):
             raise ApiError(422, "upload_empty", "Не выбрано ни одного файла.")
         for part in files:
-            if is_zip(part.filename, part.data):
+            if is_zip(part.filename):
                 out.source_kind = "zip" if len(files) == 1 else source_kind
                 read_zip(part.data, self.limits, out, seen)
             else:
@@ -444,8 +447,8 @@ class OnboardingService:
                 ):
                     raise ApiError(422, "field_invalid", f"{name}: нужен список строк.", {"field": name})
                 out[name] = list(dict.fromkeys(v.strip() for v in value if v.strip()))[:50]
-            elif name == "type":
-                if value not in {t.value for t in DocType}:
+            elif name == "type":  # None: «по шаблону» — the type comes from the template
+                if value is not None and value not in {t.value for t in DocType}:
                     raise ApiError(422, "field_invalid", "Неизвестный тип документа.", {"field": name})
                 out[name] = value
             elif name == "template_id":
@@ -571,6 +574,13 @@ class OnboardingService:
             chosen = list(d.fields["related_ids"])
         else:
             chosen = list(a.get("yaml_related_ids") or [])
+        if d.selected_links is not None:  # a preselected (YAML) link the person unticked leaves the draft
+            unticked = {
+                v["target_document_id"]
+                for k, v in links.items()
+                if v.get("selected_by_user") and k not in d.selected_links
+            }
+            chosen = [x for x in chosen if x not in unticked]
         selected = (
             d.selected_links
             if d.selected_links is not None
@@ -655,6 +665,34 @@ class OnboardingService:
             logger.info("onboarding confirm batch=%s created=%d failed=%d", batch_id, result.created, failed)
             return result
 
+    @staticmethod
+    def _merged_yaml(content: str, d: ItemDecisions, item: PlannedItem) -> str:
+        """The file's valid frontmatter with ONLY the person's decisions applied: every other key (typed `relations`,
+        `version`, `synthetic`, a pinned `template_version`, …) stays as the author wrote it."""
+        yaml_text, body = split_frontmatter(content)
+        meta = load_frontmatter(yaml_text)
+        for name in ("title", "type", "owner", "tags", "summary"):
+            if name in d.fields:
+                value = d.fields[name]
+                if value in (None, "", []):
+                    meta.pop(name, None)
+                else:
+                    meta[name] = value
+        if "template_id" in d.fields:  # another template: pinned to its active version on import
+            meta.pop("template_version", None)
+            if d.fields["template_id"]:
+                meta["template"] = d.fields["template_id"]
+            else:
+                meta.pop("template", None)
+        if item.related_ids:
+            meta["related_ids"] = list(item.related_ids)
+        else:
+            meta.pop("related_ids", None)
+        dumped = yaml.safe_dump(
+            meta, allow_unicode=True, sort_keys=False, default_flow_style=None, width=1000
+        )
+        return f"---\n{dumped}---\n\n{body}"
+
     async def _create_one(self, user: UserContext, batch_id: str, item: PlannedItem) -> DraftOutcome:
         row = self._store.item(batch_id, item.item_id)
         assert row is not None
@@ -683,11 +721,11 @@ class OnboardingService:
                         client_request_id=request_id,
                     ),
                 )
-            elif (
-                a.get("has_valid_yaml")
-                and not d.fields
-                and set(item.related_ids) == set(a.get("yaml_related_ids") or [])
-            ):
+            elif a.get(
+                "has_valid_yaml"
+            ):  # the file's own YAML is kept; the person's decisions are merged into it
+                if d.fields or set(item.related_ids) != set(a.get("yaml_related_ids") or []):
+                    content = self._merged_yaml(content, d, item)
                 detail = await self._proposals.create_imported(
                     user, content, reason=reason, client_request_id=request_id
                 )

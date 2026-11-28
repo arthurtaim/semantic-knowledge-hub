@@ -126,7 +126,7 @@ export function ItemInspector({ batchId, itemId, templates, locked, onChanged, o
   if (!detail) return <Loading label="Открываю файл…" />;
   const update = detail.proposed_operation === "update";
   const importable = detail.parse_status !== "invalid" && detail.parse_status !== "unsupported";
-  const editable = importable && !locked && !detail.outcome;
+  const editable = importable && !locked && detail.outcome?.state !== "draft_created"; // a failed draft can be fixed and retried
   const modelFields = detail.fields.filter((f) => f.origin === "model");
 
   return (
